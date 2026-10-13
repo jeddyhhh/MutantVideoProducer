@@ -13,9 +13,10 @@ RealMedia, Cinepak, DV and still images. Renders can go to any of about 150 outp
 ![The editor: an editable orbital news broadcast with captions, animated graphics and a multitrack timeline](docs/screenshots/editor.png)
 
 **Native graphics and animation**: build broadcast layouts, charts and animated scenes directly
-in the editor. This race scene uses curved paths, reusable cars and motion trails.
+in the editor with a general 2D graphics engine: curved paths, reusable objects, keyframes,
+masks, cameras and motion effects.
 
-![The Graphics Overlay Composer editing a night race circuit with reusable cars and curved paths](docs/screenshots/graphics-composer.png)
+![The Graphics Overlay Composer with editable layers, curved paths and animation controls](docs/screenshots/graphics-composer.png)
 
 **Waveform graphics**: turn actual source audio into styled stereo bars, envelopes or lines,
 with playback progress and optional scrolling.
