@@ -10,7 +10,17 @@ Anything FFmpeg can read can be imported: more than 360 container formats and ab
 video decoders, from AV1 and HEVC 10-bit down to Nintendo 3DS camera AVIs, `.3gp` phone clips,
 RealMedia, Cinepak, DV and still images. Renders can go to any of about 150 output formats.
 
-![The editor: animated titles over a retro grid, with the multitrack timeline](docs/screenshots/editor.png)
+![The editor: an editable orbital news broadcast with captions, animated graphics and a multitrack timeline](docs/screenshots/editor.png)
+
+**Native graphics and animation**: build broadcast layouts, charts and animated scenes directly
+in the editor. This race scene uses curved paths, reusable cars and motion trails.
+
+![The Graphics Overlay Composer editing a night race circuit with reusable cars and curved paths](docs/screenshots/graphics-composer.png)
+
+**Waveform graphics**: turn actual source audio into styled stereo bars, envelopes or lines,
+with playback progress and optional scrolling.
+
+![Signal Studio: a stereo waveform graphic generated from audio, with its editable properties](docs/screenshots/waveform.png)
 
 **Effects and scopes**: the device chain under the timeline, the waveform scope beside the preview.
 
@@ -23,20 +33,15 @@ stream or send to OBS.
 
 **Themes**: Neon Grid, Night City, Synthwave Sunset and Studio Light (View > Theme).
 
-![Four of the seven themes](docs/screenshots/themes.png)
-
-**Transitions** and **generators**:
-
-![Glitch, Ripple, Swirl, Card Flip, Cube Spin, Film Burn, Luma Fade, Shape Reveal, Mosaic, Zoom Blur, Tiles, Light Leak, Flash, Wave Wipe, Slices and Kaleidoscope](docs/screenshots/transitions.png)
-
-![Plasma, Aurora, Starfield, Bokeh Lights, Retro Grid, Digital Rain, Confetti, Countdown Leader, Kinetic Text, Shape and Color Bars](docs/screenshots/generators.png)
+![The orbital broadcast project in Neon Grid, Night City, Synthwave Sunset and Studio Light](docs/screenshots/themes.png)
 
 ## Features
 
 **Editing**: multitrack timeline; trimming, splitting, slip, slide and roll; auto ripple; groups;
 fade curves; markers and regions; a beat grid; envelopes; speed changes, reverse, frame blending,
 speed ramps and freeze frames; Project Media with folders, ratings, search and in / out marks;
-proxies for heavy footage; Create Clip from YouTube; autosave and crash recovery; History.
+proxies for heavy footage; a dedicated From YouTube bin; profiles with shared media libraries;
+Collect Project and Media for portable projects; autosave and crash recovery; History.
 
 **Effects**: 68 video effects, from colour grading (Curves, Color Wheels, LUTs) to glitch,
 analog, psychedelic and 128 *Broken Video Game Systems* effects; 27 transitions; a device chain
@@ -58,8 +63,12 @@ plugins, an Audio Mixer, auto ducking and beat detection.
 **Captions**: Auto Captions with Whisper on this computer (GPU or CPU), translation, speaker
 colours, SRT and WebVTT, subtitle tracks in renders.
 
+**Narration**: generate speech locally from captions, manage downloadable voices and convert
+generated narration with integrated RVC. Narration Studio keeps scripts and takes with the project.
+
 **Rendering**: about 170 templates (YouTube, TikTok, Instagram, Discord size limits, ProRes,
-DNxHR, GIF, image sequences, audio only, retro consoles...), GPU encoders, framing for other shapes.
+DNxHR, GIF, image sequences, audio only, retro consoles...), GPU encoders, framing for other shapes,
+and a detailed render status window, including renders started through MCP.
 
 **Live**: cameras, screens, windows and video files; a four-input switcher; layers; 16 effect pads
 with transitions, launched on the beat; tempo and beat detection; scenes and setlists; modulation;

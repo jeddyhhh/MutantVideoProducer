@@ -329,6 +329,8 @@ if(EXISTS "${MVP_DEPS_DIR}/rvc-assets")
 endif()
 if(WIN32)
     target_sources(mvp PRIVATE data/mvp.rc) # the program icon
+    # Ninja/MSVC resource compilation does not discover dependencies inside .rc files.
+    set_property(SOURCE data/mvp.rc APPEND PROPERTY OBJECT_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/data/mvp.ico")
 endif()
 endif()
 

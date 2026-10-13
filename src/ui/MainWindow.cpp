@@ -315,6 +315,7 @@ void MainWindow::createLayout()
     m_scopes = new ScopesWidget;
     m_scopes->setVisible(false);
     m_topSplit = new QSplitter(Qt::Horizontal);
+    m_topSplit->setObjectName(QStringLiteral("editorTopSplit"));
     m_topSplit->addWidget(tabs);
     m_topSplit->addWidget(previewPane);
     m_topSplit->addWidget(m_scopes);
@@ -340,6 +341,7 @@ void MainWindow::createLayout()
     m_devices->setPreview(m_preview); // effect masks are drawn and dragged on the preview
 
     m_mainSplit = new QSplitter(Qt::Vertical);
+    m_mainSplit->setObjectName(QStringLiteral("editorMainSplit"));
     m_mainSplit->addWidget(m_topSplit);
     m_mainSplit->addWidget(timelinePane);
     // The bottom section: the device chain, and the properties of a transition,

@@ -24,6 +24,7 @@
 #include <QLocalServer>
 #include <QLocalSocket>
 #include <QSettings>
+#include <QSplitter>
 #include <QTabWidget>
 #include <QTreeWidget>
 #include <QTimer>
@@ -386,6 +387,11 @@ int main(int argc, char** argv)
     }
     if (!screenshot.isEmpty()) {
         window.resize(1600, 1000);
+        // Keep the picture legible and all demo tracks visible in documentation captures.
+        if (auto* split = window.findChild<QSplitter*>(QStringLiteral("editorMainSplit")))
+            split->setSizes({480, 350, 120});
+        if (auto* split = window.findChild<QSplitter*>(QStringLiteral("editorTopSplit")))
+            split->setSizes({360, 1240, 0});
         QTimer::singleShot(delays.isEmpty() ? 4000 : delays.front().toInt(), &window, [&] {
             window.grab().save(screenshot);
             for (const QString& name : grabs)
