@@ -11,6 +11,8 @@ What changed in each version of Mutant Video Producer. The newest is first.
   explicitly skips unavailable GPU checks while keeping the CPU and composer assertions.
 - Windows Actions builds main and publishes an installer/ZIP; Linux Actions publishes an
   Ubuntu 24.04 archive after tests. Packaged Windows AI workers are cached between builds.
+- Windows FFmpeg downloads select a completed dated 8.1 build and verify its SHA-256,
+  avoiding transient 404s while the publisher replaces the moving latest release.
 - Bundled workers are deployed only when an executable for the target platform exists.
 
 ### Audio finishing and graphics workflow
