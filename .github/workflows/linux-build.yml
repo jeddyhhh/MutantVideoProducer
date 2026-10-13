@@ -11,7 +11,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -62,6 +62,7 @@ jobs:
           build/Release/bin/mvp_finishing_test || failed=1
           build/Release/bin/mvp_graphics_test || failed=1
           build/Release/bin/mvp_motion_test || failed=1
+          python3 -m unittest discover -s tests -p test_ci_builds.py || failed=1
           exit $failed
 
       - name: Package Linux build
@@ -78,7 +79,15 @@ jobs:
           tar -C build/package -czf build/MutantVideoProducer-linux-x86_64.tar.gz MutantVideoProducer
 
       - uses: actions/upload-artifact@v4
+        if: github.event_name == 'pull_request'
+        continue-on-error: true
         with:
           name: mvp-linux-x86_64
           path: build/MutantVideoProducer-linux-x86_64.tar.gz
           if-no-files-found: error
+
+      - name: Store development build downloads
+        if: github.event_name != 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/store-ci-build.py build/MutantVideoProducer-linux-x86_64.tar.gz

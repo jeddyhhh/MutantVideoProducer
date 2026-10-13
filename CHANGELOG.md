@@ -14,6 +14,10 @@ What changed in each version of Mutant Video Producer. The newest is first.
 - Windows FFmpeg downloads select a completed dated 8.1 build and verify its SHA-256,
   avoiding transient 404s while the publisher replaces the moving latest release.
 - Bundled workers are deployed only when an executable for the target platform exists.
+- Branch build downloads are stored in draft releases with SHA-256 checksums; large files
+  have verified multipart reconstruction. Delivery no longer requires Actions artifact quota.
+- Windows CI builds the complete app and its executed tests with bounded parallelism,
+  avoiding redundant whole-program links of suites already run on Linux.
 
 ### Audio finishing and graphics workflow
 

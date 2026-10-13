@@ -26,6 +26,8 @@ jobs:
   build:
     runs-on: windows-latest
     timeout-minutes: 90
+    env:
+      CMAKE_BUILD_PARALLEL_LEVEL: 2
     steps:
       - uses: actions/checkout@v4
 
@@ -134,7 +136,9 @@ jobs:
 
       - name: Build
         shell: cmd
-        run: build.bat Release
+        # Build the complete app and every test used below. Composer/GPU suites
+        # run separately on Linux; avoid redundant MSVC whole-program links here.
+        run: build.bat Release mvp mvp_selftest mvp_collection_test mvp_brand_test mvp_finishing_test mvp_voice_test mvp_docs
 
       # The native windows platform (no window is shown): offscreen has no fonts on Windows.
       - name: Self-test
@@ -155,6 +159,8 @@ jobs:
           & "$bin/mvp_brand_test.exe"
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           & "$bin/mvp_finishing_test.exe"
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          python -m unittest discover -s tests -p test_ci_builds.py
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           python -m unittest discover -s tests -p test_voice_worker.py
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
@@ -222,6 +228,8 @@ jobs:
           "offline=$off.zip" >> $env:GITHUB_OUTPUT
 
       - uses: actions/upload-artifact@v4
+        if: github.ref_type == 'tag'
+        continue-on-error: true
         with:
           name: mvp-win64
           compression-level: 0 # the files are already compressed archives/installers
@@ -229,6 +237,13 @@ jobs:
             ${{ steps.package.outputs.zip }}
             ${{ steps.package.outputs.setup }}
             ${{ steps.package.outputs.symbols }}
+
+      - name: Store development build downloads
+        if: github.ref_type != 'tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: pwsh
+        run: python scripts/store-ci-build.py "${{ steps.package.outputs.zip }}" "${{ steps.package.outputs.setup }}" "${{ steps.package.outputs.symbols }}"
 
       - name: Publish release
         if: github.ref_type == 'tag'
