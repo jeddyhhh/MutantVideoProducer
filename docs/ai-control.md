@@ -74,6 +74,9 @@ The [Letting an AI Assistant Edit](tutorials/16-ai-assistant.md) tutorial walks 
 
 ## Documentary tools
 
+`audio_finishing` measures final-mix LUFS, loudness range and true peaks, reports mix warnings and can apply safe master gain. See [Audio finishing](audio-finishing.md).
+`graphics_overlay` also exposes alignment, distribution, saved locks and reusable brand kits. See [Animation scenes](animation-scenes.md#layout-and-brand-workflow).
+
 `story_chapters` lists, adds, adopts, updates, reorders, assigns or deletes chapters. Durations are seconds; `get_project.chapters` contains saved microsecond strings. A chapter has a narration window followed by listening-only time. `adopt` turns an existing `from`/`to` range into a chapter, splitting boundary clips and retaining their sync.
 
 `compound_sequence` packs `event_ids`, returns its embedded timeline with `get`, replaces that content with `update`, and restores editable tracks with `unpack`. The JSON returned by `get` uses the same microsecond string fields as project files. Import media into the parent pool first. Paired picture/audio containers share the same immutable child content; updating either updates its linked partner. `ripple` defaults to true.

@@ -16,6 +16,7 @@
 #include "engine/MediaCache.h"
 #include "engine/PlaybackEngine.h"
 #include "ui/AudioMeter.h"
+#include "ui/AudioFinishingWindow.h"
 #include "ui/DeviceChainView.h"
 #include "ui/EffectEditor.h"
 #include "ui/EventPropertiesDialog.h"
@@ -648,6 +649,11 @@ void MainWindow::createActions()
     voiceAction->setObjectName(QStringLiteral("generateVoice"));
     captionsMenu->addAction(voiceAction);
     tools->addSeparator();
+    auto* finishingAction = act(tr("Audio &Finishing…"), QKeySequence(), [this] {
+        if (editorActive()) { stopPlayback(false); showAudioFinishing(this, m_project); }
+    });
+    finishingAction->setObjectName(QStringLiteral("audioFinishing"));
+    tools->addAction(finishingAction);
     tools->addAction(act(tr("Create &Proxies for Heavy Files"), QKeySequence(), [this] {
         QList<int> all;
         for (const auto& [id, m] : m_project->media())
@@ -2148,6 +2154,41 @@ int MainWindow::runEditorTest(QStringList& log)
                              " (statuses %2 %3 %4 %5 %6)")
                   .arg(tools.size()).arg(status).arg(notifyStatus).arg(getStatus).arg(foreignStatus).arg(listStatus));
 
+        // Finishing and graphics workflow use the same HTTP surface as external clients.
+        {
+            const auto original = m_project->timeline();
+            const int undoIndex = m_project->undoStack()->index();
+            const auto report = data(call("audio_finishing", {{"action","analyze"}}));
+            check(report["ok"].toBool() && report.contains("true_peak_dbtp") &&
+                      m_project->timeline()==original &&
+                      failed(call("audio_finishing", {{"action","apply_gain"},{"lufs",0}})),
+                  "AI audio finishing measures the final mix without edits and rejects invalid targets");
+            QJsonObject shape{{"type","rect"},{"id","shape"},{"x",.2},{"y",.2},
+                              {"width",.2},{"height",.2},{"fill","#ffffff"},{"brand_role","accent"}};
+            QJsonObject scene{{"version",2},{"layers",QJsonArray{shape}}};
+            auto created=call("graphics_overlay",{{"action","create"},{"scene",scene},{"length",2}});
+            int id = data(created)["event_id"].toInt();
+            auto arrangement=call("graphics_overlay",{{"action","layout"},{"event_id",id},
+                                {"layer_ids",QJsonArray{"shape"}},{"operation","left"},{"reference","safe"}});
+            auto arranged=data(arrangement);
+            auto locked=call("graphics_overlay",{{"action","lock"},{"event_id",id},{"layer_ids",QJsonArray{"shape"}},{"locked",true}});
+            const auto protectedTimeline=m_project->timeline();
+            bool refused=failed(call("graphics_overlay",{{"action","layout"},{"event_id",id},
+                                {"layer_ids",QJsonArray{"shape"}},{"operation","right"}}));
+            bool untouched=m_project->timeline()==protectedTimeline;
+            call("graphics_overlay",{{"action","lock"},{"event_id",id},{"layer_ids",QJsonArray{"shape"}},{"locked",false}});
+            QJsonObject kit{{"version",1},{"name","Test"},{"font","Arial"},{"primary","#00ff00"},
+                            {"secondary","#0000ff"},{"accent","#ff6600"},{"foreground","#ffffff"},{"background","#000000"}};
+            auto branded=data(call("graphics_overlay",{{"action","brand"},{"event_id",id},{"brand",kit}}));
+            bool styled=branded["data"].toObject()["layers"].toArray().first().toObject()["fill"]=="#ff6600";
+            if (!id || failed(arrangement) || failed(locked) || !styled)
+                note("Workflow replies: "+QString::fromUtf8(QJsonDocument(QJsonObject{{"create",created},{"layout",arrangement},{"lock",locked},{"brand",branded}}).toJson(QJsonDocument::Compact)));
+            m_project->undoStack()->setIndex(undoIndex);
+            check(id>0 && !failed(locked) && refused && untouched && styled &&
+                      std::abs(arranged["data"].toObject()["layers"].toArray().first().toObject()["x"].toDouble()-.05)<.00001 &&
+                      m_project->timeline()==original,
+                  "AI graphics workflow aligns, locks, refuses protected edits, applies brands and undoes exactly");
+        }
         // Edit through the tools.
         const QJsonObject project = data(call(QStringLiteral("get_project"), {}));
         const int mediaId = project[QStringLiteral("media")].toArray().first().toObject()[QStringLiteral("media_id")].toInt();

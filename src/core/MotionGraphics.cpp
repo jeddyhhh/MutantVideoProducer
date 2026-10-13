@@ -1301,6 +1301,12 @@ QRectF bounds(const QJsonObject &scene, const QString &id, double time,
   auto pose = g.pose(g.ids[id], time);
   return (pose.world * g.camera(time, {})).mapRect(pose.box);
 }
+QHash<QString,QRectF> allBounds(const QJsonObject& scene, double time, QSizeF size) {
+  int budget=0;Graph graph(scene,size,budget);QHash<QString,QRectF> result;
+  auto camera=graph.camera(time,{});
+  for(auto it=graph.ids.constBegin();it!=graph.ids.constEnd();++it){auto pose=graph.pose(it.value(),time);result.insert(it.key(),(pose.world*camera).mapRect(pose.box));}
+  return result;
+}
 QVector<PathHandle> handles(const QJsonObject &scene, const QString &id,
                             double time, QSizeF size) {
   int budget = 0;

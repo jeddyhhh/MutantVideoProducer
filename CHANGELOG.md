@@ -2,6 +2,18 @@
 
 What changed in each version of Mutant Video Producer. The newest is first.
 
+### Audio finishing and graphics workflow
+
+- Audio Finishing measures the complete post-master mix: integrated, momentary and
+  short-term loudness, loudness range, true peaks, stereo balance/correlation and silence.
+  Editable targets, mix warnings, JSON reports and an undoable peak-limited master gain
+  are available from Tools, the mixer and MCP.
+- The graphics composer adds snapping guides, multi-layer moves, alignment/equal-gap
+  distribution, keyboard nudging, saved layer/group locks and reusable font/colour brand kits.
+  Layout preserves animation and supports recording keys. MCP exposes layout, lock and brand actions.
+- Added regression coverage for intersample peaks, silent/invalid audio, actual mixer
+  normalization, transformed/animated layouts, locks and brand styles.
+
 ### New project format and icon
 
 - Projects now use `.mvp` and a Mutant Video Producer format identifier with a mandatory

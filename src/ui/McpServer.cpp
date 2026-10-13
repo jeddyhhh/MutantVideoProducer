@@ -2,6 +2,9 @@
 #include "ui/McpServer.h"
 
 #include "core/AudioEffects.h"
+#include "core/AudioFinishing.h"
+#include "core/GraphicsWorkflow.h"
+#include "ui/AudioFinishingWindow.h"
 #include "core/BeatMarkers.h"
 #include "core/BeatTracker.h"
 #include "core/Captions.h"
@@ -710,8 +713,9 @@ QJsonArray McpServer::toolList()
                    {QStringLiteral("length"), prop("number", "Seconds (default 5)")},
                    {QStringLiteral("preset"), prop("string", "Generator preset id (default \"title\"; e.g. lower_third, credits, solid_black)")},
                    {QStringLiteral("track"), prop("integer", "Video track index (default: the first)")}}));
-    t.append(tool("graphics_overlay", "Native scene graph and animation engine. Actions capabilities/presets/validate/create/get/update/keyframe/bind_audio/export_template/import_template. v1 scenes retain their appearance; v2 adds paths (M/L/Q/C/Z commands), parented groups, symbols/instances, particles, repeaters, charts, camera, masks, gradients, shadows/glow, trails/motion_blur and character/word/line text_animation. Animate properties with {keyframes:[[event-local seconds,value,easing?],...],easing,loop,ping_pong}; numeric, colour, discrete and compatible path morph values work. follow:{path:layer_id,progress,orient,loop} follows curved paths. Scene variables substitute {{name}} in text; datasets drive charts. bind_audio embeds real source envelopes and native detected beats; property {audio:binding,base,amount,channel:peak|left|right|beat} reacts without adding sound. Read capabilities and docs/animation-scenes.md for limits and examples. All edits are saved and undoable.",
-        {{"action",prop("string","capabilities, presets, validate, create, get, update, keyframe, bind_audio, export_template, import_template")},{"event_id",prop("integer","Existing graphics event")},{"preset",prop("string","Existing broadcast layouts or motion_race/titles/chart/route/particles/morph/audio/reusable (motion_ prefix)")},{"scene",prop("object","Complete editable scene; update replaces it")},{"params",prop("object","Generator opacity")},{"at",prop("number","Timeline start, seconds")},{"length",prop("number","Event duration, seconds")},{"track",prop("integer","Preferred video track index")},{"layer_id",prop("string","Layer ID for keyframe, or $camera/$variables")},{"property",prop("string","Property path, e.g. x, fill, follow.progress")},{"time",prop("number","Keyframe event-local seconds")},{"value",prop("any","Keyframe value")},{"easing",prop("any","Curve name or [x1,y1,x2,y2]")},{"binding",prop("string","Audio binding name (default source)")},{"source_event_id",prop("integer","Straight audio/video source event")},{"media_id",prop("integer","Imported source media")},{"waveform_event_id",prop("integer","Reuse an existing waveform envelope")},{"source_in",prop("number","Audio source offset, seconds")},{"duration",prop("number","Audio source span, seconds")},{"bins",prop("integer","Envelope bins: 64–8192")},{"path",prop("string","Native .json template path")},{"overwrite",prop("boolean","Allow overwriting an exported template")}}, {"action"}));
+    t.append(tool("audio_finishing", "Measure the entire final stereo mix after all audio effects using EBU R128 and oversampled true peaks. analyze returns LUFS, LRA, dBTP, sample peaks, stereo checks, silence and warnings. apply_gain reanalyzes and adds an undoable master gain limited by true-peak headroom; reanalyze afterward. A cancellable progress window appears. Targets are editable, not platform guarantees.", {{"action",prop("string","analyze or apply_gain")},{"lufs",prop("number","Target -36 to -5 LUFS (default -16)")},{"true_peak",prop("number","Ceiling -12 to 0 dBTP (default -1.5)")}}, {"action"}));
+    t.append(tool("graphics_overlay", "Native scene graph and animation engine. Actions capabilities/presets/validate/create/get/update/keyframe/bind_audio/export_template/import_template/layout/lock/brand. layout arranges selected layer_ids by operation and reference, preserving animation offsets. lock protects layer edits and descendants. brand applies a reusable font/palette kit to tagged static brand_role fills and static text fonts; locked/animated styles are preserved. v1 scenes retain their appearance; v2 adds paths (M/L/Q/C/Z commands), parented groups, symbols/instances, particles, repeaters, charts, camera, masks, gradients, shadows/glow, trails/motion_blur and character/word/line text_animation. Animate properties with {keyframes:[[event-local seconds,value,easing?],...],easing,loop,ping_pong}; numeric, colour, discrete and compatible path morph values work. follow:{path:layer_id,progress,orient,loop} follows curved paths. Scene variables substitute {{name}} in text; datasets drive charts. bind_audio embeds real source envelopes and native detected beats; property {audio:binding,base,amount,channel:peak|left|right|beat} reacts without adding sound. Read capabilities and docs/animation-scenes.md for limits and examples. All edits are saved and undoable.",
+        {{"action",prop("string","capabilities, presets, validate, create, get, update, keyframe, bind_audio, export_template, import_template, layout, lock, brand")},{"event_id",prop("integer","Existing graphics event")},{"preset",prop("string","Existing broadcast layouts or motion_race/titles/chart/route/particles/morph/audio/reusable (motion_ prefix)")},{"scene",prop("object","Complete editable scene; update replaces it")},{"params",prop("object","Generator opacity")},{"at",prop("number","Timeline start, seconds")},{"length",prop("number","Event duration, seconds")},{"track",prop("integer","Preferred video track index")},{"layer_id",prop("string","Layer ID for keyframe, or $camera/$variables")},{"property",prop("string","Property path, e.g. x, fill, follow.progress")},{"time",prop("number","Keyframe event-local seconds")},{"value",prop("any","Keyframe value")},{"easing",prop("any","Curve name or [x1,y1,x2,y2]")},{"binding",prop("string","Audio binding name (default source)")},{"source_event_id",prop("integer","Straight audio/video source event")},{"media_id",prop("integer","Imported source media")},{"waveform_event_id",prop("integer","Reuse an existing waveform envelope")},{"source_in",prop("number","Audio source offset, seconds")},{"duration",prop("number","Audio source span, seconds")},{"bins",prop("integer","Envelope bins: 64–8192")},{"path",prop("string","Native .json template path")},{"overwrite",prop("boolean","Allow overwriting an exported template")},{"layer_ids",arrayProp("string","Layer IDs for layout or lock; get returns addressable IDs, including legacy scenes")},{"operation",prop("string","left, hcenter, right, top, vcenter, bottom, distribute_h, distribute_v")},{"reference",prop("string","canvas (default), safe or selection")},{"locked",prop("boolean","Protect selected layers (true), or unlock them (false)")},{"brand",prop("object","version:1, name, font and primary/secondary/accent/background/foreground colours")}}, {"action"}));
     t.append(tool("waveform_graphic", "Draws real source audio as a native waveform. Actions create/get/update/refresh. Supply source_event_id or media_id. Audio peaks are decoded once and embedded in the project. source_in and duration are source seconds; length is timeline duration. Source-event speed is reflected in progress; reverse, loops and speed ramps are rejected. Shows source audio before effects, not a master mix. It does not add audio. params control x,y,width,height,color,played_color,style (Bars/Filled envelope/Line),stereo,normalize,progress,scroll,window,amplitude,rate,offset.",
         {{"action",prop("string","create, get, update, refresh")},{"event_id",prop("integer","Waveform event for get/update/refresh")},{"source_event_id",prop("integer","Existing audio or video event with audio")},{"media_id",prop("integer","Imported media with audio")},{"source_in",prop("number","Source offset, seconds")},{"duration",prop("number","Source span up to 3600 seconds")},{"bins",prop("integer","Peak envelope resolution: 64–8192 (default 2048)")},{"params",prop("object","Waveform style settings; numeric settings support keyframes")},{"at",prop("number","Timeline start, defaults to source event start or cursor")},{"length",prop("number","Timeline duration, defaults to source event length or source span")},{"track",prop("integer","Preferred video track index")}}, {"action"}));
     t.append(tool("edit_event",
@@ -1101,21 +1105,53 @@ QJsonObject McpServer::callTool(const QString& name, const QJsonObject& a)
         apply(tl, QStringLiteral("Add Text"));
         return jsonResult({{QStringLiteral("event_id"), id}});
     }
+    if (name == "audio_finishing") {
+        auto action = str("action");
+        if(action!="analyze"&&action!="apply_gain")return errorResult("action must be analyze or apply_gain.");
+        finishing::Target target{"Custom",num("lufs",-16),num("true_peak",-1.5)};
+        if(!std::isfinite(target.lufs)||!std::isfinite(target.truePeak)||target.lufs < -36||target.lufs > -5||target.truePeak < -12||target.truePeak > 0)
+            return errorResult("Use -36 to -5 LUFS and -12 to 0 dBTP.");
+        auto measured = project->snapshot();
+        auto report = analyzeAudioMix(m_window,*measured);
+        auto result = report.json(target);
+        bool stale = project->snapshot()!=measured;
+        result["stale"]=stale;
+        if(!report.error.isEmpty()||report.cancelled)return errorResult(report.cancelled?"Audio analysis cancelled.":report.error);
+        if(action=="apply_gain") {
+            if(stale)return errorResult("The project changed during analysis. Reanalyze before applying gain.");
+            auto tl=project->timeline();QString error;
+            if(!finishing::applyGain(tl,report,target,&error))return errorResult(error);
+            apply(tl,"Finish Audio / Safe Master Gain");result["applied_gain_db"]=finishing::safeGain(report,target);result["reanalyze_required"]=true;
+        }
+        return jsonResult(result);
+    }
     if(name=="graphics_overlay"||name=="waveform_graphic") {
         const bool wave=name=="waveform_graphic";const QString action=str("action"),type=wave?"audio_waveform":"graphics_overlay";
-        if(!wave&&action=="capabilities")return jsonResult(motion::capabilities());
+        if(!wave&&action=="capabilities") {auto info=motion::capabilities();info["workflow"]=QJsonArray{"layout","lock","brand","canvas / safe / selection references","equal-gap distribution"};return jsonResult(info);}
         if(!wave&&action=="validate"){if(!a["scene"].isObject())return errorResult("scene must be an object");auto error=graphics::validateScene(a["scene"].toObject());return jsonResult({{"valid",error.isEmpty()},{"error",error}});}
         if(!wave&&action=="presets") {QJsonArray out;for(auto id:graphics::presets())out.append(QJsonObject{{"id",id},{"scene",graphics::scene(id)}});return jsonResult({{"presets",out}});}
-        if(!QStringList{"create","get","update","refresh","keyframe","bind_audio","export_template","import_template"}.contains(action)||(wave&&QStringList{"keyframe","bind_audio","export_template","import_template"}.contains(action))||(!wave&&action=="refresh"))return errorResult("Unsupported graphics action.");
+        if(!QStringList{"create","get","update","refresh","keyframe","bind_audio","export_template","import_template","layout","lock","brand"}.contains(action)||(wave&&QStringList{"keyframe","bind_audio","export_template","import_template","layout","lock","brand"}.contains(action))||(!wave&&action=="refresh"))return errorResult("Unsupported graphics action.");
         Timeline tl=project->timeline();Clip* c=nullptr;int eventId=integer("event_id");
-        if(action!="create"&&action!="import_template") {c=tl.findClip(eventId);if(!c||c->generator.type!=type)return errorResult("Choose an event of the matching graphics generator type.");if(action=="get")return jsonResult({{"event_id",eventId},{"data",c->generator.data},{"generator",generatorToJson(c->generator)}});}
+        if(action!="create"&&action!="import_template") {c=tl.findClip(eventId);if(!c||c->generator.type!=type)return errorResult("Choose an event of the matching graphics generator type.");if(!wave)c->generator.data=graphics_workflow::prepare(c->generator.data);if(action=="get")return jsonResult({{"event_id",eventId},{"data",c->generator.data},{"generator",generatorToJson(c->generator)}});}
         QJsonObject data=c?c->generator.data:QJsonObject{};double at=has("at")?num("at"):sec(w->m_timeline->cursorTime()),length=has("length")?num("length"):10;double rate=1;
+        if(!wave&&QStringList{"layout","lock","brand"}.contains(action)) {
+            QString error;QJsonObject changed;
+            if(action=="brand") {if(!a["brand"].isObject())return errorResult("brand must be a kit object.");changed=graphics_workflow::applyBrand(data,a["brand"].toObject(),&error);}
+            else {
+                if(!a["layer_ids"].isArray())return errorResult("layer_ids must be an array of layer IDs.");
+                QStringList ids;for(auto id:a["layer_ids"].toArray()){if(!id.isString())return errorResult("Layer IDs must be strings.");ids.append(id.toString());}
+                if(action=="lock"){if(!a["locked"].isBool())return errorResult("locked must be true or false.");changed=graphics_workflow::setLocked(data,ids,a["locked"].toBool(),&error);}
+                else changed=graphics_workflow::layout(data,ids,str("operation"),has("reference")?str("reference"):QString("canvas"),num("time"),&error);
+            }
+            if(changed.isEmpty())return errorResult(error);
+            c->generator.data=changed;apply(tl,"Graphics / "+action);return jsonResult({{"event_id",eventId},{"data",changed}});
+        }
         if(!wave&&action=="export_template") {
             if(str("path").isEmpty())return errorResult("Choose a template path.");if(QFileInfo::exists(str("path"))&&!a["overwrite"].toBool())return errorResult("Template exists; supply overwrite:true.");
             if(auto error=graphics::validateScene(data);!error.isEmpty())return errorResult(error);QSaveFile file(str("path"));if(!file.open(QIODevice::WriteOnly)||file.write(QJsonDocument(data).toJson())<0||!file.commit())return errorResult("Could not save graphics template.");return jsonResult({{"path",str("path")}});
         }
         if(!wave&&action=="import_template") {QFile file(str("path"));if(!file.open(QIODevice::ReadOnly)||file.size()>4*1024*1024)return errorResult("Choose a graphics JSON template up to 4 MB.");QJsonParseError error;auto document=QJsonDocument::fromJson(file.readAll(),&error);if(error.error!=QJsonParseError::NoError||!document.isObject())return errorResult("Invalid graphics JSON template.");data=document.object();}
-        if(!wave&&action=="keyframe") {QString error;data=motion::withKeyframe(data,str("layer_id"),str("property"),num("time"),a["value"],has("easing")?a["easing"]:QJsonValue("linear"),&error);if(data.isEmpty())return errorResult(error);}
+        if(!wave&&action=="keyframe") {if(graphics_workflow::locked(data,str("layer_id")))return errorResult("Unlock the layer or its parent before editing keys.");QString error;data=motion::withKeyframe(data,str("layer_id"),str("property"),num("time"),a["value"],has("easing")?a["easing"]:QJsonValue("linear"),&error);if(data.isEmpty())return errorResult(error);}
         if(!wave&&action=="bind_audio") {
             QJsonObject envelope;double speed=1,offset=0;
             if(has("waveform_event_id")){auto source=tl.findClip(integer("waveform_event_id"));if(!source||source->generator.type!="audio_waveform")return errorResult("Choose a waveform event.");envelope=source->generator.data;speed=source->generator.params["rate"].value;offset=source->generator.params["offset"].value+(sec(c->start)-sec(source->start))*speed;}

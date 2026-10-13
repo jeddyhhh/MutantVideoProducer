@@ -19,6 +19,7 @@
 #include <QJsonDocument>
 #include <QLineF>
 #include <QListWidget>
+#include <QLineEdit>
 #include <QMessageBox>
 #include <QMouseEvent>
 #include <QOffscreenSurface>
@@ -571,5 +572,23 @@ int main(int argc, char **argv) {
   check(deleted["layers"].toArray().size() == 2 &&
             motion::validate(deleted).isEmpty(),
         "deleting a group removes its children without orphaned parents");
+  timeline=project.timeline();
+  timeline.findClip(eid)->generator.data=scene({rect("a",.1,.1,.1,.1),rect("b",.4,.3,.1,.1)});
+  project.applyEdit(timeline,"workflow fixture");
+  int beforeWorkflow=project.undoStack()->count();
+  QTimer::singleShot(0,[&]{for(auto* widget:QApplication::topLevelWidgets())if(widget->objectName()=="graphicsComposer") {
+    auto* layers=widget->findChild<QListWidget*>("graphicsLayers");layers->setCurrentRow(0);layers->item(1)->setSelected(true);
+    widget->findChild<QPushButton*>("graphicsArrange")->click();
+    widget->findChild<QPushButton*>("graphicsLock")->click();
+    check(!widget->findChild<QLineEdit*>("graphicsLayerName")->isEnabled(),"locking selection disables direct property editing");
+    widget->findChild<QPushButton*>("graphicsUnlock")->click();
+    check(widget->findChild<QLineEdit*>("graphicsLayerName")->isEnabled(),"unlock restores property editing");
+    qobject_cast<QDialog*>(widget)->accept();
+  }});
+  composeGraphics(&parent,&project,eid);
+  auto arranged=project.timeline().findClip(eid)->generator.data["layers"].toArray();
+  check(arranged.size()==2&&std::abs(arranged[0].toObject()["x"].toDouble())<.00001&&std::abs(arranged[1].toObject()["x"].toDouble())<.00001,"composer arranges multiple selected layers in one operation");
+  check(project.undoStack()->count()==beforeWorkflow+1,"composer workflow apply produces one undo step");
+  project.undoStack()->undo();check(project.timeline()==timeline,"undo restores the scene before workflow edits");
   return failures;
 }

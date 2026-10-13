@@ -1,5 +1,8 @@
 # Audio
 
+For final delivery levels, see [Audio finishing](audio-finishing.md): LUFS targets,
+true peaks, mix checks and undoable master gain.
+
 ## Audio effects
 
 Drag an effect from the **Audio FX** tab:

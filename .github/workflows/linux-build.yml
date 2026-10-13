@@ -10,6 +10,13 @@ on:
   pull_request:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
     runs-on: ubuntu-24.04
@@ -52,4 +59,26 @@ jobs:
           run harden testmedia data/examples $out/harden 500
           build/Release/bin/mvp_collection_test || failed=1
           build/Release/bin/mvp_brand_test || failed=1
+          build/Release/bin/mvp_finishing_test || failed=1
+          build/Release/bin/mvp_graphics_test || failed=1
+          build/Release/bin/mvp_motion_test || failed=1
           exit $failed
+
+      - name: Package Linux build
+        run: |
+          mkdir -p build/package/MutantVideoProducer
+          cp -a build/Release/bin/. build/package/MutantVideoProducer/
+          find build/package/MutantVideoProducer -maxdepth 1 -type f -name 'mvp_*test' -delete
+          cp README.md LICENSE CHANGELOG.md build/package/MutantVideoProducer/
+          printf '%s\n' 'Built for Ubuntu 24.04 x86_64 with system Qt 6 and FFmpeg 6.1.' \
+            'Install runtime dependencies: sudo apt install qt6-base-dev qt6-multimedia-dev libqt6opengl6-dev ffmpeg' \
+            'Run: ./MutantVideoProducer' \
+            'Optional AI workers/models are not bundled in this Linux archive.' \
+            > build/package/MutantVideoProducer/BUILD-NOTES.txt
+          tar -C build/package -czf build/MutantVideoProducer-linux-x86_64.tar.gz MutantVideoProducer
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mvp-linux-x86_64
+          path: build/MutantVideoProducer-linux-x86_64.tar.gz
+          if-no-files-found: error

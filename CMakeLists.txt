@@ -134,6 +134,8 @@ add_library(mvp_core STATIC
     src/core/FrameRenderer.h
     src/core/GpuCompositor.h     src/core/GpuCompositor.cpp
     src/core/AudioMixer.h        src/core/AudioMixer.cpp
+    src/core/AudioFinishing.h     src/core/AudioFinishing.cpp
+    src/core/GraphicsWorkflow.h  src/core/GraphicsWorkflow.cpp
     src/core/AudioTempo.h        src/core/AudioTempo.cpp
     src/core/AudioStretch.h      src/core/AudioStretch.cpp
     src/core/Presets.h           src/core/Presets.cpp
@@ -244,6 +246,7 @@ add_executable(mvp WIN32
     src/ui/MediaBin.h            src/ui/MediaBin.cpp
     src/ui/RelinkDialog.h        src/ui/RelinkDialog.cpp
     src/ui/MixerWindow.h         src/ui/MixerWindow.cpp
+    src/ui/AudioFinishingWindow.h src/ui/AudioFinishingWindow.cpp
     src/ui/BeatTuner.h           src/ui/BeatTuner.cpp
     src/ui/MidiHub.h             src/ui/MidiHub.cpp
     src/ui/ProxyQueue.h          src/ui/ProxyQueue.cpp
@@ -348,6 +351,8 @@ endif()
 add_executable(mvp_adversarial_test tests/adversarial.cpp)
 target_link_libraries(mvp_adversarial_test PRIVATE mvp_core)
 add_executable(mvp_collection_test tests/collection.cpp)
+add_executable(mvp_finishing_test tests/finishing.cpp)
+target_link_libraries(mvp_finishing_test PRIVATE mvp_core)
 target_link_libraries(mvp_collection_test PRIVATE mvp_core)
 add_executable(mvp_brand_test tests/brand.cpp)
 target_link_libraries(mvp_brand_test PRIVATE Qt6::Core)

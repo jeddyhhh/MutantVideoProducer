@@ -1,6 +1,7 @@
 #include "core/Brand.h"
 #include "ui/GraphicsEditor.h"
 #include "core/Graphics.h"
+#include "core/GraphicsWorkflow.h"
 #include "core/MotionGraphics.h"
 #include "core/Profiles.h"
 #include "core/Project.h"
@@ -20,6 +21,7 @@
 #include <QHeaderView>
 #include <QJsonDocument>
 #include <QLabel>
+#include <QKeyEvent>
 #include <QLineEdit>
 #include <QListWidget>
 #include <QMessageBox>
@@ -170,6 +172,13 @@ public:
   std::function<void(QPointF, bool)> drag;
   QPointF previous;
   bool resizing = false, pressed = false;
+  bool bypassSnap = false;
+  QStringList selectedIds;
+  QVector<double> xGuides, yGuides;
+  mutable QJsonObject boundsScene;
+  mutable double boundsTime = -1;
+  mutable QSizeF boundsSize;
+  mutable QHash<QString,QRectF> cachedBounds;
   double time = 0;
   bool editPath = false;
   int handle = -1;
@@ -177,6 +186,7 @@ public:
   Canvas() {
     setMinimumSize(560, 340);
     setObjectName("graphicsCanvas");
+    setFocusPolicy(Qt::StrongFocus);
   }
   QRectF picture() const {
     QSizeF s = size();
@@ -186,9 +196,12 @@ public:
   }
   QRectF bounds(const QJsonObject &l) const {
     auto r = picture();
-    if (scene["version"].toInt() == 2 && !l["id"].toString().isEmpty())
-      return motion::bounds(scene, l["id"].toString(), time, r.size())
-          .translated(r.topLeft());
+    if (scene["version"].toInt() == 2 && !l["id"].toString().isEmpty()) {
+      if(boundsScene!=scene||boundsTime!=time||boundsSize!=r.size()) {
+        cachedBounds=motion::allBounds(scene,time,r.size());boundsScene=scene;boundsTime=time;boundsSize=r.size();
+      }
+      return cachedBounds.value(l["id"].toString()).translated(r.topLeft());
+    }
     return {
         r.left() + motion::evaluate(l["x"], time, scene).toDouble() * r.width(),
         r.top() + motion::evaluate(l["y"], time, scene).toDouble() * r.height(),
@@ -212,6 +225,9 @@ public:
     p.setPen(QPen(QColor(255, 255, 255, 70), 1, Qt::DashLine));
     p.drawRect(r.adjusted(r.width() * .05, r.height() * .05, -r.width() * .05,
                           -r.height() * .05));
+    p.setPen(QPen(QColor("#ffb35c"), 1, Qt::DashLine));
+    for (auto x : xGuides) p.drawLine(QPointF(r.left()+x*r.width(),r.top()),QPointF(r.left()+x*r.width(),r.bottom()));
+    for (auto y : yGuides) p.drawLine(QPointF(r.left(),r.top()+y*r.height()),QPointF(r.right(),r.top()+y*r.height()));
     auto a = scene["layers"].toArray();
     if (selected >= 0 && selected < a.size()) {
       auto b = bounds(a[selected].toObject());
@@ -235,12 +251,13 @@ public:
     }
   }
   void mousePressEvent(QMouseEvent *e) override {
+    setFocus();
     auto a = scene["layers"].toArray();
     previous = e->position();
     resizing = false;
     pressed = false;
     handle = -1;
-    if (editPath && selected >= 0 && selected < a.size()) {
+    if (editPath && selected >= 0 && selected < a.size() && !graphics_workflow::locked(scene,a[selected].toObject()["id"].toString())) {
       auto hs = motion::handles(scene, a[selected].toObject()["id"].toString(),
                                 time, picture().size());
       for (int i = 0; i < hs.size(); ++i)
@@ -251,7 +268,7 @@ public:
           return;
         }
     }
-    if (selected >= 0 && selected < a.size() &&
+    if (selected >= 0 && selected < a.size() && !graphics_workflow::locked(scene,a[selected].toObject()["id"].toString()) &&
         QRectF(bounds(a[selected].toObject()).bottomRight() - QPointF(8, 8),
                QSizeF(16, 16))
             .contains(previous)) {
@@ -260,7 +277,7 @@ public:
       return;
     }
     for (int i = a.size() - 1; i >= 0; --i)
-      if (a[i].toObject()["visible"].toBool(true) &&
+      if (a[i].toObject()["visible"].toBool(true) && !graphics_workflow::locked(scene,a[i].toObject()["id"].toString()) &&
           bounds(a[i].toObject()).contains(previous)) {
         if (select)
           select(i);
@@ -269,6 +286,7 @@ public:
       }
   }
   void mouseMoveEvent(QMouseEvent *e) override {
+    bypassSnap = e->modifiers().testFlag(Qt::AltModifier);
     if (!pressed || !(e->buttons() & Qt::LeftButton))
       return;
     auto r = picture();
@@ -288,7 +306,17 @@ public:
     if (drag)
       drag({delta.x() / r.width(), delta.y() / r.height()}, resizing);
   }
-  void mouseReleaseEvent(QMouseEvent *) override { pressed = false; }
+  void mouseReleaseEvent(QMouseEvent *) override { pressed = false; xGuides.clear(); yGuides.clear(); update(); }
+  void keyPressEvent(QKeyEvent* e) override {
+    QPointF delta;
+    if(e->key()==Qt::Key_Left)delta.setX(-1);else if(e->key()==Qt::Key_Right)delta.setX(1);
+    else if(e->key()==Qt::Key_Up)delta.setY(-1);else if(e->key()==Qt::Key_Down)delta.setY(1);
+    else {QWidget::keyPressEvent(e);return;}
+    if(e->modifiers().testFlag(Qt::ShiftModifier))delta*=10;
+    bypassSnap=true;
+    if(drag)drag({delta.x()/1280.,delta.y()/720.},false);
+    bypassSnap=false;e->accept();
+  }
 };
 class Designer : public QDialog {
 public:
@@ -317,6 +345,10 @@ public:
   QTimer *playTimer = nullptr;
   std::vector<std::function<void(QJsonObject)>> refreshers;
   QString layerDraftId;
+  QCheckBox* snapping = nullptr;
+  QComboBox* layoutReference = nullptr;
+  QComboBox* brandRole = nullptr;
+  QWidget* propertyTabs = nullptr;
   Designer(QWidget *parent, QJsonObject scene, Project *project = nullptr,
            double duration = 10)
       : QDialog(parent), data(std::move(scene)), project(project),
@@ -345,6 +377,7 @@ public:
                                  "Dashed guides show title-safe margins.")),
                    1);
     root->addLayout(top);
+    installWorkflow(root);
     auto *row = new QHBoxLayout;
     root->addLayout(row, 1);
     auto *left = new QVBoxLayout;
@@ -373,6 +406,7 @@ public:
       auto *button = new QPushButton(label);
       left->addWidget(button);
       connect(button, &QPushButton::clicked, this, [this, label] {
+        if (!editableSelection()) return;
         int i = list->currentRow();
         auto a = data["layers"].toArray();
         if (i < 0)
@@ -392,6 +426,13 @@ public:
                 changed = true;
               }
             }
+          }
+        }
+        if (label == tr("Delete")) {
+          for (auto id : subtree) if (graphics_workflow::locked(data, id)) {
+            QMessageBox::information(this, tr("Locked layers"),
+                                     tr("Unlock the group's locked layers before deleting it."));
+            return;
           }
         }
         if (label == tr("Duplicate")) {
@@ -479,6 +520,7 @@ public:
     auto *form = new QFormLayout(formWidget);
     scroll->setWidget(formWidget);
     auto *tabs = new QTabWidget;
+    propertyTabs = tabs;
     tabs->setMinimumWidth(300);
     tabs->setMaximumWidth(410);
     tabs->addTab(scroll, tr("Layout"));
@@ -486,6 +528,12 @@ public:
     name = new QLineEdit;
     name->setObjectName("graphicsLayerName");
     form->addRow(tr("Name"), name);
+    brandRole = new QComboBox;
+    brandRole->setObjectName("graphicsBrandRole");
+    brandRole->addItems({"None","primary","secondary","accent","background","foreground"});
+    brandRole->setToolTip(tr("Assign a colour role to use reusable brand kits. Animated fills keep their animation."));
+    form->addRow(tr("Brand colour"),brandRole);
+    connect(brandRole,&QComboBox::currentTextChanged,this,[this](QString role){change("brand_role",role=="None"?QString():role);});
     visible = new QCheckBox(tr("Visible"));
     form->addRow(visible);
     words = new QPlainTextEdit;
@@ -560,11 +608,32 @@ public:
     connect(align, &QComboBox::currentTextChanged, this,
             [this](QString a) { change("align", a); });
     connect(list, &QListWidget::currentRowChanged, this, [this] { load(); });
-    canvas->select = [this](int i) { list->setCurrentRow(i); };
+    canvas->select = [this](int i) {
+      bool additive = QApplication::keyboardModifiers().testFlag(Qt::ShiftModifier);
+      if(additive){list->item(i)->setSelected(!list->item(i)->isSelected());list->setCurrentRow(i,QItemSelectionModel::NoUpdate);}
+      else if(list->item(i)->isSelected())list->setCurrentRow(i,QItemSelectionModel::NoUpdate);
+      else list->setCurrentRow(i);
+      load();
+    };
+    connect(list,&QListWidget::itemSelectionChanged,this,[this]{if(!loading)load();});
     canvas->drag = [this](QPointF delta, bool resize) {
       auto o = current();
       if (o.isEmpty())
         return;
+      if (graphics_workflow::locked(data,o["id"].toString())) return;
+      if (!resize) {
+        auto ids = selectionIds();
+        auto requested = delta;
+        if(snapping->isChecked()&&!canvas->bypassSnap) {
+          delta=graphics_workflow::snap(data,ids,delta,currentTime,8./std::max(1.,canvas->picture().width()),&canvas->xGuides,&canvas->yGuides);
+          // Keep the unsnapped pointer offset so slow dragging can escape a guide.
+          canvas->previous += QPointF((delta.x()-requested.x())*canvas->picture().width(),(delta.y()-requested.y())*canvas->picture().height());
+        }
+        QString error;
+        auto result=graphics_workflow::translate(data,ids,delta,currentTime,&error);
+        if(result.isEmpty()){canvas->xGuides.clear();canvas->yGuides.clear();return;}
+        useWorkflow(result,true);return;
+      }
       if (data["version"].toInt() == 2)
         delta = motion::editDelta(data, o["id"].toString(), currentTime,
                                   canvas->picture().size(), delta);
@@ -714,6 +783,71 @@ public:
     int i = list->currentRow();
     return i >= 0 && i < a.size() ? a[i].toObject() : QJsonObject{};
   }
+  QStringList selectionIds() const {
+    QStringList ids;
+    auto layers=data["layers"].toArray();
+    for(auto* item:list->selectedItems())ids.append(layers[list->row(item)].toObject()["id"].toString());
+    return ids;
+  }
+  bool editableSelection() {
+    for(auto id:selectionIds())if(graphics_workflow::locked(data,id)) {
+      QMessageBox::information(this,tr("Locked layers"),tr("Unlock the selected layer or its parent first."));return false;
+    }
+    return true;
+  }
+  void useWorkflow(QJsonObject result, bool geometry = false) {
+    if(geometry&&record&&record->isChecked()) {
+      auto keyed=data;keyed["version"]=2;
+      auto before=data["layers"].toArray(),after=result["layers"].toArray();
+      for(int i=0;i<before.size();++i)for(auto property:{"x","y","follow.offset_x","follow.offset_y"}) {
+        auto old=layerProperty(before[i].toObject(),property),value=layerProperty(after[i].toObject(),property);
+        if(old==value)continue;
+        QString error;
+        auto updated=motion::withKeyframe(keyed,before[i].toObject()["id"].toString(),property,currentTime,
+                                         motion::evaluate(value,currentTime,result),easing(),&error);
+        if(updated.isEmpty()){QMessageBox::warning(this,tr("Layout animation"),error);return;}keyed=updated;
+      }
+      result=keyed;
+    }
+    data=result;load();syncJson();
+  }
+  void installWorkflow(QVBoxLayout* root) {
+    ensureIds();
+    auto* bar=new QHBoxLayout;
+    snapping=new QCheckBox(tr("Snap"));snapping->setChecked(true);snapping->setObjectName("graphicsSnap");
+    snapping->setToolTip(tr("Snap moves to canvas edges, centre, safe margins and other layers. Hold Alt to bypass. Arrow keys nudge; Shift nudges 10 pixels."));bar->addWidget(snapping);
+    layoutReference=new QComboBox;layoutReference->addItem(tr("Canvas"),"canvas");layoutReference->addItem(tr("Safe margins"),"safe");layoutReference->addItem(tr("Selection"),"selection");bar->addWidget(layoutReference);
+    auto* operation=new QComboBox;
+    for(auto pair:{std::pair{"Align left","left"},std::pair{"Centre horizontally","hcenter"},std::pair{"Align right","right"},std::pair{"Align top","top"},std::pair{"Centre vertically","vcenter"},std::pair{"Align bottom","bottom"},std::pair{"Distribute horizontally","distribute_h"},std::pair{"Distribute vertically","distribute_v"}})operation->addItem(tr(pair.first),pair.second);
+    operation->setObjectName("graphicsLayoutOperation");bar->addWidget(operation);
+    auto* apply=new QPushButton(tr("Arrange"));apply->setObjectName("graphicsArrange");bar->addWidget(apply);
+    connect(apply,&QPushButton::clicked,this,[this,operation]{QString error;auto result=graphics_workflow::layout(data,selectionIds(),operation->currentData().toString(),layoutReference->currentData().toString(),currentTime,&error);if(result.isEmpty())QMessageBox::information(this,tr("Arrange layers"),error);else useWorkflow(result,true);});
+    for(bool value:{true,false}) {
+      auto* b=new QPushButton(value?tr("Lock"):tr("Unlock"));b->setObjectName(value?"graphicsLock":"graphicsUnlock");bar->addWidget(b);
+      connect(b,&QPushButton::clicked,this,[this,value]{auto selected=selectionIds();QString error;auto result=graphics_workflow::setLocked(data,selected,value,&error);if(result.isEmpty()){QMessageBox::information(this,tr("Layer locks"),error);return;}data=result;int row=list->currentRow();refresh(row);loading=true;for(int i=0;i<list->count();++i)list->item(i)->setSelected(selected.contains(data["layers"].toArray()[i].toObject()["id"].toString()));loading=false;load();});
+    }
+    auto* brand=new QPushButton(tr("Brand kit…"));brand->setObjectName("graphicsBrandKit");bar->addWidget(brand);connect(brand,&QPushButton::clicked,this,[this]{editBrand();});
+    bar->addStretch();root->addLayout(bar);
+  }
+  void editBrand() {
+    QDialog dialog(this);dialog.setWindowTitle(tr("Reusable brand kit"));dialog.setObjectName("graphicsBrandDialog");
+    if(testAttribute(Qt::WA_DontShowOnScreen))dialog.setAttribute(Qt::WA_DontShowOnScreen);
+    auto* root=new QVBoxLayout(&dialog);auto* hint=new QLabel(tr("Assign Brand colour roles in Layout. A kit updates tagged static fills and unanimated text fonts; locked layers and animated styles are preserved."));hint->setWordWrap(true);root->addWidget(hint);
+    auto* form=new QFormLayout;root->addLayout(form);
+    auto* kitName=new QLineEdit;kitName->setObjectName("graphicsBrandName");form->addRow(tr("Name"),kitName);
+    auto* kitFont=new QFontComboBox;form->addRow(tr("Font"),kitFont);
+    std::map<QString,QPushButton*> colours;
+    for(auto role:{"primary","secondary","accent","background","foreground"}){auto* button=new QPushButton;colours[role]=button;form->addRow(role,button);connect(button,&QPushButton::clicked,&dialog,[&,button]{auto c=QColorDialog::getColor(QColor(button->property("colour").toString()),&dialog,tr("Brand colour"),QColorDialog::ShowAlphaChannel);if(c.isValid()){auto s=c.name(QColor::HexArgb);button->setProperty("colour",s);button->setText(s);button->setStyleSheet("background:"+s);}});}
+    auto populate=[&](QJsonObject kit){kitName->setText(kit["name"].toString());kitFont->setCurrentFont(QFont(kit["font"].toString()));for(auto& [role,button]:colours){auto s=kit[role].toString();button->setProperty("colour",s);button->setText(s);button->setStyleSheet("background:"+s);}};
+    auto kit=[&]{QJsonObject result{{"version",1},{"name",kitName->text().trimmed()},{"font",kitFont->currentFont().family()}};for(auto& [role,button]:colours)result[role]=button->property("colour").toString();return result;};
+    auto initial=data["brand"].toObject();if(!graphics_workflow::validateBrand(initial).isEmpty())initial={{"version",1},{"name","My brand"},{"font","Segoe UI"},{"primary","#53e3d0"},{"secondary","#679fff"},{"accent","#ffb35c"},{"background","#08131f"},{"foreground","#eff7fc"}};populate(initial);
+    auto* row=new QHBoxLayout;root->addLayout(row);auto* open=new QPushButton(tr("Open kit…"));auto* save=new QPushButton(tr("Save kit…"));row->addWidget(open);row->addWidget(save);
+    QString folder=templateFolder()+"/Brands";
+    connect(open,&QPushButton::clicked,&dialog,[&]{auto path=QFileDialog::getOpenFileName(&dialog,tr("Open brand kit"),folder,tr("Brand kits (*.json)"));if(path.isEmpty())return;QFile file(path);if(!file.open(QIODevice::ReadOnly)||file.size()>65536){QMessageBox::warning(&dialog,tr("Brand kit"),tr("Cannot open this kit (maximum 64 KB)."));return;}QJsonParseError parse;auto doc=QJsonDocument::fromJson(file.readAll(),&parse);auto error=graphics_workflow::validateBrand(doc.object());if(parse.error!=QJsonParseError::NoError||!error.isEmpty()){QMessageBox::warning(&dialog,tr("Brand kit"),error.isEmpty()?tr("Invalid kit JSON."):error);return;}populate(doc.object());});
+    connect(save,&QPushButton::clicked,&dialog,[&]{auto error=graphics_workflow::validateBrand(kit());if(!error.isEmpty()){QMessageBox::warning(&dialog,tr("Brand kit"),error);return;}QDir().mkpath(folder);auto path=QFileDialog::getSaveFileName(&dialog,tr("Save brand kit"),folder+"/Brand.json",tr("Brand kits (*.json)"));if(path.isEmpty())return;auto bytes=QJsonDocument(kit()).toJson();QSaveFile file(path);if(!file.open(QIODevice::WriteOnly)||file.write(bytes)!=bytes.size()||!file.commit())QMessageBox::warning(&dialog,tr("Brand kit"),tr("Could not save this kit."));});
+    auto* buttons=new QDialogButtonBox(QDialogButtonBox::Ok|QDialogButtonBox::Cancel);buttons->button(QDialogButtonBox::Ok)->setText(tr("Apply kit"));root->addWidget(buttons);connect(buttons,&QDialogButtonBox::accepted,&dialog,&QDialog::accept);connect(buttons,&QDialogButtonBox::rejected,&dialog,&QDialog::reject);
+    if(dialog.exec()==QDialog::Accepted){QString error;auto result=graphics_workflow::applyBrand(data,kit(),&error);if(result.isEmpty())QMessageBox::warning(this,tr("Brand kit"),error);else useWorkflow(result);}
+  }
   void normalize() {
     if (data["version"].toInt() != 2)
       return;
@@ -836,6 +970,7 @@ public:
                            tr("Could not save this template."));
   }
   void groupSelection() {
+    if (!editableSelection()) return;
     auto items = list->selectedItems();
     QVector<int> selected;
     for (auto *item : items)
@@ -868,6 +1003,7 @@ public:
     refresh(a.size() - 1);
   }
   void makeSymbol() {
+    if (!editableSelection()) return;
     if (list->currentRow() < 0)
       return;
     ensureIds();
@@ -1607,6 +1743,7 @@ public:
     int i = list->currentRow();
     if (i < 0)
       return;
+    if (graphics_workflow::locked(data,current()["id"].toString())) return;
     auto a = data["layers"].toArray();
     auto o = a[i].toObject();
     auto old = layerProperty(o, key);
@@ -1623,7 +1760,7 @@ public:
       o = current();
     }
     bool structural =
-        QStringList{"id", "type", "parent", "symbol", "name", "path"}.contains(
+        QStringList{"id", "type", "parent", "symbol", "name", "path", "brand_role", "locked"}.contains(
             key);
     if (!structural && (((record && record->isChecked()) &&
                          (value.isDouble() || value.isString() ||
@@ -1667,7 +1804,7 @@ public:
             next = x.toObject()["parent"].toString();
         parent = next;
       }
-      list->addItem(QString(depth * 2, ' ') +
+      list->addItem(QString(depth * 2, ' ') + (graphics_workflow::locked(data,o["id"].toString()) ? QStringLiteral("[locked] ") : QString()) +
                     o["name"].toString(o["type"].toString()));
     }
     list->setCurrentRow(selection);
@@ -1677,6 +1814,8 @@ public:
   void load() {
     loading = true;
     auto o = current();
+    propertyTabs->setEnabled(!graphics_workflow::locked(data,o["id"].toString()));
+    brandRole->setCurrentText(o["brand_role"].toString().isEmpty()?"None":o["brand_role"].toString());
     const bool isText = o["type"].toString() == "text",
                isImage = o["type"].toString() == "image";
     words->setEnabled(isText);
@@ -1708,6 +1847,7 @@ public:
         motion::evaluate(o["stroke"], currentTime, data).toString("#ffffff"));
     canvas->selected = list->currentRow();
     canvas->scene = data;
+    canvas->selectedIds = selectionIds();
     canvas->update();
     if (parentBox) {
       parentBox->clear();
@@ -1734,7 +1874,7 @@ public:
           continue;
         if (l["type"] == "group" && !descendants.contains(id))
           parentBox->addItem(l["name"].toString(id), id);
-        if (l["type"] == "path" && id != o["id"])
+        if (l["type"] == "path" && id != o["id"].toString())
           followBox->addItem(l["name"].toString(id), id);
       }
       parentBox->setCurrentIndex(

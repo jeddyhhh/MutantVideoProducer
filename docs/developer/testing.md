@@ -14,6 +14,8 @@ For only the collection UI/MCP checks, set `MVP_COLLECTION_ONLY=1` and run `Muta
 
 ## Commands
 
+`mvp_finishing_test` checks gated loudness against known stereo signals, intersample peaks, high crest-factor headroom, silence, invalid samples, cancellation, post-master mixing/undo and graphics layout through transformed parents. It also checks animated positions, locks, snapping and brand-kit validation. The graphics and motion suites exercise the composer UI and GPU/CPU parity.
+
 ```sh
 tests/make_test_media.sh deps/ffmpeg/bin/ffmpeg.exe testmedia
 build/Release/bin/mvp_selftest probe testmedia/*

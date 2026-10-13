@@ -1,5 +1,6 @@
 #pragma once
 #include <QImage>
+#include <QHash>
 #include <QJsonObject>
 #include <QPainterPath>
 #include <QVector>
@@ -28,6 +29,7 @@ struct PathHandle {
 };
 QRectF bounds(const QJsonObject &scene, const QString &id, double time,
               QSizeF size);
+QHash<QString,QRectF> allBounds(const QJsonObject& scene, double time, QSizeF size);
 QVector<PathHandle> handles(const QJsonObject &scene, const QString &id,
                             double time, QSizeF size);
 QPointF editDelta(const QJsonObject &scene, const QString &id, double time,

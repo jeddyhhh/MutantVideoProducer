@@ -55,11 +55,13 @@ backgrounds, overlays, shapes and colour bars.
 
 **Native graphics and animation**: editable broadcast layouts and a general 2D composer with
 parented layers, visual keyframes, easing, curved paths, morphing, masks, cameras, reusable objects,
-data charts, audio/beat bindings, particles, repeaters and motion effects. All are available through
+data charts, audio/beat bindings, particles, repeaters and motion effects. Snapping, alignment,
+distribution, layer locks and reusable brand kits help finish layouts. All are available through
 MCP and use the same renderer in preview and export. See [Animation scenes](docs/animation-scenes.md).
 
 **Audio**: EQ, dynamics, reverb, delay, pitch, noise reduction and more, about 100 presets, VST3
-plugins, an Audio Mixer, auto ducking and beat detection.
+plugins, an Audio Mixer, auto ducking and beat detection. [Audio Finishing](docs/audio-finishing.md)
+checks final-mix loudness, true peaks and stereo compatibility, with editable targets and undoable gain.
 
 **Captions**: Auto Captions with Whisper on this computer (GPU or CPU), translation, speaker
 colours, SRT and WebVTT, subtitle tracks in renders.

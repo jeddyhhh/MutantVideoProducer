@@ -8,7 +8,7 @@ name: Windows release
 on:
   push:
     tags: ['v*']
-    branches: ['claude/**'] # test builds of feature branches
+    branches: ['main', 'claude/**'] # main and feature-branch build artifacts
     paths-ignore: ['**.md']
   release:
     types: [published]
@@ -104,6 +104,16 @@ jobs:
         shell: pwsh
         run: ./scripts/download-youtube-runtime.ps1
 
+      - name: Remove packaged worker build intermediates
+        shell: pwsh
+        run: |
+          $workspaceRoot = [IO.Path]::GetFullPath($env:GITHUB_WORKSPACE)
+          foreach ($relativePath in 'deps/voice-worker-env', 'deps/rvc-worker-env', 'build/voice-worker', 'build/rvc-worker') {
+              $workerBuildPath = [IO.Path]::GetFullPath((Join-Path $workspaceRoot $relativePath))
+              if (-not $workerBuildPath.StartsWith($workspaceRoot + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)) { throw 'Worker build path is outside the workspace' }
+              if (Test-Path -LiteralPath $workerBuildPath) { Remove-Item -LiteralPath $workerBuildPath -Recurse -Force }
+          }
+
       - name: Build
         shell: cmd
         run: build.bat Release
@@ -125,6 +135,8 @@ jobs:
           & "$bin/mvp_collection_test.exe"
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           & "$bin/mvp_brand_test.exe"
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          & "$bin/mvp_finishing_test.exe"
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           python -m unittest discover -s tests -p test_voice_worker.py
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
@@ -169,6 +181,9 @@ jobs:
           & $iscc /Q "/DAppVersion=$version" "/DSourceDir=$PWD\$dir" "/O$PWD" installer/mvp.iss
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           "setup=MutantVideoProducer-$version-win64-setup.exe" >> $env:GITHUB_OUTPUT
+          # Tag builds include the large offline edition. Branch builds retain the same
+          # bundled engines and download models through the in-app libraries.
+          if ($env:GITHUB_REF_TYPE -ne 'tag') { exit 0 }
           # The offline version: the same, plus every speech model (nothing is downloaded when used).
           $ProgressPreference = 'SilentlyContinue'
           $off = "$dir-offline"

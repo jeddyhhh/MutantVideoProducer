@@ -15,6 +15,19 @@ Drag an **Animation** preset from the Generators / Graphics category onto the ti
 
 Presets: curved race circuit with detailed reusable cars, animated typography, data chart, revealed route, deterministic confetti, morphing shapes, audio-reactive shapes/bars and reusable information cards. These are editable starting points.
 
+## Layout and brand workflow
+
+The composer toolbar provides **Snap**, **Arrange**, **Lock**, **Unlock** and **Brand kit…**.
+
+- Select several layers in the list, or Shift-click on the canvas. Moves keep the selection together. Snap uses canvas edges/centre, 5% safe margins and other visible layer edges/centres; orange guides show the match. Hold Alt to bypass snapping. Focus the canvas and use arrow keys to nudge, or Shift+arrows for ten preview pixels.
+- Arrange against **Canvas**, **Safe margins** or **Selection**. Align left/right/top/bottom or either centre; distribute three or more layers with equal gaps. Selection distribution retains the outside bounds. Transformed parents and the scene camera are accounted for. Select a group or its children, not both.
+- Layout operations offset animated positions while retaining their curves. With **Record keyframes** enabled, canvas moves and arranging instead record positions at the playhead.
+- Locks are saved in the scene and protect canvas manipulation, property controls and layout operations. Locking a group also protects descendants. Locked layers remain selectable in the list for unlocking. Full advanced scene replacement remains an explicit way to change any scene data.
+- Assign a **Brand colour** role in Layout, then apply a kit's primary, secondary, accent, background or foreground colour. A kit also supplies static text fonts. Animated styles and locked layers are preserved. Shared symbol definitions used by locked instances are preserved too.
+- Open/save kits as JSON under your profile's `Media/Graphics Templates/Brands` folder. Ordinary scene templates retain the chosen kit, role tags, animation and locks, so layouts can be reused across projects.
+
+MCP `graphics_overlay` adds `layout`, `lock` and `brand` actions. `get` returns stable addressable layer IDs, including prepared legacy layouts. Layout takes `layer_ids`, `operation` (`left`, `hcenter`, `right`, `top`, `vcenter`, `bottom`, `distribute_h`, `distribute_v`), `reference` (`canvas`, `safe`, `selection`) and event-local `time`. Lock takes `layer_ids` and boolean `locked`. Brand takes `brand` with `version:1`, `name`, `font` and the five colour-role values. Each is one undoable project edit. Keyframe edits respect layer/group locks.
+
 ## Scene schema
 
 ```json

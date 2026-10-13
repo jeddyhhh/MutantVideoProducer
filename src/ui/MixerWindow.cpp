@@ -4,6 +4,7 @@
 
 #include "core/Project.h"
 #include "ui/AudioLevels.h"
+#include "ui/AudioFinishingWindow.h"
 
 #include <QComboBox>
 #include <QDoubleSpinBox>
@@ -291,6 +292,12 @@ MixerWindow::MixerWindow(Project* project, QWidget* parent) : QWidget(parent, Qt
     fx->setText(tr("Master FX"));
     connect(fx, &QToolButton::clicked, this, &MixerWindow::masterEffectsRequested);
     ml->addWidget(fx, 0, Qt::AlignHCenter);
+    auto* finish = new QToolButton;
+    finish->setText(tr("Finish mix…"));
+    finish->setObjectName(QStringLiteral("mixerAudioFinishing"));
+    finish->setToolTip(tr("Measure integrated loudness and true peaks, check the final mix and apply safe master gain."));
+    connect(finish, &QToolButton::clicked, this, [this] { showAudioFinishing(this, m_project); });
+    ml->addWidget(finish, 0, Qt::AlignHCenter);
     m_master = new LevelMeter;
     ml->addWidget(m_master, 1, Qt::AlignHCenter);
     outer->addWidget(master);
