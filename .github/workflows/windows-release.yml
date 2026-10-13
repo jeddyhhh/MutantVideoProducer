@@ -1,8 +1,7 @@
 # Builds Mutant Video Producer for Windows and publishes an installer and a zip (MutantVideoProducer.exe +
 # Qt + FFmpeg + MSVC runtime) on a GitHub release when a version tag such as v0.1.0 is pushed
-# or a release is published from the Releases page. Pushes to claude/...
-# feature branches (and Actions > Windows release > Run workflow) just build
-# the zip as a workflow artifact, for testing.
+# or a release is published from the Releases page. Main/feature branch pushes
+# and manual branch runs store tested downloads in a draft development release.
 name: Windows release
 
 on:

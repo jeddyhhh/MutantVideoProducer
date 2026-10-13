@@ -1,8 +1,10 @@
 import hashlib
 import importlib.util
+import json
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
 
 def module(name, file):
@@ -64,6 +66,27 @@ class CiDownloadTests(unittest.TestCase):
 
     def test_file_below_release_limit_is_not_split_unnecessarily(self):
         self.assertEqual(list(store.parts(self.file, 1000, threshold=5000)), [(self.file, False)])
+
+    def test_creation_does_not_require_immediate_list_visibility(self):
+        release = {'tag_name': 'ci-' + 'a' * 12, 'draft': True, 'html_url': 'https://example.test/draft'}
+        with patch.object(store, 'gh', side_effect=['[]', json.dumps(release)]) as client:
+            self.assertEqual(store.draft_release('owner/repo', 'a' * 40),
+                             (release['tag_name'], release['html_url']))
+        self.assertIn('draft=true', client.call_args.args)
+
+    def test_concurrent_creation_waits_for_list_visibility(self):
+        release = {'tag_name': 'ci-' + 'a' * 12, 'draft': True, 'html_url': 'https://example.test/draft'}
+        with patch.object(store, 'gh', side_effect=['[]', RuntimeError('already exists'), '[]', json.dumps([release])]), \
+             patch.object(store.time, 'sleep') as pause:
+            self.assertEqual(store.draft_release('owner/repo', 'a' * 40)[1], release['html_url'])
+            pause.assert_called_once_with(2)
+
+    def test_published_release_is_never_modified(self):
+        release = {'tag_name': 'ci-' + 'a' * 12, 'draft': False, 'html_url': 'https://example.test/release'}
+        with patch.object(store, 'gh', return_value=json.dumps([release])) as client:
+            with self.assertRaises(RuntimeError):
+                store.draft_release('owner/repo', 'a' * 40)
+            self.assertEqual(client.call_count, 1)
 
 
 if __name__ == '__main__':

@@ -59,17 +59,23 @@ def draft_release(repo, commit):
     release = find()
     if release is None:
         try:
-            gh('release', 'create', tag, '--repo', repo, '--target', commit,
-               '--draft', '--prerelease', '--title', f'Development builds {commit[:12]}',
-               '--notes', f'Tested CI downloads for commit {commit}. Windows and Linux workflows attach their files here. '
+            # Use the creation response: the release list can lag behind a successful POST.
+            release = json.loads(gh('api', '--method', 'POST', f'repos/{repo}/releases',
+               '-f', f'tag_name={tag}', '-f', f'target_commitish={commit}',
+               '-F', 'draft=true', '-F', 'prerelease=true', '-f', f'name=Development builds {commit[:12]}',
+               '-f', f'body=Tested CI downloads for commit {commit}. Windows and Linux workflows attach their files here. '
                'These builds remain drafts; formal releases use version tags. SHA-256 files accompany each download. '
                'If a large file is split into .part001, .part002, etc., download every matching part and its .sha256 file, then run '
-               '`python join-build-parts.py <filename.part001>` to reconstruct it.')
+               '`python join-build-parts.py <filename.part001>` to reconstruct it.'))
         except RuntimeError:
             # The other platform may have created the same draft concurrently.
-            if find() is None:
+            for attempt in range(6):
+                release = find()
+                if release is not None:
+                    break
+                time.sleep(2)
+            if release is None:
                 raise
-        release = find()
     if release is None or not release['draft']:
         raise RuntimeError('Refusing to attach development builds to a published release')
     return tag, release['html_url']
