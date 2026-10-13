@@ -1,0 +1,369 @@
+{
+    "audioMasterEffects": [
+    ],
+    "format": "montage-project",
+    "media": [
+        {
+            "id": 1,
+            "path": "media/music.m4a",
+            "relativePath": "media/music.m4a"
+        }
+    ],
+    "nextId": 10,
+    "outputEffects": [
+    ],
+    "settings": {
+        "fpsDen": 1,
+        "fpsNum": 30,
+        "height": 1080,
+        "sampleRate": 48000,
+        "width": 1920
+    },
+    "tracks": [
+        {
+            "clips": [
+                {
+                    "fadeIn": "500000",
+                    "fadeOut": "500000",
+                    "gain": 1,
+                    "generator": {
+                        "params": {
+                            "align": {
+                                "v": 1
+                            },
+                            "animIn": {
+                                "v": 1
+                            },
+                            "animOut": {
+                                "v": 1
+                            },
+                            "bold": {
+                                "v": 1
+                            },
+                            "box": {
+                                "v": 0
+                            },
+                            "boxColor": {
+                                "v": 0
+                            },
+                            "boxPadding": {
+                                "v": 20
+                            },
+                            "boxRadius": {
+                                "v": 6
+                            },
+                            "color": {
+                                "v": 16777215
+                            },
+                            "font": {
+                                "text": "Arial",
+                                "v": 0
+                            },
+                            "inDuration": {
+                                "v": 0.5
+                            },
+                            "italic": {
+                                "v": 0
+                            },
+                            "lineSpacing": {
+                                "v": 1
+                            },
+                            "outDuration": {
+                                "v": 0.5
+                            },
+                            "outline": {
+                                "v": 0
+                            },
+                            "outlineColor": {
+                                "v": 0
+                            },
+                            "shadow": {
+                                "v": 0.6
+                            },
+                            "shadowBlur": {
+                                "v": 6
+                            },
+                            "shadowColor": {
+                                "v": 0
+                            },
+                            "shadowX": {
+                                "v": 4
+                            },
+                            "shadowY": {
+                                "v": 4
+                            },
+                            "size": {
+                                "v": 10
+                            },
+                            "text": {
+                                "text": "My First Edit",
+                                "v": 0
+                            },
+                            "tracking": {
+                                "v": 0
+                            },
+                            "x": {
+                                "v": 0.5
+                            },
+                            "y": {
+                                "v": 0.5
+                            }
+                        },
+                        "type": "text"
+                    },
+                    "group": 0,
+                    "id": 7,
+                    "length": "4000000",
+                    "media": 0,
+                    "muted": false,
+                    "name": "",
+                    "sourceIn": "0",
+                    "start": "500000",
+                    "stream": -1
+                },
+                {
+                    "fadeIn": "0",
+                    "fadeOut": "0",
+                    "gain": 1,
+                    "generator": {
+                        "params": {
+                            "align": {
+                                "v": 0
+                            },
+                            "animIn": {
+                                "v": 2
+                            },
+                            "animOut": {
+                                "v": 1
+                            },
+                            "bold": {
+                                "v": 1
+                            },
+                            "box": {
+                                "v": 0.55
+                            },
+                            "boxColor": {
+                                "v": 0
+                            },
+                            "boxPadding": {
+                                "v": 22
+                            },
+                            "boxRadius": {
+                                "v": 6
+                            },
+                            "color": {
+                                "v": 16777215
+                            },
+                            "font": {
+                                "text": "Arial",
+                                "v": 0
+                            },
+                            "inDuration": {
+                                "v": 0.5
+                            },
+                            "italic": {
+                                "v": 0
+                            },
+                            "lineSpacing": {
+                                "v": 1
+                            },
+                            "outDuration": {
+                                "v": 0.5
+                            },
+                            "outline": {
+                                "v": 0
+                            },
+                            "outlineColor": {
+                                "v": 0
+                            },
+                            "shadow": {
+                                "v": 0
+                            },
+                            "shadowBlur": {
+                                "v": 6
+                            },
+                            "shadowColor": {
+                                "v": 0
+                            },
+                            "shadowX": {
+                                "v": 4
+                            },
+                            "shadowY": {
+                                "v": 4
+                            },
+                            "size": {
+                                "v": 5
+                            },
+                            "text": {
+                                "text": "Starfield\nA generated background",
+                                "v": 0
+                            },
+                            "tracking": {
+                                "v": 0
+                            },
+                            "x": {
+                                "v": 0.07
+                            },
+                            "y": {
+                                "v": 0.83
+                            }
+                        },
+                        "type": "text"
+                    },
+                    "group": 0,
+                    "id": 8,
+                    "length": "4000000",
+                    "media": 0,
+                    "muted": false,
+                    "name": "",
+                    "sourceIn": "0",
+                    "start": "9500000",
+                    "stream": -1
+                }
+            ],
+            "id": 3,
+            "level": 1,
+            "muted": false,
+            "name": "Titles",
+            "pan": 0,
+            "solo": false,
+            "type": "video"
+        },
+        {
+            "clips": [
+                {
+                    "fadeIn": "0",
+                    "fadeOut": "0",
+                    "gain": 1,
+                    "generator": {
+                        "params": {
+                            "palette": {
+                                "v": 2
+                            },
+                            "scale": {
+                                "v": 1
+                            },
+                            "speed": {
+                                "v": 0.4
+                            }
+                        },
+                        "type": "plasma"
+                    },
+                    "group": 0,
+                    "id": 4,
+                    "length": "5000000",
+                    "media": 0,
+                    "muted": false,
+                    "name": "",
+                    "sourceIn": "0",
+                    "start": "0",
+                    "stream": -1
+                },
+                {
+                    "fadeIn": "0",
+                    "fadeOut": "0",
+                    "gain": 1,
+                    "generator": {
+                        "params": {
+                            "color1": {
+                                "v": 4063136
+                            },
+                            "color2": {
+                                "v": 9067775
+                            },
+                            "horizon": {
+                                "v": 729920
+                            },
+                            "sky": {
+                                "v": 132111
+                            },
+                            "speed": {
+                                "v": 1
+                            },
+                            "stars": {
+                                "v": 1
+                            }
+                        },
+                        "type": "aurora"
+                    },
+                    "group": 0,
+                    "id": 5,
+                    "length": "5000000",
+                    "media": 0,
+                    "muted": false,
+                    "name": "",
+                    "sourceIn": "0",
+                    "start": "4000000",
+                    "stream": -1
+                },
+                {
+                    "fadeIn": "0",
+                    "fadeOut": "0",
+                    "gain": 1,
+                    "generator": {
+                        "params": {
+                            "background": {
+                                "v": 5
+                            },
+                            "color": {
+                                "v": 16777215
+                            },
+                            "count": {
+                                "v": 600
+                            },
+                            "speed": {
+                                "v": 1
+                            },
+                            "trails": {
+                                "v": 0.3
+                            }
+                        },
+                        "type": "starfield"
+                    },
+                    "group": 0,
+                    "id": 6,
+                    "length": "5000000",
+                    "media": 0,
+                    "muted": false,
+                    "name": "",
+                    "sourceIn": "0",
+                    "start": "9000000",
+                    "stream": -1
+                }
+            ],
+            "id": 1,
+            "level": 1,
+            "muted": false,
+            "name": "Pictures",
+            "pan": 0,
+            "solo": false,
+            "type": "video"
+        },
+        {
+            "clips": [
+                {
+                    "fadeIn": "0",
+                    "fadeOut": "2000000",
+                    "gain": 1,
+                    "group": 0,
+                    "id": 9,
+                    "length": "14000000",
+                    "media": 1,
+                    "muted": false,
+                    "name": "",
+                    "sourceIn": "0",
+                    "start": "0",
+                    "stream": 0
+                }
+            ],
+            "id": 2,
+            "level": 1,
+            "muted": false,
+            "name": "Music",
+            "pan": 0,
+            "solo": false,
+            "type": "audio"
+        }
+    ],
+    "version": 1
+}

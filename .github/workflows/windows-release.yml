@@ -1,0 +1,207 @@
+# Builds Mutant Video Producer for Windows and publishes an installer and a zip (MutantVideoProducer.exe +
+# Qt + FFmpeg + MSVC runtime) on a GitHub release when a version tag such as v0.1.0 is pushed
+# or a release is published from the Releases page. Pushes to claude/...
+# feature branches (and Actions > Windows release > Run workflow) just build
+# the zip as a workflow artifact, for testing.
+name: Windows release
+
+on:
+  push:
+    tags: ['v*']
+    branches: ['claude/**'] # test builds of feature branches
+    paths-ignore: ['**.md']
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+# Publishing a release with a new tag fires both the release and the tag push.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      # Qt 6.8+: older Qt headers use stdext::checked_array_iterator, which the
+      # Visual Studio 2026 compiler on the runner no longer has.
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.8.3'
+          arch: win64_msvc2022_64
+          modules: qtmultimedia
+          dir: ${{ github.workspace }}/deps
+          cache: true
+
+      - name: Download FFmpeg
+        shell: pwsh
+        run: |
+          $name = 'ffmpeg-n8.1-latest-win64-gpl-shared-8.1'
+          Invoke-WebRequest "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/$name.zip" -OutFile ffmpeg.zip
+          Expand-Archive ffmpeg.zip -DestinationPath deps
+          Rename-Item "deps/$name" ffmpeg
+
+      # Optional parts, each left out of the build when missing: speech to text
+      # (auto captions), person segmentation (Remove Background), VST3 plugins.
+      - name: Download whisper.cpp, ONNX Runtime and the VST3 interfaces
+        shell: pwsh
+        run: |
+          $ProgressPreference = 'SilentlyContinue' # (the progress bar slows big downloads right down)
+          Invoke-WebRequest https://github.com/ggml-org/whisper.cpp/archive/refs/tags/v1.9.5.zip -OutFile whisper.zip
+          Expand-Archive whisper.zip -DestinationPath deps
+          Rename-Item deps/whisper.cpp-1.9.5 whisper
+          # ONNX Runtime with DirectML (the model on any DirectX 12 GPU, else the CPU), as deps/onnxruntime/{include,lib}.
+          $nuget = 'https://api.nuget.org/v3-flatcontainer'
+          Invoke-WebRequest "$nuget/microsoft.ml.onnxruntime.directml/1.24.4/microsoft.ml.onnxruntime.directml.1.24.4.nupkg" -OutFile ortdml.zip
+          Invoke-WebRequest "$nuget/microsoft.ai.directml/1.15.4/microsoft.ai.directml.1.15.4.nupkg" -OutFile dml.zip
+          Expand-Archive ortdml.zip -DestinationPath ortdml
+          Expand-Archive dml.zip -DestinationPath dml
+          New-Item -ItemType Directory -Force deps/onnxruntime/include, deps/onnxruntime/lib | Out-Null
+          Copy-Item ortdml/build/native/include/* deps/onnxruntime/include
+          Copy-Item ortdml/runtimes/win-x64/native/* deps/onnxruntime/lib
+          Copy-Item dml/bin/x64-win/DirectML.dll deps/onnxruntime/lib
+          Copy-Item ortdml/LICENSE deps/onnxruntime/LICENSE
+          Copy-Item dml/LICENSE.txt deps/onnxruntime/DIRECTML-LICENSE.txt
+          git clone --depth 1 https://github.com/steinbergmedia/vst3_pluginterfaces.git deps/vst3/pluginterfaces
+
+      # To build Whisper's Vulkan backend (auto captions on the GPU); users need only a graphics driver.
+      - name: Install the Vulkan SDK
+        shell: pwsh
+        run: |
+          $ProgressPreference = 'SilentlyContinue'
+          Invoke-WebRequest https://sdk.lunarg.com/sdk/download/1.4.363.0/windows/vulkan-sdk.exe -OutFile vulkan-sdk.exe
+          Start-Process ./vulkan-sdk.exe -Wait -ArgumentList '--root', 'C:/VulkanSDK/1.4.363.0', '--accept-licenses', '--default-answer', '--confirm-command', 'install'
+          "VULKAN_SDK=C:/VulkanSDK/1.4.363.0" >> $env:GITHUB_ENV
+
+      # The tag's version (v0.2.5 -> 0.2.5) goes into the program (Help > About, the update check)
+      # and the file names; other builds are dev-<commit>.
+      - name: Version
+        shell: pwsh
+        run: |
+          $version = if ($env:GITHUB_REF_TYPE -eq 'tag') { $env:GITHUB_REF_NAME.TrimStart('v') } else { "dev-$($env:GITHUB_SHA.Substring(0, 7))" }
+          "MVP_VERSION=$version" >> $env:GITHUB_ENV
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Build local voice worker
+        shell: pwsh
+        run: ./scripts/build-voice-worker.ps1
+
+      - name: Build bundled RVC engine
+        shell: pwsh
+        run: ./scripts/build-rvc-worker.ps1
+
+      - name: Prepare YouTube JavaScript runtime
+        shell: pwsh
+        run: ./scripts/download-youtube-runtime.ps1
+
+      - name: Build
+        shell: cmd
+        run: build.bat Release
+
+      # The native windows platform (no window is shown): offscreen has no fonts on Windows.
+      - name: Self-test
+        shell: pwsh
+        run: |
+          $bin = 'build/Release/bin'
+          New-Item -ItemType Directory -Force testmedia, build/ci | Out-Null
+          deps/ffmpeg/bin/ffmpeg.exe -v error -f lavfi -i testsrc2=size=640x360:rate=30 -f lavfi -i sine=frequency=440 `
+              -t 5 -c:v libx264 -pix_fmt yuv420p -c:a aac -shortest testmedia/h264_aac.mp4
+          & "$bin/mvp_selftest.exe" probe testmedia/h264_aac.mp4
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          & "$bin/mvp_selftest.exe" generators build/ci/gen
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          & "$bin/mvp_selftest.exe" youtube-options
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          & "$bin/mvp_collection_test.exe"
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          & "$bin/mvp_brand_test.exe"
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          python -m unittest discover -s tests -p test_voice_worker.py
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          python scripts/download-voice-assets.py --output build/ci/voice-assets --voice-id af_heart
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          $env:MVP_VOICE_DIR = "$PWD/build/ci/voice-assets"
+          & "$bin/mvp_voice_test.exe"
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+
+      - name: Package
+        id: package
+        shell: pwsh
+        run: |
+          $version = $env:MVP_VERSION
+          $dir = "MutantVideoProducer-$version-win64"
+          New-Item -ItemType Directory $dir | Out-Null
+          Copy-Item -Recurse build/Release/bin/* $dir
+          Remove-Item "$dir/mvp_selftest.exe", "$dir/mvp_*_test.exe", "$dir/platforms/qoffscreen.dll" -ErrorAction SilentlyContinue
+          # Incremental builds can contain executables from the previous product name.
+          Remove-Item "$dir/montage.exe", "$dir/montage_selftest.exe", "$dir/montage_*_test.exe" -ErrorAction SilentlyContinue
+          # Symbols stay out of the download; kept as a workflow artifact to read crash reports with.
+          New-Item -ItemType Directory symbols | Out-Null
+          Move-Item "$dir/*.pdb" symbols
+          7z a -tzip -mx=5 "$dir-symbols.zip" ./symbols/* | Out-Null
+          "symbols=$dir-symbols.zip" >> $env:GITHUB_OUTPUT
+          # MSVC runtime next to the exe, so no Visual C++ Redistributable install is needed.
+          $vs = & "${env:ProgramFiles(x86)}/Microsoft Visual Studio/Installer/vswhere.exe" -latest -products * -property installationPath
+          $crt = Get-ChildItem "$vs/VC/Redist/MSVC/*/x64/Microsoft.VC*.CRT" -Directory | Sort-Object FullName | Select-Object -Last 1
+          Copy-Item "$($crt.FullName)/*.dll" $dir
+          Copy-Item deps/ffmpeg/LICENSE.txt "$dir/FFMPEG-LICENSE.txt"
+          Copy-Item deps/onnxruntime/LICENSE "$dir/ONNXRUNTIME-LICENSE.txt"
+          Copy-Item deps/onnxruntime/DIRECTML-LICENSE.txt "$dir/DIRECTML-LICENSE.txt"
+          Copy-Item deps/whisper/LICENSE "$dir/WHISPER-LICENSE.txt"
+          Copy-Item README.md, LICENSE, CHANGELOG.md $dir
+          if (-not (Test-Path "$dir/MutantVideoProducer.exe")) { throw 'MutantVideoProducer.exe missing' }
+          7z a -tzip -mx=5 "$dir.zip" $dir | Out-Null
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          "zip=$dir.zip" >> $env:GITHUB_OUTPUT
+          # The installer (Inno Setup): Start menu and desktop shortcuts, .mtg files, an uninstaller.
+          $iscc = "${env:ProgramFiles(x86)}/Inno Setup 6/ISCC.exe"
+          if (-not (Test-Path $iscc)) { choco install innosetup -y --no-progress | Out-Null }
+          & $iscc /Q "/DAppVersion=$version" "/DSourceDir=$PWD\$dir" "/O$PWD" installer/mvp.iss
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          "setup=MutantVideoProducer-$version-win64-setup.exe" >> $env:GITHUB_OUTPUT
+          # The offline version: the same, plus every speech model (nothing is downloaded when used).
+          $ProgressPreference = 'SilentlyContinue'
+          $off = "$dir-offline"
+          Rename-Item $dir $off
+          python scripts/download-voice-assets.py --output "$off/voice/assets"
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          python scripts/download-voice-assets.py --catalog data/rvc/catalog.json --output "$off/voice/assets"
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          New-Item -ItemType Directory "$off/models/whisper" | Out-Null
+          $hf = 'https://huggingface.co'
+          foreach ($url in "$hf/ggerganov/whisper.cpp/resolve/main/ggml-tiny.bin", "$hf/ggerganov/whisper.cpp/resolve/main/ggml-base.bin",
+                           "$hf/ggerganov/whisper.cpp/resolve/main/ggml-small.bin",
+                           "$hf/akashmjn/tinydiarize-whisper.cpp/resolve/main/ggml-small.en-tdrz.bin") {
+              Invoke-WebRequest $url -OutFile "$off/models/whisper/$(Split-Path $url -Leaf)"
+          }
+          7z a -tzip -mx=1 "$off.zip" $off | Out-Null
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          "offline=$off.zip" >> $env:GITHUB_OUTPUT
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mvp-win64
+          path: |
+            ${{ steps.package.outputs.zip }}
+            ${{ steps.package.outputs.setup }}
+            ${{ steps.package.outputs.symbols }}
+
+      - name: Publish release
+        if: github.ref_type == 'tag'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            ${{ steps.package.outputs.setup }}
+            ${{ steps.package.outputs.zip }}
+            ${{ steps.package.outputs.offline }}
+          generate_release_notes: true

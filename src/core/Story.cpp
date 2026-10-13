@@ -1,0 +1,210 @@
+#include "core/Story.h"
+#include "core/TimelineOps.h"
+#include <QJsonArray>
+#include <QRegularExpression>
+#include <random>
+#include <limits>
+
+namespace {
+TimeUs time(const QJsonObject& o,const char* key) { return o.value(QLatin1String(key)).toString().toLongLong(); }
+std::set<int> ids(const QJsonObject& o) { std::set<int> r; for(auto v:o["clips"].toArray()) r.insert(v.toInt()); return r; }
+QJsonArray array(const std::set<int>& values) { QJsonArray a;for(int id:values)a.append(id);return a; }
+int chapterIndex(const Timeline& tl,int id) { for(int i=0;i<tl.chapters.size();++i)if(tl.chapters[i].toObject()["id"].toInt()==id)return i;return -1; }
+bool fail(QString* error,const QString& text) { if(error)*error=text;return false; }
+void shiftChain(EffectChain& chain,TimeUs delta) { for(auto& e:chain) { for(auto& [key,value]:e.params)for(auto& k:value.keys)k.time+=delta;for(auto& rc:e.chains)shiftChain(rc.effects,delta); } }
+void shiftTrack(Track& track,TimeUs delta) { for(auto& c:track.clips)c.start+=delta;shiftChain(track.effects,delta);for(auto* e:{&track.volume,&track.panEnvelope,&track.composite})for(auto& k:e->points)k.time+=delta; }
+void shiftChapter(QJsonObject& chapter,TimeUs delta) { chapter["start"]=QString::number(time(chapter,"start")+delta); }
+}
+namespace story {
+int addChapter(Timeline& tl,const QString& name,const QString& script,TimeUs narration,TimeUs listening,const MediaItem* source,TimeUs sourceIn,const FrameRate& fps,QString* error)
+{
+    if(name.trimmed().isEmpty()||narration<0||listening<0||narration+listening<=0||narration+listening>3600*kUsPerSecond) { fail(error,"Give the chapter a name and a duration up to one hour.");return 0; }
+    narration=fps.snap(narration);listening=fps.snap(listening);
+    TimeUs chapterEnd=tl.duration();
+    for(auto value:tl.chapters){auto c=value.toObject();chapterEnd=std::max(chapterEnd,time(c,"start")+time(c,"narration")+time(c,"listening"));}
+    const TimeUs at=fps.snap(chapterEnd);const int id=tl.allocId();std::set<int> clips;
+    if(source) {
+        const auto placed=ops::insertMedia(tl,*source,at,-1,fps,true);
+        for(int cid:placed)if(auto* c=tl.findClip(cid)) {
+            c->sourceIn=std::max<TimeUs>(0,sourceIn);c->length=narration+listening;
+            if(!source->info.isStill && c->sourceIn+c->length>source->info.duration) {
+                c->sourceIn=std::clamp<TimeUs>(c->sourceIn,0,std::max<TimeUs>(0,source->info.duration-1));
+                c->loopLength=source->info.duration;
+            }
+            c->name=name;c->narration["story_source_duration"]=QString::number(source->info.duration);c->narration["story_source_still"]=source->info.isStill;clips.insert(cid);
+            int ti=-1;tl.findClip(cid,&ti);
+            if(tl.tracks[size_t(ti)].type==TrackType::Audio) {
+                auto effect=makeEffectOfType("a_gain",tl.allocId());effect.params["storyGain"].value=1;auto& p=effect.params["gain"];p.value=-22;
+                p.keys={{0,-22,Keyframe::Interp::Linear},{std::max<TimeUs>(0,narration-100000),-22,Keyframe::Interp::Linear},{narration,0,Keyframe::Interp::Linear}};
+                c->effects.push_back(effect);
+            }
+        }
+    }
+    if(!source) {
+        int ti=ops::addTrack(tl,TrackType::Video,0);tl.tracks[size_t(ti)].name="Storyboard";
+        Clip c;c.id=tl.allocId();c.start=at;c.length=narration+listening;c.name=name+" / footage placeholder";
+        c.generator.type="text";c.generator.params["text"].text=name;c.generator.params["size"].value=8;
+        tl.tracks[size_t(ti)].clips.push_back(c);clips.insert(c.id);
+    }
+    QJsonObject chapter{{"id",id},{"name",name.trimmed()},{"script",script},{"start",QString::number(at)},
+        {"narration",QString::number(narration)},{"listening",QString::number(listening)},{"clips",array(clips)},{"stretch",array(clips)}};
+    tl.chapters.append(chapter);
+    Marker marker;marker.id=id;marker.name="Chapter: "+name.trimmed();marker.time=at;marker.length=narration+listening;marker.color=5;tl.markers.push_back(marker);tl.sortMarkers();
+    return id;
+}
+bool updateChapter(Timeline& tl,int id,const QString& name,const QString& script,TimeUs narration,TimeUs listening,QString* error)
+{
+    const int i=chapterIndex(tl,id);if(i<0)return fail(error,"Chapter not found.");
+    if(name.trimmed().isEmpty()||narration<0||listening<0||narration+listening<=0||narration+listening>3600*kUsPerSecond)return fail(error,"Use a chapter name and a positive duration up to one hour.");
+    auto chapter=tl.chapters[i].toObject();const TimeUs at=time(chapter,"start"),old=time(chapter,"narration")+time(chapter,"listening"),duration=narration+listening,delta=duration-old;
+    const auto own=ids(chapter);std::set<int> stretch;for(auto value:chapter["stretch"].toArray())stretch.insert(value.toInt());
+    for(int cid:own)if(const auto* clip=tl.findClip(cid)) {
+        if(clip->narration.contains("takes") && clip->end()>at+narration)
+            return fail(error,"Existing narration would enter the listening section. Trim or regenerate it first.");
+        if(delta<0 && clip->end()>at+duration && !(stretch.count(cid)&&clip->start==at&&clip->length==old&&!clip->narration.contains("takes")))
+            return fail(error,"Trim the assigned clips to the new chapter end before shortening it.");
+    }
+    // A duration change must not cut or silently change unrelated overlapping material.
+    if(delta>0)for(int cid:own)if(const auto* c=tl.findClip(cid);c&&c->isSequence()&&c->end()==at+old)return fail(error,"Unpack the chapter compound before extending its listening time, then pack it again after the change.");
+    if(delta)for(const auto& t:tl.tracks)for(const auto& c:t.clips)
+        if(!own.count(c.id)&&c.start<at+old&&c.end()>at+old)return fail(error,"An unassigned clip crosses this chapter's end. Split and assign it before changing the duration.");
+    if(delta)ops::rippleShift(tl,at+old,delta,{},own,true);
+    for(int cid:own)if(auto* c=tl.findClip(cid)) {
+        if(stretch.count(cid)&&c->start==at&&c->length==old) {
+            c->length=duration;const auto available=c->narration["story_source_duration"].toString().toLongLong();
+            if(available>0&&!c->narration["story_source_still"].toBool()&&c->sourceIn+c->sourceSpan()>available)c->loopLength=available;
+        }
+        if(c->narration.contains("takes"))continue;
+        for(auto& effect:c->effects)if(effect.type=="a_gain"&&effect.params.count("storyGain")) {
+            effect.params["storyGain"].value=1;auto& p=effect.params["gain"];p.value=-22;p.keys={{0,-22,Keyframe::Interp::Linear},{std::max<TimeUs>(0,narration-100000),-22,Keyframe::Interp::Linear},{narration,0,Keyframe::Interp::Linear}};
+        }
+    }
+    for(int j=0;j<tl.chapters.size();++j)if(j!=i) {auto c=tl.chapters[j].toObject();if(time(c,"start")>=at+old){shiftChapter(c,delta);tl.chapters[j]=c;} }
+    chapter["name"]=name.trimmed();chapter["script"]=script;chapter["narration"]=QString::number(narration);chapter["listening"]=QString::number(listening);tl.chapters[i]=chapter;
+    if(auto* m=tl.findMarker(id)){m->name="Chapter: "+name.trimmed();m->time=at;m->length=duration;}tl.sortClips();tl.sortMarkers();return true;
+}
+bool bindChapter(Timeline& tl,int id,const std::set<int>& selection,QString* error)
+{
+    int i=chapterIndex(tl,id);if(i<0)return fail(error,"Chapter not found.");auto chapter=tl.chapters[i].toObject();auto bound=ids(chapter);
+    const auto expanded=ops::expandToGroups(tl,selection);const auto at=time(chapter,"start"),end=at+time(chapter,"narration")+time(chapter,"listening");
+    for(int cid:expanded) {const auto* c=tl.findClip(cid);if(!c||c->start<at||c->end()>end)return fail(error,"Assigned clips must fit entirely inside the chapter.");bound.insert(cid);}
+    chapter["clips"]=array(bound);tl.chapters[i]=chapter;return true;
+}
+bool moveChapter(Timeline& tl,int id,int direction,QString* error)
+{
+    int i=chapterIndex(tl,id),j=i+(direction<0?-1:1);if(i<0||j<0||j>=tl.chapters.size())return fail(error,"There is no adjacent chapter in that direction.");
+    auto a=tl.chapters[std::min(i,j)].toObject(),b=tl.chapters[std::max(i,j)].toObject();const auto start=time(a,"start"),la=time(a,"narration")+time(a,"listening"),lb=time(b,"narration")+time(b,"listening");
+    if(time(b,"start")!=start+la)return fail(error,"Only adjacent chapter ranges can be swapped.");
+    auto ai=ids(a),bi=ids(b);for(const auto& t:tl.tracks)for(const auto& c:t.clips)if(c.start<start+la+lb&&c.end()>start&&!ai.count(c.id)&&!bi.count(c.id))return fail(error,"Assign all material in both chapters before swapping them.");
+    for(auto& t:tl.tracks)for(auto& c:t.clips) {if(ai.count(c.id))c.start+=lb;else if(bi.count(c.id))c.start-=la;}
+    for(auto& m:tl.markers) {if(m.time>=start&&m.time<start+la)m.time+=lb;else if(m.time>=start+la&&m.time<start+la+lb)m.time-=la;}
+    shiftChapter(a,lb);shiftChapter(b,-la);tl.chapters[std::min(i,j)]=b;tl.chapters[std::max(i,j)]=a;tl.sortClips();tl.sortMarkers();return true;
+}
+bool removeChapter(Timeline& tl,int id,QString* error)
+{
+    int i=chapterIndex(tl,id);if(i<0)return fail(error,"Chapter not found.");const auto c=tl.chapters[i].toObject();const auto at=time(c,"start"),length=time(c,"narration")+time(c,"listening");const auto owned=ids(c);
+    for(const auto& t:tl.tracks)for(const auto& clip:t.clips)if(clip.start<at+length&&clip.end()>at&&!owned.count(clip.id))return fail(error,"Assign all material in the chapter before deleting its range.");
+    ops::removeClips(tl,owned);ops::rippleShift(tl,at+length,-length,{},{},true);std::erase_if(tl.markers,[&](const Marker&m){return m.id==id;});tl.chapters.removeAt(i);
+    for(int j=0;j<tl.chapters.size();++j){auto q=tl.chapters[j].toObject();if(time(q,"start")>=at+length){shiftChapter(q,-length);tl.chapters[j]=q;}}
+    return true;
+}
+int adoptChapter(Timeline& tl,const QString& name,const QString& script,TimeUs from,TimeUs to,TimeUs narration,QString* error)
+{
+    if(name.trimmed().isEmpty()||from<0||to<=from||narration<0||narration>to-from||to-from>3600*kUsPerSecond){fail(error,"Select a positive region up to one hour and a narration window within it.");return 0;}
+    for(auto value:tl.chapters){auto c=value.toObject();const auto at=time(c,"start"),end=at+time(c,"narration")+time(c,"listening");if(from<end&&to>at){fail(error,"Chapter ranges must not overlap.");return 0;}}
+    ops::splitClips(tl,{},from);ops::splitClips(tl,{},to);std::set<int> owned;
+    for(const auto& t:tl.tracks)for(const auto& c:t.clips)if(c.start>=from&&c.end()<=to)owned.insert(c.id);
+    int id=tl.allocId();QJsonObject chapter{{"id",id},{"name",name.trimmed()},{"script",script},{"start",QString::number(from)},{"narration",QString::number(narration)},{"listening",QString::number(to-from-narration)},{"clips",array(owned)}};
+    int i=0;while(i<tl.chapters.size()&&time(tl.chapters[i].toObject(),"start")<from)++i;tl.chapters.insert(i,chapter);
+    Marker marker;marker.id=id;marker.name="Chapter: "+name.trimmed();marker.time=from;marker.length=to-from;marker.color=5;tl.markers.push_back(marker);tl.sortMarkers();return id;
+}
+std::vector<int> compound(Timeline& tl,const std::set<int>& selected,const QString& name,QString* error)
+{
+    auto selection=ops::expandToGroups(tl,selected);TimeUs start=std::numeric_limits<TimeUs>::max(),end=0;int firstVisual=int(tl.tracks.size()),lastVisual=-1;bool picture=false,sound=false;
+    for(size_t ti=0;ti<tl.tracks.size();++ti)for(const auto& c:tl.tracks[ti].clips)if(selection.count(c.id)) {start=std::min(start,c.start);end=std::max(end,c.end());if(isVisualTrack(tl.tracks[ti].type)){picture=true;firstVisual=std::min(firstVisual,int(ti));lastVisual=int(ti);}else sound=true;}
+    if(end<=start){fail(error,"Select clips to make a compound sequence.");return {};}
+    for(int ti=firstVisual;ti<=lastVisual;++ti)for(const auto& c:tl.tracks[size_t(ti)].clips)if(!selection.count(c.id)&&c.start<end&&c.end()>start){fail(error,"Include the overlapping visual layers between the selected tracks to preserve their compositing order.");return {};}
+    std::set<int> tracks;
+    for(const auto& t:tl.tracks)for(const auto& c:t.clips)if(selection.count(c.id))tracks.insert(t.id);
+    std::function<int(const Timeline&)> depth=[&](const Timeline& t){int d=0;for(const auto& tr:t.tracks)for(const auto& c:tr.clips)if(c.isSequence())d=std::max(d,1+depth(*c.sequence.value));return d;};
+    if(depth(tl)>=15){fail(error,"The maximum sequence nesting depth is fifteen.");return {};}
+    for(const auto& t:tl.tracks) {
+        if(t.duckUnder && tracks.count(t.id)!=tracks.count(t.duckUnder)){fail(error,"Include both sides of audio ducking before making a compound.");return {};}
+        if(t.solo){fail(error,"Turn off track solos before making a compound.");return {};}
+        if(tracks.count(t.id)&&isVisualTrack(t.type)&&t.blend){fail(error,"Reset the selected tracks to Normal blend mode before packing their layers.");return {};}
+    }
+    Timeline nested;nested.nextId=tl.nextId;nested.narrationSettings=tl.narrationSettings;
+    for(auto& t:tl.tracks){Track inner=t;std::erase_if(inner.clips,[&](const Clip& c){return !selection.count(c.id);});if(inner.clips.empty())continue;shiftTrack(inner,-start);nested.tracks.push_back(std::move(inner));std::erase_if(t.clips,[&](const Clip& c){return selection.count(c.id);});}
+    const int originalInsert=picture?firstVisual:int(tl.tracks.size());int insert=0;
+    for(int i=0;i<originalInsert;++i)if(!tl.tracks[size_t(i)].clips.empty()||!tracks.count(tl.tracks[size_t(i)].id))++insert;
+    std::erase_if(tl.tracks,[&](const Track& t){return tracks.count(t.id)&&t.clips.empty();});
+    auto content=std::make_shared<const Timeline>(std::move(nested));int group=tl.allocId();std::vector<int> result;std::set<int> containers;
+    for(auto type:{TrackType::Video,TrackType::Audio}) {
+        if((type==TrackType::Video&&!picture)||(type==TrackType::Audio&&!sound))continue;
+        Track t;t.id=tl.allocId();t.type=type;t.name=name+(type==TrackType::Video?" / Sequence":" / Sequence audio");
+        Clip c;c.id=tl.allocId();c.groupId=group;c.name=name;c.start=start;c.length=end-start;c.sequence.value=content;t.clips.push_back(c);result.push_back(c.id);containers.insert(c.id);
+        tl.tracks.insert(tl.tracks.begin()+insert++,std::move(t));
+    }
+    for(int i=0;i<tl.chapters.size();++i){auto chapter=tl.chapters[i].toObject();auto own=ids(chapter);if(!own.empty()&&std::all_of(own.begin(),own.end(),[&](int cid){return selection.count(cid);})) {chapter["clips"]=array(containers);tl.chapters[i]=chapter;}}
+    return result;
+}
+bool unpack(Timeline& tl,int clipId,QString* error)
+{
+    const auto* found=tl.findClip(clipId);if(!found||!found->isSequence())return fail(error,"Select a compound sequence.");const Clip container=*found;
+    if(container.speed!=1||container.reverse||container.hasRamp()||container.gain!=1||!container.effects.empty()||!container.panCrop.empty()||container.fadeIn||container.fadeOut)return fail(error,"Edit inside this compound to retain its applied transformations. Reset them before unpacking.");
+    const auto group=ops::expandToGroups(tl,{clipId});int index=0;tl.findClip(clipId,&index);const auto nested=*container.sequence.value;
+    if(container.sourceIn!=0||container.length!=nested.duration())return fail(error,"Restore the compound's full source range before unpacking.");
+    for(int id:group) {
+        int ti=0;const auto* c=tl.findClip(id,&ti);if(!c||!c->isSequence()||c->sequence!=container.sequence)return fail(error,"Ungroup unrelated clips before unpacking.");
+        const auto& t=tl.tracks[size_t(ti)];if(t.level!=1||t.pan!=0||t.muted||t.solo||t.blend||t.duckUnder||!t.effects.empty()||t.volume.active||t.panEnvelope.active||t.composite.active)return fail(error,"Reset the container track's effects and controls before unpacking.");
+    }
+    if(!nested.outputEffects.empty()||!nested.audioMasterEffects.empty())return fail(error,"Keep this compound to retain its output effects.");
+    std::set<int> containerTracks;for(int id:group){int ti=0;tl.findClip(id,&ti);containerTracks.insert(tl.tracks[size_t(ti)].id);}
+    ops::removeClips(tl,group);int insertion=0;for(int i=0;i<index;++i)if(!tl.tracks[size_t(i)].clips.empty()||!containerTracks.count(tl.tracks[size_t(i)].id))++insertion;
+    std::erase_if(tl.tracks,[&](const Track& t){return containerTracks.count(t.id)&&t.clips.empty();});index=insertion;
+    std::map<int,int> mapping,groups;std::set<int> restored;
+    Timeline content=nested;
+    for(auto& t:content.tracks) { const int old=t.id;t.id=tl.allocId();mapping[old]=t.id;for(auto& c:t.clips){int oldClip=c.id;c.id=tl.allocId();mapping[oldClip]=c.id;restored.insert(c.id);if(c.groupId&&!groups.count(c.groupId))groups[c.groupId]=tl.allocId();} }
+    std::function<void(EffectChain&)> effects=[&](EffectChain& chain){for(auto& e:chain){e.id=tl.allocId();for(auto& rc:e.chains)effects(rc.effects);}};
+    for(auto& t:content.tracks) {
+        if(t.duckUnder)t.duckUnder=mapping[t.duckUnder];effects(t.effects);
+        for(auto& c:t.clips) {if(c.groupId)c.groupId=groups[c.groupId];effects(c.effects);const int owner=c.narration["caption_owner"].toInt();if(owner)c.narration["caption_owner"]=mapping[owner];}
+        shiftTrack(t,container.start);tl.tracks.insert(tl.tracks.begin()+index++,std::move(t));
+    }
+    for(int i=0;i<tl.chapters.size();++i){auto chapter=tl.chapters[i].toObject();auto own=ids(chapter);if(std::any_of(own.begin(),own.end(),[&](int cid){return group.count(cid);})) {chapter["clips"]=array(restored);std::set<int> stretch;for(auto value:chapter["stretch"].toArray())if(mapping.count(value.toInt()))stretch.insert(mapping[value.toInt()]);chapter["stretch"]=array(stretch);tl.chapters[i]=chapter;}}
+    tl.sortClips();return true;
+}
+bool replaceCompound(Timeline& tl,int clipId,const Timeline& content,bool ripple,QString* error)
+{
+    const auto* found=tl.findClip(clipId);if(!found||!found->isSequence())return fail(error,"Choose a compound sequence.");
+    if(content.duration()<=0)return fail(error,"A sequence must contain at least one clip.");const QString issue=timelineProblem(content);if(!issue.isEmpty())return fail(error,issue);
+    const Clip container=*found;const bool full=container.sourceIn==0&&container.speed==1&&!container.hasRamp()&&!container.reverse&&container.length==container.sequence.value->duration();const TimeUs delta=full?content.duration()-container.length:0;
+    const auto group=ops::expandToGroups(tl,{clipId});
+    for(int i=0;i<tl.chapters.size();++i) {
+        auto chapter=tl.chapters[i].toObject();const auto own=ids(chapter);const auto start=time(chapter,"start");
+        if(std::any_of(group.begin(),group.end(),[&](int id){return own.count(id);})&&start==container.start&&start+time(chapter,"narration")+time(chapter,"listening")==container.end()) {
+            const TimeUs listening=time(chapter,"listening")+delta;if(listening<0)return fail(error,"The sequence is shorter than the chapter's narration window. Shorten that window before trimming the compound.");
+            if(!ripple&&delta)for(auto v:tl.chapters){auto other=v.toObject();if(other["id"]!=chapter["id"]&&time(other,"start")>=container.end()&&time(other,"start")<container.end()+delta)return fail(error,"Enable ripple to keep the following chapter clear.");}
+            chapter["listening"]=QString::number(listening);tl.chapters[i]=chapter;
+            if(auto* marker=tl.findMarker(chapter["id"].toInt()))marker->length=time(chapter,"narration")+listening;
+        } else if(ripple&&delta&&start>=container.end()){shiftChapter(chapter,delta);tl.chapters[i]=chapter;}
+    }
+    if(ripple&&delta)ops::rippleShift(tl,container.end(),delta,{},group,true);
+    const auto immutable=std::make_shared<const Timeline>(content);
+    for(int id:group)if(auto* c=tl.findClip(id);c&&c->isSequence()&&c->sequence==container.sequence){c->sequence.value=immutable;c->length=full?immutable->duration():std::min(c->length,ops::maxClipLength(nullptr,*c));if(c->length<=0)return fail(error,"A trimmed container would have no source left after this edit.");}
+    tl.nextId=std::max(tl.nextId,content.nextId);tl.sortClips();return true;
+}
+int directorsDice(Timeline& tl,const std::set<int>& selection,unsigned seed,int style,double intensity)
+{
+    intensity=std::clamp(intensity,0.0,1.0);std::mt19937 rng(seed);int count=0;
+    for(auto& t:tl.tracks)if(isVisualTrack(t.type))for(auto& c:t.clips)if(selection.count(c.id)&&!c.isGenerated()) {
+        c.panCrop["mode"].value=1;
+        auto& zoom=c.panCrop["zoom"];const double base=std::max(1.0,zoom.value);const double extra=(style+1)*.045*intensity;
+        const bool in=bool(rng()%2);zoom.value=base;zoom.keys={{0,base+(in?0:extra),Keyframe::Interp::Smooth},{c.length,base+(in?extra:0),Keyframe::Interp::Smooth}};
+        if(style>=1){auto e=makeEffectOfType("rgb_split",tl.allocId());e.params["redX"].value=-8;e.params["blueX"].value=8;e.params["fxMix"].value=0;e.params["fxMix"].keys={{0,.18*intensity,Keyframe::Interp::Linear},{std::min<TimeUs>(150000,c.length),0,Keyframe::Interp::Linear}};c.effects.push_back(e);}
+        if(style==2&&intensity>0){c.fadeIn=std::min<TimeUs>(120000,c.length/4);c.transitionIn.type=(rng()%2)?"glitch":"slices";}
+        ++count;
+    }
+    return count;
+}
+}

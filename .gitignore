@@ -1,0 +1,12 @@
+/build/
+/deps/
+/testmedia/
+/dist/
+/creative-test/
+__pycache__/
+*.pyc
+*.spec
+*.user
+.vs/
+.vscode/
+*.log

@@ -1,0 +1,1216 @@
+{
+    "audioMasterEffects": [
+    ],
+    "format": "montage-project",
+    "media": [
+        {
+            "id": 1,
+            "path": "media/sample.mp4",
+            "relativePath": "media/sample.mp4"
+        }
+    ],
+    "nextId": 37,
+    "outputEffects": [
+    ],
+    "settings": {
+        "fpsDen": 1,
+        "fpsNum": 30,
+        "height": 1080,
+        "sampleRate": 48000,
+        "width": 1920
+    },
+    "tracks": [
+        {
+            "clips": [
+                {
+                    "fadeIn": "200000",
+                    "fadeOut": "200000",
+                    "gain": 1,
+                    "generator": {
+                        "params": {
+                            "align": {
+                                "v": 1
+                            },
+                            "animIn": {
+                                "v": 1
+                            },
+                            "animOut": {
+                                "v": 1
+                            },
+                            "bold": {
+                                "v": 0
+                            },
+                            "box": {
+                                "v": 0.5
+                            },
+                            "boxColor": {
+                                "v": 0
+                            },
+                            "boxPadding": {
+                                "v": 12
+                            },
+                            "boxRadius": {
+                                "v": 6
+                            },
+                            "color": {
+                                "v": 16777215
+                            },
+                            "font": {
+                                "text": "Arial",
+                                "v": 0
+                            },
+                            "inDuration": {
+                                "v": 0.15
+                            },
+                            "italic": {
+                                "v": 0
+                            },
+                            "lineSpacing": {
+                                "v": 1
+                            },
+                            "outDuration": {
+                                "v": 0.15
+                            },
+                            "outline": {
+                                "v": 0
+                            },
+                            "outlineColor": {
+                                "v": 0
+                            },
+                            "shadow": {
+                                "v": 0
+                            },
+                            "shadowBlur": {
+                                "v": 6
+                            },
+                            "shadowColor": {
+                                "v": 0
+                            },
+                            "shadowX": {
+                                "v": 4
+                            },
+                            "shadowY": {
+                                "v": 4
+                            },
+                            "size": {
+                                "v": 4.5
+                            },
+                            "text": {
+                                "text": "Colour bars: open the Scopes",
+                                "v": 0
+                            },
+                            "tracking": {
+                                "v": 0
+                            },
+                            "x": {
+                                "v": 0.5
+                            },
+                            "y": {
+                                "v": 0.08
+                            }
+                        },
+                        "type": "text"
+                    },
+                    "group": 0,
+                    "id": 5,
+                    "length": "2600000",
+                    "media": 0,
+                    "muted": false,
+                    "name": "",
+                    "sourceIn": "0",
+                    "start": "200000",
+                    "stream": -1
+                },
+                {
+                    "fadeIn": "200000",
+                    "fadeOut": "200000",
+                    "gain": 1,
+                    "generator": {
+                        "params": {
+                            "align": {
+                                "v": 1
+                            },
+                            "animIn": {
+                                "v": 1
+                            },
+                            "animOut": {
+                                "v": 1
+                            },
+                            "bold": {
+                                "v": 0
+                            },
+                            "box": {
+                                "v": 0.5
+                            },
+                            "boxColor": {
+                                "v": 0
+                            },
+                            "boxPadding": {
+                                "v": 12
+                            },
+                            "boxRadius": {
+                                "v": 6
+                            },
+                            "color": {
+                                "v": 16777215
+                            },
+                            "font": {
+                                "text": "Arial",
+                                "v": 0
+                            },
+                            "inDuration": {
+                                "v": 0.15
+                            },
+                            "italic": {
+                                "v": 0
+                            },
+                            "lineSpacing": {
+                                "v": 1
+                            },
+                            "outDuration": {
+                                "v": 0.15
+                            },
+                            "outline": {
+                                "v": 0
+                            },
+                            "outlineColor": {
+                                "v": 0
+                            },
+                            "shadow": {
+                                "v": 0
+                            },
+                            "shadowBlur": {
+                                "v": 6
+                            },
+                            "shadowColor": {
+                                "v": 0
+                            },
+                            "shadowX": {
+                                "v": 4
+                            },
+                            "shadowY": {
+                                "v": 4
+                            },
+                            "size": {
+                                "v": 4.5
+                            },
+                            "text": {
+                                "text": "Original",
+                                "v": 0
+                            },
+                            "tracking": {
+                                "v": 0
+                            },
+                            "x": {
+                                "v": 0.5
+                            },
+                            "y": {
+                                "v": 0.08
+                            }
+                        },
+                        "type": "text"
+                    },
+                    "group": 0,
+                    "id": 9,
+                    "length": "3600000",
+                    "media": 0,
+                    "muted": false,
+                    "name": "",
+                    "sourceIn": "0",
+                    "start": "3200000",
+                    "stream": -1
+                },
+                {
+                    "fadeIn": "200000",
+                    "fadeOut": "200000",
+                    "gain": 1,
+                    "generator": {
+                        "params": {
+                            "align": {
+                                "v": 1
+                            },
+                            "animIn": {
+                                "v": 1
+                            },
+                            "animOut": {
+                                "v": 1
+                            },
+                            "bold": {
+                                "v": 0
+                            },
+                            "box": {
+                                "v": 0.5
+                            },
+                            "boxColor": {
+                                "v": 0
+                            },
+                            "boxPadding": {
+                                "v": 12
+                            },
+                            "boxRadius": {
+                                "v": 6
+                            },
+                            "color": {
+                                "v": 16777215
+                            },
+                            "font": {
+                                "text": "Arial",
+                                "v": 0
+                            },
+                            "inDuration": {
+                                "v": 0.15
+                            },
+                            "italic": {
+                                "v": 0
+                            },
+                            "lineSpacing": {
+                                "v": 1
+                            },
+                            "outDuration": {
+                                "v": 0.15
+                            },
+                            "outline": {
+                                "v": 0
+                            },
+                            "outlineColor": {
+                                "v": 0
+                            },
+                            "shadow": {
+                                "v": 0
+                            },
+                            "shadowBlur": {
+                                "v": 6
+                            },
+                            "shadowColor": {
+                                "v": 0
+                            },
+                            "shadowX": {
+                                "v": 4
+                            },
+                            "shadowY": {
+                                "v": 4
+                            },
+                            "size": {
+                                "v": 4.5
+                            },
+                            "text": {
+                                "text": "S-Curve Contrast",
+                                "v": 0
+                            },
+                            "tracking": {
+                                "v": 0
+                            },
+                            "x": {
+                                "v": 0.5
+                            },
+                            "y": {
+                                "v": 0.08
+                            }
+                        },
+                        "type": "text"
+                    },
+                    "group": 0,
+                    "id": 14,
+                    "length": "3600000",
+                    "media": 0,
+                    "muted": false,
+                    "name": "",
+                    "sourceIn": "0",
+                    "start": "7200000",
+                    "stream": -1
+                },
+                {
+                    "fadeIn": "200000",
+                    "fadeOut": "200000",
+                    "gain": 1,
+                    "generator": {
+                        "params": {
+                            "align": {
+                                "v": 1
+                            },
+                            "animIn": {
+                                "v": 1
+                            },
+                            "animOut": {
+                                "v": 1
+                            },
+                            "bold": {
+                                "v": 0
+                            },
+                            "box": {
+                                "v": 0.5
+                            },
+                            "boxColor": {
+                                "v": 0
+                            },
+                            "boxPadding": {
+                                "v": 12
+                            },
+                            "boxRadius": {
+                                "v": 6
+                            },
+                            "color": {
+                                "v": 16777215
+                            },
+                            "font": {
+                                "text": "Arial",
+                                "v": 0
+                            },
+                            "inDuration": {
+                                "v": 0.15
+                            },
+                            "italic": {
+                                "v": 0
+                            },
+                            "lineSpacing": {
+                                "v": 1
+                            },
+                            "outDuration": {
+                                "v": 0.15
+                            },
+                            "outline": {
+                                "v": 0
+                            },
+                            "outlineColor": {
+                                "v": 0
+                            },
+                            "shadow": {
+                                "v": 0
+                            },
+                            "shadowBlur": {
+                                "v": 6
+                            },
+                            "shadowColor": {
+                                "v": 0
+                            },
+                            "shadowX": {
+                                "v": 4
+                            },
+                            "shadowY": {
+                                "v": 4
+                            },
+                            "size": {
+                                "v": 4.5
+                            },
+                            "text": {
+                                "text": "Teal and Orange",
+                                "v": 0
+                            },
+                            "tracking": {
+                                "v": 0
+                            },
+                            "x": {
+                                "v": 0.5
+                            },
+                            "y": {
+                                "v": 0.08
+                            }
+                        },
+                        "type": "text"
+                    },
+                    "group": 0,
+                    "id": 19,
+                    "length": "3600000",
+                    "media": 0,
+                    "muted": false,
+                    "name": "",
+                    "sourceIn": "0",
+                    "start": "11200000",
+                    "stream": -1
+                },
+                {
+                    "fadeIn": "200000",
+                    "fadeOut": "200000",
+                    "gain": 1,
+                    "generator": {
+                        "params": {
+                            "align": {
+                                "v": 1
+                            },
+                            "animIn": {
+                                "v": 1
+                            },
+                            "animOut": {
+                                "v": 1
+                            },
+                            "bold": {
+                                "v": 0
+                            },
+                            "box": {
+                                "v": 0.5
+                            },
+                            "boxColor": {
+                                "v": 0
+                            },
+                            "boxPadding": {
+                                "v": 12
+                            },
+                            "boxRadius": {
+                                "v": 6
+                            },
+                            "color": {
+                                "v": 16777215
+                            },
+                            "font": {
+                                "text": "Arial",
+                                "v": 0
+                            },
+                            "inDuration": {
+                                "v": 0.15
+                            },
+                            "italic": {
+                                "v": 0
+                            },
+                            "lineSpacing": {
+                                "v": 1
+                            },
+                            "outDuration": {
+                                "v": 0.15
+                            },
+                            "outline": {
+                                "v": 0
+                            },
+                            "outlineColor": {
+                                "v": 0
+                            },
+                            "shadow": {
+                                "v": 0
+                            },
+                            "shadowBlur": {
+                                "v": 6
+                            },
+                            "shadowColor": {
+                                "v": 0
+                            },
+                            "shadowX": {
+                                "v": 4
+                            },
+                            "shadowY": {
+                                "v": 4
+                            },
+                            "size": {
+                                "v": 4.5
+                            },
+                            "text": {
+                                "text": "Faded Film",
+                                "v": 0
+                            },
+                            "tracking": {
+                                "v": 0
+                            },
+                            "x": {
+                                "v": 0.5
+                            },
+                            "y": {
+                                "v": 0.08
+                            }
+                        },
+                        "type": "text"
+                    },
+                    "group": 0,
+                    "id": 24,
+                    "length": "3600000",
+                    "media": 0,
+                    "muted": false,
+                    "name": "",
+                    "sourceIn": "0",
+                    "start": "15200000",
+                    "stream": -1
+                },
+                {
+                    "fadeIn": "200000",
+                    "fadeOut": "200000",
+                    "gain": 1,
+                    "generator": {
+                        "params": {
+                            "align": {
+                                "v": 1
+                            },
+                            "animIn": {
+                                "v": 1
+                            },
+                            "animOut": {
+                                "v": 1
+                            },
+                            "bold": {
+                                "v": 0
+                            },
+                            "box": {
+                                "v": 0.5
+                            },
+                            "boxColor": {
+                                "v": 0
+                            },
+                            "boxPadding": {
+                                "v": 12
+                            },
+                            "boxRadius": {
+                                "v": 6
+                            },
+                            "color": {
+                                "v": 16777215
+                            },
+                            "font": {
+                                "text": "Arial",
+                                "v": 0
+                            },
+                            "inDuration": {
+                                "v": 0.15
+                            },
+                            "italic": {
+                                "v": 0
+                            },
+                            "lineSpacing": {
+                                "v": 1
+                            },
+                            "outDuration": {
+                                "v": 0.15
+                            },
+                            "outline": {
+                                "v": 0
+                            },
+                            "outlineColor": {
+                                "v": 0
+                            },
+                            "shadow": {
+                                "v": 0
+                            },
+                            "shadowBlur": {
+                                "v": 6
+                            },
+                            "shadowColor": {
+                                "v": 0
+                            },
+                            "shadowX": {
+                                "v": 4
+                            },
+                            "shadowY": {
+                                "v": 4
+                            },
+                            "size": {
+                                "v": 4.5
+                            },
+                            "text": {
+                                "text": "Cool Moonlight",
+                                "v": 0
+                            },
+                            "tracking": {
+                                "v": 0
+                            },
+                            "x": {
+                                "v": 0.5
+                            },
+                            "y": {
+                                "v": 0.08
+                            }
+                        },
+                        "type": "text"
+                    },
+                    "group": 0,
+                    "id": 29,
+                    "length": "3600000",
+                    "media": 0,
+                    "muted": false,
+                    "name": "",
+                    "sourceIn": "0",
+                    "start": "19200000",
+                    "stream": -1
+                },
+                {
+                    "fadeIn": "200000",
+                    "fadeOut": "200000",
+                    "gain": 1,
+                    "generator": {
+                        "params": {
+                            "align": {
+                                "v": 1
+                            },
+                            "animIn": {
+                                "v": 1
+                            },
+                            "animOut": {
+                                "v": 1
+                            },
+                            "bold": {
+                                "v": 0
+                            },
+                            "box": {
+                                "v": 0.5
+                            },
+                            "boxColor": {
+                                "v": 0
+                            },
+                            "boxPadding": {
+                                "v": 12
+                            },
+                            "boxRadius": {
+                                "v": 6
+                            },
+                            "color": {
+                                "v": 16777215
+                            },
+                            "font": {
+                                "text": "Arial",
+                                "v": 0
+                            },
+                            "inDuration": {
+                                "v": 0.15
+                            },
+                            "italic": {
+                                "v": 0
+                            },
+                            "lineSpacing": {
+                                "v": 1
+                            },
+                            "outDuration": {
+                                "v": 0.15
+                            },
+                            "outline": {
+                                "v": 0
+                            },
+                            "outlineColor": {
+                                "v": 0
+                            },
+                            "shadow": {
+                                "v": 0
+                            },
+                            "shadowBlur": {
+                                "v": 6
+                            },
+                            "shadowColor": {
+                                "v": 0
+                            },
+                            "shadowX": {
+                                "v": 4
+                            },
+                            "shadowY": {
+                                "v": 4
+                            },
+                            "size": {
+                                "v": 4.5
+                            },
+                            "text": {
+                                "text": "Vintage Film",
+                                "v": 0
+                            },
+                            "tracking": {
+                                "v": 0
+                            },
+                            "x": {
+                                "v": 0.5
+                            },
+                            "y": {
+                                "v": 0.08
+                            }
+                        },
+                        "type": "text"
+                    },
+                    "group": 0,
+                    "id": 36,
+                    "length": "3600000",
+                    "media": 0,
+                    "muted": false,
+                    "name": "",
+                    "sourceIn": "0",
+                    "start": "23200000",
+                    "stream": -1
+                }
+            ],
+            "id": 3,
+            "level": 1,
+            "muted": false,
+            "name": "Grades",
+            "pan": 0,
+            "solo": false,
+            "type": "video"
+        },
+        {
+            "clips": [
+                {
+                    "fadeIn": "0",
+                    "fadeOut": "0",
+                    "gain": 1,
+                    "generator": {
+                        "params": {
+                            "style": {
+                                "v": 0
+                            }
+                        },
+                        "type": "color_bars"
+                    },
+                    "group": 0,
+                    "id": 4,
+                    "length": "3000000",
+                    "media": 0,
+                    "muted": false,
+                    "name": "",
+                    "sourceIn": "0",
+                    "start": "0",
+                    "stream": -1
+                },
+                {
+                    "fadeIn": "0",
+                    "fadeOut": "0",
+                    "gain": 1,
+                    "group": 6,
+                    "id": 7,
+                    "length": "4000000",
+                    "media": 1,
+                    "muted": false,
+                    "name": "",
+                    "sourceIn": "0",
+                    "start": "3000000",
+                    "stream": 0
+                },
+                {
+                    "effects": [
+                        {
+                            "enabled": true,
+                            "id": 13,
+                            "params": {
+                                "blueHighlights": {
+                                    "v": 0
+                                },
+                                "blueMidtones": {
+                                    "v": 0
+                                },
+                                "blueShadows": {
+                                    "v": 0
+                                },
+                                "darks": {
+                                    "v": -0.07
+                                },
+                                "greenHighlights": {
+                                    "v": 0
+                                },
+                                "greenMidtones": {
+                                    "v": 0
+                                },
+                                "greenShadows": {
+                                    "v": 0
+                                },
+                                "highlights": {
+                                    "v": 0
+                                },
+                                "lights": {
+                                    "v": 0.07
+                                },
+                                "midtones": {
+                                    "v": 0
+                                },
+                                "redHighlights": {
+                                    "v": 0
+                                },
+                                "redMidtones": {
+                                    "v": 0
+                                },
+                                "redShadows": {
+                                    "v": 0
+                                },
+                                "shadows": {
+                                    "v": 0
+                                }
+                            },
+                            "type": "curves"
+                        }
+                    ],
+                    "fadeIn": "0",
+                    "fadeOut": "0",
+                    "gain": 1,
+                    "group": 10,
+                    "id": 11,
+                    "length": "4000000",
+                    "media": 1,
+                    "muted": false,
+                    "name": "",
+                    "sourceIn": "4000000",
+                    "start": "7000000",
+                    "stream": 0
+                },
+                {
+                    "effects": [
+                        {
+                            "enabled": true,
+                            "id": 18,
+                            "params": {
+                                "gain": {
+                                    "v": 0
+                                },
+                                "gainAmount": {
+                                    "v": 0.3
+                                },
+                                "gainHue": {
+                                    "v": 30
+                                },
+                                "gamma": {
+                                    "v": 0
+                                },
+                                "gammaAmount": {
+                                    "v": 0
+                                },
+                                "gammaHue": {
+                                    "v": 200
+                                },
+                                "lift": {
+                                    "v": 0
+                                },
+                                "liftAmount": {
+                                    "v": 0.35
+                                },
+                                "liftHue": {
+                                    "v": 190
+                                }
+                            },
+                            "type": "color_wheels"
+                        }
+                    ],
+                    "fadeIn": "0",
+                    "fadeOut": "0",
+                    "gain": 1,
+                    "group": 15,
+                    "id": 16,
+                    "length": "4000000",
+                    "media": 1,
+                    "muted": false,
+                    "name": "",
+                    "sourceIn": "0",
+                    "start": "11000000",
+                    "stream": 0
+                },
+                {
+                    "effects": [
+                        {
+                            "enabled": true,
+                            "id": 23,
+                            "params": {
+                                "blueHighlights": {
+                                    "v": 0
+                                },
+                                "blueMidtones": {
+                                    "v": 0
+                                },
+                                "blueShadows": {
+                                    "v": 0
+                                },
+                                "darks": {
+                                    "v": 0.04
+                                },
+                                "greenHighlights": {
+                                    "v": 0
+                                },
+                                "greenMidtones": {
+                                    "v": 0
+                                },
+                                "greenShadows": {
+                                    "v": 0
+                                },
+                                "highlights": {
+                                    "v": -0.08
+                                },
+                                "lights": {
+                                    "v": 0
+                                },
+                                "midtones": {
+                                    "v": 0
+                                },
+                                "redHighlights": {
+                                    "v": 0
+                                },
+                                "redMidtones": {
+                                    "v": 0
+                                },
+                                "redShadows": {
+                                    "v": 0
+                                },
+                                "shadows": {
+                                    "v": 0.12
+                                }
+                            },
+                            "type": "curves"
+                        }
+                    ],
+                    "fadeIn": "0",
+                    "fadeOut": "0",
+                    "gain": 1,
+                    "group": 20,
+                    "id": 21,
+                    "length": "4000000",
+                    "media": 1,
+                    "muted": false,
+                    "name": "",
+                    "sourceIn": "4000000",
+                    "start": "15000000",
+                    "stream": 0
+                },
+                {
+                    "effects": [
+                        {
+                            "enabled": true,
+                            "id": 28,
+                            "params": {
+                                "gain": {
+                                    "v": -0.05
+                                },
+                                "gainAmount": {
+                                    "v": 0
+                                },
+                                "gainHue": {
+                                    "v": 30
+                                },
+                                "gamma": {
+                                    "v": 0
+                                },
+                                "gammaAmount": {
+                                    "v": 0.25
+                                },
+                                "gammaHue": {
+                                    "v": 215
+                                },
+                                "lift": {
+                                    "v": -0.05
+                                },
+                                "liftAmount": {
+                                    "v": 0.3
+                                },
+                                "liftHue": {
+                                    "v": 220
+                                }
+                            },
+                            "type": "color_wheels"
+                        }
+                    ],
+                    "fadeIn": "0",
+                    "fadeOut": "0",
+                    "gain": 1,
+                    "group": 25,
+                    "id": 26,
+                    "length": "4000000",
+                    "media": 1,
+                    "muted": false,
+                    "name": "",
+                    "sourceIn": "0",
+                    "start": "19000000",
+                    "stream": 0
+                },
+                {
+                    "effects": [
+                        {
+                            "enabled": true,
+                            "id": 33,
+                            "params": {
+                                "blueHighlights": {
+                                    "v": 0
+                                },
+                                "blueMidtones": {
+                                    "v": 0
+                                },
+                                "blueShadows": {
+                                    "v": 0
+                                },
+                                "darks": {
+                                    "v": 0
+                                },
+                                "greenHighlights": {
+                                    "v": 0
+                                },
+                                "greenMidtones": {
+                                    "v": 0
+                                },
+                                "greenShadows": {
+                                    "v": 0
+                                },
+                                "highlights": {
+                                    "v": -0.06
+                                },
+                                "lights": {
+                                    "v": 0
+                                },
+                                "midtones": {
+                                    "v": 0
+                                },
+                                "redHighlights": {
+                                    "v": 0
+                                },
+                                "redMidtones": {
+                                    "v": 0
+                                },
+                                "redShadows": {
+                                    "v": 0
+                                },
+                                "shadows": {
+                                    "v": 0.1
+                                }
+                            },
+                            "type": "curves"
+                        },
+                        {
+                            "enabled": true,
+                            "id": 34,
+                            "params": {
+                                "gain": {
+                                    "v": 0
+                                },
+                                "gainAmount": {
+                                    "v": 0
+                                },
+                                "gainHue": {
+                                    "v": 30
+                                },
+                                "gamma": {
+                                    "v": 0
+                                },
+                                "gammaAmount": {
+                                    "v": 0.2
+                                },
+                                "gammaHue": {
+                                    "v": 40
+                                },
+                                "lift": {
+                                    "v": 0
+                                },
+                                "liftAmount": {
+                                    "v": 0
+                                },
+                                "liftHue": {
+                                    "v": 200
+                                }
+                            },
+                            "type": "color_wheels"
+                        },
+                        {
+                            "enabled": true,
+                            "id": 35,
+                            "params": {
+                                "hue": {
+                                    "v": 0
+                                },
+                                "lightness": {
+                                    "v": 0
+                                },
+                                "saturation": {
+                                    "v": -0.25
+                                }
+                            },
+                            "type": "hsl"
+                        }
+                    ],
+                    "fadeIn": "0",
+                    "fadeOut": "0",
+                    "gain": 1,
+                    "group": 30,
+                    "id": 31,
+                    "length": "4000000",
+                    "media": 1,
+                    "muted": false,
+                    "name": "",
+                    "sourceIn": "4000000",
+                    "start": "23000000",
+                    "stream": 0
+                }
+            ],
+            "id": 1,
+            "level": 1,
+            "muted": false,
+            "name": "Video",
+            "pan": 0,
+            "solo": false,
+            "type": "video"
+        },
+        {
+            "clips": [
+                {
+                    "fadeIn": "0",
+                    "fadeOut": "0",
+                    "gain": 1,
+                    "group": 6,
+                    "id": 8,
+                    "length": "4000000",
+                    "media": 1,
+                    "muted": false,
+                    "name": "",
+                    "sourceIn": "0",
+                    "start": "3000000",
+                    "stream": 1
+                },
+                {
+                    "fadeIn": "0",
+                    "fadeOut": "0",
+                    "gain": 1,
+                    "group": 10,
+                    "id": 12,
+                    "length": "4000000",
+                    "media": 1,
+                    "muted": false,
+                    "name": "",
+                    "sourceIn": "4000000",
+                    "start": "7000000",
+                    "stream": 1
+                },
+                {
+                    "fadeIn": "0",
+                    "fadeOut": "0",
+                    "gain": 1,
+                    "group": 15,
+                    "id": 17,
+                    "length": "4000000",
+                    "media": 1,
+                    "muted": false,
+                    "name": "",
+                    "sourceIn": "0",
+                    "start": "11000000",
+                    "stream": 1
+                },
+                {
+                    "fadeIn": "0",
+                    "fadeOut": "0",
+                    "gain": 1,
+                    "group": 20,
+                    "id": 22,
+                    "length": "4000000",
+                    "media": 1,
+                    "muted": false,
+                    "name": "",
+                    "sourceIn": "4000000",
+                    "start": "15000000",
+                    "stream": 1
+                },
+                {
+                    "fadeIn": "0",
+                    "fadeOut": "0",
+                    "gain": 1,
+                    "group": 25,
+                    "id": 27,
+                    "length": "4000000",
+                    "media": 1,
+                    "muted": false,
+                    "name": "",
+                    "sourceIn": "0",
+                    "start": "19000000",
+                    "stream": 1
+                },
+                {
+                    "fadeIn": "0",
+                    "fadeOut": "0",
+                    "gain": 1,
+                    "group": 30,
+                    "id": 32,
+                    "length": "4000000",
+                    "media": 1,
+                    "muted": false,
+                    "name": "",
+                    "sourceIn": "4000000",
+                    "start": "23000000",
+                    "stream": 1
+                }
+            ],
+            "id": 2,
+            "level": 1,
+            "muted": false,
+            "name": "Audio",
+            "pan": 0,
+            "solo": false,
+            "type": "audio"
+        }
+    ],
+    "version": 1
+}

@@ -1,0 +1,191 @@
+# Effects
+
+Effects work the same way on video and audio. This page covers how to add, set and animate them.
+[Video Effects](video-effects.md) and [Audio](audio.md) list the effects themselves.
+
+![The device chain under the timeline](screenshots/effects-scopes.png)
+
+## Where effects go
+
+An effect can sit at four levels. Each is processed in this order:
+
+1. **Event FX**: on one event.
+2. **Transitions** between events (see [Transitions](transitions.md)).
+3. **Track FX**: on everything on a track.
+4. **Output FX**: on the finished picture (**Edit > Video Output FX...**), or **Master FX** on the
+   finished sound (**Edit > Audio Master FX...**, or the *Master FX* button on the transport bar).
+
+## Adding an effect
+
+- Drag an effect from the **Video FX** or **Audio FX** tab:
+  - onto an **event**, for event FX;
+  - onto an **empty part of a track or its header**, for track FX;
+  - into the **device chain**, in front of or behind a device.
+  The timeline highlights where it will go.
+- Or double-click it in the browser, or pick it from the **Add** button on the device chain.
+- **Ctrl+E** (**Edit > Event FX...**) shows the selected event's effects.
+
+## The device chain
+
+The **Effects** tab at the bottom shows a chain as a row of devices, each with all its controls.
+The **Event / Track / Output** tabs above it switch between:
+
+- the selected event's effects,
+- its track's effects,
+- the whole output (*Master* for audio).
+
+Clicking a track header, its **fx** button, or **Track FX** in an event's right-click menu shows the track's chain.
+
+**Controls**:
+
+- **Knobs**: drag up or down; hold **Shift** for fine steps; use the mouse wheel; double-click to reset.
+- Right-click any control:
+  - **Enter Value...** to type a number,
+  - **Reset to Default**,
+  - keyframe commands,
+  - **Follow Audio...**.
+
+**Devices**:
+
+- Each device has an **on / off** button, **fold**, and **delete**. Right-click a device for
+  duplicate and group.
+- Drag a device by its title bar to reorder it. **Ctrl+drag** copies it.
+- Make the panel taller (drag the divider above it) and the controls stack into more rows, so more
+  devices fit side by side.
+
+## Keyframes
+
+Any number, and any colour, can change over time.
+
+- The **◇** next to a control adds a keyframe at the cursor.
+- Once a setting has keyframes its value turns orange, and changing it sets a keyframe at the cursor.
+- Right-click the control:
+  - **Add / Remove Keyframe at Cursor**,
+  - **Previous Keyframe** / **Next Keyframe**,
+  - **Keyframe Curve**: Linear, Smooth or Hold.
+- Event FX keyframes move with the event. Track and output keyframes follow timeline time.
+
+## Presets
+
+- The browsers list factory presets under each effect. Expand an effect to see them. Examples:
+  EQ *Vocal Presence*, Reverb *Cathedral*, Pixel Sort *Melting Highlights*.
+- **Preset Chains** are whole chains, racks included. Examples: *Podcast Voice*, *Telephone*,
+  *Blockbuster Grade*, *Broken Stream*.
+- Drag a preset onto an event, a track or the device chain, or double-click it.
+- A device's **≡** button loads presets into it, and **Save as Preset...** keeps its settings as your own preset.
+- **Save Chain**, or right-click with several devices selected, saves a chain preset.
+- Your presets (video and audio) are JSON files in the app data folder. Right-click one in the
+  browser to delete it.
+
+## Racks
+
+A rack runs several chains side by side on the same input and mixes them back together.
+
+- **Ctrl+click** devices and press **Ctrl+G** (or right-click > **Group into Rack**) to group
+  them into a rack (the **Group** button does the same). Or **Add > Video Effect Rack (empty)**
+  (Audio Effect Rack for sound).
+- Drop an effect or a device on the rack's chain list to start a new chain. Click a chain to see and
+  edit its devices.
+- Each chain has on / off, solo and a level.
+- **Audio** chains are summed, with delay compensation between them.
+- **Video** chains are layered with an opacity and a blend mode: Normal, Add, Screen, Multiply,
+  Overlay, Lighten, Darken or Difference.
+- The rack's **Dry/Wet** mixes the result with the input.
+- Racks can be nested. A rack with one chain can be ungrouped.
+
+## Masks
+
+A mask limits a video effect (or a rack) to part of the picture: blur a face, colour one object, or
+grade everything except the sky.
+
+1. Click the **◐** button on the device. An ellipse mask appears on the preview.
+2. Choose its **Shape**: Rectangle, Ellipse or Freehand. **Outside the mask** applies the effect
+   everywhere except inside it.
+3. On the preview, drag inside the mask to move it, and near a corner to resize it.
+4. Set the position, size, angle and **feather** (soft edge) on the device. All of them can be keyframed.
+
+### Freehand masks and rotoscoping
+
+With the shape set to **Freehand**, the mask is an outline of 3 to 16 points.
+
+- Drag the points on the preview. Drag inside the shape to move all of it.
+- **Alt+click** the outline to add a point there. **Alt+click** a point to remove it.
+- **Smooth curve** draws a curve through the points; off, straight lines.
+- The mask's position, size, angle, feather and Track Motion still apply: the points sit in its frame.
+- **Animate shape**: dragging a point keys it at the cursor, so the outline can follow something
+  that changes shape over time (rotoscoping). Move the cursor, adjust the points, repeat.
+
+### Track Motion
+
+**Track Motion** (a button on a masked effect in a video event's Event FX) follows what is inside
+the mask:
+
+- It tracks from the cursor to the end of the event.
+- It keyframes the mask's position on every frame.
+- It works through the event's framing and stabilisation.
+- It stops where it loses the object.
+- It needs an event playing forwards at a steady speed (no reverse or speed ramp).
+
+![A Pixelate in an ellipse mask, following the ball after Track Motion](animations/track-motion.gif)
+
+## Follow Audio
+
+Right-click any number control in the Editor > **Follow Audio...** to make it move with the music.
+Mutant Video Producer writes keyframes from how loud the timeline is: everything, or just its bass, mids or highs.
+The setting goes between a quiet value and a loud value, over the event (or over the whole project
+for track and output effects).
+
+On the Live tab the same right-click offers **Modulate...** (see [Live](live.md#modulation)).
+
+## The Properties tab and handles on the preview
+
+Titles, transitions and Pan/Crop open in the **Properties** tab beside Effects, with the same
+keyframe buttons. It opens when you:
+
+- click a transition's label on an event,
+- add a transition,
+- open Pan/Crop,
+- select a text or generated event.
+
+Selecting another event, or opening any effects, goes back to the **Effects** tab.
+
+While Properties shows, you can drag on the preview:
+
+- a title's or text's position, an iris's or gradient's centre;
+- the dot on the line to turn a wipe's, clock wipe's or gradient's angle;
+- scroll to resize text.
+
+Each drag is one undo step, and a keyframed setting gets a keyframe at the cursor.
+
+## Pan/Crop
+
+**Event Pan/Crop** (**Ctrl+Shift+P**, or the framing button next to an event's `fx` badge) frames the picture:
+
+- Drag the rectangle over the source picture to pan. Drag a corner, or scroll, to zoom.
+- **Fit**, **Fill** or **Stretch** framing, rotation and flips.
+- Keyframe the zoom and centre for Ken Burns moves.
+- On the preview: drag the picture to pan, scroll to zoom.
+
+## Stabilize
+
+Right-click a video event > **Stabilize...**:
+
+- **Smoothing**: Light (keeps intended moves), Medium, Strong, or Very strong (nearly a tripod).
+- **Zoom in to hide the moving edges**.
+
+The footage is analysed once: blocks are matched between frames, and a shift and rotation are
+fitted to them, leaving out things that move on their own. The analysis is kept in the app's
+cache. The correction becomes part of the event's framing, so the preview, the GPU and renders all
+get it. Choose **Off** to remove it.
+
+## GPU acceleration
+
+With **Options > GPU Acceleration** on, every video effect runs on the graphics card, except
+*FFmpeg Filter*, which FFmpeg runs. The GPU and CPU give the same result, so turning it off only
+changes the speed.
+
+## Try it
+
+- [Effects and Keyframes](tutorials/04-effects-and-keyframes.md): a keyframed blur, a rack, and a
+  masked effect to track.
+- [Masks, Stabilising and Removing Backgrounds](tutorials/12-masks-stabilize-background.md).

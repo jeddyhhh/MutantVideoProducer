@@ -1,0 +1,26 @@
+// The program icon (also for .mtg files once the installer links them to Mutant Video Producer).
+IDI_ICON1 ICON "mvp.ico"
+
+1 VERSIONINFO
+ FILEVERSION MVP_FILE_VERSION
+ PRODUCTVERSION MVP_FILE_VERSION
+ FILETYPE 1
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040904b0"
+        BEGIN
+            VALUE "CompanyName", "Mutant Video Producer\0"
+            VALUE "FileDescription", "Mutant Video Producer\0"
+            VALUE "FileVersion", MVP_VERSION "\0"
+            VALUE "InternalName", "MutantVideoProducer\0"
+            VALUE "OriginalFilename", "MutantVideoProducer.exe\0"
+            VALUE "ProductName", "Mutant Video Producer\0"
+            VALUE "ProductVersion", MVP_VERSION "\0"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x409, 1200
+    END
+END

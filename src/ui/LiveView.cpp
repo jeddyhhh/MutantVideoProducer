@@ -1,0 +1,3529 @@
+#include "ui/LiveView.h"
+
+#include "ui/Theme.h"
+
+#include "core/BeatTracker.h"
+
+#include "core/AudioDecoder.h"
+#include "core/LivePadSets.h"
+#include "core/LiveRecorder.h"
+#include "core/Project.h"
+#include "ui/DeviceChainView.h"
+#include "core/MediaInfo.h"
+#include "ui/AudioMeter.h"
+#include "ui/EffectsBrowser.h"
+#include "ui/LiveClipsBrowser.h"
+#include "ui/BeatTuner.h"
+#include "ui/LiveOverlaysDialog.h"
+#include "ui/LivePadPanel.h"
+#include "ui/MidiHub.h"
+#include "ui/PreviewWidget.h"
+#include "ui/SetlistDialog.h"
+#include "ui/StreamDialog.h"
+#include "core/FFmpeg.h"
+#include <QProcess>
+#include "core/VideoShare.h"
+
+#include <QCheckBox>
+#include <QComboBox>
+#include <QElapsedTimer>
+#include <QEventLoop>
+#include <QAbstractSpinBox>
+#include <QApplication>
+#include <QDir>
+#include <QFileDialog>
+#include <QInputDialog>
+#include <QLineEdit>
+#include <QPlainTextEdit>
+#include <QSlider>
+#include <QTextEdit>
+#include <QFileInfo>
+#include <QGuiApplication>
+#include <QHBoxLayout>
+#include <QCloseEvent>
+#include <QContextMenuEvent>
+#include <QKeyEvent>
+#include <QMenu>
+#include <QLabel>
+#include <QPainter>
+#include <QPushButton>
+#include <QScreen>
+#include <QSettings>
+#include <QSpinBox>
+#include <QSplitter>
+#include <QStandardItemModel>
+#include <QTimer>
+#include <QToolButton>
+#include <QVBoxLayout>
+#include <QFormLayout>
+#include <QWheelEvent>
+#include <cmath>
+#include <QScrollArea>
+#include <QTabWidget>
+
+namespace {
+
+// Full-screen output (double-click or Esc closes it).
+class OutputWindow : public PreviewWidget {
+public:
+    using PreviewWidget::PreviewWidget;
+
+protected:
+    void keyPressEvent(QKeyEvent* e) override
+    {
+        if (e->key() == Qt::Key_Escape || e->key() == Qt::Key_F11)
+            close();
+    }
+    void mouseDoubleClickEvent(QMouseEvent*) override { close(); }
+};
+
+// The picture in its own normal window, e.g. for OBS's Window Capture
+// (its title stays "Mutant Video Producer Live Output"). Right-click for exact sizes and
+// always-on-top; closing it puts the picture back in the Live tab.
+class PopOutWindow : public PreviewWidget {
+public:
+    std::function<void()> onClosed;
+
+    PopOutWindow()
+    {
+        setWindowFlag(Qt::Window);
+        setWindowTitle(LiveView::tr("Mutant Video Producer Live Output"));
+        setBackground(Qt::black);
+        setAttribute(Qt::WA_DeleteOnClose, false);
+    }
+
+protected:
+    void closeEvent(QCloseEvent* e) override
+    {
+        QSettings().setValue(QStringLiteral("live/popOutGeometry"), saveGeometry());
+        PreviewWidget::closeEvent(e);
+        if (onClosed)
+            onClosed();
+    }
+    void keyPressEvent(QKeyEvent* e) override
+    {
+        if (e->key() == Qt::Key_F11)
+            isFullScreen() ? showNormal() : showFullScreen();
+        else if (e->key() == Qt::Key_Escape && isFullScreen())
+            showNormal();
+    }
+    void mouseDoubleClickEvent(QMouseEvent*) override { isFullScreen() ? showNormal() : showFullScreen(); }
+    void contextMenuEvent(QContextMenuEvent* e) override
+    {
+        QMenu menu(this);
+        QMenu* sizes = menu.addMenu(LiveView::tr("Window Size"));
+        if (!image().isNull())
+            sizes->addAction(LiveView::tr("Picture Size (%1 x %2)").arg(image().width()).arg(image().height()), this,
+                             [this, s = image().size()] { setSize(s); });
+        for (QSize s : {QSize(1920, 1080), QSize(1280, 720), QSize(960, 540), QSize(640, 360)})
+            sizes->addAction(QStringLiteral("%1 x %2").arg(s.width()).arg(s.height()), this, [this, s] { setSize(s); });
+        QAction* top = menu.addAction(LiveView::tr("Always on Top"));
+        top->setCheckable(true);
+        top->setChecked(windowFlags() & Qt::WindowStaysOnTopHint);
+        connect(top, &QAction::toggled, this, [this](bool on) {
+            setWindowFlag(Qt::WindowStaysOnTopHint, on);
+            show();
+        });
+        menu.addAction(isFullScreen() ? LiveView::tr("Exit Full Screen") : LiveView::tr("Full Screen"), this,
+                       [this] { isFullScreen() ? showNormal() : showFullScreen(); });
+        menu.addSeparator();
+        menu.addAction(LiveView::tr("Back to the Live Tab"), this, [this] { close(); });
+        menu.exec(e->globalPos());
+    }
+
+private:
+    void setSize(QSize s)
+    {
+        showNormal();
+        resize(s); // the inside of the window: what a window capture sees
+    }
+};
+
+// The live picture; double-click opens the full-screen output.
+class LiveDisplay : public PreviewWidget {
+public:
+    std::function<void()> onDoubleClick;
+    // Pan and zoom of the output, in output pixels: a drag (from its start), a wheel turn at a point, the menu.
+    std::function<void(QPointF delta, bool start)> onPan;
+    std::function<void(double steps, QPointF at)> onZoom;
+    std::function<void(QPoint globalPos)> onMenu;
+    QString hint; // shown while there is no picture
+    QString info; // shown in a corner while zoomed / panned
+    using PreviewWidget::PreviewWidget;
+
+protected:
+    void paintEvent(QPaintEvent* e) override
+    {
+        PreviewWidget::paintEvent(e);
+        QPainter p(this);
+        if (!hint.isEmpty()) {
+            p.setPen(QColor(0x9a, 0x9a, 0xa0));
+            p.drawText(rect(), Qt::AlignCenter, hint);
+        }
+        if (!info.isEmpty() && !image().isNull()) {
+            const QRect r = p.fontMetrics().boundingRect(info).adjusted(-6, -3, 6, 3);
+            const QRect box(QPoint(8, height() - r.height() - 8), r.size());
+            p.fillRect(box, QColor(0, 0, 0, 150));
+            p.setPen(QColor(0xe0, 0xe0, 0xe6));
+            p.drawText(box, Qt::AlignCenter, info);
+        }
+    }
+    void mouseDoubleClickEvent(QMouseEvent*) override
+    {
+        m_dragging = false;
+        if (onDoubleClick)
+            onDoubleClick();
+    }
+    // Widget point -> output pixels.
+    QPointF toImage(QPointF pos) const
+    {
+        const QRectF r = pictureRect();
+        if (r.isEmpty() || image().isNull())
+            return {};
+        return QPointF((pos.x() - r.x()) * image().width() / r.width(), (pos.y() - r.y()) * image().height() / r.height());
+    }
+    void mousePressEvent(QMouseEvent* e) override
+    {
+        if (e->button() == Qt::LeftButton && !image().isNull() && onPan) {
+            m_dragging = true;
+            m_dragFrom = toImage(e->position());
+            setCursor(Qt::ClosedHandCursor);
+            onPan({}, true);
+            return;
+        }
+        PreviewWidget::mousePressEvent(e);
+    }
+    void mouseMoveEvent(QMouseEvent* e) override
+    {
+        if (m_dragging && onPan) {
+            onPan(toImage(e->position()) - m_dragFrom, false);
+            return;
+        }
+        setCursor(image().isNull() ? Qt::ArrowCursor : Qt::OpenHandCursor);
+        PreviewWidget::mouseMoveEvent(e);
+    }
+    void mouseReleaseEvent(QMouseEvent* e) override
+    {
+        if (m_dragging) {
+            m_dragging = false;
+            setCursor(Qt::OpenHandCursor);
+            return;
+        }
+        PreviewWidget::mouseReleaseEvent(e);
+    }
+    void wheelEvent(QWheelEvent* e) override
+    {
+        if (image().isNull() || !onZoom) {
+            PreviewWidget::wheelEvent(e);
+            return;
+        }
+        onZoom(e->angleDelta().y() / 120.0, toImage(e->position()));
+        e->accept();
+    }
+    void contextMenuEvent(QContextMenuEvent* e) override
+    {
+        if (onMenu && !image().isNull())
+            onMenu(e->globalPos());
+    }
+
+private:
+    bool m_dragging = false;
+    QPointF m_dragFrom;
+};
+
+struct CameraFormat {
+    const char* label;
+    int w, h;
+    double fps;
+};
+QString audioHelp()
+{
+    return LiveView::tr("Sound recorded with the clips: a microphone, line-in or capture card,\n"
+                        "or \"Desktop audio\": whatever the computer plays through an output.");
+}
+
+const CameraFormat kCameraFormats[] = {{"Camera default", 0, 0, 0},      {"640x480", 640, 480, 0},
+                                       {"1280x720", 1280, 720, 0},      {"1280x720 @ 60", 1280, 720, 60},
+                                       {"1920x1080", 1920, 1080, 0},    {"1920x1080 @ 60", 1920, 1080, 60},
+                                       {"3840x2160", 3840, 2160, 0}};
+
+} // namespace
+
+// A setup section in the sidebar: a title that folds its settings away
+// (remembered).
+class LiveSection : public QWidget {
+public:
+    LiveSection(const QString& title, const QString& key, QLayout* body)
+    {
+        setObjectName(QStringLiteral("liveSection_") + key);
+        auto* v = new QVBoxLayout(this);
+        v->setContentsMargins(0, 0, 0, 0);
+        v->setSpacing(0);
+        auto* header = new QToolButton;
+        header->setText(title);
+        header->setCheckable(true);
+        header->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
+        header->setAutoRaise(true);
+        header->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+        theme::style(header, QStringLiteral("QToolButton { font-weight: bold; text-align: left; padding: 3px; border-bottom: 1px solid @line; }"));
+        auto* content = new QWidget;
+        content->setLayout(body);
+        v->addWidget(header);
+        v->addWidget(content);
+        const QString setting = QStringLiteral("live/section/") + key;
+        auto apply = [header, content](bool open) {
+            header->setArrowType(open ? Qt::DownArrow : Qt::RightArrow);
+            content->setVisible(open);
+        };
+        const bool open = QSettings().value(setting, true).toBool();
+        header->setChecked(open);
+        apply(open);
+        connect(header, &QToolButton::toggled, this, [apply, setting](bool on) {
+            apply(on);
+            QSettings().setValue(setting, on);
+        });
+    }
+};
+
+QString LiveView::layoutName(int layout)
+{
+    switch (layout) {
+    case 1:
+        return tr("Stage: the picture across the top, pads and effects below");
+    case 2:
+        return tr("Compact: a big picture, pads / setup / effects in tabs");
+    default:
+        return tr("Sidebar: pads left, setup right");
+    }
+}
+
+void LiveView::saveLayoutState() const
+{
+    QSettings settings;
+    for (const auto& [name, splitter] : m_frameSplitters)
+        if (splitter)
+            settings.setValue(QStringLiteral("live/layout%1/%2").arg(m_layout).arg(name), splitter->saveState());
+    if (m_frameTabs)
+        settings.setValue(QStringLiteral("live/layout%1/tab").arg(m_layout), m_frameTabs->currentIndex());
+}
+
+void LiveView::setLayoutMode(int layout)
+{
+    layout = std::clamp(layout, 0, kLayoutCount - 1);
+    if (m_frame) {
+        if (layout == m_layout)
+            return;
+        saveLayoutState();
+    }
+    // Take the pieces out of the old frame (they live on; the frame goes).
+    if (m_padsScroll)
+        m_padsScroll->takeWidget();
+    for (QWidget* w : {static_cast<QWidget*>(m_pads), m_center, m_cuePanel, static_cast<QWidget*>(m_sidebar), static_cast<QWidget*>(m_bottomSplit)}) {
+        w->hide();
+        w->setParent(this);
+    }
+    delete m_frame;
+    m_frameSplitters.clear();
+    m_frameTabs = nullptr;
+    m_padsScroll = nullptr;
+    m_layout = layout;
+    m_frame = new QWidget;
+    m_frame->setObjectName(QStringLiteral("liveFrame"));
+    auto* fl = new QVBoxLayout(m_frame);
+    fl->setContentsMargins(0, 0, 0, 0);
+    auto splitter = [this](Qt::Orientation o, const QString& name) {
+        auto* sp = new QSplitter(o);
+        sp->setChildrenCollapsible(false);
+        m_frameSplitters.push_back({name, sp});
+        return sp;
+    };
+    auto padsScrolled = [this] { // pads in a scroll area, for frames where they may be short of room
+        m_padsScroll = new QScrollArea;
+        m_padsScroll->setWidget(m_pads);
+        m_padsScroll->setWidgetResizable(true);
+        m_padsScroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+        m_padsScroll->setFrameShape(QFrame::NoFrame);
+        m_padsScroll->setMinimumWidth(m_pads->minimumSizeHint().width() + 18);
+        return m_padsScroll.data();
+    };
+    auto sideColumn = [this] { // the cue over the setup
+        auto* col = new QWidget;
+        auto* v = new QVBoxLayout(col);
+        v->setContentsMargins(0, 0, 0, 0);
+        v->setSpacing(4);
+        v->addWidget(m_cuePanel);
+        v->addWidget(m_sidebar, 1);
+        return col;
+    };
+    QSplitter* root = nullptr;
+    m_bottomSplit->setOrientation(layout == 2 ? Qt::Vertical : Qt::Horizontal); // a tab is narrow: the list over the chain
+    if (layout == 1) {
+        // Stage: the picture as large as can be, the setup beside it; pads and effects in a deck below.
+        root = splitter(Qt::Vertical, QStringLiteral("root"));
+        auto* top = splitter(Qt::Horizontal, QStringLiteral("top"));
+        top->addWidget(m_center);
+        top->addWidget(sideColumn());
+        top->setStretchFactor(0, 1);
+        top->setStretchFactor(1, 0);
+        auto* deck = splitter(Qt::Horizontal, QStringLiteral("deck"));
+        deck->addWidget(padsScrolled());
+        deck->addWidget(m_bottomSplit);
+        deck->setStretchFactor(0, 0);
+        deck->setStretchFactor(1, 1);
+        root->addWidget(top);
+        root->addWidget(deck);
+        root->setStretchFactor(0, 3);
+        root->setStretchFactor(1, 2);
+        top->setSizes({1200, 300});
+        deck->setSizes({340, 1200});
+    } else if (layout == 2) {
+        // Compact: the picture, and everything else one tab away (laptops, small screens).
+        root = splitter(Qt::Horizontal, QStringLiteral("root"));
+        m_frameTabs = new QTabWidget;
+        m_frameTabs->setObjectName(QStringLiteral("liveTabs"));
+        auto* perform = new QWidget;
+        auto* pv = new QVBoxLayout(perform);
+        pv->setContentsMargins(0, 0, 0, 0);
+        pv->addWidget(m_cuePanel);
+        pv->addWidget(padsScrolled(), 1);
+        m_frameTabs->addTab(perform, tr("Perform"));
+        m_frameTabs->addTab(m_sidebar, tr("Setup"));
+        m_frameTabs->addTab(m_bottomSplit, tr("Effects"));
+        root->addWidget(m_center);
+        root->addWidget(m_frameTabs);
+        root->setStretchFactor(0, 1);
+        root->setStretchFactor(1, 0);
+        root->setSizes({1100, 420});
+    } else {
+        // Sidebar: pads left, the picture with scenes and the setlist, the setup right; effects below.
+        root = splitter(Qt::Vertical, QStringLiteral("root"));
+        auto* top = splitter(Qt::Horizontal, QStringLiteral("top"));
+        top->addWidget(padsScrolled());
+        top->addWidget(m_center);
+        top->addWidget(sideColumn());
+        top->setStretchFactor(0, 0);
+        top->setStretchFactor(1, 1);
+        top->setStretchFactor(2, 0);
+        top->setSizes({300, 1000, 300});
+        root->addWidget(top);
+        root->addWidget(m_bottomSplit);
+        root->setStretchFactor(0, 3);
+        root->setStretchFactor(1, 1);
+    }
+    fl->addWidget(root);
+    m_mainLayout->addWidget(m_frame, 1);
+    for (QWidget* w : {static_cast<QWidget*>(m_pads), m_center, static_cast<QWidget*>(m_sidebar), static_cast<QWidget*>(m_bottomSplit)})
+        w->show();
+    m_cuePanel->setVisible(m_cueKind != LiveEngine::CueNone);
+    QSettings settings;
+    for (const auto& [name, sp] : m_frameSplitters) {
+        const QByteArray state = settings.value(QStringLiteral("live/layout%1/%2").arg(layout).arg(name)).toByteArray();
+        if (!state.isEmpty())
+            sp->restoreState(state);
+    }
+    if (m_frameTabs)
+        m_frameTabs->setCurrentIndex(std::clamp(settings.value(QStringLiteral("live/layout%1/tab").arg(layout), 0).toInt(), 0, 2));
+    settings.setValue(QStringLiteral("live/layout"), layout);
+    emit layoutChanged(layout);
+}
+
+LiveView::LiveView(Project* project, QWidget* parent) : QWidget(parent), m_project(project), m_engine(new LiveEngine(this))
+{
+    auto* layout = new QVBoxLayout(this);
+    layout->setContentsMargins(0, 0, 0, 0);
+    layout->setSpacing(0);
+
+    // ---- Controls (placed by the chosen layout below) ----
+    m_source = new QComboBox;
+    m_source->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
+    m_source->setMinimumContentsLength(13);
+    m_source->setToolTip(tr("Cameras and capture cards, whole screens, or a single window"));
+    auto* refresh = new QToolButton;
+    refresh->setText(QStringLiteral("⟳"));
+    refresh->setToolTip(tr("Look for sources again (new windows, plugged-in cameras)"));
+    m_nextFile = new QToolButton;
+    m_nextFile->setText(QStringLiteral("⏭"));
+    m_nextFile->setToolTip(tr("Next video in the playlist"));
+    m_format = new QComboBox;
+    for (const CameraFormat& f : kCameraFormats)
+        m_format->addItem(QString::fromLatin1(f.label));
+    m_format->setToolTip(tr("Format to ask the camera for"));
+    m_audio = new QComboBox;
+    m_audio->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
+    m_audio->setMinimumContentsLength(11);
+    m_audio->setToolTip(audioHelp());
+    m_audioMeter = new AudioMeter;
+    m_audioMeter->setFixedSize(64, 22);
+    m_audioMeter->setToolTip(tr("Input level"));
+    m_size = new QComboBox;
+    m_size->addItem(tr("Source size"), QSize());
+    m_size->addItem(QStringLiteral("1080p"), QSize(1920, 1080));
+    m_size->addItem(QStringLiteral("720p"), QSize(1280, 720));
+    m_size->addItem(QStringLiteral("540p"), QSize(960, 540));
+    m_size->addItem(QStringLiteral("360p"), QSize(640, 360));
+    // Phones: a fixed portrait (or square) output, whatever the source's shape.
+    m_size->insertSeparator(m_size->count());
+    struct Canvas {
+        const char* label;
+        QSize size;
+    };
+    for (const Canvas& c : {Canvas{"Portrait 1080x1920 (9:16)", {1080, 1920}}, Canvas{"Portrait 720x1280 (9:16)", {720, 1280}},
+                            Canvas{"Portrait 540x960 (9:16)", {540, 960}}, Canvas{"Portrait 1080x1350 (4:5)", {1080, 1350}},
+                            Canvas{"Square 1080x1080 (1:1)", {1080, 1080}}}) {
+        m_size->addItem(QString::fromLatin1(c.label), c.size);
+        m_size->setItemData(m_size->count() - 1, true, Qt::UserRole + 1); // a fixed output shape
+    }
+    m_size->setToolTip(tr("Size the effects work at (smaller is faster).\n"
+                          "Portrait and square sizes make the output that shape for phones (TikTok, Reels, Shorts, Stories);\n"
+                          "Framing says how a picture of another shape goes in."));
+    m_size->setSizeAdjustPolicy(QComboBox::AdjustToContents); // narrow unless a long (portrait) size is chosen
+    m_framing = new QComboBox;
+    m_framing->setObjectName(QStringLiteral("liveFraming"));
+    m_framing->addItem(tr("Crop to fill"), int(LiveFraming::CropFill));
+    m_framing->addItem(tr("Fit (black bars)"), int(LiveFraming::Fit));
+    m_framing->addItem(tr("Fit on blurred background"), int(LiveFraming::FitBlur));
+    m_framing->setToolTip(tr("How a picture of another shape goes into the portrait or square output:\n"
+                             "cropped to fill it (the middle), fitted with black bars, or fitted over a blurred copy of itself"));
+    m_fps = new QComboBox;
+    for (int f : {24, 25, 30, 50, 60})
+        m_fps->addItem(QStringLiteral("%1 fps").arg(f), f);
+    m_fps->setToolTip(tr("Frames per second the effects are rendered at"));
+    m_mirror = new QCheckBox(tr("Mirror"));
+    m_mirror->setToolTip(tr("Flip the picture left to right (like a mirror, for cameras pointing at you)"));
+    m_start = new QPushButton;
+    m_start->setObjectName(QStringLiteral("liveStart"));
+    m_start->setMinimumWidth(90);
+    m_rec = new QPushButton(tr("●  Rec"));
+    m_rec->setObjectName(QStringLiteral("liveRec"));
+    m_rec->setMinimumWidth(80);
+    m_rec->setToolTip(tr("Record a clip of the live output; it appears in the Editor's From Live tab"));
+    m_screenshot = new QPushButton(tr("Screenshot"));
+    m_screenshot->setObjectName(QStringLiteral("liveScreenshot"));
+    m_screenshot->setToolTip(tr("Save the picture on the big display as a PNG; it appears in the Editor's From Live tab, "
+                                "next to the recordings. Right-click: Learn MIDI"));
+    m_recMode = new QComboBox;
+    m_recMode->addItem(tr("With effects"));
+    m_recMode->addItem(tr("Clean picture"));
+    m_recMode->setToolTip(tr("Record what you see, or the picture before the Live FX (to add effects later in the editor)"));
+    m_recTime = new QLabel;
+    m_recTime->setMinimumWidth(70);
+    theme::style(m_recTime, QStringLiteral("color: @bad; font-weight: bold;"));
+    auto* full = new QPushButton(tr("Full Screen"));
+    full->setToolTip(tr("Show the live output full screen (double-click the picture; Esc closes it)"));
+    m_popOutButton = new QPushButton(tr("Pop Out"));
+    m_popOutButton->setCheckable(true);
+    m_popOutButton->setToolTip(tr("Move the picture into its own window, \"Mutant Video Producer Live Output\" (e.g. to capture it in OBS\n"
+                                  "with a Window Capture). Right-click that window for exact sizes; close it to bring the picture back."));
+    m_status = new QLabel;
+    theme::style(m_status, QStringLiteral("color: @dim;"));
+    m_status->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred); // long messages don't widen the window
+
+    // Layer, replay, MIDI, scenes, overlays.
+    m_layer = new QComboBox;
+    m_layer->setObjectName(QStringLiteral("liveLayer"));
+    m_layer->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
+    m_layer->setMinimumContentsLength(12);
+    m_layer->setToolTip(tr("A second source laid over the first: a camera over a screen, a video loop over a camera...\n"
+                           "Give it its own effects (a Chroma Keyer for a green screen) in the pads' Edit list > Layer FX."));
+    for (int k = 0; k < LiveEngine::kMaxInputs; ++k) {
+        auto* c = new QComboBox;
+        c->setObjectName(QStringLiteral("liveInput%1").arg(k + 2));
+        c->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
+        c->setMinimumContentsLength(12);
+        c->setToolTip(tr("Another source kept open for the switcher under the picture (video files chosen for Source or Layer are listed too)"));
+        m_inputs[size_t(k)] = c;
+    }
+    m_switcher = new QWidget;
+    m_switcher->setObjectName(QStringLiteral("liveSwitcher"));
+    {
+        auto* h = new QHBoxLayout(m_switcher);
+        h->setContentsMargins(4, 4, 4, 0);
+        h->setSpacing(4);
+        for (int k = 0; k <= LiveEngine::kMaxInputs; ++k) {
+            auto* t = new QToolButton;
+            t->setObjectName(QStringLiteral("liveInputTile%1").arg(k + 1));
+            t->setToolButtonStyle(Qt::ToolButtonTextUnderIcon);
+            t->setIconSize(QSize(128, 72));
+            t->setFocusPolicy(Qt::NoFocus);
+            t->setToolTip(tr("Click: preview this input (green). Double-click: put it on air (red) at once. Right-click: Learn MIDI"));
+            t->installEventFilter(this);
+            t->setContextMenuPolicy(Qt::CustomContextMenu);
+            connect(t, &QToolButton::clicked, this, [this, k] { setPreviewInput(k); });
+            connect(t, &QWidget::customContextMenuRequested, this, [this, k, t](const QPoint& pos) {
+                QMenu menu;
+                menu.addAction(tr("Learn MIDI (cut to this input)..."), [this, k] { learnMidi(QStringLiteral("input:%1").arg(k), tr("Input %1").arg(k + 1)); });
+                menu.exec(t->mapToGlobal(pos));
+            });
+            m_inputTiles[size_t(k)] = t;
+            h->addWidget(t);
+        }
+        h->addStretch(1);
+        auto* cut = new QPushButton(tr("Cut"));
+        cut->setObjectName(QStringLiteral("liveCut"));
+        cut->setToolTip(tr("Put the preview (green) on air at once; the input that was on air goes to preview (Enter)"));
+        auto* autoTake = new QPushButton(tr("Auto"));
+        autoTake->setObjectName(QStringLiteral("liveAuto"));
+        autoTake->setToolTip(tr("Put the preview on air with the pads' Transition and length (Shift+Enter)"));
+        connect(cut, &QPushButton::clicked, this, [this] { cutTo(m_preview, false); });
+        connect(autoTake, &QPushButton::clicked, this, [this] { cutTo(m_preview, true); });
+        auto* buttons = new QVBoxLayout;
+        buttons->addWidget(cut);
+        buttons->addWidget(autoTake);
+        h->addLayout(buttons);
+        m_switcher->hide();
+    }
+    m_nextLayerFile = new QToolButton;
+    m_nextLayerFile->setText(QStringLiteral("⏭"));
+    m_nextLayerFile->setToolTip(tr("Next video in the layer's playlist"));
+    m_layerMode = new QComboBox;
+    m_layerMode->addItems({tr("Picture in picture"), tr("Full frame")});
+    m_layerMode->setToolTip(tr("A small picture in a corner, or over the whole picture (blended)"));
+    m_layerCorner = new QComboBox;
+    m_layerCorner->addItems({tr("Top left"), tr("Top right"), tr("Bottom left"), tr("Bottom right"), tr("Centre")});
+    m_layerSize = new QComboBox;
+    for (int s : {15, 20, 25, 33, 40, 50, 66})
+        m_layerSize->addItem(QStringLiteral("%1%").arg(s), s / 100.0);
+    m_layerSize->setToolTip(tr("Width of the picture in picture"));
+    m_layerBlend = new QComboBox;
+    m_layerBlend->addItems(blendModeNames());
+    m_layerBlend->setToolTip(tr("How the layer mixes with the picture under it"));
+    m_layerOpacity = new QSlider(Qt::Horizontal);
+    m_layerOpacity->setRange(0, 100);
+    m_layerOpacity->setMinimumWidth(90);
+    m_layerOpacity->setToolTip(tr("Layer opacity"));
+    m_replay = new QCheckBox(tr("Replay buffer"));
+    m_replay->setToolTip(tr("Keep the last seconds of the output in memory while capturing, so you can save what just happened"));
+    m_replayLength = new QComboBox;
+    for (int s : {15, 30, 60, 120})
+        m_replayLength->addItem(tr("%1 s").arg(s), s);
+    m_saveReplay = new QPushButton(tr("Save Replay"));
+    m_saveReplay->setToolTip(tr("Save the replay buffer as a clip (it appears in the Editor's From Live tab). Right-click: Learn MIDI"));
+    m_midi = new QComboBox;
+    m_midi->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
+    m_midi->setMinimumContentsLength(12);
+    m_midi->setToolTip(tr("A MIDI controller: right-click a pad (or Tap, Set 1, Rec, Save Replay) > Learn MIDI to map it;\n"
+                          "knobs and faders can move effect settings (right-click a Live FX knob > Modulate > MIDI)"));
+    for (int i = 0; i < kLiveScenes; ++i) {
+        auto* b = new QToolButton;
+        b->setText(QString::number(i + 1));
+        b->setFixedWidth(24);
+        b->setContextMenuPolicy(Qt::CustomContextMenu);
+        connect(b, &QToolButton::clicked, this, [this, i] {
+            if (QApplication::keyboardModifiers() & Qt::ShiftModifier)
+                cueScene(i); // a look in the Cue window first
+            else
+                recallScene(i);
+        });
+        connect(b, &QWidget::customContextMenuRequested, this, [this, i, b](const QPoint& pos) {
+            const LiveScene& s = m_project->timeline().liveScenes[size_t(i)];
+            QMenu menu(this);
+            menu.addAction(tr("Cue (preview it, not live; Shift+click)"), this, [this, i] { cueScene(i); })->setEnabled(s.used);
+            menu.addAction(s.used ? tr("Save the Current Look Here (replace)") : tr("Save the Current Look Here"), this, [this, i] { saveScene(i); });
+            QAction* rename = menu.addAction(tr("Rename..."), this, [this, i] {
+                bool ok = false;
+                const QString name = QInputDialog::getText(this, tr("Rename Scene"), tr("Name of scene %1:").arg(i + 1), QLineEdit::Normal,
+                                                           m_project->timeline().liveScenes[size_t(i)].name, &ok);
+                if (!ok)
+                    return;
+                Timeline tl = m_project->timeline();
+                tl.liveScenes[size_t(i)].name = name.trimmed();
+                m_project->applyEdit(tl, tr("Rename Scene"));
+            });
+            rename->setEnabled(s.used);
+            QAction* clear = menu.addAction(tr("Clear"), this, [this, i] {
+                Timeline tl = m_project->timeline();
+                tl.liveScenes[size_t(i)] = LiveScene();
+                m_project->applyEdit(tl, tr("Clear Scene"));
+            });
+            clear->setEnabled(s.used);
+            menu.addSeparator();
+            menu.addAction(tr("Learn MIDI..."), this, [this, i] { learnMidi(QStringLiteral("scene:%1").arg(i), tr("scene %1").arg(i + 1)); });
+            menu.exec(b->mapToGlobal(pos));
+        });
+        m_sceneButtons[size_t(i)] = b;
+    }
+    auto* overlays = new QPushButton(tr("Overlays..."));
+    overlays->setToolTip(tr("Text, a logo, the tempo or the time over the output"));
+
+    // The setlist, sending the output to other apps, going live.
+    m_songPrev = new QToolButton;
+    m_songPrev->setText(QStringLiteral("◀"));
+    m_songPrev->setToolTip(tr("Previous song (Page Up). Right-click: Learn MIDI"));
+    m_song = new QComboBox;
+    m_song->setObjectName(QStringLiteral("liveSong"));
+    m_song->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
+    m_song->setMinimumContentsLength(14);
+    m_song->setToolTip(tr("The song playing: choosing one loads its pad set, sets its tempo and recalls its scene"));
+    m_songNext = new QToolButton;
+    m_songNext->setText(QStringLiteral("▶"));
+    m_songNext->setToolTip(tr("Next song (Page Down). Right-click: Learn MIDI"));
+    auto* editSetlistButton = new QPushButton(tr("Edit..."));
+    editSetlistButton->setToolTip(tr("Edit the setlist: the songs of the set, each one's pad set, tempo (locked or listened for) and scene"));
+    m_songNotes = new QLabel;
+    m_songNotes->setObjectName(QStringLiteral("liveSongNotes"));
+    theme::style(m_songNotes, QStringLiteral("color: @warn; padding-left: 8px;"));
+    m_spoutBox = new QCheckBox(tr("Spout"));
+    m_spoutBox->setObjectName(QStringLiteral("liveSpout"));
+    m_spoutBox->setContextMenuPolicy(Qt::CustomContextMenu);
+    m_spoutBox->setToolTip(tr("Share the output (with effects and overlays) as a Spout sender, for OBS (Spout2 plugin),\n"
+                              "Resolume, TouchDesigner, MadMapper, SpoutCam... Right-click: the sender's name"));
+    m_cameraBox = new QCheckBox(tr("Virtual camera"));
+    m_cameraBox->setObjectName(QStringLiteral("liveVirtualCamera"));
+    m_cameraBox->setToolTip(tr("Show the output through the \"OBS Virtual Camera\" webcam, so Zoom, Discord, Teams or a\n"
+                               "browser can pick it as a camera (OBS doesn't need to be running; its own virtual camera must be off)"));
+    if (!SpoutSender::available()) {
+        m_spoutBox->setEnabled(false);
+        m_spoutBox->setToolTip(tr("Spout needs Windows with Direct3D 11"));
+    }
+    if (!VirtualCamera::installed()) {
+        m_cameraBox->setEnabled(false);
+        m_cameraBox->setToolTip(tr("Install OBS Studio to get its virtual camera (Mutant Video Producer feeds it pictures without OBS running)"));
+    }
+    m_shareStatus = new QLabel;
+    m_shareStatus->setObjectName(QStringLiteral("liveShareStatus"));
+    theme::style(m_shareStatus, QStringLiteral("color: @dim;"));
+    m_goLive = new QPushButton(tr("Go Live"));
+    m_goLive->setObjectName(QStringLiteral("liveGoLive"));
+    m_goLive->setMinimumWidth(110);
+    m_goLive->setToolTip(tr("Stream the output and the Audio input to Twitch, YouTube, Facebook or your own server\n"
+                            "(Stream Settings...); press again to end the stream"));
+    auto* streamSettings = new QToolButton;
+    streamSettings->setText(QStringLiteral("⚙"));
+    streamSettings->setToolTip(tr("Stream Settings: the service, the stream key and the bitrate"));
+    m_streamStatus = new QLabel;
+    m_streamStatus->setObjectName(QStringLiteral("liveStreamStatus"));
+    theme::style(m_streamStatus, QStringLiteral("color: @dim;"));
+    connect(m_goLive, &QPushButton::clicked, this, &LiveView::toggleStream);
+    connect(streamSettings, &QToolButton::clicked, this, [this] { StreamDialog(this).exec(); });
+
+    // ---- Picture over the effects section ----
+    auto* display = new LiveDisplay;
+    display->onDoubleClick = [this] { showFullScreenOutput(); };
+    // Drag to pan, scroll to zoom: the source in the output (framing it for a phone, say).
+    display->onPan = [this](QPointF delta, bool start) {
+        if (start) {
+            m_panStart = m_panZoom;
+            return;
+        }
+        QSizeF canvas;
+        LiveFraming framing;
+        panZoomFrame(&canvas, &framing);
+        const QRectF r = sourceRectInCanvas(QSizeF(m_sourceSize), canvas, framing, m_panStart);
+        if (r.isEmpty())
+            return;
+        LivePanZoom pz = m_panStart;
+        pz.center -= QPointF(delta.x() / r.width(), delta.y() / r.height());
+        setPanZoom(pz);
+    };
+    display->onZoom = [this](double steps, QPointF at) { zoomBy(std::pow(1.15, steps), at); };
+    display->onMenu = [this](const QPoint& globalPos) {
+        QMenu menu(this);
+        menu.addAction(tr("Reset Pan and Zoom"), this, [this] { setPanZoom({}); })->setEnabled(!m_panZoom.isDefault());
+        menu.addSeparator();
+        for (double z : {1.0, 1.5, 2.0, 3.0, 4.0})
+            menu.addAction(tr("Zoom %1%").arg(int(z * 100)), this, [this, z] {
+                LivePanZoom pz = m_panZoom;
+                pz.zoom = z;
+                setPanZoom(pz);
+            });
+        menu.addSeparator();
+        menu.addAction(tr("Full Screen"), this, &LiveView::showFullScreenOutput);
+        menu.exec(globalPos);
+    };
+    display->hint = tr("Choose a camera, capture card, screen or window (Setup > Input) and press Start.\n"
+                       "Add effects from the Video FX list: they apply to the live picture.");
+    m_display = display;
+    m_display->setMinimumSize(320, 180);
+    m_browser = new EffectsBrowser(EffectsBrowser::Kind::Effects);
+    m_browser->setObjectName(QStringLiteral("liveFxBrowser"));
+    m_browser->setToolTip(tr("Drag effects and presets into the Live FX chain, or double-click them"));
+    m_devices = new DeviceChainView(m_project, [] { return TimeUs(0); });
+    m_devices->setObjectName(QStringLiteral("liveDevices"));
+    m_devices->setTarget({FxTarget::Kind::Live, 0});
+    m_bottomSplit = new QSplitter(Qt::Horizontal);
+    m_bottomSplit->addWidget(m_browser);
+    m_bottomSplit->addWidget(m_devices);
+    m_bottomSplit->setStretchFactor(0, 0);
+    m_bottomSplit->setStretchFactor(1, 1);
+    m_bottomSplit->setSizes({280, 1200});
+    m_pads = new LivePadPanel(m_project);
+    // The cue: a pad or scene previewed before it goes live.
+    m_cuePanel = new QWidget;
+    m_cuePanel->setObjectName(QStringLiteral("liveCue"));
+    {
+        auto* cv = new QVBoxLayout(m_cuePanel);
+        cv->setContentsMargins(6, 4, 6, 4);
+        auto* title = new QLabel(tr("CUE  (not live)"));
+        theme::style(title, QStringLiteral("color: @cue; font-weight: bold;"));
+        cv->addWidget(title);
+        m_cueView = new PreviewWidget;
+        m_cueView->setMinimumSize(240, 135);
+        cv->addWidget(m_cueView, 1);
+        m_cueLabel = new QLabel;
+        m_cueLabel->setWordWrap(true);
+        theme::style(m_cueLabel, QStringLiteral("color: @text;"));
+        cv->addWidget(m_cueLabel);
+        auto* buttons = new QHBoxLayout;
+        auto* take = new QPushButton(tr("Take"));
+        take->setObjectName(QStringLiteral("liveCueTake"));
+        take->setToolTip(tr("Put it live (on the beat or bar if Launch says so). Right-click: Learn MIDI"));
+        theme::style(take, QStringLiteral("QPushButton { background: @cue; color: @window; font-weight: bold; }"));
+        take->setContextMenuPolicy(Qt::CustomContextMenu);
+        auto* close = new QPushButton(tr("Close"));
+        buttons->addWidget(take, 1);
+        buttons->addWidget(close);
+        cv->addLayout(buttons);
+        connect(take, &QPushButton::clicked, this, &LiveView::takeCue);
+        connect(close, &QPushButton::clicked, this, &LiveView::clearCue);
+        connect(take, &QWidget::customContextMenuRequested, this, [this, take](const QPoint& pos) {
+            QMenu menu(this);
+            menu.addAction(tr("Learn MIDI..."), this, [this] { learnMidi(QStringLiteral("take"), tr("Take (cue)")); });
+            menu.exec(take->mapToGlobal(pos));
+        });
+    }
+    m_cuePanel->setVisible(false);
+
+    // ---- The pieces the layouts arrange ----
+    // Show bar: what is pressed during a set.
+    m_showBar = new QWidget;
+    m_showBar->setObjectName(QStringLiteral("liveShowBar"));
+    {
+        auto* h = new QHBoxLayout(m_showBar);
+        h->setContentsMargins(8, 4, 8, 4);
+        h->addWidget(m_start);
+        h->addWidget(m_rec);
+        h->addWidget(m_recTime);
+        h->addWidget(m_screenshot);
+        h->addSpacing(6);
+        h->addWidget(m_goLive);
+        h->addWidget(m_streamStatus);
+        h->addSpacing(6);
+        h->addWidget(m_saveReplay);
+        h->addSpacing(14);
+        h->addWidget(full);
+        h->addWidget(m_popOutButton);
+        h->addSpacing(14);
+        h->addWidget(m_status, 1);
+        auto* layoutButton = new QToolButton;
+        layoutButton->setObjectName(QStringLiteral("liveLayoutButton"));
+        layoutButton->setText(tr("Layout"));
+        layoutButton->setPopupMode(QToolButton::InstantPopup);
+        layoutButton->setToolTip(tr("How the Live tab is laid out (also Options > Live Tab Layout)"));
+        auto* menu = new QMenu(layoutButton);
+        for (int i = 0; i < kLayoutCount; ++i)
+            menu->addAction(layoutName(i), this, [this, i] { setLayoutMode(i); });
+        layoutButton->setMenu(menu);
+        h->addWidget(layoutButton);
+    }
+    // Under the picture: scenes and the setlist, pressed during a set too.
+    m_strip = new QWidget;
+    m_strip->setObjectName(QStringLiteral("liveStrip"));
+    {
+        auto* h = new QHBoxLayout(m_strip);
+        h->setContentsMargins(4, 4, 4, 2);
+        h->addWidget(new QLabel(tr("Scenes")));
+        for (QToolButton* b : m_sceneButtons)
+            h->addWidget(b);
+        h->addSpacing(16);
+        h->addWidget(new QLabel(tr("Setlist")));
+        h->addWidget(m_songPrev);
+        h->addWidget(m_song, 1);
+        h->addWidget(m_songNext);
+        h->addWidget(editSetlistButton);
+        m_songNotes->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+        h->addWidget(m_songNotes, 1);
+    }
+    m_center = new QWidget;
+    m_center->setObjectName(QStringLiteral("liveCenter"));
+    {
+        auto* v = new QVBoxLayout(m_center);
+        v->setContentsMargins(0, 0, 0, 0);
+        v->setSpacing(0);
+        v->addWidget(m_display, 1);
+        v->addWidget(m_switcher);
+        v->addWidget(m_strip);
+    }
+    // The setup: chosen before a set, in sections that fold away.
+    auto* sections = new QWidget;
+    auto* sv = new QVBoxLayout(sections);
+    sv->setContentsMargins(4, 4, 4, 4);
+    sv->setSpacing(2);
+    auto form = [] {
+        auto* f = new QFormLayout;
+        f->setContentsMargins(6, 2, 2, 8);
+        f->setHorizontalSpacing(8);
+        f->setVerticalSpacing(4);
+        f->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
+        return f;
+    };
+    auto row = [](std::initializer_list<QWidget*> widgets, int stretchFirst = 1) {
+        auto* w = new QWidget;
+        auto* h = new QHBoxLayout(w);
+        h->setContentsMargins(0, 0, 0, 0);
+        h->setSpacing(4);
+        bool first = true;
+        for (QWidget* x : widgets) {
+            h->addWidget(x, first ? stretchFirst : 0);
+            first = false;
+        }
+        return w;
+    };
+    {
+        auto* f = form();
+        f->addRow(tr("Source"), row({m_source, refresh, m_nextFile}));
+        m_formatRow = row({new QLabel(tr("Camera")), m_format}, 0);
+        static_cast<QHBoxLayout*>(m_formatRow->layout())->setStretch(1, 1);
+        f->addRow(m_formatRow);
+        f->addRow(tr("Audio"), row({m_audio, m_audioMeter}));
+        f->addRow(tr("Size"), m_size);
+        m_framingRow = row({new QLabel(tr("Framing")), m_framing}, 0);
+        static_cast<QHBoxLayout*>(m_framingRow->layout())->setStretch(1, 1);
+        f->addRow(m_framingRow);
+        f->addRow(tr("Rate"), row({m_fps, m_mirror}));
+        m_panZoomLabel = new QLabel;
+        m_panZoomLabel->setObjectName(QStringLiteral("livePanZoom"));
+        auto* resetFrame = new QToolButton;
+        resetFrame->setText(tr("Reset"));
+        resetFrame->setToolTip(tr("Back to the whole source, as framed"));
+        connect(resetFrame, &QToolButton::clicked, this, [this] { setPanZoom({}); });
+        auto* frameRow = row({m_panZoomLabel, resetFrame});
+        frameRow->setToolTip(tr("Pan and zoom the source in the output: drag the picture to move it, scroll on it to zoom\n"
+                                "(up to 8x), right-click it for set zooms. With a portrait size it picks the part of the source\n"
+                                "that fills the frame. Recordings, streams and everything sent out get it too."));
+        m_panZoomLabel->setToolTip(frameRow->toolTip());
+        f->addRow(tr("Frame"), frameRow);
+        sv->addWidget(new LiveSection(tr("Input"), QStringLiteral("input"), f));
+    }
+    {
+        auto* f = form();
+        f->addRow(tr("Source"), row({m_layer, m_nextLayerFile}));
+        f->addRow(tr("Mode"), m_layerMode);
+        f->addRow(tr("Where"), row({m_layerCorner, m_layerSize}));
+        f->addRow(tr("Blend"), m_layerBlend);
+        f->addRow(tr("Opacity"), m_layerOpacity);
+        sv->addWidget(new LiveSection(tr("Layer"), QStringLiteral("layer"), f));
+    }
+    {
+        auto* f = form();
+        for (int k = 0; k < LiveEngine::kMaxInputs; ++k)
+            f->addRow(tr("Input %1").arg(k + 2), m_inputs[size_t(k)]);
+        auto* hint = new QLabel(tr("Input 1 is the Source. With more inputs, a switcher appears under the picture: "
+                                   "click one to preview it, then Cut or Auto."));
+        hint->setWordWrap(true);
+        theme::style(hint, QStringLiteral("color: @dim;"));
+        f->addRow(hint);
+        sv->addWidget(new LiveSection(tr("Switcher"), QStringLiteral("switcher"), f));
+    }
+    {
+        auto* f = form();
+        f->addRow(tr("Record"), m_recMode);
+        f->addRow(tr("Replay"), row({m_replay, m_replayLength}, 0));
+        f->addRow(QString(), overlays);
+        sv->addWidget(new LiveSection(tr("Output"), QStringLiteral("output"), f));
+    }
+    {
+        auto* f = form();
+        f->addRow(row({m_spoutBox, m_cameraBox}, 0));
+        m_shareStatus->setWordWrap(true);
+        f->addRow(m_shareStatus);
+        streamSettings->setText(tr("Stream Settings..."));
+        streamSettings->setToolButtonStyle(Qt::ToolButtonTextOnly);
+        f->addRow(tr("Stream"), streamSettings);
+        sv->addWidget(new LiveSection(tr("Send"), QStringLiteral("send"), f));
+    }
+    {
+        auto* f = form();
+        f->addRow(tr("Device"), m_midi);
+        auto* hint = new QLabel(tr("Right-click a pad, scene or button > Learn MIDI to map it."));
+        hint->setWordWrap(true);
+        theme::style(hint, QStringLiteral("color: @dim;"));
+        f->addRow(hint);
+        sv->addWidget(new LiveSection(tr("MIDI"), QStringLiteral("midi"), f));
+    }
+    sv->addStretch(1);
+    m_sidebar = new QScrollArea;
+    m_sidebar->setObjectName(QStringLiteral("liveSetup"));
+    m_sidebar->setWidget(sections);
+    m_sidebar->setWidgetResizable(true);
+    m_sidebar->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    m_sidebar->setFrameShape(QFrame::NoFrame);
+    m_sidebar->setMinimumWidth(sections->minimumSizeHint().width() + 16);
+    layout->addWidget(m_showBar);
+    m_mainLayout = layout;
+
+    // ---- Settings ----
+    QSettings settings;
+    m_size->setCurrentIndex(std::clamp(settings.value(QStringLiteral("live/size"), 2).toInt(), 0, m_size->count() - 1));
+    if (m_size->currentData().isNull() && m_size->currentIndex() > 0) // (the separator)
+        m_size->setCurrentIndex(2);
+    m_framing->setCurrentIndex(std::clamp(settings.value(QStringLiteral("live/framing"), 0).toInt(), 0, m_framing->count() - 1));
+    m_fps->setCurrentIndex(std::max(0, m_fps->findData(settings.value(QStringLiteral("live/fps"), 30).toInt())));
+    m_format->setCurrentIndex(std::clamp(settings.value(QStringLiteral("live/format"), 0).toInt(), 0, m_format->count() - 1));
+    m_mirror->setChecked(settings.value(QStringLiteral("live/mirror"), false).toBool());
+    m_recMode->setCurrentIndex(settings.value(QStringLiteral("live/recordClean"), false).toBool() ? 1 : 0);
+    m_bottomSplit->restoreState(settings.value(QStringLiteral("live/bottomSplit")).toByteArray());
+    setLayoutMode(std::clamp(settings.value(QStringLiteral("live/layout"), 0).toInt(), 0, kLayoutCount - 1));
+    {
+        LivePanZoom pz;
+        pz.center = QPointF(settings.value(QStringLiteral("live/panX"), 0.5).toDouble(), settings.value(QStringLiteral("live/panY"), 0.5).toDouble());
+        pz.zoom = settings.value(QStringLiteral("live/zoom"), 1.0).toDouble();
+        m_panZoom = pz; // checked against the framing once the source's size is known
+        m_engine->setPanZoom(pz);
+    }
+    m_layerMode->setCurrentIndex(std::clamp(settings.value(QStringLiteral("live/layerMode"), 0).toInt(), 0, 1));
+    m_layerCorner->setCurrentIndex(std::clamp(settings.value(QStringLiteral("live/layerCorner"), 3).toInt(), 0, 4));
+    m_layerSize->setCurrentIndex(std::max(0, m_layerSize->findData(settings.value(QStringLiteral("live/layerSize"), 0.25).toDouble())));
+    m_layerBlend->setCurrentIndex(std::clamp(settings.value(QStringLiteral("live/layerBlend"), 0).toInt(), 0, m_layerBlend->count() - 1));
+    m_layerOpacity->setValue(settings.value(QStringLiteral("live/layerOpacity"), 100).toInt());
+    m_replayLength->setCurrentIndex(std::max(0, m_replayLength->findData(settings.value(QStringLiteral("live/replaySeconds"), 30).toInt())));
+    m_spoutBox->setChecked(m_spoutBox->isEnabled() && settings.value(QStringLiteral("live/spout"), false).toBool());
+    m_cameraBox->setChecked(m_cameraBox->isEnabled() && settings.value(QStringLiteral("live/virtualCamera"), false).toBool());
+    for (const QString& kv : settings.value(QStringLiteral("live/midiMap")).toStringList())
+        if (const int eq = kv.indexOf(QLatin1Char('=')); eq > 0)
+            m_midiMap[kv.left(eq)] = kv.mid(eq + 1);
+
+    // ---- Wiring ----
+    connect(refresh, &QToolButton::clicked, this, [this] {
+        refreshSources();
+        refreshAudioSources();
+        refreshMidi();
+    });
+    connect(m_audio, qOverload<int>(&QComboBox::currentIndexChanged), this, [this] {
+        updateControls();
+        if (m_engine->isRunning())
+            m_engine->setAudioSource(audioSource());
+        saveSettings();
+    });
+    connect(m_engine, &LiveEngine::audioStatus, this, [this](const QString& description, const QString& error) {
+        m_audioState = !error.isEmpty() ? tr("no audio: %1").arg(error) : description.isEmpty() ? QString() : tr("audio %1").arg(description);
+        m_audio->setToolTip(m_audioState.isEmpty() ? audioHelp() : m_audioState + QStringLiteral("\n\n") + audioHelp());
+        m_audioMeter->setPeaks(0, 0);
+        if (!error.isEmpty())
+            m_status->setText(tr("Audio input: %1").arg(error));
+    });
+    connect(m_engine, &LiveEngine::audioLevel, m_audioMeter, &AudioMeter::setPeaks);
+    connect(m_start, &QPushButton::clicked, this, &LiveView::startStop);
+    connect(m_rec, &QPushButton::clicked, this, &LiveView::toggleRecording);
+    connect(m_recMode, qOverload<int>(&QComboBox::currentIndexChanged), this, [this] { saveSettings(); });
+    connect(m_engine, &LiveEngine::recordingStarted, this, [this](const QString&, const QString& encoder) {
+        m_recTime->setText(QStringLiteral("REC 0:00"));
+        m_recTime->setToolTip(tr("Encoding with %1").arg(encoder));
+        updateControls();
+    });
+    connect(m_engine, &LiveEngine::recordingProgress, this, [this](double secs, qint64 dropped) {
+        const int s = int(secs);
+        m_recTime->setText(QStringLiteral("REC %1:%2").arg(s / 60).arg(s % 60, 2, 10, QLatin1Char('0')));
+        m_recTime->setToolTip(dropped ? tr("%1 frame(s) dropped: the encoder could not keep up").arg(dropped) : QString());
+    });
+    connect(m_engine, &LiveEngine::recordingFinished, this, [this](const QString& path, bool ok, const QString& error, double secs) {
+        m_recTime->clear();
+        if (ok)
+            m_status->setText(tr("Recorded %1 (%2 s): it is in the Editor's From Live tab").arg(QFileInfo(path).fileName()).arg(secs, 0, 'f', 1));
+        else
+            m_status->setText(tr("Recording failed: %1").arg(error));
+        updateControls();
+    });
+    connect(full, &QPushButton::clicked, this, &LiveView::showFullScreenOutput);
+    connect(m_popOutButton, &QPushButton::clicked, this, &LiveView::togglePopOut);
+    connect(m_pads, &LivePadPanel::padPressed, this, &LiveView::triggerPad);
+    connect(m_pads, &LivePadPanel::padCued, this, &LiveView::cuePad);
+    connect(m_engine, &LiveEngine::cueFrameReady, this, [this](const QImage& img) {
+        if (m_cueKind == 0)
+            return;
+        ++m_cueFrames;
+        m_cueView->setImage(img);
+    });
+    connect(m_pads, &LivePadPanel::editRequested, this, &LiveView::editChain);
+    connect(m_pads, &LivePadPanel::message, m_status, &QLabel::setText);
+    connect(m_pads, &LivePadPanel::setLoaded, this, [this](const QString& name) {
+        if (m_activePad >= 0)
+            triggerPad(m_activePad); // the pads changed under it: switch it off (with the transition)
+        updateDeviceLock();
+        m_status->setText(name.isEmpty() ? tr("New empty pad set") : tr("Loaded the pad set \"%1\"").arg(name));
+    });
+    connect(m_project, &Project::changed, this, &LiveView::updateDeviceLock);
+    connect(m_engine, &LiveEngine::beat, m_pads, &LivePadPanel::audioBeat);
+    m_pads->setBeatTracker(m_engine->beatTracker());
+    connect(m_engine, &LiveEngine::started, m_pads, [this] { m_pads->setRunning(true); });
+    connect(m_engine, &LiveEngine::stopped, m_pads, [this] { m_pads->setRunning(false); });
+    connect(m_engine, &LiveEngine::failed, m_pads, [this] { m_pads->setRunning(false); });
+    connect(m_pads, &LivePadPanel::dropped, this, [this](int pad, const QString& mime, const QString& id) {
+        if (m_pads->isLocked(pad)) {
+            m_status->setText(tr("Pad %1 is locked (right-click it > Unlock Pad to change it)").arg(pad + 1));
+            return;
+        }
+        editChain(pad + 1);
+        if (mime == QLatin1String(EffectsBrowser::kPresetMime)) {
+            if (m_devices->acceptsPreset(id))
+                m_devices->addPreset(id);
+        } else {
+            m_devices->addEffect(id);
+        }
+    });
+    connect(m_source, qOverload<int>(&QComboBox::currentIndexChanged), this, [this] {
+        if (m_source->currentData().toInt() == -2) {
+            chooseVideoFiles(m_source);
+            return;
+        }
+        updateControls();
+        updateSwitcher(); // (input 1's name)
+        setPanZoom({}); // another picture: framed afresh
+        if (m_engine->isRunning())
+            m_engine->start(options()); // switch source live
+    });
+    connect(m_format, qOverload<int>(&QComboBox::currentIndexChanged), this, [this] {
+        if (m_engine->isRunning() && options().source.kind == LiveSource::Kind::Device)
+            m_engine->start(options());
+        saveSettings();
+    });
+    auto applySize = [this] {
+        const bool canvas = m_size->currentData(Qt::UserRole + 1).toBool();
+        m_framingRow->setVisible(canvas);
+        setPanZoom(m_panZoom); // the pan's limits follow the output's shape
+        m_engine->setCanvas(canvas ? m_size->currentData().toSize() : QSize(), LiveFraming(m_framing->currentData().toInt()));
+        if (!canvas)
+            m_engine->setMaxSize(m_size->currentData().toSize());
+        saveSettings();
+    };
+    connect(m_size, qOverload<int>(&QComboBox::currentIndexChanged), this, applySize);
+    connect(m_framing, qOverload<int>(&QComboBox::currentIndexChanged), this, applySize);
+    m_framingRow->setVisible(m_size->currentData(Qt::UserRole + 1).toBool());
+    connect(m_fps, qOverload<int>(&QComboBox::currentIndexChanged), this, [this] {
+        m_engine->setFps(m_fps->currentData().toDouble());
+        saveSettings();
+    });
+    connect(m_mirror, &QCheckBox::toggled, this, [this](bool on) {
+        m_engine->setMirror(on);
+        saveSettings();
+    });
+    connect(m_browser, &EffectsBrowser::activated, m_devices, [this](const QString& id) {
+        if (editingLocked())
+            m_status->setText(tr("Pad %1 is locked").arg(m_pads->editing()));
+        else
+            m_devices->addEffect(id);
+    });
+    connect(m_browser, &EffectsBrowser::presetActivated, m_devices, [this](const QString& id) {
+        if (editingLocked())
+            m_status->setText(tr("Pad %1 is locked").arg(m_pads->editing()));
+        else if (m_devices->acceptsPreset(id))
+            m_devices->addPreset(id);
+    });
+    connect(m_project, &Project::changed, this, [this] { m_engine->setSnapshot(m_project->snapshot()); });
+    m_engine->setSnapshot(m_project->snapshot());
+
+    // The beat clock (modulation, overlays) follows the pads' clock.
+    connect(m_pads, &LivePadPanel::beatTicked, m_engine, &LiveEngine::noteBeat);
+    connect(m_pads, &LivePadPanel::tempoChanged, m_engine, &LiveEngine::setTempo);
+    m_engine->setTempo(m_pads->bpm());
+    connect(m_pads, &LivePadPanel::padHeld, this, &LiveView::holdPad);
+    connect(m_pads, &LivePadPanel::midiLearnRequested, this, &LiveView::learnMidi);
+    // Files: the next one in the playlist.
+    connect(m_nextFile, &QToolButton::clicked, this, [this] { m_engine->nextFile(false); });
+    connect(m_nextLayerFile, &QToolButton::clicked, this, [this] { m_engine->nextFile(true); });
+    // The layer.
+    auto layerChanged = [this] {
+        m_engine->setLayerSettings(layerSettings());
+        updateLayerControls();
+        saveSettings();
+    };
+    connect(m_layer, qOverload<int>(&QComboBox::activated), this, [this] {
+        if (m_layer->currentData().toInt() == -2) {
+            chooseVideoFiles(m_layer);
+            return;
+        }
+        if (m_engine->isRunning())
+            m_engine->setLayer(layerSource());
+        updateLayerControls();
+        saveSettings();
+    });
+    connect(m_layerMode, qOverload<int>(&QComboBox::currentIndexChanged), this, layerChanged);
+    connect(m_layerCorner, qOverload<int>(&QComboBox::currentIndexChanged), this, layerChanged);
+    connect(m_layerSize, qOverload<int>(&QComboBox::currentIndexChanged), this, layerChanged);
+    connect(m_layerBlend, qOverload<int>(&QComboBox::currentIndexChanged), this, layerChanged);
+    connect(m_layerOpacity, &QSlider::valueChanged, this, layerChanged);
+    for (QComboBox* c : m_inputs)
+        connect(c, qOverload<int>(&QComboBox::activated), this, [this] {
+            if (m_engine->isRunning())
+                m_engine->setInputs(inputSources());
+            updateSwitcher();
+            saveSettings();
+        });
+    connect(m_engine, &LiveEngine::inputFrames, this, [this](const QList<QImage>& pictures) {
+        for (int k = 0; k < int(pictures.size()) && k <= LiveEngine::kMaxInputs; ++k)
+            m_inputTiles[size_t(k)]->setIcon(pictures[k].isNull() ? QIcon() : QIcon(QPixmap::fromImage(pictures[k])));
+    });
+    connect(m_engine, &LiveEngine::layerStatus, this, [this](const QString& description, const QString& error) {
+        if (!error.isEmpty())
+            m_status->setText(tr("Layer: %1").arg(error));
+        else if (!description.isEmpty())
+            m_status->setText(tr("Layer: %1").arg(description));
+    });
+    // The replay buffer.
+    auto replayChanged = [this] {
+        m_engine->setReplay(m_replay->isChecked(), m_replayLength->currentData().toDouble(), m_recMode->currentIndex() == 0);
+        saveSettings();
+    };
+    connect(m_replay, &QCheckBox::toggled, this, replayChanged);
+    connect(m_replayLength, qOverload<int>(&QComboBox::currentIndexChanged), this, replayChanged);
+    connect(m_recMode, qOverload<int>(&QComboBox::currentIndexChanged), this, replayChanged);
+    connect(m_saveReplay, &QPushButton::clicked, this, &LiveView::saveReplay);
+    connect(m_screenshot, &QPushButton::clicked, this, &LiveView::saveScreenshot);
+    struct Learnable {
+        QPushButton* button;
+        QString action, label;
+    };
+    for (const Learnable& l : {Learnable{m_saveReplay, QStringLiteral("replay"), tr("Save Replay")}, Learnable{m_rec, QStringLiteral("rec"), tr("Rec")},
+                               Learnable{m_screenshot, QStringLiteral("screenshot"), tr("Screenshot")}}) {
+        QPushButton* button = l.button;
+        const QString action = l.action, label = l.label;
+        button->setContextMenuPolicy(Qt::CustomContextMenu);
+        connect(button, &QWidget::customContextMenuRequested, this, [this, button, action, label](const QPoint& pos) {
+            QMenu menu(this);
+            menu.addAction(tr("Learn MIDI..."), this, [this, action, label] { learnMidi(action, label); });
+            menu.exec(button->mapToGlobal(pos));
+        });
+    }
+    connect(m_engine, &LiveEngine::replayStatus, this, [this](bool running, const QString& encoder, const QString& error) {
+        m_saveReplay->setToolTip(running ? tr("Save the last %1 s as a clip (encoding with %2)").arg(m_replayLength->currentData().toInt()).arg(encoder)
+                                         : tr("Save the replay buffer as a clip (it appears in the Editor's From Live tab)"));
+        if (!error.isEmpty())
+            m_status->setText(tr("Replay buffer: %1").arg(error));
+        updateControls();
+    });
+    connect(m_engine, &LiveEngine::replaySaved, this, [this](const QString& path, bool ok, const QString& error, double secs) {
+        m_status->setText(ok ? tr("Saved the replay %1 (%2 s): it is in the Editor's From Live tab").arg(QFileInfo(path).fileName()).arg(secs, 0, 'f', 1)
+                             : tr("Could not save the replay: %1").arg(error));
+    });
+    // MIDI.
+    connect(m_midi, qOverload<int>(&QComboBox::activated), this, [this] {
+        const QString name = m_midi->currentData().toString();
+        QString error;
+        if (name.isEmpty())
+            MidiHub::instance()->close();
+        else if (!MidiHub::instance()->open(name, &error))
+            m_status->setText(tr("MIDI: %1").arg(error));
+        else
+            m_status->setText(tr("MIDI: listening to %1").arg(name));
+        QSettings().setValue(QStringLiteral("live/midi"), name);
+    });
+    connect(MidiHub::instance(), &MidiHub::message, this, &LiveView::midiMessage);
+    connect(m_project, &Project::changed, this, &LiveView::refreshScenes);
+    // Setlist.
+    connect(m_project, &Project::changed, this, &LiveView::refreshSetlist);
+    connect(m_songPrev, &QToolButton::clicked, this, [this] { stepSong(-1); });
+    connect(m_songNext, &QToolButton::clicked, this, [this] { stepSong(1); });
+    connect(m_song, qOverload<int>(&QComboBox::activated), this, [this](int item) {
+        const int song = m_song->itemData(item).toInt();
+        if (song >= 0)
+            recallSong(song);
+    });
+    connect(editSetlistButton, &QPushButton::clicked, this, &LiveView::editSetlist);
+    struct SongButton {
+        QToolButton* button;
+        QString action, label;
+    };
+    for (const SongButton& sb : {SongButton{m_songPrev, QStringLiteral("song:prev"), tr("previous song")},
+                                 SongButton{m_songNext, QStringLiteral("song:next"), tr("next song")}}) {
+        QToolButton* button = sb.button;
+        const QString action = sb.action, label = sb.label;
+        button->setContextMenuPolicy(Qt::CustomContextMenu);
+        connect(button, &QWidget::customContextMenuRequested, this, [this, button, action, label](const QPoint& pos) {
+            QMenu menu(this);
+            menu.addAction(tr("Learn MIDI..."), this, [this, action, label] { learnMidi(action, label); });
+            menu.exec(button->mapToGlobal(pos));
+        });
+    }
+    // Sending the output to other apps.
+    connect(m_spoutBox, &QCheckBox::toggled, this, [this](bool on) {
+        QSettings().setValue(QStringLiteral("live/spout"), on);
+        updateSharing();
+    });
+    connect(m_cameraBox, &QCheckBox::toggled, this, [this](bool on) {
+        QSettings().setValue(QStringLiteral("live/virtualCamera"), on);
+        updateSharing();
+    });
+    connect(m_spoutBox, &QWidget::customContextMenuRequested, this, [this](const QPoint& pos) {
+        QMenu menu(this);
+        menu.addAction(tr("Sender Name..."), this, [this] {
+            bool ok = false;
+            const QString name = QInputDialog::getText(this, tr("Spout Sender"), tr("Name other apps see this output by:"), QLineEdit::Normal,
+                                                       QSettings().value(QStringLiteral("live/spoutName"), QStringLiteral("Mutant Video Producer")).toString(), &ok)
+                                     .trimmed();
+            if (ok && !name.isEmpty()) {
+                QSettings().setValue(QStringLiteral("live/spoutName"), name);
+                updateSharing();
+            }
+        });
+        menu.exec(m_spoutBox->mapToGlobal(pos));
+    });
+    auto styleGoLive = [this](int state) { // 0 off, 1 connecting, 2 live
+        m_goLive->setText(state == 2 ? tr("■  End Stream") : state == 1 ? tr("Connecting...") : tr("Go Live"));
+        theme::style(m_goLive, state == 2   ? QStringLiteral("QPushButton { background: @bad; color: @window; font-weight: bold; }")
+                                : state == 1 ? QStringLiteral("QPushButton { background: @warn; color: @window; }")
+                                             : QString());
+    };
+    connect(m_engine, &LiveEngine::streamStatus, this,
+            [this, styleGoLive](bool connecting, bool live, const QString& encoder, const QString& error) {
+                m_streamLive = live;
+                styleGoLive(live ? 2 : connecting ? 1 : 0);
+                if (live) {
+                    theme::style(m_streamStatus, QStringLiteral("color: @bad; font-weight: bold;"));
+                    m_streamStatus->setText(tr("LIVE on %1").arg(StreamDialog::serviceName()));
+                    m_streamStatus->setToolTip(tr("Encoding with %1 at %2 kb/s").arg(encoder).arg(StreamDialog::bitrateKbps()));
+                } else if (connecting) {
+                    theme::style(m_streamStatus, QStringLiteral("color: @warn;"));
+                    m_streamStatus->setText(tr("connecting to %1...").arg(StreamDialog::serviceName()));
+                } else {
+                    theme::style(m_streamStatus, error.isEmpty() ? QStringLiteral("color: @dim;") : QStringLiteral("color: @bad;"));
+                    m_streamStatus->setText(error.isEmpty() ? tr("stream ended") : tr("stream: %1").arg(error));
+                    m_streamStatus->setToolTip(error);
+                }
+            });
+    connect(m_engine, &LiveEngine::streamProgress, this, [this](double seconds, qint64 dropped) {
+        if (!m_streamLive)
+            return;
+        const int s = int(seconds);
+        m_streamStatus->setText(tr("LIVE on %1  %2:%3:%4%5")
+                                    .arg(StreamDialog::serviceName())
+                                    .arg(s / 3600)
+                                    .arg(s / 60 % 60, 2, 10, QLatin1Char('0'))
+                                    .arg(s % 60, 2, 10, QLatin1Char('0'))
+                                    .arg(dropped > 0 ? tr("  (%1 pictures dropped: lower the bitrate or size)").arg(dropped) : QString()));
+    });
+    connect(m_engine, &LiveEngine::sharingStatus, this,
+            [this](const QString& spoutName, const QString& spoutError, QSize cameraSize, const QString& cameraError) {
+                m_spoutSender = spoutName;
+                m_cameraSize = cameraSize;
+                QStringList parts;
+                if (!spoutName.isEmpty())
+                    parts << tr("Spout \"%1\"").arg(spoutName);
+                if (cameraSize.isValid())
+                    parts << tr("camera %1x%2").arg(cameraSize.width()).arg(cameraSize.height());
+                if (!spoutError.isEmpty()) {
+                    parts << tr("Spout: %1").arg(spoutError);
+                    QSignalBlocker block(m_spoutBox);
+                    m_spoutBox->setChecked(false);
+                }
+                if (!cameraError.isEmpty())
+                    parts << tr("camera: %1").arg(cameraError);
+                m_shareStatus->setText(parts.join(QStringLiteral("  ·  ")));
+                theme::style(m_shareStatus, spoutError.isEmpty() && cameraError.isEmpty() ? QStringLiteral("color: @good;")
+                                                                                          : QStringLiteral("color: @bad;"));
+                if (parts.isEmpty())
+                    updateSharing(); // the hint while not capturing
+            });
+    // Overlays.
+    connect(overlays, &QPushButton::clicked, this, [this] {
+        if (!m_overlays)
+            m_overlays = new LiveOverlaysDialog(m_project, this);
+        m_overlays->show();
+        m_overlays->raise();
+        m_overlays->activateWindow();
+    });
+    qApp->installEventFilter(this);
+
+    connect(m_engine, &LiveEngine::frameReady, this, [this, display](const QImage& img) {
+        ++m_frames;
+        if (m_popOut && m_popOut->isVisible()) {
+            m_popOut->setImage(img);
+        } else {
+            display->hint.clear();
+            m_display->setImage(img);
+        }
+        if (m_fullScreen && m_fullScreen->isVisible())
+            m_fullScreen->setImage(img);
+    });
+    connect(m_engine, &LiveEngine::started, this, [this](const QString& how) {
+        m_status->setText(tr("Opened %1").arg(how));
+        m_status->setToolTip(how);
+        updateControls();
+    });
+    connect(m_engine, &LiveEngine::failed, this, [this](const QString& error) {
+        m_status->setText(tr("Could not capture: %1").arg(error));
+        m_status->setToolTip(error);
+        updateControls();
+    });
+    connect(m_engine, &LiveEngine::stopped, this, [this] {
+        m_status->setText(tr("Stopped"));
+        m_audioState.clear();
+        m_audioMeter->setPeaks(0, 0);
+        updateControls();
+    });
+    connect(m_engine, &LiveEngine::statsChanged, this,
+            [this](double captureFps, double renderFps, double ms, const QString& renderer, QSize src) {
+                if (src != m_sourceSize) {
+                    m_sourceSize = src;
+                    setPanZoom(m_panZoom); // the limits of the pan, now the source's shape is known
+                }
+                m_status->setText(tr("Source %1x%2 at %3 fps  ·  effects %4 fps, %5 ms/frame (%6)")
+                                      .arg(src.width())
+                                      .arg(src.height())
+                                      .arg(captureFps, 0, 'f', 0)
+                                      .arg(renderFps, 0, 'f', 0)
+                                      .arg(ms, 0, 'f', 1)
+                                      .arg(renderer)
+                                  + (m_audioState.isEmpty() ? QString() : QStringLiteral("  ·  ") + m_audioState));
+            });
+    refreshSources();
+    refreshAudioSources();
+    refreshMidi();
+    refreshScenes();
+    refreshSetlist();
+    updateLayerControls();
+    updateControls();
+    updateSharing();
+}
+
+void LiveView::refreshSetlist()
+{
+    const std::vector<LiveSong>& songs = m_project->timeline().liveSetlist;
+    if (m_currentSong >= int(songs.size()))
+        m_currentSong = -1;
+    QSignalBlocker block(m_song);
+    m_song->clear();
+    if (songs.empty())
+        m_song->addItem(tr("(no songs: Edit Setlist...)"), -1);
+    for (int i = 0; i < int(songs.size()); ++i) {
+        const LiveSong& s = songs[size_t(i)];
+        QString text = QStringLiteral("%1. %2").arg(i + 1).arg(s.name.isEmpty() ? tr("Song %1").arg(i + 1) : s.name);
+        if (s.bpm > 0)
+            text += QStringLiteral("  ·  %1 BPM").arg(s.bpm, 0, 'f', s.bpm == std::round(s.bpm) ? 0 : 2);
+        m_song->addItem(text, i);
+    }
+    m_song->setCurrentIndex(songs.empty() ? 0 : m_currentSong);
+    m_songPrev->setEnabled(!songs.empty());
+    m_songNext->setEnabled(!songs.empty());
+    m_songNotes->setText(m_currentSong >= 0 ? songs[size_t(m_currentSong)].notes : QString());
+}
+
+void LiveView::recallSong(int index)
+{
+    const std::vector<LiveSong> songs = m_project->timeline().liveSetlist;
+    if (index < 0 || index >= int(songs.size())) {
+        m_status->setText(songs.empty() ? tr("The setlist is empty: Edit Setlist... to add songs") : tr("There is no song %1").arg(index + 1));
+        return;
+    }
+    const LiveSong s = songs[size_t(index)];
+    m_currentSong = index;
+    QStringList problems;
+    // Its pad set, as saved (unless it is on already, untouched).
+    if (!s.padSet.isEmpty() && (m_pads->currentSet() != s.padSet || m_pads->setModified()) && !m_pads->loadSet(s.padSet))
+        problems << tr("the pad set \"%1\" is missing").arg(s.padSet);
+    m_pads->setSongTempo(s.bpm, s.lockBpm);
+    if (s.scene >= 0)
+        recallScene(s.scene);
+    refreshSetlist();
+    const QString name = s.name.isEmpty() ? tr("Song %1").arg(index + 1) : s.name;
+    m_status->setText(tr("Song %1: %2").arg(index + 1).arg(name)
+                      + (s.bpm > 0 ? tr(", %1 BPM%2").arg(s.bpm, 0, 'f', 2).arg(s.lockBpm ? tr(" locked") : QString()) : tr(", finding the tempo"))
+                      + (problems.isEmpty() ? QString() : tr(" (%1)").arg(problems.join(QStringLiteral(", ")))));
+}
+
+void LiveView::stepSong(int delta)
+{
+    const int n = int(m_project->timeline().liveSetlist.size());
+    if (n == 0) {
+        recallSong(0); // says the setlist is empty
+        return;
+    }
+    const int next = m_currentSong < 0 ? (delta > 0 ? 0 : n - 1) : std::clamp(m_currentSong + delta, 0, n - 1);
+    if (next == m_currentSong) {
+        m_status->setText(delta > 0 ? tr("That was the last song") : tr("This is the first song"));
+        return;
+    }
+    recallSong(next);
+}
+
+void LiveView::editSetlist()
+{
+    SetlistDialog dlg(m_project->timeline().liveSetlist, [this] {
+        LiveSong s;
+        s.name = m_pads->currentSet();
+        s.padSet = m_pads->currentSet();
+        s.bpm = m_pads->bpm();
+        s.lockBpm = m_pads->lockBpmButton()->isChecked();
+        s.scene = m_activeScene;
+        return s;
+    }, this);
+    if (dlg.exec() != QDialog::Accepted)
+        return;
+    Timeline tl = m_project->timeline();
+    tl.liveSetlist = dlg.songs();
+    if (tl != m_project->timeline())
+        m_project->applyEdit(tl, tr("Edit Setlist"));
+}
+
+void LiveView::updateSharing()
+{
+    const QString name = QSettings().value(QStringLiteral("live/spoutName"), QStringLiteral("Mutant Video Producer")).toString();
+    m_engine->setSharing(m_spoutBox->isChecked(), name, m_cameraBox->isChecked());
+    if (!m_engine->isRunning()) {
+        theme::style(m_shareStatus, QStringLiteral("color: @dim;"));
+        m_shareStatus->setText(m_spoutBox->isChecked() || m_cameraBox->isChecked() ? tr("(sends while capturing)") : QString());
+    }
+}
+
+void LiveView::refreshScenes()
+{
+    const LiveScenes& scenes = m_project->timeline().liveScenes;
+    for (int i = 0; i < kLiveScenes; ++i) {
+        QToolButton* b = m_sceneButtons[size_t(i)];
+        const LiveScene& s = scenes[size_t(i)];
+        const QString name = s.name.isEmpty() ? tr("Scene %1").arg(i + 1) : s.name;
+        b->setToolTip(s.used ? tr("%1 (F%2): click to recall the look; right-click to save over it, rename or learn MIDI").arg(name).arg(i + 1)
+                             : tr("Scene %1 (F%1): empty. Right-click > Save the Current Look Here: the Live FX, the active pad,\n"
+                                  "the layer and its FX, and the overlays").arg(i + 1));
+        const bool cued = m_cueKind == LiveEngine::CueScene && m_cueIndex == i;
+        theme::style(b, cued && s.used                  ? QStringLiteral("QToolButton { background: @raised; color: @text; border: 2px solid @cue; }")
+                         : i == m_activeScene && s.used ? QStringLiteral("QToolButton { background: @accent; color: @onAccent; font-weight: bold; }")
+                         : s.used                     ? QStringLiteral("QToolButton { background: @raised; color: @text; }")
+                                                      : QStringLiteral("QToolButton { color: @faint; }"));
+    }
+}
+
+void LiveView::saveScene(int scene)
+{
+    if (scene < 0 || scene >= kLiveScenes)
+        return;
+    Timeline tl = m_project->timeline();
+    LiveScene& s = tl.liveScenes[size_t(scene)];
+    const QString name = s.name;
+    s = LiveScene();
+    s.used = true;
+    s.name = name;
+    s.liveEffects = tl.liveEffects;
+    s.pad = m_activePad;
+    s.layerSource = layerSource().name;
+    s.layer = layerSettings();
+    s.layerEffects = tl.liveLayerEffects;
+    s.overlays = tl.liveOverlays;
+    m_activeScene = scene;
+    m_project->applyEdit(tl, tr("Save Scene %1").arg(scene + 1));
+    m_status->setText(tr("Saved the current look as scene %1").arg(scene + 1));
+}
+
+void LiveView::recallScene(int scene)
+{
+    if (scene < 0 || scene >= kLiveScenes)
+        return;
+    const LiveScene s = m_project->timeline().liveScenes[size_t(scene)];
+    if (!s.used) {
+        m_status->setText(tr("Scene %1 is empty: right-click it > Save the Current Look Here").arg(scene + 1));
+        return;
+    }
+    m_activeScene = scene;
+    Timeline tl = m_project->timeline();
+    tl.liveEffects = s.liveEffects;
+    tl.liveLayerEffects = s.layerEffects;
+    tl.liveOverlays = s.overlays;
+    if (tl != m_project->timeline())
+        m_project->applyEdit(tl, tr("Recall Scene %1").arg(scene + 1));
+    if (s.pad != m_activePad) { // with the pad transition
+        const int before = m_activePad;
+        m_activePad = s.pad;
+        m_pads->setActivePad(m_activePad);
+        m_engine->setPad(m_activePad, m_pads->transition(), m_pads->transitionSeconds());
+        followPad(before);
+    }
+    // The layer: its source (if it is still there) and how it is laid over.
+    int layer = 0;
+    if (!s.layerSource.isEmpty()) {
+        layer = std::max(0, m_layer->findText(s.layerSource));
+        if (layer == 0)
+            m_status->setText(tr("Scene %1: the layer's source \"%2\" isn't available").arg(scene + 1).arg(s.layerSource));
+    }
+    {
+        QSignalBlocker b1(m_layer), b2(m_layerMode), b3(m_layerCorner), b4(m_layerSize), b5(m_layerBlend), b6(m_layerOpacity);
+        m_layer->setCurrentIndex(layer);
+        m_layerMode->setCurrentIndex(int(s.layer.mode));
+        m_layerCorner->setCurrentIndex(s.layer.corner);
+        const int size = m_layerSize->findData(s.layer.size);
+        if (size >= 0)
+            m_layerSize->setCurrentIndex(size);
+        m_layerBlend->setCurrentIndex(s.layer.blend);
+        m_layerOpacity->setValue(int(std::lround(s.layer.opacity * 100)));
+    }
+    m_engine->setLayerSettings(layerSettings());
+    if (m_engine->isRunning())
+        m_engine->setLayer(layerSource());
+    updateLayerControls();
+    refreshScenes();
+    saveSettings();
+    const QString name = s.name.isEmpty() ? tr("scene %1").arg(scene + 1) : s.name;
+    if (m_status->text().isEmpty() || !m_status->text().startsWith(tr("Scene %1:").arg(scene + 1)))
+        m_status->setText(tr("Recalled %1").arg(name));
+}
+
+LiveView::~LiveView()
+{
+    qApp->removeEventFilter(this);
+    saveSettings();
+    m_engine->stop();
+    delete m_fullScreen;
+    if (m_popOut && m_popOut->isVisible())
+        QSettings().setValue(QStringLiteral("live/popOutGeometry"), m_popOut->saveGeometry());
+    delete m_popOut;
+}
+
+void LiveView::saveSettings() const
+{
+    QSettings settings;
+    settings.setValue(QStringLiteral("live/size"), m_size->currentIndex());
+    settings.setValue(QStringLiteral("live/framing"), m_framing->currentIndex());
+    settings.setValue(QStringLiteral("live/fps"), m_fps->currentData().toInt());
+    settings.setValue(QStringLiteral("live/format"), m_format->currentIndex());
+    settings.setValue(QStringLiteral("live/mirror"), m_mirror->isChecked());
+    settings.setValue(QStringLiteral("live/recordClean"), m_recMode->currentIndex() == 1);
+    saveLayoutState();
+    settings.setValue(QStringLiteral("live/bottomSplit"), m_bottomSplit->saveState());
+    const int i = m_source->currentData().toInt();
+    if (i >= 0 && i < int(m_sources.size()))
+        settings.setValue(QStringLiteral("live/source"), m_sources[size_t(i)].name);
+    if (m_audio->count() > 0)
+        settings.setValue(QStringLiteral("live/audio"), audioSource().name);
+    if (m_layer->count() > 0)
+        settings.setValue(QStringLiteral("live/layer"), layerSource().name);
+    if (m_inputs[0]->count() > 0) {
+        QStringList inputs;
+        for (const LiveSource& s : inputSources())
+            inputs << s.name;
+        settings.setValue(QStringLiteral("live/inputs"), inputs);
+    }
+    settings.setValue(QStringLiteral("live/layerMode"), m_layerMode->currentIndex());
+    settings.setValue(QStringLiteral("live/layerCorner"), m_layerCorner->currentIndex());
+    settings.setValue(QStringLiteral("live/layerSize"), m_layerSize->currentData().toDouble());
+    settings.setValue(QStringLiteral("live/layerBlend"), m_layerBlend->currentIndex());
+    settings.setValue(QStringLiteral("live/layerOpacity"), m_layerOpacity->value());
+    settings.setValue(QStringLiteral("live/replaySeconds"), m_replayLength->currentData().toInt());
+}
+
+void LiveView::refreshAudioSources()
+{
+    const QString current = m_audio->count() > 0 ? audioSource().name : QSettings().value(QStringLiteral("live/audio")).toString();
+    QSignalBlocker block(m_audio);
+    m_audio->clear();
+    m_audioSources = listLiveAudioSources();
+    m_audio->addItem(tr("No audio"), -1);
+    int select = 0;
+    for (size_t i = 0; i < m_audioSources.size(); ++i) {
+        m_audio->addItem(m_audioSources[i].name, int(i));
+        if (m_audioSources[i].name == current)
+            select = m_audio->count() - 1;
+    }
+    m_audio->setCurrentIndex(select);
+    if (m_engine->isRunning())
+        m_engine->setAudioSource(audioSource());
+    updateControls();
+}
+
+LiveAudioSource LiveView::audioSource() const
+{
+    const int i = m_audio->currentData().toInt();
+    return i >= 0 && i < int(m_audioSources.size()) ? m_audioSources[size_t(i)] : LiveAudioSource();
+}
+
+void LiveView::refreshSources()
+{
+    // (Choosing video files: what was chosen before, unless the dialog chose new ones.)
+    const QString current = m_source->currentIndex() >= 0 && m_source->currentData().toInt() >= 0
+                                ? m_source->currentText()
+                                : QSettings().value(QStringLiteral("live/source")).toString();
+    const QString currentLayer = m_layer->count() > 0 && m_layer->currentData().toInt() != -2 ? layerSource().name
+                                                                                             : QSettings().value(QStringLiteral("live/layer")).toString();
+    QSignalBlocker block(m_source);
+    m_source->clear();
+    m_sources = listLiveSources();
+    // Video files chosen before (newest first), as playlists.
+    for (const QVariant& v : QSettings().value(QStringLiteral("live/playlists")).toList()) {
+        const QStringList paths = v.toStringList();
+        if (paths.isEmpty())
+            continue;
+        LiveSource s;
+        s.kind = LiveSource::Kind::File;
+        s.id = paths.join(QLatin1Char('\n'));
+        s.name = paths.size() == 1 ? tr("Video: %1").arg(QFileInfo(paths.front()).fileName())
+                                   : tr("Videos: %1 + %2 more").arg(QFileInfo(paths.front()).fileName()).arg(paths.size() - 1);
+        m_sources.push_back(s);
+    }
+    auto* model = qobject_cast<QStandardItemModel*>(m_source->model());
+    auto header = [&](const QString& text) {
+        m_source->addItem(text, -1);
+        if (model) {
+            QStandardItem* item = model->item(m_source->count() - 1);
+            item->setEnabled(false);
+            QFont f = item->font();
+            f.setBold(true);
+            item->setFont(f);
+        }
+    };
+    const struct {
+        LiveSource::Kind kind;
+        QString title;
+    } groups[] = {{LiveSource::Kind::Device, tr("Cameras & capture devices")}, {LiveSource::Kind::Screen, tr("Screens")},
+                  {LiveSource::Kind::Window, tr("Windows")}, {LiveSource::Kind::File, tr("Video files (looped)")}};
+    int select = -1, firstScreen = -1;
+    for (const auto& g : groups) {
+        header(g.title);
+        if (g.kind == LiveSource::Kind::File)
+            m_source->addItem(tr("   Choose video files..."), -2);
+        bool any = g.kind == LiveSource::Kind::File;
+        for (size_t i = 0; i < m_sources.size(); ++i) {
+            if (m_sources[i].kind != g.kind)
+                continue;
+            any = true;
+            m_source->addItem(QStringLiteral("   ") + m_sources[i].name, int(i));
+            if (m_sources[i].name == current.trimmed())
+                select = m_source->count() - 1;
+            if (g.kind == LiveSource::Kind::Screen && firstScreen < 0)
+                firstScreen = m_source->count() - 1;
+        }
+        if (!any) {
+            header(tr("   (none found)"));
+        }
+    }
+    if (select < 0)
+        select = firstScreen;
+    if (select >= 0)
+        m_source->setCurrentIndex(select);
+    // The layer: none, or any of the same sources.
+    {
+        QSignalBlocker blockLayer(m_layer);
+        m_layer->clear();
+        m_layer->addItem(tr("No layer"), -3);
+        int layerSelect = 0;
+        for (size_t i = 0; i < m_sources.size(); ++i) {
+            m_layer->addItem(m_sources[i].name, int(i));
+            if (m_sources[i].name == currentLayer)
+                layerSelect = m_layer->count() - 1;
+        }
+        m_layer->addItem(tr("Choose video files..."), -2);
+        m_layer->setCurrentIndex(layerSelect);
+    }
+    // The switcher's inputs: off, or any of the same sources.
+    {
+        const QStringList saved = QSettings().value(QStringLiteral("live/inputs")).toStringList();
+        for (int k = 0; k < LiveEngine::kMaxInputs; ++k) {
+            QComboBox* c = m_inputs[size_t(k)];
+            const QString current = c->count() > 0 ? (c->currentData().toInt() >= 0 ? m_sources[size_t(c->currentData().toInt())].name : QString())
+                                                   : saved.value(k);
+            QSignalBlocker block(c);
+            c->clear();
+            c->addItem(tr("Off"), -3);
+            for (size_t i = 0; i < m_sources.size(); ++i) {
+                c->addItem(m_sources[i].name, int(i));
+                if (!current.isEmpty() && m_sources[i].name == current)
+                    c->setCurrentIndex(c->count() - 1);
+            }
+        }
+    }
+    updateSwitcher();
+    updateLayerControls();
+    updateControls();
+}
+
+void LiveView::addPlaylist(const QStringList& paths)
+{
+    QSettings settings;
+    QVariantList lists = settings.value(QStringLiteral("live/playlists")).toList();
+    for (int i = int(lists.size()) - 1; i >= 0; --i)
+        if (lists[i].toStringList() == paths)
+            lists.removeAt(i);
+    lists.prepend(paths);
+    while (lists.size() > 6)
+        lists.removeLast();
+    settings.setValue(QStringLiteral("live/playlists"), lists);
+}
+
+void LiveView::chooseVideoFiles(QComboBox* combo)
+{
+    QSettings settings;
+    const QStringList paths = QFileDialog::getOpenFileNames(this, tr("Video Files (played in a loop, one after the other)"),
+                                                            settings.value(QStringLiteral("dirs/liveVideos")).toString(),
+                                                            tr("Videos (*.mp4 *.mov *.mkv *.webm *.avi *.m4v *.mpg *.mpeg *.wmv *.flv *.gif);;All files (*)"));
+    if (!paths.isEmpty()) {
+        settings.setValue(QStringLiteral("dirs/liveVideos"), QFileInfo(paths.front()).absolutePath());
+        addPlaylist(paths);
+        const QString name = paths.size() == 1 ? tr("Video: %1").arg(QFileInfo(paths.front()).fileName())
+                                               : tr("Videos: %1 + %2 more").arg(QFileInfo(paths.front()).fileName()).arg(paths.size() - 1);
+        if (combo == m_layer)
+            settings.setValue(QStringLiteral("live/layer"), name);
+        else
+            settings.setValue(QStringLiteral("live/source"), name);
+    }
+    // Rebuild the lists (the new playlist selected, or the previous choice back).
+    refreshSources();
+    if (!paths.isEmpty() && m_engine->isRunning()) {
+        if (combo == m_source)
+            m_engine->start(options());
+        else
+            m_engine->setLayer(layerSource());
+    }
+    saveSettings();
+}
+
+std::vector<LiveSource> LiveView::inputSources() const
+{
+    std::vector<LiveSource> list;
+    for (QComboBox* c : m_inputs) {
+        const int i = c->currentData().toInt();
+        list.push_back(i >= 0 && i < int(m_sources.size()) ? m_sources[size_t(i)] : LiveSource());
+    }
+    return list;
+}
+
+void LiveView::updateSwitcher()
+{
+    const std::vector<LiveSource> inputs = inputSources();
+    const bool any = std::any_of(inputs.begin(), inputs.end(), [](const LiveSource& s) { return !s.name.isEmpty(); });
+    m_switcher->setVisible(any);
+    for (int k = 0; k <= LiveEngine::kMaxInputs; ++k) {
+        QToolButton* t = m_inputTiles[size_t(k)];
+        const QString name = k == 0 ? m_source->currentText().trimmed() : inputs[size_t(k - 1)].name;
+        t->setVisible(k == 0 || !name.isEmpty());
+        t->setText(QStringLiteral("%1  %2").arg(k + 1).arg(QFontMetrics(t->font()).elidedText(name, Qt::ElideRight, 110)));
+        const QString border = k == m_program ? QStringLiteral("@bad") : (k == m_preview ? QStringLiteral("@good") : QStringLiteral("@line"));
+        theme::style(t, QStringLiteral("QToolButton { border: 3px solid %1; border-radius: 3px; padding: 1px; }").arg(border));
+    }
+}
+
+void LiveView::setPreviewInput(int input)
+{
+    m_preview = std::clamp(input, 0, LiveEngine::kMaxInputs);
+    updateSwitcher();
+}
+
+void LiveView::cutTo(int input, bool withTransition)
+{
+    input = std::clamp(input, 0, LiveEngine::kMaxInputs);
+    if (input == m_program)
+        return;
+    m_engine->setProgram(input, withTransition ? m_pads->transition() : TransitionSpec(), withTransition ? m_pads->transitionSeconds() : 0.0);
+    m_preview = m_program; // what was on air waits in preview
+    m_program = input;
+    updateSwitcher();
+}
+
+LiveSource LiveView::layerSource() const
+{
+    const int i = m_layer->currentData().toInt();
+    return i >= 0 && i < int(m_sources.size()) ? m_sources[size_t(i)] : LiveSource();
+}
+
+LiveLayerSettings LiveView::layerSettings() const
+{
+    LiveLayerSettings s;
+    s.mode = LiveLayerSettings::Mode(m_layerMode->currentIndex());
+    s.corner = m_layerCorner->currentIndex();
+    s.size = m_layerSize->currentData().toDouble();
+    s.blend = m_layerBlend->currentIndex();
+    s.opacity = m_layerOpacity->value() / 100.0;
+    return s;
+}
+
+void LiveView::updateLayerControls()
+{
+    const LiveSource layer = layerSource();
+    const bool on = !layer.name.isEmpty();
+    const bool pip = m_layerMode->currentIndex() == 0;
+    for (QWidget* w : {static_cast<QWidget*>(m_layerMode), static_cast<QWidget*>(m_layerBlend), static_cast<QWidget*>(m_layerOpacity)})
+        w->setEnabled(on);
+    m_layerCorner->setVisible(pip);
+    m_layerSize->setVisible(pip);
+    m_layerCorner->setEnabled(on);
+    m_layerSize->setEnabled(on);
+    m_nextLayerFile->setVisible(layer.kind == LiveSource::Kind::File && on);
+}
+
+void LiveView::refreshMidi()
+{
+    const QString current = MidiHub::instance()->current().isEmpty() ? QSettings().value(QStringLiteral("live/midi")).toString()
+                                                                    : MidiHub::instance()->current();
+    QSignalBlocker block(m_midi);
+    m_midi->clear();
+    m_midi->addItem(tr("No MIDI"), QString());
+    for (const QString& d : MidiHub::instance()->devices())
+        m_midi->addItem(d, d);
+    const int i = m_midi->findData(current);
+    m_midi->setCurrentIndex(std::max(0, i));
+    if (i > 0 && MidiHub::instance()->current() != current) {
+        QString error;
+        if (!MidiHub::instance()->open(current, &error))
+            m_status->setText(tr("MIDI: %1").arg(error));
+    }
+}
+
+void LiveView::saveMidiMap() const
+{
+    QStringList list;
+    for (auto it = m_midiMap.begin(); it != m_midiMap.end(); ++it)
+        list << it.key() + QLatin1Char('=') + it.value();
+    QSettings().setValue(QStringLiteral("live/midiMap"), list);
+}
+
+void LiveView::learnMidi(const QString& action, const QString& label)
+{
+    if (MidiHub::instance()->current().isEmpty()) {
+        m_status->setText(tr("Choose your MIDI controller in the MIDI list first, then Learn MIDI again"));
+        return;
+    }
+    m_midiLearn = action;
+    m_midiLearnLabel = label;
+    m_status->setText(tr("Press a pad or key (or move a button) on %1 for %2...").arg(MidiHub::instance()->current(), label));
+}
+
+void LiveView::midiMessage(const MidiMessage& m)
+{
+    if (m.status >= 0xF0) { // MIDI clock: beats (and where the bar is) for Auto: MIDI clock
+        if (const auto beat = m_midiClock.feed(m))
+            m_pads->clockBeat(beat->bpm, beat->barBeat);
+        return;
+    }
+    if (m.isController())
+        m_engine->setMidiController(m.channel(), m.data1, m.data2); // modulation reads every controller
+    const bool note = m.isNoteOn() || m.isNoteOff();
+    if (!note && !m.isController())
+        return;
+    const QString key = QStringLiteral("%1:%2:%3").arg(note ? QStringLiteral("n") : QStringLiteral("c")).arg(m.channel()).arg(m.data1);
+    if (!m_midiLearn.isEmpty() && (m.isNoteOn() || (m.isController() && m.data2 > 0))) {
+        for (auto it = m_midiMap.begin(); it != m_midiMap.end();) // one control per action
+            it = it.value() == m_midiLearn ? m_midiMap.erase(it) : std::next(it);
+        m_midiMap[key] = m_midiLearn;
+        saveMidiMap();
+        m_status->setText(tr("%1 now plays %2").arg(note ? tr("MIDI note %1 (channel %2)").arg(m.data1).arg(m.channel() + 1)
+                                                         : tr("MIDI controller %1 (channel %2)").arg(m.data1).arg(m.channel() + 1),
+                                                    m_midiLearnLabel));
+        m_midiLearn.clear();
+        if (m.isController())
+            m_ccDown.insert(key);
+        return;
+    }
+    const auto it = m_midiMap.find(key);
+    if (it == m_midiMap.end())
+        return;
+    if (note) {
+        runAction(it.value(), m.isNoteOn());
+    } else { // a button sending a controller: down at 64 and over
+        const bool down = m.data2 >= 64;
+        if (down == m_ccDown.contains(key))
+            return;
+        if (down)
+            m_ccDown.insert(key);
+        else
+            m_ccDown.remove(key);
+        runAction(it.value(), down);
+    }
+}
+
+void LiveView::runAction(const QString& action, bool down)
+{
+    if (action.startsWith(QLatin1String("pad:"))) {
+        const int pad = action.mid(4).toInt();
+        if (pad < 0 || pad >= kLivePads)
+            return;
+        if (m_pads->isMomentary(pad))
+            holdPad(pad, down);
+        else if (down)
+            m_pads->pressPad(pad); // at once, or on the next beat / bar (Launch)
+        return;
+    }
+    if (action.startsWith(QLatin1String("scene:"))) {
+        if (down)
+            recallScene(action.mid(6).toInt());
+        return;
+    }
+    if (action.startsWith(QLatin1String("input:"))) { // input:N = cut to input N (0 = the Source)
+        if (down)
+            cutTo(action.mid(6).toInt(), false);
+        return;
+    }
+    if (action == QLatin1String("cut") || action == QLatin1String("auto")) {
+        if (down)
+            cutTo(m_preview, action == QLatin1String("auto"));
+        return;
+    }
+    if (action == QLatin1String("take")) {
+        if (down)
+            takeCue();
+        return;
+    }
+    if (action.startsWith(QLatin1String("cue:"))) { // cue:N = pad N (0-based)
+        if (down)
+            cuePad(action.mid(4).toInt());
+        return;
+    }
+    if (action.startsWith(QLatin1String("song:"))) {
+        if (!down)
+            return;
+        const QString which = action.mid(5);
+        if (which == QLatin1String("next"))
+            stepSong(1);
+        else if (which == QLatin1String("prev"))
+            stepSong(-1);
+        else
+            recallSong(which.toInt());
+        return;
+    }
+    if (!down)
+        return;
+    if (action == QLatin1String("tap"))
+        m_pads->tap();
+    else if (action == QLatin1String("setone"))
+        m_pads->setDownbeat();
+    else if (action == QLatin1String("findtempo"))
+        m_pads->findTempoAgain();
+    else if (action == QLatin1String("lockbpm"))
+        m_pads->lockBpmButton()->toggle();
+    else if (action == QLatin1String("rec"))
+        toggleRecording();
+    else if (action == QLatin1String("replay"))
+        saveReplay();
+    else if (action == QLatin1String("screenshot"))
+        saveScreenshot();
+}
+
+void LiveView::holdPad(int pad, bool down)
+{
+    const auto it = std::find(m_held.begin(), m_held.end(), pad);
+    if (down && it == m_held.end())
+        m_held.push_back(pad);
+    else if (!down && it != m_held.end())
+        m_held.erase(it);
+    else
+        return;
+    m_engine->setHeldPads(m_held);
+    m_pads->setHeldPads(m_held);
+}
+
+void LiveView::saveReplay()
+{
+    if (!m_engine->replayRunning()) {
+        m_status->setText(m_engine->isRunning() ? tr("Switch the Replay buffer on first: it keeps the last seconds from then on")
+                                                : tr("The replay buffer fills while capturing: press Start (and tick Replay buffer)"));
+        return;
+    }
+    m_engine->saveReplay(newLiveRecordingPath(QStringLiteral("Replay")));
+    m_status->setText(tr("Saving the replay..."));
+}
+
+void LiveView::saveScreenshot()
+{
+    // What the big display shows: the output (in the popped-out window when it is out).
+    const QImage shown = m_popOut && m_popOut->isVisible() ? m_popOut->image() : m_display->image();
+    if (shown.isNull()) {
+        m_status->setText(tr("Nothing to capture yet: press Start"));
+        return;
+    }
+    const QString path = newLiveRecordingPath(QStringLiteral("Screenshot"), QStringLiteral("png"));
+    if (!shown.convertToFormat(QImage::Format_RGB888).save(path)) {
+        m_status->setText(tr("Could not save %1").arg(QDir::toNativeSeparators(path)));
+        return;
+    }
+    m_status->setText(tr("Saved %1 (%2 x %3)").arg(QFileInfo(path).fileName()).arg(shown.width()).arg(shown.height()));
+    m_status->setToolTip(QDir::toNativeSeparators(path));
+    m_lastScreenshot = path;
+}
+
+bool LiveView::eventFilter(QObject* watched, QEvent* event)
+{
+    const QEvent::Type type = event->type();
+    if (type == QEvent::MouseButtonDblClick) // a switcher input: on air at once
+        for (int k = 0; k <= LiveEngine::kMaxInputs; ++k)
+            if (watched == m_inputTiles[size_t(k)]) {
+                cutTo(k, false);
+                return true;
+            }
+    if (type != QEvent::KeyPress && type != QEvent::KeyRelease && type != QEvent::ShortcutOverride)
+        return QWidget::eventFilter(watched, event);
+    auto* k = static_cast<QKeyEvent*>(event);
+    // Only on the Live tab (or its output windows), not while typing, not with Ctrl / Alt.
+    const QWidget* active = QApplication::activeWindow();
+    const bool live = (m_active && active == window()) || (m_popOut && active == m_popOut) || (m_fullScreen && active == m_fullScreen);
+    if (!live || (k->modifiers() & (Qt::ControlModifier | Qt::AltModifier | Qt::MetaModifier)))
+        return false;
+    QWidget* focus = QApplication::focusWidget();
+    if (qobject_cast<QLineEdit*>(focus) || qobject_cast<QAbstractSpinBox*>(focus) || qobject_cast<QTextEdit*>(focus)
+        || qobject_cast<QPlainTextEdit*>(focus) || (focus && focus->window() != active))
+        return false;
+    static const int keys[16] = {Qt::Key_1, Qt::Key_2, Qt::Key_3, Qt::Key_4, Qt::Key_Q, Qt::Key_W, Qt::Key_E, Qt::Key_R,
+                                 Qt::Key_A, Qt::Key_S, Qt::Key_D, Qt::Key_F, Qt::Key_Z, Qt::Key_X, Qt::Key_C, Qt::Key_V};
+    QString action;
+    if (const int* hit = std::find(std::begin(keys), std::end(keys), k->key()); hit != std::end(keys))
+        action = QStringLiteral("pad:%1").arg(int(hit - std::begin(keys)));
+    else if (k->key() >= Qt::Key_F1 && k->key() < Qt::Key_F1 + kLiveScenes && !(k->modifiers() & Qt::ShiftModifier)) // (Shift+F1: help)
+        action = QStringLiteral("scene:%1").arg(k->key() - Qt::Key_F1);
+    else if (k->key() == Qt::Key_PageDown)
+        action = QStringLiteral("song:next");
+    else if (k->key() == Qt::Key_PageUp)
+        action = QStringLiteral("song:prev");
+    else if ((k->key() == Qt::Key_Return || k->key() == Qt::Key_Enter) && m_switcher->isVisible())
+        action = (k->modifiers() & Qt::ShiftModifier) ? QStringLiteral("auto") : QStringLiteral("cut");
+    else
+        return false;
+    if (type == QEvent::ShortcutOverride) { // the pad, not a menu shortcut (R is Insert Region in the editor)
+        event->accept();
+        return true;
+    }
+    if (!k->isAutoRepeat())
+        runAction(action, type == QEvent::KeyPress);
+    return true;
+}
+
+LiveEngine::Options LiveView::options() const
+{
+    LiveEngine::Options o;
+    const int i = m_source->currentData().toInt();
+    if (i >= 0 && i < int(m_sources.size()))
+        o.source = m_sources[size_t(i)];
+    const CameraFormat& f = kCameraFormats[std::clamp(m_format->currentIndex(), 0, int(std::size(kCameraFormats)) - 1)];
+    o.format.size = QSize(f.w, f.h);
+    o.format.fps = f.fps;
+    if (m_size->currentData(Qt::UserRole + 1).toBool()) {
+        o.canvas = m_size->currentData().toSize();
+        o.framing = LiveFraming(m_framing->currentData().toInt());
+    } else {
+        o.maxSize = m_size->currentData().toSize();
+    }
+    o.fps = m_fps->currentData().toDouble();
+    o.mirror = m_mirror->isChecked();
+    o.audio = audioSource();
+    o.pad = m_activePad;
+    o.layer = layerSource();
+    o.layerSettings = layerSettings();
+    o.inputs = inputSources();
+    o.program = m_program;
+    return o;
+}
+
+void LiveView::startStop()
+{
+    if (m_engine->isRunning()) {
+        m_engine->stop();
+        m_status->setText(tr("Stopped"));
+    } else {
+        const int i = m_source->currentData().toInt();
+        if (i < 0 || i >= int(m_sources.size()))
+            return;
+        m_status->setText(tr("Opening %1...").arg(m_sources[size_t(i)].name));
+        m_engine->setPaused(!m_active);
+        m_engine->start(options());
+        saveSettings();
+    }
+    updateControls();
+}
+
+void LiveView::toggleRecording()
+{
+    if (m_engine->isRecording()) {
+        m_engine->stopRecording();
+        return;
+    }
+    if (!m_engine->isRunning()) {
+        startStop();
+        if (!m_engine->isRunning())
+            return;
+    }
+    m_engine->startRecording(newLiveRecordingPath(), m_recMode->currentIndex() == 0);
+    updateControls();
+}
+
+void LiveView::panZoomFrame(QSizeF* canvas, LiveFraming* framing) const
+{
+    if (m_size->currentData(Qt::UserRole + 1).toBool()) {
+        *canvas = QSizeF(m_size->currentData().toSize());
+        *framing = LiveFraming(m_framing->currentData().toInt());
+    } else { // the output is the source's shape: the zoomed-in part fills it
+        *canvas = QSizeF(m_display->image().isNull() ? m_sourceSize : m_display->image().size());
+        *framing = LiveFraming::CropFill;
+    }
+}
+
+void LiveView::setPanZoom(LivePanZoom pz)
+{
+    pz.zoom = std::clamp(pz.zoom, 1.0, kLiveMaxZoom);
+    QSizeF canvas;
+    LiveFraming framing;
+    panZoomFrame(&canvas, &framing);
+    if (m_sourceSize.isValid() && !canvas.isEmpty()) { // as far as the framing allows
+        QPointF used;
+        sourceRectInCanvas(QSizeF(m_sourceSize), canvas, framing, pz, &used);
+        pz.center = QPointF(std::clamp(used.x(), 0.0, 1.0), std::clamp(used.y(), 0.0, 1.0));
+    }
+    m_panZoom = pz;
+    m_engine->setPanZoom(pz);
+    const bool moved = !pz.isDefault();
+    const bool panned = std::abs(pz.center.x() - 0.5) + std::abs(pz.center.y() - 0.5) > 1e-3;
+    const int percent = int(std::lround(pz.zoom * 100));
+    m_panZoomLabel->setText(!moved ? tr("100% (drag / scroll the picture)") : panned ? tr("%1%, moved").arg(percent) : tr("%1%").arg(percent));
+    static_cast<LiveDisplay*>(m_display)->info = moved ? tr("Zoom %1%  ·  drag to move  ·  right-click to reset").arg(int(std::lround(pz.zoom * 100))) : QString();
+    m_display->update();
+    QSettings s;
+    s.setValue(QStringLiteral("live/panX"), pz.center.x());
+    s.setValue(QStringLiteral("live/panY"), pz.center.y());
+    s.setValue(QStringLiteral("live/zoom"), pz.zoom);
+}
+
+void LiveView::zoomBy(double factor, QPointF at)
+{
+    QSizeF canvas;
+    LiveFraming framing;
+    panZoomFrame(&canvas, &framing);
+    const QRectF r = sourceRectInCanvas(QSizeF(m_sourceSize), canvas, framing, m_panZoom);
+    LivePanZoom pz = m_panZoom;
+    pz.zoom = std::clamp(m_panZoom.zoom * factor, 1.0, kLiveMaxZoom);
+    if (!r.isEmpty() && !canvas.isEmpty()) {
+        // The point under the cursor stays put.
+        const QPointF s((at.x() - r.x()) / r.width(), (at.y() - r.y()) / r.height());
+        const QSizeF size = r.size() * (pz.zoom / m_panZoom.zoom);
+        const QPointF topLeft(at.x() - s.x() * size.width(), at.y() - s.y() * size.height());
+        pz.center = QPointF((canvas.width() / 2 - topLeft.x()) / size.width(), (canvas.height() / 2 - topLeft.y()) / size.height());
+    }
+    setPanZoom(pz);
+}
+
+void LiveView::cuePad(int pad)
+{
+    if (pad < 0 || pad >= kLivePads)
+        return;
+    if (m_cueKind == LiveEngine::CuePad && m_cueIndex == pad) {
+        clearCue();
+        return;
+    }
+    m_cueKind = LiveEngine::CuePad;
+    m_cueIndex = pad;
+    m_engine->setCue(m_cueKind, pad);
+    m_pads->setCuedPad(pad);
+    const LivePad& p = m_project->timeline().livePads[size_t(pad)];
+    m_cueLabel->setText(tr("Pad %1%2 over the Live FX%3")
+                            .arg(pad + 1)
+                            .arg(p.name.isEmpty() ? QString() : QStringLiteral(": ") + p.name)
+                            .arg(m_engine->isRunning() ? QString() : tr(" (shows while capturing)")));
+    m_cueView->setImage(QImage());
+    m_cuePanel->setVisible(true);
+    refreshScenes();
+}
+
+void LiveView::cueScene(int scene)
+{
+    if (scene < 0 || scene >= kLiveScenes)
+        return;
+    const LiveScene& s = m_project->timeline().liveScenes[size_t(scene)];
+    if (!s.used) {
+        m_status->setText(tr("Scene %1 is empty: nothing to cue").arg(scene + 1));
+        return;
+    }
+    if (m_cueKind == LiveEngine::CueScene && m_cueIndex == scene) {
+        clearCue();
+        return;
+    }
+    m_cueKind = LiveEngine::CueScene;
+    m_cueIndex = scene;
+    m_engine->setCue(m_cueKind, scene);
+    m_pads->setCuedPad(-1);
+    m_cueLabel->setText(tr("Scene %1%2 (its Live FX, pad and overlays; the layer as it is now)%3")
+                            .arg(scene + 1)
+                            .arg(s.name.isEmpty() ? QString() : QStringLiteral(": ") + s.name)
+                            .arg(m_engine->isRunning() ? QString() : tr(" - shows while capturing")));
+    m_cueView->setImage(QImage());
+    m_cuePanel->setVisible(true);
+    refreshScenes();
+}
+
+void LiveView::takeCue()
+{
+    const int kind = m_cueKind, index = m_cueIndex;
+    clearCue();
+    if (kind == LiveEngine::CuePad) {
+        if (index != m_activePad) // pressing the live pad would switch it off
+            m_pads->pressPad(index);
+    } else if (kind == LiveEngine::CueScene) {
+        recallScene(index);
+    }
+}
+
+void LiveView::clearCue()
+{
+    m_cueKind = LiveEngine::CueNone;
+    m_cueIndex = -1;
+    m_engine->setCue(LiveEngine::CueNone, -1);
+    m_pads->setCuedPad(-1);
+    m_cuePanel->setVisible(false);
+    refreshScenes();
+}
+
+void LiveView::toggleStream()
+{
+    if (m_engine->isStreaming()) {
+        m_engine->stopStream();
+        return;
+    }
+    QString url = StreamDialog::streamUrl();
+    if (url.isEmpty()) {
+        StreamDialog dlg(this);
+        if (dlg.exec() != QDialog::Accepted)
+            return;
+        url = StreamDialog::streamUrl();
+        if (url.isEmpty()) {
+            m_streamStatus->setText(tr("stream: set the server and the stream key first"));
+            return;
+        }
+    }
+    if (!m_engine->isRunning()) {
+        startStop();
+        if (!m_engine->isRunning())
+            return;
+    }
+    m_engine->startStream(url, StreamDialog::bitrateKbps());
+    m_goLive->setText(tr("Connecting..."));
+}
+
+void LiveView::updateControls()
+{
+    const int i = m_source->currentData().toInt();
+    const bool valid = i >= 0 && i < int(m_sources.size());
+    m_formatRow->setVisible(valid && m_sources[size_t(i)].kind == LiveSource::Kind::Device);
+    m_start->setEnabled(valid || m_engine->isRunning());
+    m_start->setText(m_engine->isRunning() ? tr("■  Stop") : tr("▶  Start"));
+    const bool rec = m_engine->isRecording();
+    m_rec->setText(rec ? tr("■  Stop Rec") : tr("●  Rec"));
+    theme::style(m_rec, rec ? QStringLiteral("QPushButton { background: @bad; color: @window; font-weight: bold; }")
+                             : QStringLiteral("QPushButton { color: @bad; }"));
+    m_rec->setEnabled(valid || m_engine->isRunning());
+    m_audioMeter->setVisible(!audioSource().isNull());
+    m_nextFile->setVisible(valid && m_sources[size_t(i)].kind == LiveSource::Kind::File);
+    m_saveReplay->setEnabled(m_replay->isChecked());
+}
+
+void LiveView::setActive(bool active)
+{
+    m_active = active;
+    updatePaused();
+    if (active && m_sources.empty())
+        refreshSources();
+}
+
+void LiveView::updatePaused()
+{
+    // Keep rendering while the picture is visible somewhere: this tab, the
+    // full-screen output or the pop-out window (OBS may be capturing it).
+    const bool shown = m_active || (m_fullScreen && m_fullScreen->isVisible()) || (m_popOut && m_popOut->isVisible());
+    m_engine->setPaused(!shown);
+}
+
+void LiveView::triggerPad(int pad)
+{
+    const int before = m_activePad;
+    m_activePad = m_activePad == pad ? -1 : pad; // pressing the active pad switches it off
+    m_pads->setActivePad(m_activePad);
+    m_engine->setPad(m_activePad, m_pads->transition(), m_pads->transitionSeconds());
+    if (!m_pads->autoStepping())
+        followPad(before);
+}
+
+void LiveView::followPad(int before)
+{
+    if (!m_pads->followsActivePad() || m_activePad == before)
+        return;
+    if (m_activePad >= 0)
+        editChain(m_activePad + 1); // the pad switched on, ready to tweak
+    else if (m_pads->editing() == before + 1)
+        editChain(0); // its pad went off: back to the Live FX
+}
+
+void LiveView::editChain(int target)
+{
+    m_pads->setEditing(target);
+    m_devices->setTarget({FxTarget::Kind::Live, target});
+    updateDeviceLock();
+}
+
+bool LiveView::editingLocked() const
+{
+    return m_pads->editing() > 0 && m_pads->isLocked(m_pads->editing() - 1);
+}
+
+void LiveView::updateDeviceLock()
+{
+    // A locked pad's chain is shown but cannot be changed.
+    const bool locked = editingLocked();
+    m_devices->setEnabled(!locked);
+    m_devices->setToolTip(locked ? tr("This pad is locked: right-click it > Unlock Pad to change its effects") : QString());
+}
+
+void LiveView::togglePopOut()
+{
+    auto* display = static_cast<LiveDisplay*>(m_display);
+    if (m_popOut && m_popOut->isVisible()) {
+        m_popOut->close(); // onClosed puts the picture back
+        return;
+    }
+    if (!m_popOut) {
+        auto* w = new PopOutWindow;
+        w->onClosed = [this, display] {
+            m_popOutButton->setChecked(false);
+            display->hint = m_engine->isRunning() ? QString()
+                                                  : tr("Choose a camera, capture card, screen or window (Setup > Input) and press Start.\n"
+                                                       "Add effects from the Video FX list: they apply to the live picture.");
+            m_display->setImage(m_popOut->image());
+            updatePaused();
+        };
+        m_popOut = w;
+        const QByteArray geometry = QSettings().value(QStringLiteral("live/popOutGeometry")).toByteArray();
+        if (geometry.isEmpty() || !m_popOut->restoreGeometry(geometry))
+            m_popOut->resize(1280, 720);
+    }
+    m_popOut->setImage(m_display->image());
+    display->hint = tr("The picture is in its own window, \"Mutant Video Producer Live Output\".\nPress Pop Out again (or close that window) to bring it back.");
+    m_display->setImage(QImage());
+    m_popOutButton->setChecked(true);
+    m_popOut->show();
+    m_popOut->raise();
+    m_popOut->activateWindow();
+    updatePaused();
+}
+
+void LiveView::showFullScreenOutput()
+{
+    if (!m_fullScreen) {
+        m_fullScreen = new OutputWindow;
+        m_fullScreen->setWindowTitle(tr("Mutant Video Producer Live Output"));
+        m_fullScreen->setAttribute(Qt::WA_DeleteOnClose, false);
+    }
+    // Prefer a screen other than the editor's (a projector / second monitor).
+    QScreen* target = screen();
+    for (QScreen* s : QGuiApplication::screens())
+        if (s != screen()) {
+            target = s;
+            break;
+        }
+    m_fullScreen->setScreen(target);
+    m_fullScreen->setGeometry(target->geometry());
+    m_fullScreen->showFullScreen();
+    m_fullScreen->raise();
+}
+
+int LiveView::runSelfTest(QStringList& log)
+{
+    int failures = 0;
+    auto check = [&](bool ok, const QString& what) {
+        log << QStringLiteral("%1  %2").arg(ok ? QStringLiteral("PASS") : QStringLiteral("FAIL"), what);
+        if (!ok)
+            ++failures;
+    };
+    auto wait = [](int ms, const std::function<bool()>& done) {
+        QElapsedTimer t;
+        t.start();
+        while (t.elapsed() < ms && !done()) {
+            QEventLoop loop;
+            QTimer::singleShot(20, &loop, &QEventLoop::quit);
+            loop.exec();
+        }
+        return done();
+    };
+    refreshSources();
+    int screenItem = -1;
+    for (int i = 0; i < m_source->count(); ++i) {
+        const int s = m_source->itemData(i).toInt();
+        if (s >= 0 && s < int(m_sources.size()) && m_sources[size_t(s)].kind == LiveSource::Kind::Screen) {
+            screenItem = i;
+            break;
+        }
+    }
+    check(screenItem >= 0, QStringLiteral("live sources: %1 found, including a screen").arg(m_sources.size()));
+    if (screenItem < 0)
+        return failures;
+    m_source->setCurrentIndex(screenItem);
+    setActive(true);
+    QString failure;
+    QObject ctx;
+    connect(m_engine, &LiveEngine::failed, &ctx, [&](const QString& e) { failure = e; });
+    QImage last;
+    connect(m_engine, &LiveEngine::frameReady, &ctx, [&](const QImage& img) { last = img; });
+    m_frames = 0;
+    startStop();
+    const bool frames = wait(8000, [&] { return m_frames >= 10 || !failure.isEmpty(); }) && failure.isEmpty();
+    check(frames && !last.isNull(), QStringLiteral("screen capture delivers pictures (%1 frames, %2x%3)%4")
+                                        .arg(m_frames).arg(last.width()).arg(last.height())
+                                        .arg(failure.isEmpty() ? QString() : QStringLiteral(": ") + failure));
+    // An effect in the Live FX chain changes the picture.
+    const QImage before = last;
+    m_devices->addEffect(QStringLiteral("invert"));
+    const int start = m_frames;
+    wait(3000, [&] { return m_frames >= start + 5; });
+    double diff = 0;
+    if (!before.isNull() && before.size() == last.size()) {
+        int64_t sum = 0, n = 0;
+        for (int y = 0; y < last.height(); y += 7)
+            for (int x = 0; x < last.width(); x += 7, ++n)
+                sum += std::abs(qGray(before.pixel(x, y)) - qGray(last.pixel(x, y)));
+        diff = n ? double(sum) / double(n) : 0;
+    }
+    check(diff > 20, QStringLiteral("the Live FX chain is applied (Invert changes the picture by %1)").arg(diff, 0, 'f', 1));
+    check(!m_project->timeline().liveEffects.empty(), QStringLiteral("Live FX are kept in the project"));
+    m_project->undoStack()->undo();
+    check(m_project->timeline().liveEffects.empty(), QStringLiteral("adding a Live effect can be undone"));
+    // Pads: a pad's chain goes on top of the Live FX when pressed, and off again.
+    // How far a picture is from the plain one: the mean grey difference per pixel (a
+    // difference of means would miss Invert on a picture that averages mid-grey).
+    QImage plain;
+    auto changed = [&](const QImage& img) {
+        if (plain.isNull() || img.size() != plain.size())
+            return 0.0;
+        int64_t sum = 0, n = 0;
+        for (int y = 0; y < img.height(); y += 7)
+            for (int x = 0; x < img.width(); x += 7, ++n)
+                sum += std::abs(qGray(img.pixel(x, y)) - qGray(plain.pixel(x, y)));
+        return n ? double(sum) / double(n) : 0.0;
+    };
+    auto settle = [&](int frames) {
+        const int target = m_frames + frames;
+        wait(4000, [&] { return m_frames >= target; });
+    };
+    editChain(1);
+    m_devices->addEffect(QStringLiteral("invert"));
+    check(m_project->timeline().livePads[0].effects.size() == 1 && m_project->timeline().liveEffects.empty(),
+          QStringLiteral("an effect added while editing pad 1 goes into the pad, not the Live FX"));
+    m_pads->transitionBox()->setCurrentIndex(0); // cut
+    settle(5);
+    plain = last.copy();
+    m_pads->padButton(0)->click();
+    settle(5);
+    const double onDiff = changed(last);
+    check(m_activePad == 0 && onDiff > 20,
+          QStringLiteral("pressing pad 1 switches its chain on (changes the picture by %1)").arg(onDiff, 0, 'f', 0));
+    m_pads->padButton(0)->click();
+    settle(5);
+    const double offDiff = changed(last);
+    check(m_activePad == -1 && offDiff < onDiff / 2,
+          QStringLiteral("pressing it again switches it off (%1 from the plain picture)").arg(offDiff, 0, 'f', 0));
+    // Crossfade over 2 s: half-way, the picture is between the two.
+    m_pads->transitionBox()->setCurrentIndex(std::max(0, m_pads->transitionBox()->findData(QStringLiteral("dissolve"))));
+    m_pads->durationBox()->setCurrentIndex(std::max(0, m_pads->durationBox()->findData(2.0)));
+    QElapsedTimer fade;
+    m_pads->padButton(0)->click();
+    fade.start();
+    wait(1100, [&] { return fade.elapsed() >= 1000; });
+    const double midDiff = changed(last);
+    wait(2500, [&] { return fade.elapsed() >= 2300; });
+    settle(3);
+    const double endDiff = changed(last);
+    check(midDiff > endDiff * 0.15 && midDiff < endDiff * 0.85,
+          QStringLiteral("a 2 s crossfade between pads is half-way after 1 s (changed by %1, then %2)")
+              .arg(midDiff, 0, 'f', 0).arg(endDiff, 0, 'f', 0));
+    m_pads->padButton(0)->click(); // off again
+    m_pads->transitionBox()->setCurrentIndex(0);
+    settle(3);
+    // Pads are saved with the project.
+    {
+        Timeline tl = m_project->timeline();
+        tl.livePads[3].name = QStringLiteral("Test pad");
+        m_project->setTimelineLive(tl);
+        const QString path = QDir(QFileInfo(liveRecordingsFolder()).absoluteFilePath()).filePath(QStringLiteral("pads.mtg"));
+        QString error;
+        Project reloaded;
+        const bool ok = m_project->save(path, &error) && reloaded.load(path, &error);
+        check(ok && reloaded.timeline().livePads == m_project->timeline().livePads,
+              QStringLiteral("pads are saved with the project%1").arg(error.isEmpty() ? QString() : QStringLiteral(": ") + error));
+        tl.livePads[3].name.clear();
+        m_project->setTimelineLive(tl);
+    }
+    // Pop Out: the picture moves to its own window and comes back.
+    togglePopOut();
+    settle(5);
+    const bool popped = m_popOut && m_popOut->isVisible() && !m_popOut->image().isNull() && m_display->image().isNull();
+    check(popped, QStringLiteral("Pop Out moves the picture into its own window (\"%1\", %2x%3)")
+                      .arg(m_popOut ? m_popOut->windowTitle() : QString()).arg(m_popOut ? m_popOut->width() : 0).arg(m_popOut ? m_popOut->height() : 0));
+    if (m_popOut)
+        m_popOut->close();
+    settle(5);
+    check(m_popOut && !m_popOut->isVisible() && !m_display->image().isNull() && !m_popOutButton->isChecked(),
+          QStringLiteral("closing that window brings the picture back"));
+    editChain(0);
+    m_project->undoStack()->undo(); // the pad's Invert
+    check(m_project->timeline().livePads[0].effects.empty(), QStringLiteral("editing a pad can be undone"));
+
+    // Locked pads, pad sets and the auto switch.
+    {
+        const int undoIndex = m_project->undoStack()->index();
+        qputenv("MVP_PADSETS_DIR", QDir(liveRecordingsFolder()).filePath(QStringLiteral("pad-sets")).toUtf8());
+        padsets::remove(QStringLiteral("Test Set A"));
+        editChain(1);
+        m_devices->addEffect(QStringLiteral("invert"));
+        m_pads->setLocked(0, true);
+        emit m_pads->dropped(0, QString::fromLatin1(EffectsBrowser::kEffectMime), QStringLiteral("sepia"));
+        check(m_project->timeline().livePads[0].effects.size() == 1 && m_pads->isLocked(0) && !m_devices->isEnabled(),
+              QStringLiteral("a locked pad takes no dropped effects and its chain is read-only"));
+        check(m_pads->saveSetAs(QStringLiteral("Test Set A")) && padsets::names().contains(QStringLiteral("Test Set A")),
+              QStringLiteral("the pads save as a set"));
+        editChain(2);
+        m_devices->addEffect(QStringLiteral("sepia"));
+        const bool modified = m_pads->setModified();
+        const bool loaded = m_pads->loadSet(QStringLiteral("Test Set A"));
+        const LivePads& pads = m_project->timeline().livePads;
+        check(modified && loaded && pads[1].effects.empty() && pads[0].effects.size() == 1 && pads[0].locked && !m_pads->setModified(),
+              QStringLiteral("loading a set brings back its pads and locks (changes since were marked: %1)").arg(modified ? "yes" : "no"));
+        // Auto switch on a tempo: 240 BPM, every beat, between two pads.
+        editChain(2);
+        m_devices->addEffect(QStringLiteral("sepia"));
+        int switches = 0;
+        QObject autoCtx;
+        connect(m_pads, &LivePadPanel::padPressed, &autoCtx, [&] { ++switches; });
+        m_pads->bpmBox()->setValue(240);
+        m_pads->everyBox()->setCurrentIndex(0);
+        m_pads->randomBox()->setChecked(false);
+        m_pads->setAutoMode(LivePadPanel::AutoTempo);
+        wait(1700, [] { return false; });
+        m_pads->setAutoMode(LivePadPanel::AutoOff);
+        const int tempoSwitches = switches;
+        check(tempoSwitches >= 4 && tempoSwitches <= 9 && (m_activePad == 0 || m_activePad == 1),
+              QStringLiteral("auto switch on a 240 BPM tempo: %1 switches in 1.7 s").arg(tempoSwitches));
+        // Auto switch on beats heard: the engine's beats (150 BPM) switch pads.
+        switches = 0;
+        m_pads->setAutoMode(LivePadPanel::AutoAudio);
+        for (int i = 0; i < 8; ++i) {
+            m_pads->audioBeat(150.0, 0.8);
+            wait(400, [] { return false; });
+        }
+        m_pads->setAutoMode(LivePadPanel::AutoOff);
+        check(switches >= 7 && m_pads->bpm() == 150,
+              QStringLiteral("auto switch on audio beats: %1 switches for 8 beats, %2 BPM shown").arg(switches).arg(m_pads->bpm()));
+        if (m_activePad >= 0)
+            triggerPad(m_activePad);
+        // Create Random Effects Chain (pad menu) and Fill Empty Pads (set menu).
+        const bool lockedRefused = !m_pads->randomizePad(0, 3);
+        const bool made = m_pads->randomizePad(2, 3, 20261005); // a fixed chain, so the test is the same every time
+        const LivePad wild = m_project->timeline().livePads[2];
+        check(lockedRefused && made && wild.effects.size() >= 6 && wild.effects.size() <= 8 && !wild.name.isEmpty(),
+              QStringLiteral("Create Random Effects Chain > Insane fills a pad (\"%1\", %2 effects; a locked pad is left alone)")
+                  .arg(wild.name).arg(wild.effects.size()));
+        QString statsName;
+        double statsMs = 0;
+        QObject statsCtx;
+        connect(m_engine, &LiveEngine::statsChanged, &statsCtx, [&](double, double, double ms, const QString& name, QSize) {
+            statsName = name;
+            statsMs = ms;
+        });
+        triggerPad(2);
+        QElapsedTimer firstTimer;
+        firstTimer.start();
+        int framesBefore = m_frames;
+        wait(15000, [&] { return m_frames > framesBefore || !failure.isEmpty(); }); // the first frame compiles its shaders
+        const qint64 firstMs = firstTimer.elapsed();
+        // (Software OpenGL in test machines takes ~0.2 s a frame for this chain; a GPU takes a few ms.)
+        framesBefore = m_frames;
+        QElapsedTimer playTimer;
+        playTimer.start();
+        wait(10000, [&] { return m_frames >= framesBefore + 3 || !failure.isEmpty(); });
+        QStringList types;
+        for (const EffectInstance& e : wild.effects)
+            types << e.type;
+        check(m_frames >= framesBefore + 3 && failure.isEmpty(),
+              QStringLiteral("the random chain plays live (%1 frames in %2 ms, first after %3 ms, %4: %5)%6")
+                  .arg(m_frames - framesBefore).arg(playTimer.elapsed()).arg(firstMs).arg(statsName + QStringLiteral(" %1 ms/frame").arg(statsMs, 0, 'f', 0), types.join(QLatin1Char(',')))
+                  .arg(failure.isEmpty() ? QString() : QStringLiteral(": ") + failure));
+        triggerPad(2);
+        const int filled = m_pads->randomizeEmptyPads(0);
+        int lowPads = 0;
+        for (int i = 3; i < kLivePads; ++i)
+            lowPads += m_project->timeline().livePads[size_t(i)].effects.size() == 2;
+        check(filled == kLivePads - 3 && lowPads == filled && m_project->timeline().livePads[2].name == wild.name,
+              QStringLiteral("Fill Empty Pads with Random Chains > Low fills only the empty pads (%1 filled)").arg(filled));
+        padsets::remove(QStringLiteral("Test Set A"));
+        while (m_project->undoStack()->index() > undoIndex)
+            m_project->undoStack()->undo();
+        editChain(0);
+        check(m_project->timeline().livePads == LivePads(), QStringLiteral("pad edits, locks and set loads undo"));
+    }
+
+    // A broken-console effect runs live too.
+    m_devices->addEffect(QStringLiteral("vg_nes_dirty"));
+    const int start2 = m_frames;
+    const bool still = wait(4000, [&] { return m_frames >= start2 + 5 || !failure.isEmpty(); });
+    check(still && failure.isEmpty(), QStringLiteral("NES: Dirty Cartridge renders live (%1 more frames)").arg(m_frames - start2));
+    // Record a clip with the effects, then find it in the Editor's From Live tab.
+    QString recorded, recError;
+    double recSecs = 0;
+    connect(m_engine, &LiveEngine::recordingFinished, &ctx, [&](const QString& p, bool ok, const QString& e, double s) {
+        recorded = ok ? p : QString();
+        recError = e;
+        recSecs = s;
+        if (!ok)
+            recorded = QStringLiteral("!");
+    });
+    // Record with sound: a generated tone stands in for a microphone.
+    m_audioSources.push_back({QStringLiteral("Test tone"), QStringLiteral("lavfi"), QStringLiteral("sine=frequency=440:sample_rate=48000,arealtime")});
+    m_audio->addItem(QStringLiteral("Test tone"), int(m_audioSources.size()) - 1);
+    const int audioBefore = m_audio->currentIndex();
+    QString audioOpened, audioError;
+    connect(m_engine, &LiveEngine::audioStatus, &ctx, [&](const QString& d, const QString& e) {
+        audioOpened = d;
+        audioError = e;
+    });
+    m_audio->setCurrentIndex(m_audio->count() - 1);
+    wait(3000, [&] { return !audioOpened.isEmpty() || !audioError.isEmpty(); });
+    check(!audioOpened.isEmpty(), QStringLiteral("the Audio input opens while capturing (%1)").arg(audioOpened.isEmpty() ? audioError : audioOpened));
+    toggleRecording();
+    wait(300, [] { return false; });
+    const bool recording = m_engine->isRecording();
+    wait(2200, [] { return false; });
+    toggleRecording();
+    wait(5000, [&] { return !recorded.isEmpty(); });
+    const MediaInfo info = recorded.size() > 1 ? probeMedia(recorded) : MediaInfo();
+    check(recording && info.ok() && info.hasVideo() && info.duration > kUsPerSecond * 3 / 2,
+          QStringLiteral("records a clip with the effects (%1 s reported, %2 s in the file, %3x%4)%5")
+              .arg(recSecs, 0, 'f', 2).arg(double(info.duration) / kUsPerSecond, 0, 'f', 2)
+              .arg(info.hasVideo() ? info.video.front().width : 0).arg(info.hasVideo() ? info.video.front().height : 0)
+              .arg(recError.isEmpty() ? QString() : QStringLiteral(": ") + recError));
+    float soundPeak = 0;
+    if (info.hasAudio()) {
+        AudioDecoder adec;
+        std::vector<float> buf(48000 * 2);
+        if (adec.open(recorded, info.audio.front().index, 48000))
+            adec.read(48000 / 2, 48000, buf.data());
+        for (float v : buf)
+            soundPeak = std::max(soundPeak, std::abs(v));
+    }
+    check(info.hasAudio() && soundPeak > 0.1f,
+          QStringLiteral("the clip has the Audio input's sound (%1 audio stream(s), peak %2)").arg(info.audio.size()).arg(soundPeak, 0, 'f', 3));
+    // Beats heard: a generated 120 BPM kick drum as the input.
+    {
+        m_audioSources.push_back({QStringLiteral("Test beat"), QStringLiteral("lavfi"),
+                                  QStringLiteral("aevalsrc=exprs='0.8*exp(-14*mod(t,0.5))*sin(2*PI*55*t)':sample_rate=48000,arealtime")});
+        m_audio->addItem(QStringLiteral("Test beat"), int(m_audioSources.size()) - 1);
+        int beats = 0;
+        double heard = 0;
+        connect(m_engine, &LiveEngine::beat, &ctx, [&](double bpm, double) {
+            ++beats;
+            heard = bpm;
+        });
+        m_audio->setCurrentIndex(m_audio->count() - 1);
+        wait(7000, [&] { return beats >= 8 && std::abs(heard - 120) < 1.0; });
+        check(beats >= 6 && std::abs(heard - 120) < 1.5,
+              QStringLiteral("beat detection on a 120 BPM kick from the Audio input: %1 BPM, %2 beats").arg(heard, 0, 'f', 2).arg(beats));
+        // The Tune window shows what it hears (a picture of it goes next to the test recordings).
+        // Showing it must not slow the picture down: compare the frames shown
+        // and the time the window takes on the UI thread.
+        const int framesBefore = m_frames;
+        wait(2000, [] { return false; });
+        const int without = m_frames - framesBefore;
+        m_pads->showBeatTuner();
+        auto* tuner = m_pads->findChild<BeatTuner*>();
+        wait(300, [] { return false; });
+        const int framesWith = m_frames;
+        const double busyBefore = tuner ? tuner->busyMs() : 0;
+        wait(2000, [] { return false; });
+        const int with = m_frames - framesWith;
+        const double busy = tuner ? (tuner->busyMs() - busyBefore) / 2 : 0;
+        check(with >= without * 85 / 100 && busy < 60,
+              QStringLiteral("the Tune window doesn't slow the picture down (%1 frames in 2 s with it open, %2 without; it takes %3 ms/s)")
+                  .arg(with).arg(without).arg(busy, 0, 'f', 1));
+        if (tuner) {
+            if (qEnvironmentVariableIsSet("MVP_LIVE_DIR"))
+                tuner->grab().save(QDir(qEnvironmentVariable("MVP_LIVE_DIR")).filePath(QStringLiteral("beat_tuner.png")));
+            tuner->hide();
+        }
+        check(tuner != nullptr, QStringLiteral("Tune... opens the Beat Detection window"));
+        // Lock BPM: the music changes to a 150 BPM kick (a new input), the tempo stays
+        // and the beats keep coming; Find Tempo Again unlocks it and hears 150.
+        BeatTracker* tracker = m_engine->beatTracker();
+        m_pads->lockBpmButton()->click();
+        const double locked = tracker->bpm();
+        m_audioSources.push_back({QStringLiteral("Test beat 150"), QStringLiteral("lavfi"),
+                                  QStringLiteral("aevalsrc=exprs='0.8*exp(-14*mod(t,0.4))*sin(2*PI*55*t)':sample_rate=48000,arealtime")});
+        m_audio->addItem(QStringLiteral("Test beat 150"), int(m_audioSources.size()) - 1);
+        m_audio->setCurrentIndex(m_audio->count() - 1);
+        beats = 0;
+        wait(5000, [] { return false; });
+        check(m_pads->lockBpmButton()->isChecked() && tracker->tempoLocked() && std::abs(locked - 120) < 1.5 && tracker->bpm() == locked
+                  && std::abs(heard - locked) < 0.01 && beats >= 6,
+              QStringLiteral("Lock BPM keeps %1 BPM when the music changes to 150 (%2 beats in 5 s at %3)").arg(locked, 0, 'f', 2).arg(beats).arg(heard, 0, 'f', 2));
+        QPushButton* again = nullptr;
+        if (tuner)
+            for (QPushButton* b : tuner->findChildren<QPushButton*>())
+                if (b->text() == tr("Find Tempo Again"))
+                    again = b;
+        if (again)
+            again->click();
+        wait(7000, [&] { return std::abs(tracker->bpm() - 150) < 1.0; });
+        check(again && !m_pads->lockBpmButton()->isChecked() && !tracker->tempoLocked() && std::abs(tracker->bpm() - 150) < 1.5,
+              QStringLiteral("Find Tempo Again unlocks it and hears the new tempo (%1 BPM)").arg(tracker->bpm(), 0, 'f', 2));
+        // /2 and x2: the tempo heard halves and stays there, then doubles back.
+        m_pads->setAutoMode(LivePadPanel::AutoAudio);
+        m_pads->scaleTempo(0.5);
+        wait(3000, [] { return false; });
+        const double halved = tracker->bpm();
+        const double shown = m_pads->bpmBox()->value();
+        m_pads->scaleTempo(2.0);
+        wait(1500, [] { return false; });
+        check(std::abs(halved - 75) < 1.5 && std::abs(shown - 75) <= 1 && std::abs(tracker->bpm() - 150) < 1.5,
+              QStringLiteral("/2 holds the 150 BPM beat at %1 (shown %2), x2 brings it back to %3").arg(halved, 0, 'f', 2).arg(shown).arg(tracker->bpm(), 0, 'f', 2));
+        // Find Tempo Again under the pads: locked, then forgotten and found again.
+        m_pads->lockBpmButton()->click();
+        m_pads->findTempoButton()->click();
+        const bool forgotten = !m_pads->lockBpmButton()->isChecked() && !tracker->tempoLocked() && tracker->bpm() == 0;
+        wait(7000, [&] { return std::abs(tracker->bpm() - 150) < 0.5; });
+        check(forgotten && std::abs(tracker->bpm() - 150) < 1.5 && std::abs(m_pads->bpmBox()->value() - tracker->bpm()) < 0.6,
+              QStringLiteral("Find Tempo Again under the pads unlocks and forgets the tempo, then hears %1 (shown %2)")
+                  .arg(tracker->bpm(), 0, 'f', 2).arg(m_pads->bpmBox()->text()));
+        // Set 1 right after a beat: that beat is the 1, the bar counts on from it.
+        std::vector<int> bar;
+        bool armed = false;
+        int startBar = 0;
+        connect(m_engine, &LiveEngine::beat, &ctx, [&] {
+            if (!armed) {
+                armed = true;
+                m_pads->setDownbeat();
+                startBar = m_pads->barBeat();
+            } else {
+                bar.push_back(m_pads->barBeat());
+            }
+        });
+        wait(5000, [&] { return bar.size() >= 8; });
+        bool counts = bar.size() >= 8 && startBar == 1;
+        for (size_t i = 0; counts && i < bar.size(); ++i)
+            counts = bar[i] == int(i % 4) + 2 - (i % 4 == 3 ? 4 : 0);
+        QStringList seq;
+        for (int v : bar)
+            seq << QString::number(v);
+        check(counts, QStringLiteral("Set 1 on a beat makes it the 1: then %1").arg(seq.join(QLatin1Char(' '))));
+        m_pads->setAutoMode(LivePadPanel::AutoOff);
+    }
+    m_audio->setCurrentIndex(audioBefore);
+    auto* clips = window()->findChild<LiveClipsBrowser*>();
+    bool listed = false;
+    wait(3000, [&] {
+        if (!clips)
+            return false;
+        clips->refresh();
+        for (int i = 0; i < clips->count(); ++i)
+            listed |= clips->item(i)->data(Qt::UserRole).toString() == recorded;
+        return listed;
+    });
+    check(listed, QStringLiteral("the clip is listed in the From Live tab"));
+    if (clips && listed) {
+        const size_t mediaBefore = m_project->media().size();
+        emit clips->addToTimelineRequested(recorded);
+        emit clips->addToTimelineRequested(recorded);
+        int onTimeline = 0;
+        for (const auto& t : m_project->timeline().tracks)
+            for (const auto& c : t.clips)
+                if (auto m = m_project->mediaItem(c.mediaId); m && m->path == recorded)
+                    ++onTimeline;
+        check(m_project->media().size() == mediaBefore + 1 && onTimeline >= 2,
+              QStringLiteral("adding it to the timeline imports it once (%1 new media, %2 events)")
+                  .arg(m_project->media().size() - mediaBefore).arg(onTimeline));
+    }
+    // ---- Momentary pads, pad keys, MIDI, modulation, the layer, overlays, the replay buffer ----
+    {
+        QObject featCtx;
+        if (m_activePad >= 0)
+            triggerPad(m_activePad);
+        m_pads->transitionBox()->setCurrentIndex(0); // cut
+        m_pads->setAutoMode(LivePadPanel::AutoOff);
+        auto meanGray = [](const QImage& img, QRect r = QRect()) {
+            if (r.isNull())
+                r = img.rect();
+            r &= img.rect();
+            int64_t sum = 0, n = 0;
+            for (int y = r.top(); y <= r.bottom(); y += 5)
+                for (int x = r.left(); x <= r.right(); x += 5, ++n)
+                    sum += qGray(img.pixel(x, y));
+            return n ? double(sum) / double(n) : 0.0;
+        };
+        auto diffIn = [](const QImage& a, const QImage& b, QRect r) {
+            if (a.size() != b.size())
+                return 999.0;
+            r &= a.rect();
+            int64_t sum = 0, n = 0;
+            for (int y = r.top(); y <= r.bottom(); y += 5)
+                for (int x = r.left(); x <= r.right(); x += 5, ++n)
+                    sum += std::abs(qGray(a.pixel(x, y)) - qGray(b.pixel(x, y)));
+            return n ? double(sum) / double(n) : 0.0;
+        };
+        {
+            Timeline tl = m_project->timeline();
+            tl.liveEffects.clear();
+            tl.livePads[1] = LivePad();
+            tl.livePads[1].effects = {makeEffectOfType(QStringLiteral("invert"), tl.allocId())};
+            tl.livePads[1].momentary = true;
+            tl.livePads[2] = LivePad();
+            tl.livePads[2].effects = {makeEffectOfType(QStringLiteral("invert"), tl.allocId())};
+            m_project->applyEdit(tl, QStringLiteral("Test pads"));
+        }
+        settle(5);
+        plain = last.copy();
+        // A momentary pad: on while held, off when let go.
+        runAction(QStringLiteral("pad:1"), true);
+        settle(5);
+        const double heldDiff = changed(last);
+        runAction(QStringLiteral("pad:1"), false);
+        settle(5);
+        const double releasedDiff = changed(last);
+        check(heldDiff > 20 && releasedDiff < heldDiff / 2 && m_activePad == -1,
+              QStringLiteral("a momentary pad is on while held (changes the picture by %1) and off when let go (%2)").arg(heldDiff, 0, 'f', 0).arg(releasedDiff, 0, 'f', 0));
+        // Pad keys: 3 switches pad 3 on and off (when the window has the keyboard).
+        window()->raise();
+        window()->activateWindow();
+        wait(500, [&] { return QApplication::activeWindow() == window(); });
+        if (QApplication::activeWindow() == window()) {
+            auto key = [&](QEvent::Type type) {
+                QKeyEvent e(type, Qt::Key_3, Qt::NoModifier, QStringLiteral("3"));
+                QApplication::sendEvent(QApplication::focusWidget() ? static_cast<QObject*>(QApplication::focusWidget()) : this, &e);
+            };
+            key(QEvent::KeyPress);
+            key(QEvent::KeyRelease);
+            const bool on = m_activePad == 2;
+            key(QEvent::KeyPress);
+            key(QEvent::KeyRelease);
+            check(on && m_activePad == -1, QStringLiteral("the 3 key switches pad 3 on and off"));
+        } else {
+            log << QStringLiteral("SKIP  pad keys: the window doesn't have the keyboard");
+        }
+        // MIDI: learn a note for pad 3; it then switches it; controllers reach modulation.
+        const QMap<QString, QString> mapBefore = m_midiMap;
+        m_midiLearn = QStringLiteral("pad:2");
+        m_midiLearnLabel = QStringLiteral("pad 3");
+        MidiMessage noteOn, noteOff, cc;
+        noteOn.status = 0x90;
+        noteOn.data1 = 60;
+        noteOn.data2 = 100;
+        noteOff.status = 0x80;
+        noteOff.data1 = 60;
+        midiMessage(noteOn); // learned, not played
+        const bool learned = m_midiMap.value(QStringLiteral("n:0:60")) == QLatin1String("pad:2") && m_activePad == -1;
+        midiMessage(noteOff);
+        midiMessage(noteOn);
+        const bool played = m_activePad == 2;
+        midiMessage(noteOff);
+        midiMessage(noteOn);
+        check(learned && played && m_activePad == -1, QStringLiteral("Learn MIDI: a note learned for pad 3 switches it on and off"));
+        m_midiMap = mapBefore;
+        saveMidiMap();
+        // Modulation: Brightness moved by MIDI controller 7, then by the beat.
+        {
+            Timeline tl = m_project->timeline();
+            EffectInstance br = makeEffectOfType(QStringLiteral("brightness_contrast"), tl.allocId());
+            Modulation m;
+            m.source = Modulation::Source::Midi;
+            m.channel = 0;
+            m.cc = 7;
+            br.params[QStringLiteral("brightness")].mod = m;
+            tl.liveEffects = {br};
+            m_project->applyEdit(tl, QStringLiteral("Test modulation"));
+        }
+        cc.status = 0xB0;
+        cc.data1 = 7;
+        cc.data2 = 127;
+        midiMessage(cc);
+        settle(5);
+        const double high = meanGray(last);
+        cc.data2 = 0;
+        midiMessage(cc);
+        settle(5);
+        const double low = meanGray(last);
+        check(high - low > 60 && m_engine->modInputs().midi[0][7] == 0,
+              QStringLiteral("a MIDI controller moves a modulated setting (Brightness: mean grey %1 at 127, %2 at 0)").arg(high, 0, 'f', 0).arg(low, 0, 'f', 0));
+        {
+            Timeline tl = m_project->timeline();
+            Modulation m;
+            m.source = Modulation::Source::Beat;
+            m.amount = 0.8;
+            m.beats = 1;
+            tl.liveEffects[0].params[QStringLiteral("brightness")].value = -0.4;
+            tl.liveEffects[0].params[QStringLiteral("brightness")].mod = m;
+            m_project->applyEdit(tl, QStringLiteral("Test modulation"));
+        }
+        m_pads->bpmBox()->setValue(120);
+        double lo = 1e9, hi = -1;
+        wait(1500, [&] {
+            const double g = meanGray(last);
+            lo = std::min(lo, g);
+            hi = std::max(hi, g);
+            return false;
+        });
+        check(hi - lo > 40, QStringLiteral("a beat-pulse modulation flashes the picture on the beat (mean grey %1 to %2)").arg(lo, 0, 'f', 0).arg(hi, 0, 'f', 0));
+        {
+            Timeline tl = m_project->timeline();
+            tl.liveEffects.clear();
+            m_project->applyEdit(tl, QStringLiteral("Test modulation"));
+        }
+        settle(5);
+        plain = last.copy();
+        // The layer: a video file in the bottom-right corner, then with its own FX.
+        const QString video = QDir(QStringLiteral("testmedia")).absoluteFilePath(QStringLiteral("h264_aac.mp4"));
+        if (QFileInfo::exists(video)) {
+            QString layerDesc, layerErr;
+            connect(m_engine, &LiveEngine::layerStatus, &featCtx, [&](const QString& d, const QString& e) {
+                layerDesc = d;
+                layerErr = e;
+            });
+            LiveSource file;
+            file.kind = LiveSource::Kind::File;
+            file.name = QStringLiteral("test video");
+            file.id = video;
+            LiveLayerSettings ls;
+            ls.mode = LiveLayerSettings::Mode::PictureInPicture;
+            ls.corner = 3;
+            ls.size = 0.33;
+            m_engine->setLayerSettings(ls);
+            m_engine->setLayer(file);
+            wait(3000, [&] { return !layerDesc.isEmpty() || !layerErr.isEmpty(); });
+            settle(10);
+            const QImage withLayer = last.copy();
+            const int w = withLayer.width(), h = withLayer.height(), m = int(w * 0.03);
+            const QRect corner(w - m - int(w * 0.33) + 6, h - m - int(w * 0.33 * 9 / 16) + 6, int(w * 0.33) - 12, int(w * 0.33 * 9 / 16) - 12);
+            const double cornerDiff = diffIn(plain, withLayer, corner);
+            {
+                Timeline tl = m_project->timeline();
+                tl.liveLayerEffects = {makeEffectOfType(QStringLiteral("invert"), tl.allocId())};
+                m_project->applyEdit(tl, QStringLiteral("Test layer FX"));
+            }
+            settle(5);
+            const double fxDiff = diffIn(withLayer, last, corner);
+            check(!layerDesc.isEmpty() && cornerDiff > 15 && fxDiff > 30,
+                  QStringLiteral("a video file as the layer shows in the bottom-right corner (changed by %1), with its own FX (invert: %2)%3")
+                      .arg(cornerDiff, 0, 'f', 0).arg(fxDiff, 0, 'f', 0).arg(layerErr.isEmpty() ? QString() : QStringLiteral(": ") + layerErr));
+            m_engine->setLayer(LiveSource());
+            Timeline tl = m_project->timeline();
+            tl.liveLayerEffects.clear();
+            m_project->applyEdit(tl, QStringLiteral("Test layer FX"));
+            settle(5);
+        } else {
+            log << QStringLiteral("SKIP  the layer: testmedia/h264_aac.mp4 is needed");
+        }
+        // The switcher: the test video as input 2; cut to it (it fills the output) and back.
+        if (QFileInfo::exists(video)) {
+            LiveSource file;
+            file.kind = LiveSource::Kind::File;
+            file.name = QStringLiteral("test video");
+            file.id = video;
+            QList<QImage> thumbs;
+            connect(m_engine, &LiveEngine::inputFrames, &featCtx, [&](const QList<QImage>& t) { thumbs = t; });
+            m_engine->setInputs({file});
+            wait(4000, [&] { return thumbs.size() == 2 && !thumbs[1].isNull(); });
+            settle(5);
+            plain = last.copy();
+            setPreviewInput(1);
+            cutTo(m_preview, false);
+            settle(8);
+            const QImage onTwo = last.copy();
+            const double cut = diffIn(plain, onTwo, onTwo.rect());
+            const bool swapped = m_program == 1 && m_preview == 0; // what was on air waits in preview
+            cutTo(0, false);
+            settle(8);
+            const double back = diffIn(plain, last, last.rect());
+            check(thumbs.size() == 2 && !thumbs[1].isNull() && cut > 15 && back < cut / 2 && swapped && last.size() == plain.size(),
+                  QStringLiteral("the switcher: a second input shows in its tile, Cut puts it on air at the output's size (changed by %1), "
+                                 "and back again (%2)").arg(cut, 0, 'f', 0).arg(back, 0, 'f', 0));
+            m_engine->setInputs({});
+            settle(3);
+        }
+        // Overlays: big text in the middle.
+        plain = last.copy();
+        {
+            Timeline tl = m_project->timeline();
+            LiveOverlay o;
+            o.kind = LiveOverlay::Kind::Text;
+            o.text = QStringLiteral("MVP");
+            o.anchor = 4;
+            o.size = 25;
+            tl.liveOverlays = {o};
+            m_project->applyEdit(tl, QStringLiteral("Test overlay"));
+        }
+        settle(5);
+        const QRect centre(last.width() / 4, last.height() * 3 / 8, last.width() / 2, last.height() / 4);
+        const double overlayDiff = diffIn(plain, last, centre);
+        {
+            Timeline tl = m_project->timeline();
+            tl.liveOverlays.clear();
+            m_project->applyEdit(tl, QStringLiteral("Test overlay"));
+        }
+        check(overlayDiff > 10, QStringLiteral("a text overlay is drawn over the output (changes the middle by %1)").arg(overlayDiff, 0, 'f', 0));
+        // The replay buffer: on for a few seconds, then saved as a clip.
+        QString replayPath;
+        bool replayOk = false;
+        double replaySecs = 0;
+        connect(m_engine, &LiveEngine::replaySaved, &featCtx, [&](const QString& p, bool ok, const QString&, double s) {
+            replayPath = p;
+            replayOk = ok;
+            replaySecs = s;
+        });
+        m_replayLength->setCurrentIndex(0); // 15 s
+        m_replay->setChecked(true);
+        wait(3000, [&] { return false; });
+        saveReplay();
+        wait(5000, [&] { return !replayPath.isEmpty(); });
+        m_replay->setChecked(false);
+        check(replayOk && QFileInfo::exists(replayPath) && replaySecs >= 1.5,
+              QStringLiteral("the replay buffer saves the last seconds as a clip (%1 s, %2)").arg(replaySecs, 0, 'f', 1).arg(QFileInfo(replayPath).fileName()));
+        // Screenshot: the big display's picture as a PNG, at its own size.
+        m_lastScreenshot.clear();
+        const QImage onDisplay = m_display->image();
+        m_screenshot->click();
+        const QImage saved(m_lastScreenshot);
+        check(!onDisplay.isNull() && !saved.isNull() && saved.size() == onDisplay.size() && m_lastScreenshot.endsWith(QLatin1String(".png")),
+              QStringLiteral("Screenshot saves the big display's picture (%1 x %2, %3)").arg(saved.width()).arg(saved.height()).arg(QFileInfo(m_lastScreenshot).fileName()));
+        // ... and it shows up in the Editor's From Live tab, as a still.
+        auto listed = [&] {
+            if (auto* clips = window()->findChild<LiveClipsBrowser*>())
+                for (int i = 0; i < clips->count(); ++i)
+                    if (clips->item(i)->data(Qt::UserRole).toString() == QFileInfo(m_lastScreenshot).absoluteFilePath()
+                        && clips->item(i)->text().contains(QLatin1String("Still")))
+                        return true;
+            return false;
+        };
+        wait(5000, listed);
+        check(listed(), QStringLiteral("the screenshot appears in the Editor's From Live tab as a still"));
+        {
+            Timeline tl = m_project->timeline();
+            tl.livePads[1] = LivePad();
+            tl.livePads[2] = LivePad();
+            m_project->applyEdit(tl, QStringLiteral("Test pads"));
+        }
+    }
+    // ---- Launch on the bar, MIDI clock, a spectrum overlay, scenes ----
+    {
+        QObject featCtx;
+        if (m_activePad >= 0)
+            triggerPad(m_activePad);
+        m_pads->transitionBox()->setCurrentIndex(0); // cut
+        {
+            Timeline tl = m_project->timeline();
+            tl.livePads[2] = LivePad();
+            tl.livePads[2].effects = {makeEffectOfType(QStringLiteral("invert"), tl.allocId())};
+            tl.liveEffects.clear();
+            tl.liveOverlays.clear();
+            m_project->applyEdit(tl, QStringLiteral("Test pads"));
+        }
+        // Launch on the next bar: pad 3 waits for a 1 of the beat clock (Auto off, 240 BPM: a bar a second).
+        m_pads->setAutoMode(LivePadPanel::AutoOff);
+        m_pads->bpmBox()->setValue(240);
+        m_pads->launchBox()->setCurrentIndex(LivePadPanel::LaunchBar);
+        int launchedOn = -1;
+        connect(m_pads, &LivePadPanel::padPressed, &featCtx, [&](int pad) {
+            if (pad == 2 && launchedOn < 0)
+                launchedOn = m_pads->barBeat() - 1; // where the beat clock is as it launches
+        });
+        runAction(QStringLiteral("pad:2"), true);
+        const bool waiting = m_activePad == -1 && m_pads->pendingPad() == 2;
+        wait(2500, [&] { return m_activePad == 2; });
+        check(waiting && m_activePad == 2 && launchedOn == 0,
+              QStringLiteral("Launch on the next bar: a pressed pad waits (dashed) and switches on the 1 (beat %1 of the bar; waited %2, active %3, pending %4)")
+                  .arg(launchedOn + 1).arg(waiting).arg(m_activePad).arg(m_pads->pendingPad()));
+        m_pads->launchBox()->setCurrentIndex(LivePadPanel::LaunchNow);
+        triggerPad(2);
+        // MIDI clock at 100 BPM drives the beat clock (Auto: MIDI clock), the bar counted from Start.
+        m_pads->setAutoMode(LivePadPanel::AutoMidi);
+        std::vector<int> bars;
+        connect(m_pads, &LivePadPanel::beatTicked, &featCtx, [&](double, int barBeat) { bars.push_back(barBeat); });
+        MidiMessage clockMsg;
+        clockMsg.status = 0xFA;
+        midiMessage(clockMsg);
+        QElapsedTimer clockTimer;
+        clockTimer.start();
+        const double tick = 60.0 / 100.0 / 24.0;
+        for (int i = 0; i < 24 * 6; ++i) { // six beats of ticks, in real time
+            while (clockTimer.nsecsElapsed() / 1e9 < i * tick)
+                wait(1, [] { return true; });
+            clockMsg.status = 0xF8;
+            clockMsg.time = clockTimer.nsecsElapsed() / 1e9;
+            midiMessage(clockMsg);
+        }
+        const std::vector<int> expected{0, 1, 2, 3, 0, 1};
+        check(bars == expected && std::abs(m_pads->bpmBox()->value() - 100) < 2,
+              QStringLiteral("MIDI clock drives the beats (%1 beats from the 1) and shows its tempo (%2 BPM)").arg(bars.size()).arg(m_pads->bpmBox()->value(), 0, 'f', 2));
+        m_pads->setAutoMode(LivePadPanel::AutoOff);
+        // A spectrum over the bottom of the picture, moving with the audio input.
+        const int beatSource = m_audio->findText(QStringLiteral("Test beat"));
+        if (beatSource >= 0) {
+            m_audio->setCurrentIndex(beatSource);
+            wait(1500, [] { return false; });
+            plain = last.copy();
+            // Bars that stand out from whatever is on the screen there (a light window: black bars).
+            double behind = 0;
+            {
+                const QRect bottom(plain.width() / 10, plain.height() * 6 / 10, plain.width() * 8 / 10, plain.height() * 35 / 100);
+                int64_t sum = 0, n = 0;
+                for (int y = bottom.top(); y < bottom.bottom(); y += 6)
+                    for (int x = bottom.left(); x < bottom.right(); x += 6, ++n)
+                        sum += qGray(plain.pixel(x, y));
+                behind = n ? double(sum) / double(n) : 0;
+            }
+            {
+                Timeline tl = m_project->timeline();
+                LiveOverlay o;
+                o.color = behind > 128 ? 0x000000 : 0xffffff;
+                o.kind = LiveOverlay::Kind::Spectrum;
+                o.anchor = 7;
+                o.size = 30;
+                o.width = 80;
+                tl.liveOverlays = {o};
+                m_project->applyEdit(tl, QStringLiteral("Test spectrum"));
+            }
+            double most = 0;
+            QImage previous;
+            double moving = 0;
+            wait(2000, [&] {
+                const QRect bottom(last.width() / 10, last.height() * 6 / 10, last.width() * 8 / 10, last.height() * 35 / 100);
+                if (plain.size() == last.size()) {
+                    int64_t sum = 0, n = 0, sumMove = 0;
+                    for (int y = bottom.top(); y < bottom.bottom(); y += 6)
+                        for (int x = bottom.left(); x < bottom.right(); x += 6, ++n) {
+                            sum += std::abs(qGray(last.pixel(x, y)) - qGray(plain.pixel(x, y)));
+                            if (previous.size() == last.size())
+                                sumMove += std::abs(qGray(last.pixel(x, y)) - qGray(previous.pixel(x, y)));
+                        }
+                    most = std::max(most, n ? double(sum) / n : 0.0);
+                    moving = std::max(moving, n ? double(sumMove) / n : 0.0);
+                }
+                previous = last.copy();
+                return false;
+            });
+            {
+                Timeline tl = m_project->timeline();
+                tl.liveOverlays.clear();
+                m_project->applyEdit(tl, QStringLiteral("Test spectrum"));
+            }
+            m_audio->setCurrentIndex(0);
+            check(most > 8 && moving > 2, QStringLiteral("a spectrum overlay draws the audio input and moves with it (%1 drawn, %2 moving)").arg(most, 0, 'f', 1).arg(moving, 0, 'f', 1));
+        } else {
+            log << QStringLiteral("SKIP  spectrum overlay: no test audio source");
+        }
+        // Scenes: save a look (Live FX invert, pad 3 on), change everything, recall it.
+        {
+            Timeline tl = m_project->timeline();
+            tl.liveEffects = {makeEffectOfType(QStringLiteral("invert"), tl.allocId())};
+            m_project->applyEdit(tl, QStringLiteral("Test scene"));
+        }
+        if (m_activePad != 2)
+            triggerPad(2);
+        const LiveScenes scenesBefore = m_project->timeline().liveScenes;
+        saveScene(0);
+        const bool saved = m_project->timeline().liveScenes[0].used && m_project->timeline().liveScenes[0].pad == 2;
+        triggerPad(2); // off
+        {
+            Timeline tl = m_project->timeline();
+            tl.liveEffects.clear();
+            m_project->applyEdit(tl, QStringLiteral("Test scene"));
+        }
+        runAction(QStringLiteral("scene:0"), true); // (F1 / MIDI play the same action)
+        check(saved && m_activePad == 2 && m_project->timeline().liveEffects.size() == 1 && m_activeScene == 0,
+              QStringLiteral("a scene saves the look and brings it back (Live FX and the active pad)"));
+        triggerPad(2);
+        Timeline tl = m_project->timeline();
+        tl.liveScenes = scenesBefore;
+        tl.liveEffects.clear();
+        tl.livePads[2] = LivePad();
+        m_project->applyEdit(tl, QStringLiteral("Test scene"));
+    }
+    // ---- Setlist: a song loads its pad set, sets its tempo and recalls its scene; the next and back ----
+    {
+        const Timeline before = m_project->timeline();
+        padsets::remove(QStringLiteral("Test Setlist Set"));
+        LivePadSet set;
+        set.name = QStringLiteral("Test Setlist Set");
+        set.pads[0].name = QStringLiteral("From the set");
+        padsets::save(set);
+        Timeline tl = m_project->timeline();
+        tl.liveSetlist.assign(2, LiveSong());
+        tl.liveSetlist[0].name = QStringLiteral("One");
+        tl.liveSetlist[0].padSet = set.name;
+        tl.liveSetlist[0].bpm = 128;
+        tl.liveSetlist[0].notes = QStringLiteral("big chorus");
+        tl.liveSetlist[1].name = QStringLiteral("Two");
+        m_project->applyEdit(tl, QStringLiteral("Test setlist"));
+        m_currentSong = -1;
+        const bool listed = m_song->count() == 2 && m_song->itemText(0).contains(QStringLiteral("One"));
+        runAction(QStringLiteral("song:next"), true); // (Page Down / MIDI play the same action)
+        const bool first = m_currentSong == 0 && m_project->timeline().livePads[0].name == QStringLiteral("From the set")
+                           && std::abs(m_pads->bpm() - 128) < 0.01 && m_pads->lockBpmButton()->isChecked() && m_song->currentIndex() == 0
+                           && m_songNotes->text() == QStringLiteral("big chorus");
+        runAction(QStringLiteral("song:next"), true);
+        const bool second = m_currentSong == 1 && !m_pads->lockBpmButton()->isChecked()
+                            && m_project->timeline().livePads[0].name == QStringLiteral("From the set") && m_songNotes->text().isEmpty();
+        runAction(QStringLiteral("song:next"), true); // the last: stays
+        const bool stays = m_currentSong == 1;
+        runAction(QStringLiteral("song:prev"), true);
+        check(listed && first && second && stays && m_currentSong == 0,
+              QStringLiteral("setlist: song 1 loads its pad set, locks 128 BPM and shows its notes; Next goes to song 2 (listening "
+                             "for the tempo, keeping the pads), stops at the last; Previous goes back"));
+        SetlistDialog dlg(m_project->timeline().liveSetlist, [] {
+            LiveSong s;
+            s.name = QStringLiteral("Now");
+            s.bpm = 99;
+            return s;
+        });
+        const bool same = dlg.songs() == m_project->timeline().liveSetlist;
+        dlg.addSong(LiveSong());
+        check(same && dlg.songs().size() == 3, QStringLiteral("Edit Setlist shows the songs as they are and adds more"));
+        m_project->applyEdit(before, QStringLiteral("Test setlist"));
+        padsets::remove(set.name);
+    }
+    // ---- Send to: Spout and the virtual camera share the output while capturing ----
+    auto meanDiff = [](const QImage& a, const QImage& b) {
+        if (a.isNull() || a.size() != b.size())
+            return 999.0;
+        int64_t sum = 0, n = 0;
+        for (int y = 0; y < a.height(); y += 9)
+            for (int x = 0; x < a.width(); x += 9, ++n)
+                sum += std::abs(qGray(a.pixel(x, y)) - qGray(b.pixel(x, y)));
+        return n ? double(sum) / double(n) : 999.0;
+    };
+    // ---- Follow: switching a pad on shows its effects; switching it off, the Live FX again ----
+    {
+        editChain(0);
+        if (m_activePad >= 0)
+            triggerPad(m_activePad);
+        triggerPad(4);
+        const bool shown = m_pads->editing() == 5 && m_devices->target().id == 5;
+        triggerPad(4);
+        const bool back = m_pads->editing() == 0;
+        triggerPad(4);
+        editChain(LivePadPanel::kLayerTarget); // looking at something else when it goes off: left alone
+        triggerPad(4);
+        const bool kept = m_pads->editing() == LivePadPanel::kLayerTarget;
+        editChain(0);
+        auto* follow = m_pads->findChild<QCheckBox*>(QStringLiteral("livePadFollow"));
+        follow->setChecked(false);
+        triggerPad(6);
+        const bool stays = m_pads->editing() == 0;
+        triggerPad(6);
+        follow->setChecked(true);
+        check(shown && back && kept && stays,
+              QStringLiteral("Follow: switching pad 5 on shows its effects, off shows the Live FX again (unless something else "
+                             "was opened meanwhile); with Follow off the chain stays put"));
+        editChain(0);
+    }
+    // ---- Layouts: the same controls in each, the picture keeps coming, a laptop screen is enough ----
+    {
+        QStringList problems;
+        const QList<QWidget*> controls{m_start, m_rec, m_goLive, m_saveReplay, m_popOutButton, m_source, m_audio, m_size, m_fps, m_mirror,
+                                       m_layer, m_layerMode, m_layerBlend, m_recMode, m_replay, m_spoutBox, m_cameraBox, m_midi, m_song,
+                                       m_songPrev, m_songNext, m_sceneButtons[0], m_sceneButtons[7], m_devices, m_browser, m_pads,
+                                       m_pads->padButton(15), m_display};
+        for (int l : {1, 2, 0}) {
+            setLayoutMode(l);
+            const int before = m_frames;
+            settle(4);
+            if (m_frames < before + 4)
+                problems << QStringLiteral("layout %1: no pictures").arg(l);
+            for (QWidget* w : controls)
+                if (!isAncestorOf(w))
+                    problems << QStringLiteral("layout %1: %2 is missing").arg(l).arg(w->objectName().isEmpty() ? QString::fromLatin1(w->metaObject()->className()) : w->objectName());
+            if (!m_display->isVisibleTo(this) || !m_strip->isVisibleTo(this) || !m_showBar->isVisibleTo(this))
+                problems << QStringLiteral("layout %1: the picture, strip or show bar is hidden").arg(l);
+            const QSize least = window()->minimumSizeHint();
+            if (least.width() > 1366 || least.height() > 768)
+                problems << QStringLiteral("layout %1 needs %2x%3").arg(l).arg(least.width()).arg(least.height());
+        }
+        // Splitter positions are kept per layout.
+        setLayoutMode(1);
+        QSplitter* deck = nullptr;
+        for (const auto& [name, sp] : m_frameSplitters)
+            if (name == QLatin1String("deck"))
+                deck = sp;
+        if (deck)
+            deck->setSizes({500, 900});
+        const int padsWidth = deck ? deck->sizes().value(0) : 0;
+        setLayoutMode(0);
+        setLayoutMode(1);
+        for (const auto& [name, sp] : m_frameSplitters)
+            if (name == QLatin1String("deck") && std::abs(sp->sizes().value(0) - padsWidth) > 4)
+                problems << QStringLiteral("the Stage deck forgot its divider (%1, was %2)").arg(sp->sizes().value(0)).arg(padsWidth);
+        setLayoutMode(0);
+        check(problems.isEmpty() && layoutMode() == 0 && QSettings().value(QStringLiteral("live/layout")).toInt() == 0,
+              QStringLiteral("layouts Sidebar, Stage and Compact: all %1 controls there, the picture keeps coming, each fits 1366x768, "
+                             "dividers remembered per layout%2")
+                  .arg(controls.size()).arg(problems.isEmpty() ? QString() : QStringLiteral(": ") + problems.join(QStringLiteral("; "))));
+    }
+    // ---- Pan and zoom: scroll and drag on the picture frame the source in the output ----
+    {
+        const int sizeBefore = m_size->currentIndex();
+        for (int i = 0; i < m_size->count(); ++i)
+            if (m_size->itemData(i).toSize() == QSize(1080, 1920) && m_size->itemData(i, Qt::UserRole + 1).toBool())
+                m_size->setCurrentIndex(i);
+        m_framing->setCurrentIndex(0); // crop to fill
+        setPanZoom({});
+        settle(6);
+        const QImage framedBefore = last.copy();
+        const QRectF pic = m_display->pictureRect();
+        const QPointF middle = pic.center();
+        // Two notches of the wheel at the middle: 1.15^2 in.
+        QWheelEvent wheel(middle, m_display->mapToGlobal(middle), QPoint(), QPoint(0, 240), Qt::NoButton, Qt::NoModifier, Qt::NoScrollPhase, false);
+        QApplication::sendEvent(m_display, &wheel);
+        const double zoomed = m_panZoom.zoom;
+        // Drag a quarter of the picture's width to the right: the source moves right (its centre goes left).
+        auto mouse = [&](QEvent::Type type, QPointF pos) {
+            QMouseEvent ev(type, pos, m_display->mapToGlobal(pos), Qt::LeftButton,
+                           type == QEvent::MouseButtonRelease ? Qt::NoButton : Qt::MouseButtons(Qt::LeftButton), Qt::NoModifier);
+            QApplication::sendEvent(m_display, &ev);
+        };
+        const double centerBefore = m_panZoom.center.x();
+        mouse(QEvent::MouseButtonPress, middle);
+        mouse(QEvent::MouseMove, middle + QPointF(pic.width() / 8, 0));
+        mouse(QEvent::MouseMove, middle + QPointF(pic.width() / 4, 0));
+        mouse(QEvent::MouseButtonRelease, middle + QPointF(pic.width() / 4, 0));
+        const double centerAfter = m_panZoom.center.x();
+        settle(6);
+        const QImage framedAfter = last.copy();
+        double change = 0;
+        if (framedAfter.size() == framedBefore.size()) {
+            int64_t sum = 0, n = 0;
+            for (int y = 0; y < framedAfter.height(); y += 9)
+                for (int x = 0; x < framedAfter.width(); x += 9, ++n)
+                    sum += std::abs(qGray(framedAfter.pixel(x, y)) - qGray(framedBefore.pixel(x, y)));
+            change = n ? double(sum) / double(n) : 0;
+        }
+        const bool engineHasIt = m_engine->panZoom() == m_panZoom;
+        const bool label = m_panZoomLabel->text().contains(QStringLiteral("132%"));
+        // Reset from Setup > Input.
+        for (QToolButton* b : m_sidebar->findChildren<QToolButton*>())
+            if (b->text() == tr("Reset"))
+                b->click();
+        const bool reset = m_panZoom.isDefault() && m_engine->panZoom().isDefault();
+        m_size->setCurrentIndex(sizeBefore);
+        settle(4);
+        check(std::abs(zoomed - 1.3225) < 0.01 && centerAfter < centerBefore - 0.01 && framedAfter.size() == QSize(1080, 1920) && change > 3
+                  && engineHasIt && label && reset,
+              QStringLiteral("pan and zoom on the picture: two wheel notches zoom to %1%, a drag moves the source (centre %2 -> %3), "
+                             "the portrait output changes (%4) but keeps its size; Reset puts it back")
+                  .arg(int(std::lround(zoomed * 100))).arg(centerBefore, 0, 'f', 3).arg(centerAfter, 0, 'f', 3).arg(change, 0, 'f', 1));
+    }
+    // ---- Portrait sizes: the output becomes that shape, framed as chosen ----
+    {
+        const int before = m_size->currentIndex();
+        auto sizeItem = [&](QSize s) {
+            for (int i = 0; i < m_size->count(); ++i)
+                if (m_size->itemData(i).toSize() == s && m_size->itemData(i, Qt::UserRole + 1).toBool())
+                    return i;
+            return -1;
+        };
+        auto shapeAfter = [&](int item, int framing) {
+            m_framing->setCurrentIndex(framing);
+            m_size->setCurrentIndex(item);
+            settle(6);
+            return last.size();
+        };
+        const QSize crop = shapeAfter(sizeItem(QSize(1080, 1920)), 0);
+        const QSize fit = shapeAfter(sizeItem(QSize(720, 1280)), 1);
+        // The screen is wider than tall: fitted, the rows at the top are black bars.
+        bool bars = true;
+        for (int x = 0; x < last.width(); x += 16)
+            bars = bars && qGray(last.pixel(x, 4)) < 8;
+        const QSize blur = shapeAfter(sizeItem(QSize(1080, 1350)), 2);
+        const QSize square = shapeAfter(sizeItem(QSize(1080, 1080)), 0);
+        const bool framingShown = m_framing->isVisibleTo(this);
+        m_size->setCurrentIndex(before);
+        settle(4);
+        check(crop == QSize(1080, 1920) && fit == QSize(720, 1280) && bars && blur == QSize(1080, 1350) && square == QSize(1080, 1080)
+                  && framingShown && !m_framing->isVisibleTo(this) && last.width() > last.height(),
+              QStringLiteral("portrait sizes: the output becomes 1080x1920 (cropped), 720x1280 (fitted, black bars), 1080x1350 "
+                             "(blurred background) and 1080x1080; back to %1x%2 after").arg(last.width()).arg(last.height()));
+    }
+    // ---- Cue: a pad previewed beside the output, not live; Take puts it live ----
+    {
+        const Timeline before = m_project->timeline();
+        Timeline tl = m_project->timeline();
+        tl.livePads[5] = LivePad();
+        tl.livePads[5].name = QStringLiteral("Cue test");
+        tl.livePads[5].effects = {makeEffectOfType(QStringLiteral("invert"), tl.allocId())};
+        m_project->applyEdit(tl, QStringLiteral("Test cue"));
+        if (m_activePad >= 0)
+            triggerPad(m_activePad); // nothing live but the Live FX
+        settle(3);
+        emit m_pads->padCued(5); // (Shift+click, or right-click > Cue)
+        m_cueFrames = 0;
+        wait(4000, [&] { return m_cueFrames >= 4; });
+        settle(2);
+        const QImage cue = m_cueView->image();
+        const QImage outNow = last;
+        // The cue is the output inverted (smaller); the output itself unchanged.
+        double inverted = 999;
+        if (!cue.isNull() && !outNow.isNull()) {
+            const QImage small = outNow.scaled(cue.size());
+            int64_t sum = 0, n = 0;
+            for (int y = 0; y < cue.height(); y += 5)
+                for (int x = 0; x < cue.width(); x += 5, ++n)
+                    sum += std::abs(qGray(cue.pixel(x, y)) - (255 - qGray(small.pixel(x, y))));
+            inverted = n ? double(sum) / double(n) : 999;
+        }
+        const bool notLive = m_activePad == -1 && m_pads->cuedPad() == 5 && m_cuePanel->isVisible();
+        check(m_cueFrames >= 4 && inverted < 25 && notLive,
+              QStringLiteral("Cue: Shift+click pad 6 previews it beside the output (%1 pictures, %2 from the output inverted) "
+                             "while the output stays as it is")
+                  .arg(m_cueFrames).arg(inverted, 0, 'f', 1));
+        runAction(QStringLiteral("take"), true); // (the Take button / MIDI)
+        settle(4);
+        check(m_activePad == 5 && !m_cuePanel->isVisible() && m_pads->cuedPad() == -1,
+              QStringLiteral("Take puts the cued pad live and closes the cue"));
+        triggerPad(5);
+        m_project->applyEdit(before, QStringLiteral("Test cue"));
+    }
+    // ---- Go Live: streaming to a server (a local one here: FFmpeg listening) ----
+    {
+        const QString ffmpegExe = QDir(QCoreApplication::applicationDirPath()).filePath(QStringLiteral("../../../deps/ffmpeg/bin/ffmpeg.exe"));
+        if (QFileInfo::exists(ffmpegExe)) {
+            const QString received = QDir(QFileInfo(QString::fromLocal8Bit(qgetenv("MVP_LIVE_DIR"))).absolutePath()).filePath(QStringLiteral("stream_test.flv"));
+            QFile::remove(received);
+            QProcess server;
+            server.start(ffmpegExe, {QStringLiteral("-hide_banner"), QStringLiteral("-loglevel"), QStringLiteral("error"), QStringLiteral("-y"),
+                                     QStringLiteral("-listen"), QStringLiteral("1"), QStringLiteral("-i"),
+                                     QStringLiteral("rtmp://127.0.0.1:19358/live/test"), QStringLiteral("-c"), QStringLiteral("copy"), received});
+            server.waitForStarted(5000);
+            wait(1200, [] { return false; });
+            QSettings s;
+            s.setValue(QStringLiteral("stream/service"), 4); // Custom
+            s.setValue(QStringLiteral("stream/server"), QStringLiteral("rtmp://127.0.0.1:19358/live/test"));
+            s.remove(QStringLiteral("stream/key"));
+            s.setValue(QStringLiteral("stream/kbps"), 3000);
+            toggleStream();
+            const bool live = wait(10000, [&] { return m_streamLive; });
+            const bool label = m_streamStatus->text().contains(QStringLiteral("LIVE"));
+            wait(3000, [] { return false; });
+            toggleStream(); // End Stream
+            const bool ended = wait(5000, [&] { return !m_engine->isStreaming() && !m_streamLive; });
+            server.waitForFinished(8000);
+            if (server.state() != QProcess::NotRunning)
+                server.kill();
+            int pictures = 0;
+            ff::InputFormatPtr in;
+            if (QFileInfo(received).size() > 0 && ff::openInput(received, in) >= 0) {
+                ff::PacketPtr pkt = ff::makePacket();
+                while (av_read_frame(in.get(), pkt.get()) >= 0) {
+                    pictures += in->streams[pkt->stream_index]->codecpar->codec_type == AVMEDIA_TYPE_VIDEO;
+                    av_packet_unref(pkt.get());
+                }
+            }
+            in.reset();
+            QFile::remove(received); // (it is a capture of the screen)
+            check(live && label && ended && pictures > 50 && m_goLive->text() == tr("Go Live"),
+                  QStringLiteral("Go Live streams the output to the server (%1 pictures arrived, \"LIVE\" shown); End Stream stops it")
+                      .arg(pictures));
+        }
+    }
+    if (m_spoutBox->isEnabled()) {
+        m_spoutBox->setChecked(true);
+        wait(4000, [&] { return !m_spoutSender.isEmpty(); });
+        const QString sender = m_spoutSender;
+        settle(3);
+        const QImage got = spout::receive(sender);
+        const double diff = meanDiff(got, last);
+        m_spoutBox->setChecked(false);
+        wait(3000, [&] { return m_spoutSender.isEmpty(); });
+        check(!sender.isEmpty() && diff < 15 && !spout::senders().contains(sender) && m_spoutSender.isEmpty(),
+              QStringLiteral("Send to Spout: \"%1\" carries the output (%2x%3, %4 from the picture shown); off takes it away")
+                  .arg(sender).arg(got.width()).arg(got.height()).arg(diff, 0, 'f', 1));
+    }
+    if (m_cameraBox->isEnabled()) {
+        m_cameraBox->setChecked(true);
+        wait(4000, [&] { return m_cameraSize.isValid(); });
+        const QSize size = m_cameraSize;
+        m_cameraBox->setChecked(false);
+        wait(3000, [&] { return !m_cameraSize.isValid(); });
+        check(size == QSize(last.width() & ~1, last.height() & ~1) && !m_cameraSize.isValid() && m_shareStatus->text().isEmpty(),
+              QStringLiteral("Send to the virtual camera: it gets the output at %1x%2; off stops it").arg(size.width()).arg(size.height()));
+    }
+    m_engine->stop();
+    check(!m_engine->isRunning(), QStringLiteral("capture stops"));
+    m_project->undoStack()->undo();
+    return failures;
+}

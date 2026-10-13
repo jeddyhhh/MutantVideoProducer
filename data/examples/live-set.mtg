@@ -1,0 +1,1253 @@
+{
+    "audioMasterEffects": [
+    ],
+    "format": "montage-project",
+    "liveEffects": [
+        {
+            "enabled": true,
+            "id": 6,
+            "params": {
+                "intensity": {
+                    "v": 0.6
+                },
+                "radius": {
+                    "v": 20
+                },
+                "threshold": {
+                    "v": 0.7
+                }
+            },
+            "type": "glow"
+        }
+    ],
+    "liveOverlays": [
+        {
+            "anchor": 1,
+            "color": 16777215,
+            "enabled": true,
+            "kind": 0,
+            "opacity": 1,
+            "pulse": true,
+            "size": 6,
+            "text": "MVP LIVE",
+            "width": 60
+        },
+        {
+            "anchor": 7,
+            "color": 16777215,
+            "enabled": true,
+            "kind": 4,
+            "opacity": 0.8,
+            "size": 14,
+            "width": 60
+        }
+    ],
+    "livePads": [
+        {
+            "effects": [
+                {
+                    "enabled": true,
+                    "id": 7,
+                    "params": {
+                        "background": {
+                            "v": 0
+                        },
+                        "color": {
+                            "v": 58879
+                        },
+                        "colorMode": {
+                            "v": 1
+                        },
+                        "glow": {
+                            "v": 6
+                        },
+                        "strength": {
+                            "v": 3
+                        }
+                    },
+                    "type": "neon_edges"
+                }
+            ],
+            "name": "Neon"
+        },
+        {
+            "effects": [
+                {
+                    "enabled": true,
+                    "id": 8,
+                    "params": {
+                        "centerX": {
+                            "v": 0.5
+                        },
+                        "centerY": {
+                            "v": 0.5
+                        },
+                        "rotation": {
+                            "v": 0
+                        },
+                        "segments": {
+                            "v": 6
+                        },
+                        "spin": {
+                            "v": 0
+                        },
+                        "zoom": {
+                            "v": 1
+                        }
+                    },
+                    "type": "kaleidoscope"
+                }
+            ],
+            "name": "Kaleido"
+        },
+        {
+            "effects": [
+                {
+                    "enabled": true,
+                    "id": 9,
+                    "params": {
+                        "mode": {
+                            "v": 0
+                        }
+                    },
+                    "type": "mirror_symmetry"
+                }
+            ],
+            "name": "Mirror"
+        },
+        {
+            "effects": [
+                {
+                    "enabled": true,
+                    "id": 10,
+                    "params": {
+                        "lumaSpread": {
+                            "v": 360
+                        },
+                        "positionSpread": {
+                            "v": 0
+                        },
+                        "saturation": {
+                            "v": 1.6
+                        },
+                        "speed": {
+                            "v": 90
+                        }
+                    },
+                    "type": "psychedelic"
+                }
+            ],
+            "name": "Psychedelic"
+        },
+        {
+            "effects": [
+                {
+                    "enabled": true,
+                    "id": 11,
+                    "params": {
+                        "animated": {
+                            "v": 1
+                        },
+                        "bleed": {
+                            "v": 8
+                        },
+                        "blur": {
+                            "v": 1.5
+                        },
+                        "chromaShift": {
+                            "v": 4
+                        },
+                        "dropouts": {
+                            "v": 0.3
+                        },
+                        "jitter": {
+                            "v": 2
+                        },
+                        "noise": {
+                            "v": 0.15
+                        },
+                        "saturation": {
+                            "v": 0.85
+                        },
+                        "tracking": {
+                            "v": 0.6
+                        }
+                    },
+                    "type": "vhs"
+                }
+            ],
+            "name": "VHS"
+        },
+        {
+            "effects": [
+                {
+                    "enabled": true,
+                    "id": 12,
+                    "params": {
+                        "brightness": {
+                            "v": 1.25
+                        },
+                        "curvature": {
+                            "v": 0.12
+                        },
+                        "lineCount": {
+                            "v": 270
+                        },
+                        "mask": {
+                            "v": 1
+                        },
+                        "maskStrength": {
+                            "v": 0.3
+                        },
+                        "scanlines": {
+                            "v": 0.5
+                        },
+                        "vignette": {
+                            "v": 0.35
+                        }
+                    },
+                    "type": "crt"
+                }
+            ],
+            "name": "CRT"
+        },
+        {
+            "effects": [
+                {
+                    "enabled": true,
+                    "id": 13,
+                    "params": {
+                        "decay": {
+                            "v": 0.85
+                        },
+                        "mode": {
+                            "v": 0
+                        }
+                    },
+                    "type": "trails"
+                }
+            ],
+            "name": "Trails"
+        },
+        {
+            "effects": [
+                {
+                    "enabled": true,
+                    "id": 14,
+                    "params": {
+                        "amount": {
+                            "v": 1
+                        }
+                    },
+                    "type": "black_white"
+                }
+            ],
+            "name": "Mono"
+        },
+        {
+            "effects": [
+                {
+                    "enabled": true,
+                    "id": 17,
+                    "params": {
+                        "amount": {
+                            "v": 6.231374256456502
+                        },
+                        "rotation": {
+                            "v": 0.5799132442188818
+                        },
+                        "seed": {
+                            "v": 523
+                        },
+                        "speed": {
+                            "v": 3.058753800056584
+                        },
+                        "zoom": {
+                            "v": 1.05
+                        }
+                    },
+                    "type": "shake"
+                },
+                {
+                    "enabled": true,
+                    "id": 18,
+                    "params": {
+                        "gain": {
+                            "v": 0
+                        },
+                        "gainAmount": {
+                            "v": 0.14071609392055645
+                        },
+                        "gainHue": {
+                            "v": 114
+                        },
+                        "gamma": {
+                            "v": 0.0270040260112919
+                        },
+                        "gammaAmount": {
+                            "v": 0
+                        },
+                        "gammaHue": {
+                            "v": 200
+                        },
+                        "lift": {
+                            "v": 0
+                        },
+                        "liftAmount": {
+                            "v": 0.26947813507901835
+                        },
+                        "liftHue": {
+                            "v": 155
+                        }
+                    },
+                    "type": "color_wheels"
+                }
+            ],
+            "name": "Quiet Bloom"
+        },
+        {
+            "effects": [
+                {
+                    "enabled": true,
+                    "id": 19,
+                    "params": {
+                        "amount": {
+                            "v": 18.85235409098691
+                        },
+                        "angle": {
+                            "v": 0
+                        },
+                        "centerX": {
+                            "v": 0.5
+                        },
+                        "centerY": {
+                            "v": 0.5
+                        },
+                        "falloff": {
+                            "v": 1
+                        },
+                        "fxBoxH": {
+                            "v": 0.5
+                        },
+                        "fxBoxW": {
+                            "v": 0.5
+                        },
+                        "fxBoxX": {
+                            "v": 0.25
+                        },
+                        "fxBoxY": {
+                            "v": 0.25
+                        },
+                        "fxFeather": {
+                            "v": 0.05
+                        },
+                        "fxMask": {
+                            "v": 0
+                        },
+                        "fxMix": {
+                            "v": 0.6280673194379179
+                        },
+                        "fxThreshold": {
+                            "v": 0.5
+                        },
+                        "greenShift": {
+                            "v": 0
+                        },
+                        "mode": {
+                            "v": 1
+                        },
+                        "wobble": {
+                            "v": 0.26319830364243996
+                        },
+                        "wobbleSpeed": {
+                            "v": 2
+                        }
+                    },
+                    "type": "chromatic_aberration"
+                },
+                {
+                    "enabled": true,
+                    "id": 20,
+                    "params": {
+                        "lumaSpread": {
+                            "v": 263
+                        },
+                        "positionSpread": {
+                            "v": 0
+                        },
+                        "saturation": {
+                            "v": 1.8408560992047907
+                        },
+                        "speed": {
+                            "v": 86
+                        }
+                    },
+                    "type": "psychedelic"
+                },
+                {
+                    "enabled": true,
+                    "id": 21,
+                    "params": {
+                        "echoes": {
+                            "v": 2
+                        },
+                        "offset": {
+                            "v": -79
+                        },
+                        "strength": {
+                            "v": 0.49543842564559326
+                        }
+                    },
+                    "type": "ghosting"
+                }
+            ],
+            "name": "Fuzzy Arcade"
+        },
+        {
+            "effects": [
+                {
+                    "enabled": true,
+                    "id": 22,
+                    "params": {
+                        "amount": {
+                            "v": 67.7943548603334
+                        },
+                        "rotation": {
+                            "v": 6.7627804964155835
+                        },
+                        "seed": {
+                            "v": 365
+                        },
+                        "speed": {
+                            "v": 7.260878529727044
+                        },
+                        "zoom": {
+                            "v": 1.05
+                        }
+                    },
+                    "type": "shake"
+                },
+                {
+                    "enabled": true,
+                    "id": 23,
+                    "params": {
+                        "decay": {
+                            "v": 0.8595173418199255
+                        },
+                        "mode": {
+                            "v": 0
+                        }
+                    },
+                    "type": "trails"
+                },
+                {
+                    "enabled": true,
+                    "id": 24,
+                    "params": {
+                        "amount": {
+                            "v": 0.9663900381140298
+                        },
+                        "autoClean": {
+                            "v": 4.42110761994425
+                        },
+                        "blockSize": {
+                            "v": 16
+                        },
+                        "fxBoxH": {
+                            "v": 0.5
+                        },
+                        "fxBoxW": {
+                            "v": 0.5
+                        },
+                        "fxBoxX": {
+                            "v": 0.25
+                        },
+                        "fxBoxY": {
+                            "v": 0.25
+                        },
+                        "fxFeather": {
+                            "v": 0.05
+                        },
+                        "fxMask": {
+                            "v": 0
+                        },
+                        "fxMix": {
+                            "v": 0.7696115178510933
+                        },
+                        "fxThreshold": {
+                            "v": 0.5
+                        },
+                        "mode": {
+                            "v": 0
+                        },
+                        "motionScale": {
+                            "v": 2.6031243338472336
+                        },
+                        "refresh": {
+                            "v": 0
+                        },
+                        "search": {
+                            "v": 16
+                        }
+                    },
+                    "type": "datamosh"
+                },
+                {
+                    "enabled": true,
+                    "id": 25,
+                    "params": {
+                        "fxBoxH": {
+                            "v": 0.5
+                        },
+                        "fxBoxW": {
+                            "v": 0.5
+                        },
+                        "fxBoxX": {
+                            "v": 0.25
+                        },
+                        "fxBoxY": {
+                            "v": 0.25
+                        },
+                        "fxFeather": {
+                            "v": 0.05
+                        },
+                        "fxMask": {
+                            "v": 0
+                        },
+                        "fxMix": {
+                            "v": 0.7332944602624052
+                        },
+                        "fxThreshold": {
+                            "v": 0.5
+                        },
+                        "invertB": {
+                            "v": 0
+                        },
+                        "invertG": {
+                            "v": 0
+                        },
+                        "invertR": {
+                            "v": 0
+                        },
+                        "order": {
+                            "v": 2
+                        }
+                    },
+                    "type": "channel_swap"
+                }
+            ],
+            "name": "Acid Signal"
+        },
+        {
+            "effects": [
+                {
+                    "enabled": true,
+                    "id": 26,
+                    "params": {
+                        "mirror": {
+                            "v": 1
+                        },
+                        "scrollX": {
+                            "v": 0.6497269877722447
+                        },
+                        "scrollY": {
+                            "v": 0
+                        },
+                        "tilesX": {
+                            "v": 6.59026668478325
+                        },
+                        "tilesY": {
+                            "v": 3.5511109305333473
+                        }
+                    },
+                    "type": "tile"
+                },
+                {
+                    "enabled": true,
+                    "id": 27,
+                    "params": {
+                        "angle": {
+                            "v": 859
+                        },
+                        "centerX": {
+                            "v": 0.5
+                        },
+                        "centerY": {
+                            "v": 0.5
+                        },
+                        "radius": {
+                            "v": 1.2835385302440923
+                        }
+                    },
+                    "type": "twirl"
+                },
+                {
+                    "enabled": true,
+                    "id": 28,
+                    "params": {
+                        "direction": {
+                            "v": 0
+                        },
+                        "frames": {
+                            "v": 60
+                        }
+                    },
+                    "type": "slit_scan"
+                },
+                {
+                    "enabled": true,
+                    "id": 29,
+                    "params": {
+                        "amount": {
+                            "v": 21.37673069800686
+                        },
+                        "angle": {
+                            "v": 0
+                        },
+                        "centerX": {
+                            "v": 0.5
+                        },
+                        "centerY": {
+                            "v": 0.5
+                        },
+                        "falloff": {
+                            "v": 1
+                        },
+                        "fxBoxH": {
+                            "v": 0.5
+                        },
+                        "fxBoxW": {
+                            "v": 0.5
+                        },
+                        "fxBoxX": {
+                            "v": 0.25
+                        },
+                        "fxBoxY": {
+                            "v": 0.25
+                        },
+                        "fxFeather": {
+                            "v": 0.05
+                        },
+                        "fxMask": {
+                            "v": 3
+                        },
+                        "fxMix": {
+                            "v": 0.936126411499814
+                        },
+                        "fxThreshold": {
+                            "v": 0.5
+                        },
+                        "greenShift": {
+                            "v": 0
+                        },
+                        "mode": {
+                            "v": 0
+                        },
+                        "wobble": {
+                            "v": 0.593498077100757
+                        },
+                        "wobbleSpeed": {
+                            "v": 2
+                        }
+                    },
+                    "type": "chromatic_aberration"
+                },
+                {
+                    "enabled": true,
+                    "id": 30,
+                    "params": {
+                        "animated": {
+                            "v": 1
+                        },
+                        "blockScale": {
+                            "v": 2
+                        },
+                        "chromaQuality": {
+                            "v": 0
+                        },
+                        "corruptWhat": {
+                            "v": 0
+                        },
+                        "corruption": {
+                            "v": 0.1992778885911911
+                        },
+                        "fxBoxH": {
+                            "v": 0.5
+                        },
+                        "fxBoxW": {
+                            "v": 0.5
+                        },
+                        "fxBoxX": {
+                            "v": 0.25
+                        },
+                        "fxBoxY": {
+                            "v": 0.25
+                        },
+                        "fxFeather": {
+                            "v": 0.05
+                        },
+                        "fxMask": {
+                            "v": 0
+                        },
+                        "fxMix": {
+                            "v": 0.8870394915880774
+                        },
+                        "fxThreshold": {
+                            "v": 0.5
+                        },
+                        "quality": {
+                            "v": 2
+                        },
+                        "subsample": {
+                            "v": 1
+                        }
+                    },
+                    "type": "jpeg_glitch"
+                },
+                {
+                    "enabled": true,
+                    "id": 31,
+                    "params": {
+                        "fps": {
+                            "v": 5.304262013108643
+                        },
+                        "freeze": {
+                            "v": 0.4274779873424073
+                        },
+                        "fxBoxH": {
+                            "v": 0.5
+                        },
+                        "fxBoxW": {
+                            "v": 0.5
+                        },
+                        "fxBoxX": {
+                            "v": 0.25
+                        },
+                        "fxBoxY": {
+                            "v": 0.25
+                        },
+                        "fxFeather": {
+                            "v": 0.05
+                        },
+                        "fxMask": {
+                            "v": 4
+                        },
+                        "fxMix": {
+                            "v": 0.9915519237044991
+                        },
+                        "fxThreshold": {
+                            "v": 0.5
+                        },
+                        "maxFreeze": {
+                            "v": 8
+                        },
+                        "seed": {
+                            "v": 27
+                        }
+                    },
+                    "type": "stutter"
+                },
+                {
+                    "enabled": true,
+                    "id": 32,
+                    "params": {
+                        "fxBoxH": {
+                            "v": 0.5
+                        },
+                        "fxBoxW": {
+                            "v": 0.5
+                        },
+                        "fxBoxX": {
+                            "v": 0.25
+                        },
+                        "fxBoxY": {
+                            "v": 0.25
+                        },
+                        "fxFeather": {
+                            "v": 0.05
+                        },
+                        "fxMask": {
+                            "v": 0
+                        },
+                        "fxMix": {
+                            "v": 0.9792981439631891
+                        },
+                        "fxThreshold": {
+                            "v": 0.5
+                        },
+                        "invertB": {
+                            "v": 0
+                        },
+                        "invertG": {
+                            "v": 0
+                        },
+                        "invertR": {
+                            "v": 1
+                        },
+                        "order": {
+                            "v": 3
+                        }
+                    },
+                    "type": "channel_swap"
+                },
+                {
+                    "enabled": true,
+                    "id": 33,
+                    "params": {
+                        "mode": {
+                            "v": 2
+                        },
+                        "shift": {
+                            "v": -28.33265902185895
+                        }
+                    },
+                    "type": "interlace"
+                }
+            ],
+            "name": "Nuclear Meltdown"
+        },
+        {
+            "effects": [
+                {
+                    "enabled": true,
+                    "id": 15,
+                    "params": {
+                        "chance": {
+                            "v": 1
+                        },
+                        "color": {
+                            "v": 16777215
+                        },
+                        "duty": {
+                            "v": 0.3
+                        },
+                        "fxBoxH": {
+                            "v": 0.5
+                        },
+                        "fxBoxW": {
+                            "v": 0.5
+                        },
+                        "fxBoxX": {
+                            "v": 0.25
+                        },
+                        "fxBoxY": {
+                            "v": 0.25
+                        },
+                        "fxFeather": {
+                            "v": 0.05
+                        },
+                        "fxMask": {
+                            "v": 0
+                        },
+                        "fxMix": {
+                            "v": 1
+                        },
+                        "fxThreshold": {
+                            "v": 0.5
+                        },
+                        "mode": {
+                            "v": 0
+                        },
+                        "opacity": {
+                            "v": 1
+                        },
+                        "rate": {
+                            "v": 6
+                        },
+                        "seed": {
+                            "v": 1
+                        }
+                    },
+                    "type": "strobe"
+                }
+            ],
+            "momentary": true,
+            "name": "Strobe (hold)"
+        },
+        {
+            "effects": [
+                {
+                    "enabled": true,
+                    "id": 16,
+                    "params": {
+                        "blueX": {
+                            "v": 12
+                        },
+                        "blueY": {
+                            "v": 0
+                        },
+                        "edge": {
+                            "v": 0
+                        },
+                        "fxBoxH": {
+                            "v": 0.5
+                        },
+                        "fxBoxW": {
+                            "v": 0.5
+                        },
+                        "fxBoxX": {
+                            "v": 0.25
+                        },
+                        "fxBoxY": {
+                            "v": 0.25
+                        },
+                        "fxFeather": {
+                            "v": 0.05
+                        },
+                        "fxMask": {
+                            "v": 0
+                        },
+                        "fxMix": {
+                            "v": 1
+                        },
+                        "fxThreshold": {
+                            "v": 0.5
+                        },
+                        "greenX": {
+                            "v": 0
+                        },
+                        "greenY": {
+                            "v": 0
+                        },
+                        "jitter": {
+                            "v": 0
+                        },
+                        "rate": {
+                            "v": 12
+                        },
+                        "redX": {
+                            "v": -12
+                        },
+                        "redY": {
+                            "v": 0
+                        },
+                        "seed": {
+                            "v": 1
+                        }
+                    },
+                    "type": "rgb_split"
+                }
+            ],
+            "momentary": true,
+            "name": "RGB Burst (hold)"
+        },
+        {
+        },
+        {
+        }
+    ],
+    "liveScenes": [
+        {
+            "layerBlend": 0,
+            "layerCorner": 3,
+            "layerEffects": [
+            ],
+            "layerMode": 0,
+            "layerOpacity": 1,
+            "layerSize": 0.3,
+            "layerSource": "",
+            "liveEffects": [
+                {
+                    "enabled": true,
+                    "id": 6,
+                    "params": {
+                        "intensity": {
+                            "v": 0.6
+                        },
+                        "radius": {
+                            "v": 20
+                        },
+                        "threshold": {
+                            "v": 0.7
+                        }
+                    },
+                    "type": "glow"
+                }
+            ],
+            "name": "Intro",
+            "overlays": [
+                {
+                    "anchor": 1,
+                    "color": 16777215,
+                    "enabled": true,
+                    "kind": 0,
+                    "opacity": 1,
+                    "pulse": true,
+                    "size": 6,
+                    "text": "MVP LIVE",
+                    "width": 60
+                }
+            ],
+            "pad": 0
+        },
+        {
+            "layerBlend": 0,
+            "layerCorner": 3,
+            "layerEffects": [
+            ],
+            "layerMode": 0,
+            "layerOpacity": 1,
+            "layerSize": 0.3,
+            "layerSource": "",
+            "liveEffects": [
+                {
+                    "enabled": true,
+                    "id": 6,
+                    "params": {
+                        "intensity": {
+                            "v": 0.6
+                        },
+                        "radius": {
+                            "v": 20
+                        },
+                        "threshold": {
+                            "v": 0.7
+                        }
+                    },
+                    "type": "glow"
+                }
+            ],
+            "name": "Drop",
+            "overlays": [
+                {
+                    "anchor": 1,
+                    "color": 16777215,
+                    "enabled": true,
+                    "kind": 0,
+                    "opacity": 1,
+                    "pulse": true,
+                    "size": 6,
+                    "text": "MVP LIVE",
+                    "width": 60
+                },
+                {
+                    "anchor": 7,
+                    "color": 16777215,
+                    "enabled": true,
+                    "kind": 4,
+                    "opacity": 0.8,
+                    "size": 14,
+                    "width": 60
+                }
+            ],
+            "pad": 3
+        },
+        {
+        },
+        {
+        },
+        {
+        },
+        {
+        },
+        {
+        },
+        {
+        }
+    ],
+    "liveSetlist": [
+        {
+            "bpm": 120,
+            "lockBpm": true,
+            "name": "Warm-up",
+            "notes": "Slow pads, let it breathe",
+            "scene": 0
+        },
+        {
+            "bpm": 128,
+            "lockBpm": true,
+            "name": "Peak",
+            "notes": "Momentary pads on the drops",
+            "scene": 1
+        }
+    ],
+    "media": [
+        {
+            "id": 1,
+            "path": "media/sample.mp4",
+            "relativePath": "media/sample.mp4"
+        }
+    ],
+    "nextId": 34,
+    "outputEffects": [
+    ],
+    "settings": {
+        "fpsDen": 1,
+        "fpsNum": 30,
+        "height": 1080,
+        "sampleRate": 48000,
+        "width": 1920
+    },
+    "tracks": [
+        {
+            "clips": [
+                {
+                    "fadeIn": "0",
+                    "fadeOut": "0",
+                    "gain": 1,
+                    "generator": {
+                        "params": {
+                            "align": {
+                                "v": 1
+                            },
+                            "animIn": {
+                                "v": 1
+                            },
+                            "animOut": {
+                                "v": 1
+                            },
+                            "bold": {
+                                "v": 1
+                            },
+                            "box": {
+                                "v": 0
+                            },
+                            "boxColor": {
+                                "v": 0
+                            },
+                            "boxPadding": {
+                                "v": 20
+                            },
+                            "boxRadius": {
+                                "v": 6
+                            },
+                            "color": {
+                                "v": 16777215
+                            },
+                            "font": {
+                                "text": "Arial",
+                                "v": 0
+                            },
+                            "inDuration": {
+                                "v": 0.5
+                            },
+                            "italic": {
+                                "v": 0
+                            },
+                            "lineSpacing": {
+                                "v": 1.2
+                            },
+                            "outDuration": {
+                                "v": 0.5
+                            },
+                            "outline": {
+                                "v": 0
+                            },
+                            "outlineColor": {
+                                "v": 0
+                            },
+                            "shadow": {
+                                "v": 0.6
+                            },
+                            "shadowBlur": {
+                                "v": 6
+                            },
+                            "shadowColor": {
+                                "v": 0
+                            },
+                            "shadowX": {
+                                "v": 4
+                            },
+                            "shadowY": {
+                                "v": 4
+                            },
+                            "size": {
+                                "v": 7
+                            },
+                            "text": {
+                                "text": "Live Set\nOpen the Live tab:\nthe pads, scenes and setlist are ready",
+                                "v": 0
+                            },
+                            "tracking": {
+                                "v": 0
+                            },
+                            "x": {
+                                "v": 0.5
+                            },
+                            "y": {
+                                "v": 0.5
+                            }
+                        },
+                        "type": "text"
+                    },
+                    "group": 0,
+                    "id": 4,
+                    "length": "10000000",
+                    "media": 0,
+                    "muted": false,
+                    "name": "",
+                    "sourceIn": "0",
+                    "start": "0",
+                    "stream": -1
+                }
+            ],
+            "id": 3,
+            "level": 1,
+            "muted": false,
+            "name": "Title",
+            "pan": 0,
+            "solo": false,
+            "type": "video"
+        },
+        {
+            "clips": [
+                {
+                    "fadeIn": "0",
+                    "fadeOut": "0",
+                    "gain": 1,
+                    "generator": {
+                        "params": {
+                            "background": {
+                                "v": 460047
+                            },
+                            "backgroundOpacity": {
+                                "v": 0
+                            },
+                            "count": {
+                                "v": 60
+                            },
+                            "palette": {
+                                "v": 2
+                            },
+                            "size": {
+                                "v": 12
+                            },
+                            "speed": {
+                                "v": 1
+                            }
+                        },
+                        "type": "bokeh"
+                    },
+                    "group": 0,
+                    "id": 5,
+                    "length": "10000000",
+                    "media": 0,
+                    "muted": false,
+                    "name": "",
+                    "sourceIn": "0",
+                    "start": "0",
+                    "stream": -1
+                }
+            ],
+            "id": 1,
+            "level": 1,
+            "muted": false,
+            "name": "Video",
+            "pan": 0,
+            "solo": false,
+            "type": "video"
+        },
+        {
+            "clips": [
+            ],
+            "id": 2,
+            "level": 1,
+            "muted": false,
+            "name": "Audio",
+            "pan": 0,
+            "solo": false,
+            "type": "audio"
+        }
+    ],
+    "version": 1
+}

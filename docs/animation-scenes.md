@@ -1,0 +1,118 @@
+# Animation scenes
+
+Mutant Video Producer's graphics composer now has a general 2D animation engine. Existing version-1 graphics retain their original renderer and appearance. New animation presets use version 2. Animation, audio analysis and reusable definitions are embedded in the project and use the same renderer in preview, CPU/GPU composition and export.
+
+## Using the composer
+
+Drag an **Animation** preset from the Generators / Graphics category onto the timeline. Select it and choose **Compose Graphics…** in Properties.
+
+- **Layout** edits text, colour and geometry. Select several layers to group them. Parent groups move, rotate and scale their children; their anchors can serve as pivots for articulated objects. **Make reusable object** turns a layer/group into a definition with editable instances.
+- **Motion** edits parent groups, path following, scale/anchors, path reveal, typography, masks, gradients, shadows, glow, trails, motion blur, particles/repeaters, charts and the scene camera. Add a Path, enable **Edit curve points on canvas**, then drag endpoints/control handles. The path buttons append, curve and close segments.
+- **Keys** selects a layer property, camera property or scene variable. Scrub to a time, enter a value and choose **Set key at playhead**. Drag diamonds on the timeline to retime keys. Keys can hold numbers, colours, text or compatible path geometry. Easing belongs to the outgoing segment. **Record keyframes** records changes made in the other controls, while editing an already animated property preserves its animation.
+- **Scene** imports chart JSON/CSV and binds real audio envelopes and beats. Advanced scene/layer data exposes the complete schema, including reusable definitions and audio mappings. Apply data to preview before continuing layout work; Apply also validates pending data drafts.
+- **Play preview** and the scrubber show event-local animation. The composer previews a 16:9 canvas; export uses the project's actual canvas.
+- **Open/Save template** exchanges native JSON compositions. The default template folder is your profile's `Media/Graphics Templates`. Image references are retained, not copied; embedded shapes, definitions and audio envelopes need no external artwork.
+
+Presets: curved race circuit with detailed reusable cars, animated typography, data chart, revealed route, deterministic confetti, morphing shapes, audio-reactive shapes/bars and reusable information cards. These are editable starting points.
+
+## Scene schema
+
+```json
+{
+  "version": 2,
+  "variables": {"headline":"A NEW CHAPTER"},
+  "datasets": {"results":[{"label":"A","value":64},{"label":"B","value":88}]},
+  "symbols": {},
+  "audio": {},
+  "camera": {"x":0.5,"y":0.5,"zoom":1,"rotation":0},
+  "layers": [
+    {"type":"rect","id":"panel","x":0.05,"y":0.12,"width":0.90,"height":0.72,"fill":"#12243b"},
+    {"type":"text","id":"heading","x":0.08,"y":0.16,"width":0.84,"height":0.12,
+     "text":"{{headline}}","font":"Segoe UI","font_size":0.055,"bold":true,"fill":"#ffffff",
+     "text_animation":{"unit":"word","style":"rise","stagger":0.1,"duration":0.5}}
+  ]
+}
+```
+
+Layers are bottom-to-top. Types: `rect`, `ellipse`, `line`, `text`, `image`, `path`, `group`, `instance`, `repeater`, `particles`, `chart`. Stable IDs identify parents, paths, masks and camera targets. IDs beginning with `$` are reserved for MCP editing targets. A child uses fractions of its group's bounds; roots use canvas fractions. Font size and stroke width use canvas height. Version-2 rounded-corner radius uses the layer's height. Rotation is degrees. `anchor_x/anchor_y` default to 0.5; `scale_x/scale_y` default to 1. `in/out` control event-local visibility, `opacity` is 0–1. Optional `blend` is `add`, `screen` or `multiply`.
+
+Groups can contain `children`, or children can identify a flat `parent` group. The composer presents nested groups as parented layers. A group's opacity applies to its composed children once, including overlaps.
+
+## Keyframes and bindings
+
+```json
+{"x":{"keyframes":[[0,0.1,"ease_in_out"],[3,0.8]],"loop":3,"ping_pong":true}}
+```
+
+Time is event-local seconds. Each key is `[seconds,value,easing?]`; keys have strictly increasing, unique times. The first key's curve controls the segment to the next key; an animation-level `easing` is the fallback. Curves: `linear`, `hold`, `ease_in`, `ease_out`, `ease_in_out`, `smooth`, `bounce`, `elastic`, or cubic Bezier `[x1,y1,x2,y2]`. Bezier time controls must be 0–1; value controls can overshoot. `loop` is a forward duration, and `ping_pong` adds a reverse leg of that duration.
+
+Numbers interpolate, colours interpolate RGBA, and text/fonts/booleans change on their key. Compatible arrays and objects interpolate recursively. Animate geometry, styling, camera settings, path progress, text, chart values, mask dimensions, effect settings and procedural parameters. Structural IDs, type, parent links, symbol identity and child structure are not keyframe properties.
+
+`{"variable":"name"}` binds a property to a scene variable; an optional numeric `offset` shifts a numeric binding. Text substitutes `{{name}}`. Symbol defaults and instance overrides supply reusable variables; repeaters also supply `index`.
+
+## Paths, morphing and following
+
+Paths use normalized coordinates within their layer box:
+
+```json
+{"type":"path","id":"route","x":0.1,"y":0.2,"width":0.8,"height":0.6,
+ "commands":[["M",0,0.8],["C",0.25,0,0.7,1,1,0.2]],
+ "fill":"#00000000","stroke":"#53e3d0","stroke_width":0.01,
+ "stroke_dash":[5,3],"trim_end":{"keyframes":[[0,0],[5,1]]}}
+```
+
+Commands: `M x y`, `L x y`, `Q cx cy x y`, `C c1x c1y c2x c2y x y`, `Z`. Morph `commands` with keyframes whose command types and point counts match. `trim_start/trim_end` reveal a stroke by its actual length. Dash lengths are multiples of pen width; `dash_offset` animates their offset.
+
+```json
+{"type":"instance","id":"car","symbol":"car_design","width":0.06,"height":0.05,
+ "follow":{"path":"route","progress":{"keyframes":[[0,0,"linear"],[8,1]],"loop":8},
+           "orient":true,"loop":true,"angle_offset":0}}
+```
+
+Following uses arc length, not Bezier parameter speed. Progress keys control acceleration/braking. `orient` rotates to the tangent; `angle_offset` adjusts the object's nose direction. `offset_x/offset_y` move relative to the path in the follower's parent coordinate space. Path references work across transformed groups in the same composition. Camera `follow` accepts any layer ID, with optional offsets; camera x/y, zoom and rotation are animatable.
+
+## Masks, styling and motion
+
+`mask` can name another shape/path layer, or be `{type:rect|ellipse|path,x,y,width,height,commands?,invert?}` relative to the masked layer's box. Masks also clip grouped contents. Animate mask geometry for wipes/reveals.
+
+`gradient` supports `linear` or `radial`, with `stops:[[position,colour],...]`, normalized `x1/y1/x2/y2`, and radial `radius`. `shadow` and `glow` have `color`, `opacity`, `blur`, `x`, `y`; blur and offsets use canvas fractions. They follow the painted silhouette, including stroked paths.
+
+`trail:{samples:8,duration:0.3,opacity:0.3}` draws fading past positions. `motion_blur:{samples:5,shutter:0.03}` averages samples around the frame time without reducing a stationary object's opacity. Effects are derived from time, so seeking and export match.
+
+Text animation: `unit:character|word|line`, `style:fade|rise|typewriter|scale`, `delay`, `stagger`, `duration`, `easing`, optional `distance` and `loop`. Character animation respects Unicode grapheme boundaries. Normal text wraps within its box, with `align`, `font`, `font_size`, `bold`, `tracking` and `line_spacing`.
+
+## Reusable objects, data and procedural graphics
+
+`symbols:{name:{layers:[...],variables:{...}}}` stores reusable local compositions. `instance` supplies `symbol` and optional variable overrides. Definition IDs are local to their composition. Recursive symbol/parent/path dependencies are rejected.
+
+`repeater` repeats its `children` or `symbol`, with `count`, `columns`, `spacing_x/spacing_y`, `rotation_step`, and `stagger` (a child-animation time offset per copy). Copies share a definition and receive a zero-based `index` variable.
+
+`chart` takes `data:[{label,value,color?},...]` or a `dataset` name from scene `datasets`. Styles are `bar`, `line`, `donut`; `progress`, `maximum`, `font_size`, `text_color` and values can animate. JSON import accepts an array or `{data:[...]}`. CSV columns are label, value and optional colour; a header is optional, and quoted fields are supported. Chart values are nonnegative in the renderer.
+
+`particles` uses deterministic `seed`, `count`, `lifetime`, `speed`, `gravity`, `direction`, `spread`, `size`, `spin`, `shape:rect|ellipse`, and `colors`. Continuous emission is the default; `emission:burst` and `delay` emit once. Speed, gravity and size use normalized units. Particle layout is reproducible without replaying earlier frames.
+
+## Audio animation
+
+Bind an imported audio/video source through the composer or MCP. Mutant Video Producer decodes actual stereo peak envelopes and runs its native beat tracker, storing `left/right`, duration, detected beats, BPM and confidence in scene `audio`. Detection quality depends on the source; it is not a manual transcription of musical beats. Analysis uses source audio before timeline effects and does not add an audio event.
+
+```json
+{"scale_y":{"audio":"source","base":0.8,"amount":0.6,"channel":"peak","attack":0.03,"release":0.12}}
+```
+
+Channels are `peak`, `left`, `right`, `beat`; numeric base and amount control response. Attack/release use seconds. Beat response decays from stored beat times. A binding's `rate/offset` maps local scene time to source-envelope time; source-event binding accounts for straight playback speed. Reverse, loops and speed ramps require a rendered source. Envelopes are snapshots; source changes require rebinding. Missing bindings use the base value. No audio file is reopened when drawing an embedded envelope.
+
+## MCP actions
+
+- `graphics_overlay {action:"capabilities"}` returns features and limits.
+- `presets`, `create`, `get`, `update` support both scene versions. Updates replace the full scene.
+- `validate` checks a supplied scene without changing the timeline.
+- `keyframe` takes event ID, layer ID (or `$camera`/`$variables`), property path, event-local time, value and easing. It retains the original static value at time zero when adding a later first key.
+- `bind_audio` takes event ID, optional binding name (default `source`), media/source-event ID, source range and bins. Alternatively reuse `waveform_event_id`; existing waveforms may not contain detected beats.
+- `export_template` takes event ID, path and explicit `overwrite` when replacing a file.
+- `import_template` validates a JSON file and inserts a new editable event, with optional at/length/track.
+
+## Limits and scope
+
+Scenes: 4 MB, 512 stored layers including definitions, depth 16, 256 keys per property, 512 commands per path and 4096 expanded reusable layers. Repeaters: 128 copies. Particles: 2048 per layer. Charts: 128 rows. Audio: one-hour analysis ranges, 64–8192 bins, at most 8192 detected beat times. Rendering has a bounded 32,768 drawing-operation budget; keep very large nested particle/text/effect compositions below it. Text animation processes up to 2048 units and text layout up to 256 lines.
+
+This is a 2D scene graph with articulated parenting, not a full 3D renderer or an IK/character-rigging suite. The scene format and renderer are separated so additional animation systems can be added later.

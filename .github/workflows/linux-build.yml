@@ -1,0 +1,55 @@
+# Builds Mutant Video Producer on Linux (Ubuntu 24.04: Qt 6.4 and FFmpeg 6.1 from its own
+# packages) and runs the self-tests that need no GPU, on every push and pull
+# request, so the Linux build keeps working.
+name: Linux build
+
+on:
+  push:
+    branches: ['**']
+    paths-ignore: ['**.md']
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq build-essential cmake ninja-build pkg-config \
+               qt6-base-dev qt6-multimedia-dev libqt6opengl6-dev libgl-dev \
+               libavdevice-dev libavformat-dev libavcodec-dev libavfilter-dev libavutil-dev libswscale-dev libswresample-dev ffmpeg
+
+      - name: Build
+        run: ./build.sh Release
+
+      # Off-screen (no display); the GPU suites are left out (the runner draws OpenGL in software).
+      - name: Self-test
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          tests/make_test_media.sh ffmpeg testmedia > /dev/null
+          bin=build/Release/bin/mvp_selftest
+          out=build/ci
+          failed=0
+          run() { echo "::group::$1"; "$bin" "$@" || failed=1; echo "::endgroup::"; }
+          run probe testmedia/h264_aac.mp4 testmedia/vp8_vorbis.webm
+          run generators $out/gen
+          run effects testmedia/h264_aac.mp4 $out/fx
+          run speed testmedia/h264_aac.mp4 $out/speed
+          run editing testmedia $out/edit
+          run audiofx testmedia $out/afx
+          run envelopes testmedia $out/env
+          run ramps testmedia $out/ramps
+          run presets testmedia $out/presets
+          run random
+          run beats
+          run docs docs data/examples src
+          run harden testmedia data/examples $out/harden 500
+          build/Release/bin/mvp_collection_test || failed=1
+          build/Release/bin/mvp_brand_test || failed=1
+          exit $failed

@@ -1,0 +1,397 @@
+{
+    "audioMasterEffects": [
+        {
+            "enabled": true,
+            "id": 12,
+            "params": {
+                "ceiling": {
+                    "v": -0.3
+                },
+                "release": {
+                    "v": 60
+                }
+            },
+            "type": "a_limiter"
+        }
+    ],
+    "format": "montage-project",
+    "media": [
+        {
+            "id": 1,
+            "path": "media/narration.m4a",
+            "relativePath": "media/narration.m4a"
+        },
+        {
+            "id": 2,
+            "path": "media/music.m4a",
+            "relativePath": "media/music.m4a"
+        }
+    ],
+    "nextId": 15,
+    "outputEffects": [
+    ],
+    "settings": {
+        "fpsDen": 1,
+        "fpsNum": 30,
+        "height": 1080,
+        "sampleRate": 48000,
+        "width": 1920
+    },
+    "tracks": [
+        {
+            "clips": [
+                {
+                    "fadeIn": "200000",
+                    "fadeOut": "200000",
+                    "gain": 1,
+                    "generator": {
+                        "params": {
+                            "align": {
+                                "v": 1
+                            },
+                            "animIn": {
+                                "v": 1
+                            },
+                            "animOut": {
+                                "v": 1
+                            },
+                            "bold": {
+                                "v": 0
+                            },
+                            "box": {
+                                "v": 0.5
+                            },
+                            "boxColor": {
+                                "v": 0
+                            },
+                            "boxPadding": {
+                                "v": 12
+                            },
+                            "boxRadius": {
+                                "v": 6
+                            },
+                            "color": {
+                                "v": 16777215
+                            },
+                            "font": {
+                                "text": "Arial",
+                                "v": 0
+                            },
+                            "inDuration": {
+                                "v": 0.15
+                            },
+                            "italic": {
+                                "v": 0
+                            },
+                            "lineSpacing": {
+                                "v": 1
+                            },
+                            "outDuration": {
+                                "v": 0.15
+                            },
+                            "outline": {
+                                "v": 0
+                            },
+                            "outlineColor": {
+                                "v": 0
+                            },
+                            "shadow": {
+                                "v": 0
+                            },
+                            "shadowBlur": {
+                                "v": 6
+                            },
+                            "shadowColor": {
+                                "v": 0
+                            },
+                            "shadowX": {
+                                "v": 4
+                            },
+                            "shadowY": {
+                                "v": 4
+                            },
+                            "size": {
+                                "v": 4.5
+                            },
+                            "text": {
+                                "text": "Audio Mixing: open the Mixer (Ctrl+Shift+M)",
+                                "v": 0
+                            },
+                            "tracking": {
+                                "v": 0
+                            },
+                            "x": {
+                                "v": 0.5
+                            },
+                            "y": {
+                                "v": 0.08
+                            }
+                        },
+                        "type": "text"
+                    },
+                    "group": 0,
+                    "id": 14,
+                    "length": "3000000",
+                    "media": 0,
+                    "muted": false,
+                    "name": "",
+                    "sourceIn": "0",
+                    "start": "0",
+                    "stream": -1
+                }
+            ],
+            "id": 13,
+            "level": 1,
+            "muted": false,
+            "name": "Title",
+            "pan": 0,
+            "solo": false,
+            "type": "video"
+        },
+        {
+            "clips": [
+                {
+                    "fadeIn": "0",
+                    "fadeOut": "0",
+                    "gain": 1,
+                    "generator": {
+                        "params": {
+                            "color1": {
+                                "v": 4063136
+                            },
+                            "color2": {
+                                "v": 9067775
+                            },
+                            "horizon": {
+                                "v": 729920
+                            },
+                            "sky": {
+                                "v": 132111
+                            },
+                            "speed": {
+                                "v": 1
+                            },
+                            "stars": {
+                                "v": 1
+                            }
+                        },
+                        "type": "aurora"
+                    },
+                    "group": 0,
+                    "id": 4,
+                    "length": "38000000",
+                    "media": 0,
+                    "muted": false,
+                    "name": "",
+                    "sourceIn": "0",
+                    "start": "0",
+                    "stream": -1
+                }
+            ],
+            "id": 1,
+            "level": 1,
+            "muted": false,
+            "name": "Picture",
+            "pan": 0,
+            "solo": false,
+            "type": "video"
+        },
+        {
+            "clips": [
+                {
+                    "fadeIn": "0",
+                    "fadeOut": "0",
+                    "gain": 1,
+                    "group": 0,
+                    "id": 5,
+                    "length": "31339000",
+                    "media": 1,
+                    "muted": false,
+                    "name": "",
+                    "sourceIn": "0",
+                    "start": "2000000",
+                    "stream": 0
+                }
+            ],
+            "effects": [
+                {
+                    "enabled": true,
+                    "id": 7,
+                    "params": {
+                        "frequency": {
+                            "v": 80
+                        },
+                        "q": {
+                            "v": 0.707
+                        },
+                        "slope": {
+                            "v": 0
+                        },
+                        "type": {
+                            "v": 1
+                        }
+                    },
+                    "type": "a_filter"
+                },
+                {
+                    "enabled": true,
+                    "id": 8,
+                    "params": {
+                        "adaptive": {
+                            "v": 0
+                        },
+                        "amount": {
+                            "v": 6
+                        },
+                        "floor": {
+                            "v": -50
+                        }
+                    },
+                    "type": "a_denoise"
+                },
+                {
+                    "enabled": true,
+                    "id": 9,
+                    "params": {
+                        "attack": {
+                            "v": 5
+                        },
+                        "knee": {
+                            "v": 6
+                        },
+                        "makeup": {
+                            "v": 6
+                        },
+                        "ratio": {
+                            "v": 4
+                        },
+                        "release": {
+                            "v": 120
+                        },
+                        "threshold": {
+                            "v": -24
+                        }
+                    },
+                    "type": "a_compressor"
+                },
+                {
+                    "enabled": true,
+                    "id": 10,
+                    "params": {
+                        "highCut": {
+                            "v": 20000
+                        },
+                        "highFreq": {
+                            "v": 10000
+                        },
+                        "highGain": {
+                            "v": 2
+                        },
+                        "lowCut": {
+                            "v": 80
+                        },
+                        "lowFreq": {
+                            "v": 100
+                        },
+                        "lowGain": {
+                            "v": 0
+                        },
+                        "mid1Freq": {
+                            "v": 250
+                        },
+                        "mid1Gain": {
+                            "v": -2
+                        },
+                        "mid1Q": {
+                            "v": 1
+                        },
+                        "mid2Freq": {
+                            "v": 3500
+                        },
+                        "mid2Gain": {
+                            "v": 4
+                        },
+                        "mid2Q": {
+                            "v": 1.2
+                        }
+                    },
+                    "type": "a_eq"
+                },
+                {
+                    "enabled": true,
+                    "id": 11,
+                    "params": {
+                        "ceiling": {
+                            "v": -1
+                        },
+                        "release": {
+                            "v": 60
+                        }
+                    },
+                    "type": "a_limiter"
+                }
+            ],
+            "id": 2,
+            "level": 1,
+            "muted": false,
+            "name": "Narration",
+            "pan": 0,
+            "solo": false,
+            "type": "audio"
+        },
+        {
+            "clips": [
+                {
+                    "fadeIn": "0",
+                    "fadeOut": "0",
+                    "gain": 1,
+                    "group": 0,
+                    "id": 6,
+                    "length": "38000000",
+                    "media": 2,
+                    "muted": false,
+                    "name": "",
+                    "sourceIn": "0",
+                    "start": "0",
+                    "stream": 0
+                }
+            ],
+            "duckAmount": -14,
+            "duckUnder": 2,
+            "id": 3,
+            "level": 1,
+            "muted": false,
+            "name": "Music",
+            "pan": 0,
+            "solo": false,
+            "type": "audio",
+            "volumeEnvelope": {
+                "active": true,
+                "points": [
+                    [
+                        "0",
+                        0,
+                        2
+                    ],
+                    [
+                        "2000000",
+                        0.8,
+                        0
+                    ],
+                    [
+                        "35000000",
+                        0.8,
+                        2
+                    ],
+                    [
+                        "38000000",
+                        0,
+                        0
+                    ]
+                ],
+                "value": 1
+            }
+        }
+    ],
+    "version": 1
+}

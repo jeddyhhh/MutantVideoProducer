@@ -1,0 +1,926 @@
+{
+    "audioMasterEffects": [
+    ],
+    "format": "montage-project",
+    "media": [
+    ],
+    "nextId": 20,
+    "outputEffects": [
+    ],
+    "settings": {
+        "fpsDen": 1,
+        "fpsNum": 30,
+        "height": 1080,
+        "sampleRate": 48000,
+        "width": 1920
+    },
+    "tracks": [
+        {
+            "clips": [
+                {
+                    "fadeIn": "0",
+                    "fadeOut": "0",
+                    "gain": 1,
+                    "generator": {
+                        "params": {
+                            "color": {
+                                "v": 16726843
+                            },
+                            "height": {
+                                "v": 1.2
+                            },
+                            "margin": {
+                                "v": 0
+                            },
+                            "position": {
+                                "v": 0
+                            },
+                            "rounded": {
+                                "v": 0
+                            },
+                            "trackColor": {
+                                "v": 16777215
+                            },
+                            "trackOpacity": {
+                                "v": 0.25
+                            }
+                        },
+                        "type": "progress_bar"
+                    },
+                    "group": 0,
+                    "id": 19,
+                    "length": "36000000",
+                    "media": 0,
+                    "muted": false,
+                    "name": "",
+                    "sourceIn": "0",
+                    "start": "0",
+                    "stream": -1
+                }
+            ],
+            "id": 18,
+            "level": 1,
+            "muted": false,
+            "name": "Progress",
+            "pan": 0,
+            "solo": false,
+            "type": "video"
+        },
+        {
+            "clips": [
+                {
+                    "fadeIn": "0",
+                    "fadeOut": "0",
+                    "gain": 1,
+                    "generator": {
+                        "params": {
+                            "align": {
+                                "v": 1
+                            },
+                            "animIn": {
+                                "v": 1
+                            },
+                            "animOut": {
+                                "v": 1
+                            },
+                            "bold": {
+                                "v": 1
+                            },
+                            "box": {
+                                "v": 0
+                            },
+                            "boxColor": {
+                                "v": 0
+                            },
+                            "boxPadding": {
+                                "v": 20
+                            },
+                            "boxRadius": {
+                                "v": 6
+                            },
+                            "color": {
+                                "v": 16777215
+                            },
+                            "font": {
+                                "text": "Arial",
+                                "v": 0
+                            },
+                            "inDuration": {
+                                "v": 0.5
+                            },
+                            "italic": {
+                                "v": 0
+                            },
+                            "lineSpacing": {
+                                "v": 1.2
+                            },
+                            "outDuration": {
+                                "v": 0.5
+                            },
+                            "outline": {
+                                "v": 0
+                            },
+                            "outlineColor": {
+                                "v": 0
+                            },
+                            "shadow": {
+                                "v": 0.6
+                            },
+                            "shadowBlur": {
+                                "v": 6
+                            },
+                            "shadowColor": {
+                                "v": 0
+                            },
+                            "shadowX": {
+                                "v": 4
+                            },
+                            "shadowY": {
+                                "v": 4
+                            },
+                            "size": {
+                                "v": 7
+                            },
+                            "text": {
+                                "text": "Titles and Generators\nEverything here is made by Mutant Video Producer",
+                                "v": 0
+                            },
+                            "tracking": {
+                                "v": 0
+                            },
+                            "x": {
+                                "v": 0.5
+                            },
+                            "y": {
+                                "v": 0.5
+                            }
+                        },
+                        "type": "text"
+                    },
+                    "group": 0,
+                    "id": 10,
+                    "length": "4000000",
+                    "media": 0,
+                    "muted": false,
+                    "name": "",
+                    "sourceIn": "0",
+                    "start": "5000000",
+                    "stream": -1
+                },
+                {
+                    "fadeIn": "0",
+                    "fadeOut": "0",
+                    "gain": 1,
+                    "generator": {
+                        "params": {
+                            "bold": {
+                                "v": 1
+                            },
+                            "color": {
+                                "v": 16777215
+                            },
+                            "font": {
+                                "text": "Arial Black",
+                                "v": 0
+                            },
+                            "highlight": {
+                                "v": 16765952
+                            },
+                            "outline": {
+                                "v": 0
+                            },
+                            "outlineColor": {
+                                "v": 0
+                            },
+                            "rate": {
+                                "v": 3
+                            },
+                            "size": {
+                                "v": 9
+                            },
+                            "style": {
+                                "v": 0
+                            },
+                            "text": {
+                                "text": "Every word pops on in time",
+                                "v": 0
+                            },
+                            "y": {
+                                "v": 0.5
+                            }
+                        },
+                        "type": "kinetic_text"
+                    },
+                    "group": 0,
+                    "id": 11,
+                    "length": "4000000",
+                    "media": 0,
+                    "muted": false,
+                    "name": "",
+                    "sourceIn": "0",
+                    "start": "9000000",
+                    "stream": -1
+                },
+                {
+                    "fadeIn": "0",
+                    "fadeOut": "0",
+                    "gain": 1,
+                    "generator": {
+                        "params": {
+                            "align": {
+                                "v": 1
+                            },
+                            "animIn": {
+                                "v": 7
+                            },
+                            "animOut": {
+                                "v": 1
+                            },
+                            "bold": {
+                                "v": 1
+                            },
+                            "box": {
+                                "v": 0
+                            },
+                            "boxColor": {
+                                "v": 0
+                            },
+                            "boxPadding": {
+                                "v": 20
+                            },
+                            "boxRadius": {
+                                "v": 6
+                            },
+                            "color": {
+                                "v": 16777215
+                            },
+                            "font": {
+                                "text": "Courier New",
+                                "v": 0
+                            },
+                            "inDuration": {
+                                "v": 2
+                            },
+                            "italic": {
+                                "v": 0
+                            },
+                            "lineSpacing": {
+                                "v": 1
+                            },
+                            "outDuration": {
+                                "v": 0.5
+                            },
+                            "outline": {
+                                "v": 0
+                            },
+                            "outlineColor": {
+                                "v": 0
+                            },
+                            "shadow": {
+                                "v": 0.6
+                            },
+                            "shadowBlur": {
+                                "v": 6
+                            },
+                            "shadowColor": {
+                                "v": 0
+                            },
+                            "shadowX": {
+                                "v": 4
+                            },
+                            "shadowY": {
+                                "v": 4
+                            },
+                            "size": {
+                                "v": 7
+                            },
+                            "text": {
+                                "text": "Typed out one letter at a time",
+                                "v": 0
+                            },
+                            "tracking": {
+                                "v": 0
+                            },
+                            "x": {
+                                "v": 0.5
+                            },
+                            "y": {
+                                "v": 0.5
+                            }
+                        },
+                        "type": "text"
+                    },
+                    "group": 0,
+                    "id": 12,
+                    "length": "4000000",
+                    "media": 0,
+                    "muted": false,
+                    "name": "",
+                    "sourceIn": "0",
+                    "start": "13000000",
+                    "stream": -1
+                },
+                {
+                    "fadeIn": "0",
+                    "fadeOut": "0",
+                    "gain": 1,
+                    "generator": {
+                        "params": {
+                            "align": {
+                                "v": 0
+                            },
+                            "animIn": {
+                                "v": 2
+                            },
+                            "animOut": {
+                                "v": 1
+                            },
+                            "bold": {
+                                "v": 1
+                            },
+                            "box": {
+                                "v": 0.55
+                            },
+                            "boxColor": {
+                                "v": 0
+                            },
+                            "boxPadding": {
+                                "v": 22
+                            },
+                            "boxRadius": {
+                                "v": 6
+                            },
+                            "color": {
+                                "v": 16777215
+                            },
+                            "font": {
+                                "text": "Arial",
+                                "v": 0
+                            },
+                            "inDuration": {
+                                "v": 0.5
+                            },
+                            "italic": {
+                                "v": 0
+                            },
+                            "lineSpacing": {
+                                "v": 1
+                            },
+                            "outDuration": {
+                                "v": 0.5
+                            },
+                            "outline": {
+                                "v": 0
+                            },
+                            "outlineColor": {
+                                "v": 0
+                            },
+                            "shadow": {
+                                "v": 0
+                            },
+                            "shadowBlur": {
+                                "v": 6
+                            },
+                            "shadowColor": {
+                                "v": 0
+                            },
+                            "shadowX": {
+                                "v": 4
+                            },
+                            "shadowY": {
+                                "v": 4
+                            },
+                            "size": {
+                                "v": 5
+                            },
+                            "text": {
+                                "text": "Lower Third\nNames and roles",
+                                "v": 0
+                            },
+                            "tracking": {
+                                "v": 0
+                            },
+                            "x": {
+                                "v": 0.07
+                            },
+                            "y": {
+                                "v": 0.83
+                            }
+                        },
+                        "type": "text"
+                    },
+                    "group": 0,
+                    "id": 13,
+                    "length": "5000000",
+                    "media": 0,
+                    "muted": false,
+                    "name": "",
+                    "sourceIn": "0",
+                    "start": "17000000",
+                    "stream": -1
+                },
+                {
+                    "fadeIn": "0",
+                    "fadeOut": "0",
+                    "gain": 1,
+                    "generator": {
+                        "params": {
+                            "angle": {
+                                "keys": [
+                                    [
+                                        "0",
+                                        0,
+                                        0
+                                    ],
+                                    [
+                                        "3000000",
+                                        360,
+                                        0
+                                    ]
+                                ],
+                                "v": 0
+                            },
+                            "color": {
+                                "v": 16723285
+                            },
+                            "corner": {
+                                "v": 15
+                            },
+                            "height": {
+                                "v": 40
+                            },
+                            "opacity": {
+                                "v": 1
+                            },
+                            "outline": {
+                                "v": 0
+                            },
+                            "outlineColor": {
+                                "v": 16777215
+                            },
+                            "shape": {
+                                "v": 5
+                            },
+                            "width": {
+                                "v": 40
+                            },
+                            "x": {
+                                "keys": [
+                                    [
+                                        "0",
+                                        0.15,
+                                        0
+                                    ],
+                                    [
+                                        "3000000",
+                                        0.85,
+                                        0
+                                    ]
+                                ],
+                                "v": 0.5
+                            },
+                            "y": {
+                                "v": 0.5
+                            }
+                        },
+                        "type": "shape"
+                    },
+                    "group": 0,
+                    "id": 16,
+                    "length": "3000000",
+                    "media": 0,
+                    "muted": false,
+                    "name": "",
+                    "sourceIn": "0",
+                    "start": "19000000",
+                    "stream": -1
+                },
+                {
+                    "fadeIn": "0",
+                    "fadeOut": "0",
+                    "gain": 1,
+                    "generator": {
+                        "params": {
+                            "align": {
+                                "v": 1
+                            },
+                            "animIn": {
+                                "v": 6
+                            },
+                            "animOut": {
+                                "v": 6
+                            },
+                            "bold": {
+                                "v": 1
+                            },
+                            "box": {
+                                "v": 0
+                            },
+                            "boxColor": {
+                                "v": 0
+                            },
+                            "boxPadding": {
+                                "v": 20
+                            },
+                            "boxRadius": {
+                                "v": 6
+                            },
+                            "color": {
+                                "v": 16777215
+                            },
+                            "font": {
+                                "text": "Impact",
+                                "v": 0
+                            },
+                            "inDuration": {
+                                "v": 0.6
+                            },
+                            "italic": {
+                                "v": 0
+                            },
+                            "lineSpacing": {
+                                "v": 1
+                            },
+                            "outDuration": {
+                                "v": 0.5
+                            },
+                            "outline": {
+                                "v": 6
+                            },
+                            "outlineColor": {
+                                "v": 0
+                            },
+                            "shadow": {
+                                "v": 0.6
+                            },
+                            "shadowBlur": {
+                                "v": 6
+                            },
+                            "shadowColor": {
+                                "v": 0
+                            },
+                            "shadowX": {
+                                "v": 4
+                            },
+                            "shadowY": {
+                                "v": 4
+                            },
+                            "size": {
+                                "v": 22
+                            },
+                            "text": {
+                                "text": "ZOOM",
+                                "v": 0
+                            },
+                            "tracking": {
+                                "v": 0
+                            },
+                            "x": {
+                                "v": 0.5
+                            },
+                            "y": {
+                                "v": 0.5
+                            }
+                        },
+                        "type": "text"
+                    },
+                    "group": 0,
+                    "id": 14,
+                    "length": "4000000",
+                    "media": 0,
+                    "muted": false,
+                    "name": "",
+                    "sourceIn": "0",
+                    "start": "22000000",
+                    "stream": -1
+                },
+                {
+                    "fadeIn": "0",
+                    "fadeOut": "0",
+                    "gain": 1,
+                    "generator": {
+                        "params": {
+                            "count": {
+                                "v": 320
+                            },
+                            "palette": {
+                                "v": 1
+                            },
+                            "size": {
+                                "v": 1
+                            },
+                            "speed": {
+                                "v": 1
+                            }
+                        },
+                        "type": "confetti"
+                    },
+                    "group": 0,
+                    "id": 17,
+                    "length": "3500000",
+                    "media": 0,
+                    "muted": false,
+                    "name": "",
+                    "sourceIn": "0",
+                    "start": "22500000",
+                    "stream": -1
+                },
+                {
+                    "fadeIn": "0",
+                    "fadeOut": "0",
+                    "gain": 1,
+                    "generator": {
+                        "params": {
+                            "align": {
+                                "v": 1
+                            },
+                            "bold": {
+                                "v": 1
+                            },
+                            "box": {
+                                "v": 0
+                            },
+                            "boxColor": {
+                                "v": 0
+                            },
+                            "boxPadding": {
+                                "v": 20
+                            },
+                            "boxRadius": {
+                                "v": 6
+                            },
+                            "color": {
+                                "v": 16777215
+                            },
+                            "font": {
+                                "text": "Arial",
+                                "v": 0
+                            },
+                            "italic": {
+                                "v": 0
+                            },
+                            "lineSpacing": {
+                                "v": 1
+                            },
+                            "outline": {
+                                "v": 0
+                            },
+                            "outlineColor": {
+                                "v": 0
+                            },
+                            "shadow": {
+                                "v": 0.6
+                            },
+                            "shadowBlur": {
+                                "v": 6
+                            },
+                            "shadowColor": {
+                                "v": 0
+                            },
+                            "shadowX": {
+                                "v": 4
+                            },
+                            "shadowY": {
+                                "v": 4
+                            },
+                            "size": {
+                                "v": 4.5
+                            },
+                            "text": {
+                                "text": "# Made with\nMutant Video Producer\n\n# Tutorial\nTitles and Generators\n\n# Thanks for watching",
+                                "v": 0
+                            },
+                            "tracking": {
+                                "v": 0
+                            },
+                            "x": {
+                                "v": 0.5
+                            }
+                        },
+                        "type": "credits"
+                    },
+                    "group": 0,
+                    "id": 15,
+                    "length": "10000000",
+                    "media": 0,
+                    "muted": false,
+                    "name": "",
+                    "sourceIn": "0",
+                    "start": "26000000",
+                    "stream": -1
+                }
+            ],
+            "id": 4,
+            "level": 1,
+            "muted": false,
+            "name": "Overlays",
+            "pan": 0,
+            "solo": false,
+            "type": "video"
+        },
+        {
+            "clips": [
+                {
+                    "fadeIn": "0",
+                    "fadeOut": "0",
+                    "gain": 1,
+                    "generator": {
+                        "params": {
+                            "background": {
+                                "v": 13224393
+                            },
+                            "ink": {
+                                "v": 1315860
+                            },
+                            "start": {
+                                "v": 5
+                            },
+                            "sweep": {
+                                "v": 8026746
+                            }
+                        },
+                        "type": "countdown"
+                    },
+                    "group": 0,
+                    "id": 5,
+                    "length": "5000000",
+                    "media": 0,
+                    "muted": false,
+                    "name": "",
+                    "sourceIn": "0",
+                    "start": "0",
+                    "stream": -1
+                },
+                {
+                    "fadeIn": "0",
+                    "fadeOut": "0",
+                    "gain": 1,
+                    "generator": {
+                        "params": {
+                            "angle": {
+                                "v": 90
+                            },
+                            "centerX": {
+                                "v": 0.5
+                            },
+                            "centerY": {
+                                "v": 0.5
+                            },
+                            "color1": {
+                                "v": 1981554
+                            },
+                            "color2": {
+                                "v": 2773656
+                            },
+                            "shape": {
+                                "v": 0
+                            }
+                        },
+                        "type": "gradient"
+                    },
+                    "group": 0,
+                    "id": 6,
+                    "length": "7000000",
+                    "media": 0,
+                    "muted": false,
+                    "name": "",
+                    "sourceIn": "0",
+                    "start": "5000000",
+                    "stream": -1
+                },
+                {
+                    "fadeIn": "0",
+                    "fadeOut": "0",
+                    "gain": 1,
+                    "generator": {
+                        "params": {
+                            "background": {
+                                "v": 460047
+                            },
+                            "backgroundOpacity": {
+                                "v": 1
+                            },
+                            "count": {
+                                "v": 40
+                            },
+                            "palette": {
+                                "v": 0
+                            },
+                            "size": {
+                                "v": 12
+                            },
+                            "speed": {
+                                "v": 1
+                            }
+                        },
+                        "type": "bokeh"
+                    },
+                    "group": 0,
+                    "id": 7,
+                    "length": "7000000",
+                    "media": 0,
+                    "muted": false,
+                    "name": "",
+                    "sourceIn": "0",
+                    "start": "12000000",
+                    "stream": -1
+                },
+                {
+                    "fadeIn": "0",
+                    "fadeOut": "0",
+                    "gain": 1,
+                    "generator": {
+                        "params": {
+                            "color": {
+                                "v": 16722902
+                            },
+                            "horizon": {
+                                "v": 0.55
+                            },
+                            "speed": {
+                                "v": 1
+                            },
+                            "sun": {
+                                "v": 1
+                            }
+                        },
+                        "type": "retro_grid"
+                    },
+                    "group": 0,
+                    "id": 8,
+                    "length": "7000000",
+                    "media": 0,
+                    "muted": false,
+                    "name": "",
+                    "sourceIn": "0",
+                    "start": "19000000",
+                    "stream": -1
+                },
+                {
+                    "fadeIn": "0",
+                    "fadeOut": "0",
+                    "gain": 1,
+                    "generator": {
+                        "params": {
+                            "background": {
+                                "v": 5
+                            },
+                            "color": {
+                                "v": 16777215
+                            },
+                            "count": {
+                                "v": 600
+                            },
+                            "speed": {
+                                "v": 1
+                            },
+                            "trails": {
+                                "v": 0.3
+                            }
+                        },
+                        "type": "starfield"
+                    },
+                    "group": 0,
+                    "id": 9,
+                    "length": "10000000",
+                    "media": 0,
+                    "muted": false,
+                    "name": "",
+                    "sourceIn": "0",
+                    "start": "26000000",
+                    "stream": -1
+                }
+            ],
+            "id": 3,
+            "level": 1,
+            "muted": false,
+            "name": "Text",
+            "pan": 0,
+            "solo": false,
+            "type": "video"
+        },
+        {
+            "clips": [
+            ],
+            "id": 1,
+            "level": 1,
+            "muted": false,
+            "name": "Backgrounds",
+            "pan": 0,
+            "solo": false,
+            "type": "video"
+        },
+        {
+            "clips": [
+            ],
+            "id": 2,
+            "level": 1,
+            "muted": false,
+            "name": "Audio",
+            "pan": 0,
+            "solo": false,
+            "type": "audio"
+        }
+    ],
+    "version": 1
+}

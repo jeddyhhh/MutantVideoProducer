@@ -1,0 +1,1704 @@
+{
+    "audioMasterEffects": [
+    ],
+    "format": "montage-project",
+    "media": [
+        {
+            "id": 1,
+            "path": "media/sample.mp4",
+            "relativePath": "media/sample.mp4"
+        }
+    ],
+    "nextId": 51,
+    "outputEffects": [
+    ],
+    "settings": {
+        "fpsDen": 1,
+        "fpsNum": 30,
+        "height": 1080,
+        "sampleRate": 48000,
+        "width": 1920
+    },
+    "tracks": [
+        {
+            "clips": [
+                {
+                    "fadeIn": "200000",
+                    "fadeOut": "200000",
+                    "gain": 1,
+                    "generator": {
+                        "params": {
+                            "align": {
+                                "v": 1
+                            },
+                            "animIn": {
+                                "v": 1
+                            },
+                            "animOut": {
+                                "v": 1
+                            },
+                            "bold": {
+                                "v": 0
+                            },
+                            "box": {
+                                "v": 0.5
+                            },
+                            "boxColor": {
+                                "v": 0
+                            },
+                            "boxPadding": {
+                                "v": 12
+                            },
+                            "boxRadius": {
+                                "v": 6
+                            },
+                            "color": {
+                                "v": 16777215
+                            },
+                            "font": {
+                                "text": "Arial",
+                                "v": 0
+                            },
+                            "inDuration": {
+                                "v": 0.15
+                            },
+                            "italic": {
+                                "v": 0
+                            },
+                            "lineSpacing": {
+                                "v": 1
+                            },
+                            "outDuration": {
+                                "v": 0.15
+                            },
+                            "outline": {
+                                "v": 0
+                            },
+                            "outlineColor": {
+                                "v": 0
+                            },
+                            "shadow": {
+                                "v": 0
+                            },
+                            "shadowBlur": {
+                                "v": 6
+                            },
+                            "shadowColor": {
+                                "v": 0
+                            },
+                            "shadowX": {
+                                "v": 4
+                            },
+                            "shadowY": {
+                                "v": 4
+                            },
+                            "size": {
+                                "v": 4.5
+                            },
+                            "text": {
+                                "text": "VHS",
+                                "v": 0
+                            },
+                            "tracking": {
+                                "v": 0
+                            },
+                            "x": {
+                                "v": 0.5
+                            },
+                            "y": {
+                                "v": 0.08
+                            }
+                        },
+                        "type": "text"
+                    },
+                    "group": 0,
+                    "id": 8,
+                    "length": "3600000",
+                    "media": 0,
+                    "muted": false,
+                    "name": "",
+                    "sourceIn": "0",
+                    "start": "200000",
+                    "stream": -1
+                },
+                {
+                    "fadeIn": "200000",
+                    "fadeOut": "200000",
+                    "gain": 1,
+                    "generator": {
+                        "params": {
+                            "align": {
+                                "v": 1
+                            },
+                            "animIn": {
+                                "v": 1
+                            },
+                            "animOut": {
+                                "v": 1
+                            },
+                            "bold": {
+                                "v": 0
+                            },
+                            "box": {
+                                "v": 0.5
+                            },
+                            "boxColor": {
+                                "v": 0
+                            },
+                            "boxPadding": {
+                                "v": 12
+                            },
+                            "boxRadius": {
+                                "v": 6
+                            },
+                            "color": {
+                                "v": 16777215
+                            },
+                            "font": {
+                                "text": "Arial",
+                                "v": 0
+                            },
+                            "inDuration": {
+                                "v": 0.15
+                            },
+                            "italic": {
+                                "v": 0
+                            },
+                            "lineSpacing": {
+                                "v": 1
+                            },
+                            "outDuration": {
+                                "v": 0.15
+                            },
+                            "outline": {
+                                "v": 0
+                            },
+                            "outlineColor": {
+                                "v": 0
+                            },
+                            "shadow": {
+                                "v": 0
+                            },
+                            "shadowBlur": {
+                                "v": 6
+                            },
+                            "shadowColor": {
+                                "v": 0
+                            },
+                            "shadowX": {
+                                "v": 4
+                            },
+                            "shadowY": {
+                                "v": 4
+                            },
+                            "size": {
+                                "v": 4.5
+                            },
+                            "text": {
+                                "text": "CRT Monitor",
+                                "v": 0
+                            },
+                            "tracking": {
+                                "v": 0
+                            },
+                            "x": {
+                                "v": 0.5
+                            },
+                            "y": {
+                                "v": 0.08
+                            }
+                        },
+                        "type": "text"
+                    },
+                    "group": 0,
+                    "id": 13,
+                    "length": "3600000",
+                    "media": 0,
+                    "muted": false,
+                    "name": "",
+                    "sourceIn": "0",
+                    "start": "4200000",
+                    "stream": -1
+                },
+                {
+                    "fadeIn": "200000",
+                    "fadeOut": "200000",
+                    "gain": 1,
+                    "generator": {
+                        "params": {
+                            "align": {
+                                "v": 1
+                            },
+                            "animIn": {
+                                "v": 1
+                            },
+                            "animOut": {
+                                "v": 1
+                            },
+                            "bold": {
+                                "v": 0
+                            },
+                            "box": {
+                                "v": 0.5
+                            },
+                            "boxColor": {
+                                "v": 0
+                            },
+                            "boxPadding": {
+                                "v": 12
+                            },
+                            "boxRadius": {
+                                "v": 6
+                            },
+                            "color": {
+                                "v": 16777215
+                            },
+                            "font": {
+                                "text": "Arial",
+                                "v": 0
+                            },
+                            "inDuration": {
+                                "v": 0.15
+                            },
+                            "italic": {
+                                "v": 0
+                            },
+                            "lineSpacing": {
+                                "v": 1
+                            },
+                            "outDuration": {
+                                "v": 0.15
+                            },
+                            "outline": {
+                                "v": 0
+                            },
+                            "outlineColor": {
+                                "v": 0
+                            },
+                            "shadow": {
+                                "v": 0
+                            },
+                            "shadowBlur": {
+                                "v": 6
+                            },
+                            "shadowColor": {
+                                "v": 0
+                            },
+                            "shadowX": {
+                                "v": 4
+                            },
+                            "shadowY": {
+                                "v": 4
+                            },
+                            "size": {
+                                "v": 4.5
+                            },
+                            "text": {
+                                "text": "RGB Split",
+                                "v": 0
+                            },
+                            "tracking": {
+                                "v": 0
+                            },
+                            "x": {
+                                "v": 0.5
+                            },
+                            "y": {
+                                "v": 0.08
+                            }
+                        },
+                        "type": "text"
+                    },
+                    "group": 0,
+                    "id": 18,
+                    "length": "3600000",
+                    "media": 0,
+                    "muted": false,
+                    "name": "",
+                    "sourceIn": "0",
+                    "start": "8200000",
+                    "stream": -1
+                },
+                {
+                    "fadeIn": "200000",
+                    "fadeOut": "200000",
+                    "gain": 1,
+                    "generator": {
+                        "params": {
+                            "align": {
+                                "v": 1
+                            },
+                            "animIn": {
+                                "v": 1
+                            },
+                            "animOut": {
+                                "v": 1
+                            },
+                            "bold": {
+                                "v": 0
+                            },
+                            "box": {
+                                "v": 0.5
+                            },
+                            "boxColor": {
+                                "v": 0
+                            },
+                            "boxPadding": {
+                                "v": 12
+                            },
+                            "boxRadius": {
+                                "v": 6
+                            },
+                            "color": {
+                                "v": 16777215
+                            },
+                            "font": {
+                                "text": "Arial",
+                                "v": 0
+                            },
+                            "inDuration": {
+                                "v": 0.15
+                            },
+                            "italic": {
+                                "v": 0
+                            },
+                            "lineSpacing": {
+                                "v": 1
+                            },
+                            "outDuration": {
+                                "v": 0.15
+                            },
+                            "outline": {
+                                "v": 0
+                            },
+                            "outlineColor": {
+                                "v": 0
+                            },
+                            "shadow": {
+                                "v": 0
+                            },
+                            "shadowBlur": {
+                                "v": 6
+                            },
+                            "shadowColor": {
+                                "v": 0
+                            },
+                            "shadowX": {
+                                "v": 4
+                            },
+                            "shadowY": {
+                                "v": 4
+                            },
+                            "size": {
+                                "v": 4.5
+                            },
+                            "text": {
+                                "text": "Pixel Sort",
+                                "v": 0
+                            },
+                            "tracking": {
+                                "v": 0
+                            },
+                            "x": {
+                                "v": 0.5
+                            },
+                            "y": {
+                                "v": 0.08
+                            }
+                        },
+                        "type": "text"
+                    },
+                    "group": 0,
+                    "id": 23,
+                    "length": "3600000",
+                    "media": 0,
+                    "muted": false,
+                    "name": "",
+                    "sourceIn": "0",
+                    "start": "12200000",
+                    "stream": -1
+                },
+                {
+                    "fadeIn": "200000",
+                    "fadeOut": "200000",
+                    "gain": 1,
+                    "generator": {
+                        "params": {
+                            "align": {
+                                "v": 1
+                            },
+                            "animIn": {
+                                "v": 1
+                            },
+                            "animOut": {
+                                "v": 1
+                            },
+                            "bold": {
+                                "v": 0
+                            },
+                            "box": {
+                                "v": 0.5
+                            },
+                            "boxColor": {
+                                "v": 0
+                            },
+                            "boxPadding": {
+                                "v": 12
+                            },
+                            "boxRadius": {
+                                "v": 6
+                            },
+                            "color": {
+                                "v": 16777215
+                            },
+                            "font": {
+                                "text": "Arial",
+                                "v": 0
+                            },
+                            "inDuration": {
+                                "v": 0.15
+                            },
+                            "italic": {
+                                "v": 0
+                            },
+                            "lineSpacing": {
+                                "v": 1
+                            },
+                            "outDuration": {
+                                "v": 0.15
+                            },
+                            "outline": {
+                                "v": 0
+                            },
+                            "outlineColor": {
+                                "v": 0
+                            },
+                            "shadow": {
+                                "v": 0
+                            },
+                            "shadowBlur": {
+                                "v": 6
+                            },
+                            "shadowColor": {
+                                "v": 0
+                            },
+                            "shadowX": {
+                                "v": 4
+                            },
+                            "shadowY": {
+                                "v": 4
+                            },
+                            "size": {
+                                "v": 4.5
+                            },
+                            "text": {
+                                "text": "Datamosh",
+                                "v": 0
+                            },
+                            "tracking": {
+                                "v": 0
+                            },
+                            "x": {
+                                "v": 0.5
+                            },
+                            "y": {
+                                "v": 0.08
+                            }
+                        },
+                        "type": "text"
+                    },
+                    "group": 0,
+                    "id": 28,
+                    "length": "3600000",
+                    "media": 0,
+                    "muted": false,
+                    "name": "",
+                    "sourceIn": "0",
+                    "start": "16200000",
+                    "stream": -1
+                },
+                {
+                    "fadeIn": "200000",
+                    "fadeOut": "200000",
+                    "gain": 1,
+                    "generator": {
+                        "params": {
+                            "align": {
+                                "v": 1
+                            },
+                            "animIn": {
+                                "v": 1
+                            },
+                            "animOut": {
+                                "v": 1
+                            },
+                            "bold": {
+                                "v": 0
+                            },
+                            "box": {
+                                "v": 0.5
+                            },
+                            "boxColor": {
+                                "v": 0
+                            },
+                            "boxPadding": {
+                                "v": 12
+                            },
+                            "boxRadius": {
+                                "v": 6
+                            },
+                            "color": {
+                                "v": 16777215
+                            },
+                            "font": {
+                                "text": "Arial",
+                                "v": 0
+                            },
+                            "inDuration": {
+                                "v": 0.15
+                            },
+                            "italic": {
+                                "v": 0
+                            },
+                            "lineSpacing": {
+                                "v": 1
+                            },
+                            "outDuration": {
+                                "v": 0.15
+                            },
+                            "outline": {
+                                "v": 0
+                            },
+                            "outlineColor": {
+                                "v": 0
+                            },
+                            "shadow": {
+                                "v": 0
+                            },
+                            "shadowBlur": {
+                                "v": 6
+                            },
+                            "shadowColor": {
+                                "v": 0
+                            },
+                            "shadowX": {
+                                "v": 4
+                            },
+                            "shadowY": {
+                                "v": 4
+                            },
+                            "size": {
+                                "v": 4.5
+                            },
+                            "text": {
+                                "text": "Broken Video Game Systems: NES",
+                                "v": 0
+                            },
+                            "tracking": {
+                                "v": 0
+                            },
+                            "x": {
+                                "v": 0.5
+                            },
+                            "y": {
+                                "v": 0.08
+                            }
+                        },
+                        "type": "text"
+                    },
+                    "group": 0,
+                    "id": 33,
+                    "length": "3600000",
+                    "media": 0,
+                    "muted": false,
+                    "name": "",
+                    "sourceIn": "0",
+                    "start": "20200000",
+                    "stream": -1
+                },
+                {
+                    "fadeIn": "200000",
+                    "fadeOut": "200000",
+                    "gain": 1,
+                    "generator": {
+                        "params": {
+                            "align": {
+                                "v": 1
+                            },
+                            "animIn": {
+                                "v": 1
+                            },
+                            "animOut": {
+                                "v": 1
+                            },
+                            "bold": {
+                                "v": 0
+                            },
+                            "box": {
+                                "v": 0.5
+                            },
+                            "boxColor": {
+                                "v": 0
+                            },
+                            "boxPadding": {
+                                "v": 12
+                            },
+                            "boxRadius": {
+                                "v": 6
+                            },
+                            "color": {
+                                "v": 16777215
+                            },
+                            "font": {
+                                "text": "Arial",
+                                "v": 0
+                            },
+                            "inDuration": {
+                                "v": 0.15
+                            },
+                            "italic": {
+                                "v": 0
+                            },
+                            "lineSpacing": {
+                                "v": 1
+                            },
+                            "outDuration": {
+                                "v": 0.15
+                            },
+                            "outline": {
+                                "v": 0
+                            },
+                            "outlineColor": {
+                                "v": 0
+                            },
+                            "shadow": {
+                                "v": 0
+                            },
+                            "shadowBlur": {
+                                "v": 6
+                            },
+                            "shadowColor": {
+                                "v": 0
+                            },
+                            "shadowX": {
+                                "v": 4
+                            },
+                            "shadowY": {
+                                "v": 4
+                            },
+                            "size": {
+                                "v": 4.5
+                            },
+                            "text": {
+                                "text": "Old Film",
+                                "v": 0
+                            },
+                            "tracking": {
+                                "v": 0
+                            },
+                            "x": {
+                                "v": 0.5
+                            },
+                            "y": {
+                                "v": 0.08
+                            }
+                        },
+                        "type": "text"
+                    },
+                    "group": 0,
+                    "id": 38,
+                    "length": "3600000",
+                    "media": 0,
+                    "muted": false,
+                    "name": "",
+                    "sourceIn": "0",
+                    "start": "24200000",
+                    "stream": -1
+                },
+                {
+                    "fadeIn": "200000",
+                    "fadeOut": "200000",
+                    "gain": 1,
+                    "generator": {
+                        "params": {
+                            "align": {
+                                "v": 1
+                            },
+                            "animIn": {
+                                "v": 1
+                            },
+                            "animOut": {
+                                "v": 1
+                            },
+                            "bold": {
+                                "v": 0
+                            },
+                            "box": {
+                                "v": 0.5
+                            },
+                            "boxColor": {
+                                "v": 0
+                            },
+                            "boxPadding": {
+                                "v": 12
+                            },
+                            "boxRadius": {
+                                "v": 6
+                            },
+                            "color": {
+                                "v": 16777215
+                            },
+                            "font": {
+                                "text": "Arial",
+                                "v": 0
+                            },
+                            "inDuration": {
+                                "v": 0.15
+                            },
+                            "italic": {
+                                "v": 0
+                            },
+                            "lineSpacing": {
+                                "v": 1
+                            },
+                            "outDuration": {
+                                "v": 0.15
+                            },
+                            "outline": {
+                                "v": 0
+                            },
+                            "outlineColor": {
+                                "v": 0
+                            },
+                            "shadow": {
+                                "v": 0
+                            },
+                            "shadowBlur": {
+                                "v": 6
+                            },
+                            "shadowColor": {
+                                "v": 0
+                            },
+                            "shadowX": {
+                                "v": 4
+                            },
+                            "shadowY": {
+                                "v": 4
+                            },
+                            "size": {
+                                "v": 4.5
+                            },
+                            "text": {
+                                "text": "Kaleidoscope",
+                                "v": 0
+                            },
+                            "tracking": {
+                                "v": 0
+                            },
+                            "x": {
+                                "v": 0.5
+                            },
+                            "y": {
+                                "v": 0.08
+                            }
+                        },
+                        "type": "text"
+                    },
+                    "group": 0,
+                    "id": 43,
+                    "length": "3600000",
+                    "media": 0,
+                    "muted": false,
+                    "name": "",
+                    "sourceIn": "0",
+                    "start": "28200000",
+                    "stream": -1
+                },
+                {
+                    "fadeIn": "200000",
+                    "fadeOut": "200000",
+                    "gain": 1,
+                    "generator": {
+                        "params": {
+                            "align": {
+                                "v": 1
+                            },
+                            "animIn": {
+                                "v": 1
+                            },
+                            "animOut": {
+                                "v": 1
+                            },
+                            "bold": {
+                                "v": 0
+                            },
+                            "box": {
+                                "v": 0.5
+                            },
+                            "boxColor": {
+                                "v": 0
+                            },
+                            "boxPadding": {
+                                "v": 12
+                            },
+                            "boxRadius": {
+                                "v": 6
+                            },
+                            "color": {
+                                "v": 16777215
+                            },
+                            "font": {
+                                "text": "Arial",
+                                "v": 0
+                            },
+                            "inDuration": {
+                                "v": 0.15
+                            },
+                            "italic": {
+                                "v": 0
+                            },
+                            "lineSpacing": {
+                                "v": 1
+                            },
+                            "outDuration": {
+                                "v": 0.15
+                            },
+                            "outline": {
+                                "v": 0
+                            },
+                            "outlineColor": {
+                                "v": 0
+                            },
+                            "shadow": {
+                                "v": 0
+                            },
+                            "shadowBlur": {
+                                "v": 6
+                            },
+                            "shadowColor": {
+                                "v": 0
+                            },
+                            "shadowX": {
+                                "v": 4
+                            },
+                            "shadowY": {
+                                "v": 4
+                            },
+                            "size": {
+                                "v": 4.5
+                            },
+                            "text": {
+                                "text": "Preset chain: Broken Stream",
+                                "v": 0
+                            },
+                            "tracking": {
+                                "v": 0
+                            },
+                            "x": {
+                                "v": 0.5
+                            },
+                            "y": {
+                                "v": 0.08
+                            }
+                        },
+                        "type": "text"
+                    },
+                    "group": 0,
+                    "id": 50,
+                    "length": "3600000",
+                    "media": 0,
+                    "muted": false,
+                    "name": "",
+                    "sourceIn": "0",
+                    "start": "32200000",
+                    "stream": -1
+                }
+            ],
+            "id": 3,
+            "level": 1,
+            "muted": false,
+            "name": "Looks",
+            "pan": 0,
+            "solo": false,
+            "type": "video"
+        },
+        {
+            "clips": [
+                {
+                    "effects": [
+                        {
+                            "enabled": true,
+                            "id": 7,
+                            "params": {
+                                "animated": {
+                                    "v": 1
+                                },
+                                "bleed": {
+                                    "v": 8
+                                },
+                                "blur": {
+                                    "v": 1.5
+                                },
+                                "chromaShift": {
+                                    "v": 4
+                                },
+                                "dropouts": {
+                                    "v": 0.3
+                                },
+                                "jitter": {
+                                    "v": 2
+                                },
+                                "noise": {
+                                    "v": 0.15
+                                },
+                                "saturation": {
+                                    "v": 0.85
+                                },
+                                "tracking": {
+                                    "v": 0.6
+                                }
+                            },
+                            "type": "vhs"
+                        }
+                    ],
+                    "fadeIn": "0",
+                    "fadeOut": "0",
+                    "gain": 1,
+                    "group": 4,
+                    "id": 5,
+                    "length": "4000000",
+                    "media": 1,
+                    "muted": false,
+                    "name": "",
+                    "sourceIn": "0",
+                    "start": "0",
+                    "stream": 0
+                },
+                {
+                    "effects": [
+                        {
+                            "enabled": true,
+                            "id": 12,
+                            "params": {
+                                "brightness": {
+                                    "v": 1.25
+                                },
+                                "curvature": {
+                                    "v": 0.12
+                                },
+                                "lineCount": {
+                                    "v": 270
+                                },
+                                "mask": {
+                                    "v": 1
+                                },
+                                "maskStrength": {
+                                    "v": 0.3
+                                },
+                                "scanlines": {
+                                    "v": 0.5
+                                },
+                                "vignette": {
+                                    "v": 0.35
+                                }
+                            },
+                            "type": "crt"
+                        }
+                    ],
+                    "fadeIn": "0",
+                    "fadeOut": "0",
+                    "gain": 1,
+                    "group": 9,
+                    "id": 10,
+                    "length": "4000000",
+                    "media": 1,
+                    "muted": false,
+                    "name": "",
+                    "sourceIn": "4000000",
+                    "start": "4000000",
+                    "stream": 0
+                },
+                {
+                    "effects": [
+                        {
+                            "enabled": true,
+                            "id": 17,
+                            "params": {
+                                "blueX": {
+                                    "v": 12
+                                },
+                                "blueY": {
+                                    "v": 0
+                                },
+                                "edge": {
+                                    "v": 0
+                                },
+                                "fxBoxH": {
+                                    "v": 0.5
+                                },
+                                "fxBoxW": {
+                                    "v": 0.5
+                                },
+                                "fxBoxX": {
+                                    "v": 0.25
+                                },
+                                "fxBoxY": {
+                                    "v": 0.25
+                                },
+                                "fxFeather": {
+                                    "v": 0.05
+                                },
+                                "fxMask": {
+                                    "v": 0
+                                },
+                                "fxMix": {
+                                    "v": 1
+                                },
+                                "fxThreshold": {
+                                    "v": 0.5
+                                },
+                                "greenX": {
+                                    "v": 0
+                                },
+                                "greenY": {
+                                    "v": 0
+                                },
+                                "jitter": {
+                                    "v": 0
+                                },
+                                "rate": {
+                                    "v": 12
+                                },
+                                "redX": {
+                                    "v": -12
+                                },
+                                "redY": {
+                                    "v": 0
+                                },
+                                "seed": {
+                                    "v": 1
+                                }
+                            },
+                            "type": "rgb_split"
+                        }
+                    ],
+                    "fadeIn": "0",
+                    "fadeOut": "0",
+                    "gain": 1,
+                    "group": 14,
+                    "id": 15,
+                    "length": "4000000",
+                    "media": 1,
+                    "muted": false,
+                    "name": "",
+                    "sourceIn": "0",
+                    "start": "8000000",
+                    "stream": 0
+                },
+                {
+                    "effects": [
+                        {
+                            "enabled": true,
+                            "id": 22,
+                            "params": {
+                                "animated": {
+                                    "v": 0
+                                },
+                                "breaks": {
+                                    "v": 0
+                                },
+                                "direction": {
+                                    "v": 0
+                                },
+                                "fxBoxH": {
+                                    "v": 0.5
+                                },
+                                "fxBoxW": {
+                                    "v": 0.5
+                                },
+                                "fxBoxX": {
+                                    "v": 0.25
+                                },
+                                "fxBoxY": {
+                                    "v": 0.25
+                                },
+                                "fxFeather": {
+                                    "v": 0.05
+                                },
+                                "fxMask": {
+                                    "v": 0
+                                },
+                                "fxMix": {
+                                    "v": 1
+                                },
+                                "fxThreshold": {
+                                    "v": 0.5
+                                },
+                                "invert": {
+                                    "v": 0
+                                },
+                                "lower": {
+                                    "v": 0.25
+                                },
+                                "maxLength": {
+                                    "v": 0
+                                },
+                                "reverse": {
+                                    "v": 0
+                                },
+                                "seed": {
+                                    "v": 1
+                                },
+                                "sortBy": {
+                                    "v": 0
+                                },
+                                "thresholdBy": {
+                                    "v": 0
+                                },
+                                "upper": {
+                                    "v": 0.8
+                                }
+                            },
+                            "type": "pixel_sort"
+                        }
+                    ],
+                    "fadeIn": "0",
+                    "fadeOut": "0",
+                    "gain": 1,
+                    "group": 19,
+                    "id": 20,
+                    "length": "4000000",
+                    "media": 1,
+                    "muted": false,
+                    "name": "",
+                    "sourceIn": "4000000",
+                    "start": "12000000",
+                    "stream": 0
+                },
+                {
+                    "effects": [
+                        {
+                            "enabled": true,
+                            "id": 27,
+                            "params": {
+                                "amount": {
+                                    "v": 0.95
+                                },
+                                "autoClean": {
+                                    "v": 0
+                                },
+                                "blockSize": {
+                                    "v": 16
+                                },
+                                "fxBoxH": {
+                                    "v": 0.5
+                                },
+                                "fxBoxW": {
+                                    "v": 0.5
+                                },
+                                "fxBoxX": {
+                                    "v": 0.25
+                                },
+                                "fxBoxY": {
+                                    "v": 0.25
+                                },
+                                "fxFeather": {
+                                    "v": 0.05
+                                },
+                                "fxMask": {
+                                    "v": 0
+                                },
+                                "fxMix": {
+                                    "v": 1
+                                },
+                                "fxThreshold": {
+                                    "v": 0.5
+                                },
+                                "mode": {
+                                    "v": 0
+                                },
+                                "motionScale": {
+                                    "v": 1
+                                },
+                                "refresh": {
+                                    "v": 0
+                                },
+                                "search": {
+                                    "v": 16
+                                }
+                            },
+                            "type": "datamosh"
+                        }
+                    ],
+                    "fadeIn": "0",
+                    "fadeOut": "0",
+                    "gain": 1,
+                    "group": 24,
+                    "id": 25,
+                    "length": "4000000",
+                    "media": 1,
+                    "muted": false,
+                    "name": "",
+                    "sourceIn": "0",
+                    "start": "16000000",
+                    "stream": 0
+                },
+                {
+                    "effects": [
+                        {
+                            "enabled": true,
+                            "id": 32,
+                            "params": {
+                                "amount": {
+                                    "v": 0.44999998807907104
+                                },
+                                "look": {
+                                    "v": 0
+                                },
+                                "screen": {
+                                    "v": 0.5
+                                },
+                                "seed": {
+                                    "v": 1
+                                },
+                                "speed": {
+                                    "v": 2
+                                }
+                            },
+                            "type": "vg_nes_dirty"
+                        }
+                    ],
+                    "fadeIn": "0",
+                    "fadeOut": "0",
+                    "gain": 1,
+                    "group": 29,
+                    "id": 30,
+                    "length": "4000000",
+                    "media": 1,
+                    "muted": false,
+                    "name": "",
+                    "sourceIn": "4000000",
+                    "start": "20000000",
+                    "stream": 0
+                },
+                {
+                    "effects": [
+                        {
+                            "enabled": true,
+                            "id": 37,
+                            "params": {
+                                "dust": {
+                                    "v": 0.5
+                                },
+                                "flicker": {
+                                    "v": 0.4
+                                },
+                                "grain": {
+                                    "v": 0.25
+                                },
+                                "scratches": {
+                                    "v": 0.5
+                                },
+                                "sepia": {
+                                    "v": 0.7
+                                },
+                                "vignette": {
+                                    "v": 0.5
+                                },
+                                "weave": {
+                                    "v": 1.5
+                                }
+                            },
+                            "type": "old_film"
+                        }
+                    ],
+                    "fadeIn": "0",
+                    "fadeOut": "0",
+                    "gain": 1,
+                    "group": 34,
+                    "id": 35,
+                    "length": "4000000",
+                    "media": 1,
+                    "muted": false,
+                    "name": "",
+                    "sourceIn": "0",
+                    "start": "24000000",
+                    "stream": 0
+                },
+                {
+                    "effects": [
+                        {
+                            "enabled": true,
+                            "id": 42,
+                            "params": {
+                                "centerX": {
+                                    "v": 0.5
+                                },
+                                "centerY": {
+                                    "v": 0.5
+                                },
+                                "rotation": {
+                                    "v": 0
+                                },
+                                "segments": {
+                                    "v": 6
+                                },
+                                "spin": {
+                                    "v": 0
+                                },
+                                "zoom": {
+                                    "v": 1
+                                }
+                            },
+                            "type": "kaleidoscope"
+                        }
+                    ],
+                    "fadeIn": "0",
+                    "fadeOut": "0",
+                    "gain": 1,
+                    "group": 39,
+                    "id": 40,
+                    "length": "4000000",
+                    "media": 1,
+                    "muted": false,
+                    "name": "",
+                    "sourceIn": "4000000",
+                    "start": "28000000",
+                    "stream": 0
+                },
+                {
+                    "effects": [
+                        {
+                            "enabled": true,
+                            "id": 47,
+                            "params": {
+                                "animated": {
+                                    "v": 1
+                                },
+                                "blockScale": {
+                                    "v": 0
+                                },
+                                "chromaQuality": {
+                                    "v": 0
+                                },
+                                "corruptWhat": {
+                                    "v": 0
+                                },
+                                "corruption": {
+                                    "v": 0.1
+                                },
+                                "fxBoxH": {
+                                    "v": 0.5
+                                },
+                                "fxBoxW": {
+                                    "v": 0.5
+                                },
+                                "fxBoxX": {
+                                    "v": 0.25
+                                },
+                                "fxBoxY": {
+                                    "v": 0.25
+                                },
+                                "fxFeather": {
+                                    "v": 0.05
+                                },
+                                "fxMask": {
+                                    "v": 0
+                                },
+                                "fxMix": {
+                                    "v": 1
+                                },
+                                "fxThreshold": {
+                                    "v": 0.5
+                                },
+                                "quality": {
+                                    "v": 12
+                                },
+                                "subsample": {
+                                    "v": 1
+                                }
+                            },
+                            "type": "jpeg_glitch"
+                        },
+                        {
+                            "enabled": true,
+                            "id": 48,
+                            "params": {
+                                "amount": {
+                                    "v": 0.2
+                                },
+                                "aspect": {
+                                    "v": 2
+                                },
+                                "blockSize": {
+                                    "v": 40
+                                },
+                                "colorGlitch": {
+                                    "v": 0.4
+                                },
+                                "colorMode": {
+                                    "v": 0
+                                },
+                                "fxBoxH": {
+                                    "v": 0.5
+                                },
+                                "fxBoxW": {
+                                    "v": 0.5
+                                },
+                                "fxBoxX": {
+                                    "v": 0.25
+                                },
+                                "fxBoxY": {
+                                    "v": 0.25
+                                },
+                                "fxFeather": {
+                                    "v": 0.05
+                                },
+                                "fxMask": {
+                                    "v": 0
+                                },
+                                "fxMix": {
+                                    "v": 1
+                                },
+                                "fxThreshold": {
+                                    "v": 0.5
+                                },
+                                "maxShift": {
+                                    "v": 160
+                                },
+                                "noise": {
+                                    "v": 0.2
+                                },
+                                "rate": {
+                                    "v": 12
+                                },
+                                "seed": {
+                                    "v": 1
+                                },
+                                "verticalShift": {
+                                    "v": 0.5
+                                }
+                            },
+                            "type": "block_glitch"
+                        },
+                        {
+                            "enabled": true,
+                            "id": 49,
+                            "params": {
+                                "amount": {
+                                    "v": 0.3
+                                },
+                                "colorGlitch": {
+                                    "v": 0.3
+                                },
+                                "direction": {
+                                    "v": 0
+                                },
+                                "edge": {
+                                    "v": 0
+                                },
+                                "fxBoxH": {
+                                    "v": 0.5
+                                },
+                                "fxBoxW": {
+                                    "v": 0.5
+                                },
+                                "fxBoxX": {
+                                    "v": 0.25
+                                },
+                                "fxBoxY": {
+                                    "v": 0.25
+                                },
+                                "fxFeather": {
+                                    "v": 0.05
+                                },
+                                "fxMask": {
+                                    "v": 0
+                                },
+                                "fxMix": {
+                                    "v": 1
+                                },
+                                "fxThreshold": {
+                                    "v": 0.5
+                                },
+                                "maxShift": {
+                                    "v": 120
+                                },
+                                "rate": {
+                                    "v": 10
+                                },
+                                "rgbSplit": {
+                                    "v": 6
+                                },
+                                "seed": {
+                                    "v": 1
+                                },
+                                "slices": {
+                                    "v": 20
+                                }
+                            },
+                            "type": "slice_glitch"
+                        }
+                    ],
+                    "fadeIn": "0",
+                    "fadeOut": "0",
+                    "gain": 1,
+                    "group": 44,
+                    "id": 45,
+                    "length": "4000000",
+                    "media": 1,
+                    "muted": false,
+                    "name": "",
+                    "sourceIn": "0",
+                    "start": "32000000",
+                    "stream": 0
+                }
+            ],
+            "id": 1,
+            "level": 1,
+            "muted": false,
+            "name": "Video",
+            "pan": 0,
+            "solo": false,
+            "type": "video"
+        },
+        {
+            "clips": [
+                {
+                    "fadeIn": "0",
+                    "fadeOut": "0",
+                    "gain": 1,
+                    "group": 4,
+                    "id": 6,
+                    "length": "4000000",
+                    "media": 1,
+                    "muted": false,
+                    "name": "",
+                    "sourceIn": "0",
+                    "start": "0",
+                    "stream": 1
+                },
+                {
+                    "fadeIn": "0",
+                    "fadeOut": "0",
+                    "gain": 1,
+                    "group": 9,
+                    "id": 11,
+                    "length": "4000000",
+                    "media": 1,
+                    "muted": false,
+                    "name": "",
+                    "sourceIn": "4000000",
+                    "start": "4000000",
+                    "stream": 1
+                },
+                {
+                    "fadeIn": "0",
+                    "fadeOut": "0",
+                    "gain": 1,
+                    "group": 14,
+                    "id": 16,
+                    "length": "4000000",
+                    "media": 1,
+                    "muted": false,
+                    "name": "",
+                    "sourceIn": "0",
+                    "start": "8000000",
+                    "stream": 1
+                },
+                {
+                    "fadeIn": "0",
+                    "fadeOut": "0",
+                    "gain": 1,
+                    "group": 19,
+                    "id": 21,
+                    "length": "4000000",
+                    "media": 1,
+                    "muted": false,
+                    "name": "",
+                    "sourceIn": "4000000",
+                    "start": "12000000",
+                    "stream": 1
+                },
+                {
+                    "fadeIn": "0",
+                    "fadeOut": "0",
+                    "gain": 1,
+                    "group": 24,
+                    "id": 26,
+                    "length": "4000000",
+                    "media": 1,
+                    "muted": false,
+                    "name": "",
+                    "sourceIn": "0",
+                    "start": "16000000",
+                    "stream": 1
+                },
+                {
+                    "fadeIn": "0",
+                    "fadeOut": "0",
+                    "gain": 1,
+                    "group": 29,
+                    "id": 31,
+                    "length": "4000000",
+                    "media": 1,
+                    "muted": false,
+                    "name": "",
+                    "sourceIn": "4000000",
+                    "start": "20000000",
+                    "stream": 1
+                },
+                {
+                    "fadeIn": "0",
+                    "fadeOut": "0",
+                    "gain": 1,
+                    "group": 34,
+                    "id": 36,
+                    "length": "4000000",
+                    "media": 1,
+                    "muted": false,
+                    "name": "",
+                    "sourceIn": "0",
+                    "start": "24000000",
+                    "stream": 1
+                },
+                {
+                    "fadeIn": "0",
+                    "fadeOut": "0",
+                    "gain": 1,
+                    "group": 39,
+                    "id": 41,
+                    "length": "4000000",
+                    "media": 1,
+                    "muted": false,
+                    "name": "",
+                    "sourceIn": "4000000",
+                    "start": "28000000",
+                    "stream": 1
+                },
+                {
+                    "fadeIn": "0",
+                    "fadeOut": "0",
+                    "gain": 1,
+                    "group": 44,
+                    "id": 46,
+                    "length": "4000000",
+                    "media": 1,
+                    "muted": false,
+                    "name": "",
+                    "sourceIn": "0",
+                    "start": "32000000",
+                    "stream": 1
+                }
+            ],
+            "id": 2,
+            "level": 1,
+            "muted": false,
+            "name": "Audio",
+            "pan": 0,
+            "solo": false,
+            "type": "audio"
+        }
+    ],
+    "version": 1
+}

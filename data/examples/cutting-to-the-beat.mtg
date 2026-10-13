@@ -1,0 +1,96 @@
+{
+    "audioMasterEffects": [
+    ],
+    "format": "montage-project",
+    "media": [
+        {
+            "id": 1,
+            "path": "media/music.m4a",
+            "relativePath": "media/music.m4a"
+        },
+        {
+            "folder": "Clips",
+            "id": 2,
+            "path": "media/sample.mp4",
+            "rating": 4,
+            "relativePath": "media/sample.mp4"
+        }
+    ],
+    "nextId": 5,
+    "outputEffects": [
+    ],
+    "settings": {
+        "fpsDen": 1,
+        "fpsNum": 30,
+        "height": 1080,
+        "sampleRate": 48000,
+        "width": 1920
+    },
+    "tracks": [
+        {
+            "clips": [
+                {
+                    "fadeIn": "0",
+                    "fadeOut": "0",
+                    "gain": 1,
+                    "generator": {
+                        "params": {
+                            "palette": {
+                                "v": 0
+                            },
+                            "scale": {
+                                "v": 1
+                            },
+                            "speed": {
+                                "v": 1
+                            }
+                        },
+                        "type": "plasma"
+                    },
+                    "group": 0,
+                    "id": 3,
+                    "length": "32000000",
+                    "media": 0,
+                    "muted": false,
+                    "name": "",
+                    "sourceIn": "0",
+                    "start": "0",
+                    "stream": -1
+                }
+            ],
+            "id": 1,
+            "level": 1,
+            "muted": false,
+            "name": "Background",
+            "pan": 0,
+            "solo": false,
+            "type": "video"
+        },
+        {
+            "clips": [
+                {
+                    "fadeIn": "0",
+                    "fadeOut": "0",
+                    "gain": 1,
+                    "group": 0,
+                    "id": 4,
+                    "length": "32000000",
+                    "media": 1,
+                    "muted": false,
+                    "name": "",
+                    "sourceIn": "0",
+                    "start": "0",
+                    "stream": 0
+                }
+            ],
+            "id": 2,
+            "level": 1,
+            "muted": false,
+            "name": "Music",
+            "pan": 0,
+            "solo": false,
+            "type": "audio"
+        }
+    ],
+    "version": 1
+}

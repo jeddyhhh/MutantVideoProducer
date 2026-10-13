@@ -1,0 +1,92 @@
+# AI Control (MCP)
+
+**Options > Allow AI Control (MCP)** lets an AI assistant on this computer work in Mutant Video Producer through the
+[Model Context Protocol](https://modelcontextprotocol.io): Claude Code, Claude Desktop, or any MCP
+client. The assistant sees the project and edits it with you, step by step, while you watch.
+
+## Setting it up
+
+1. Tick **Options > Allow AI Control (MCP)**.
+2. Open **Options > AI Control Setup...**. It shows the lines to paste, with the right paths for
+   your computer:
+   - **Claude Code**:
+
+     ```
+     claude mcp add --transport http mvp http://127.0.0.1:47811/mcp
+     ```
+
+   - **Claude Desktop**, and other clients that start a program: `MutantVideoProducer.exe --mcp-stdio` as the
+     command in `claude_desktop_config.json`. It passes messages on to the Mutant Video Producer that is open.
+3. Ask the assistant to do something, for example *"put a crossfade between every clip on the
+   first track"* or *"add captions and make them yellow"*.
+
+Every edit the assistant makes is one *AI: ...* step on the undo stack, so **Ctrl+Z** takes it back.
+The status bar shows each tool it uses.
+
+`collect_project` takes `destination` (a new folder), `include_unused_media` and `include_voice_models` (both default true). It includes unsaved edits without changing the open project and returns `project`, `report`, `copied_files`, `copied_bytes`, `missing` and `warnings`. Its copying progress window appears even for MCP calls and can cancel the operation.
+
+## What it can do
+
+**The Editor**
+
+| Tool | What it does |
+|---|---|
+| get_project | Reads the media, tracks, events, effects and their settings, markers. |
+| graphics_overlay | Compose native layered text, shapes and images; create/read/update broadcast presets or custom scenes. |
+| waveform_graphic | Build and style native graphics from real source audio, with embedded peaks, stereo and playback progress. |
+| import_media, add_media_to_timeline | Imports files and places them. |
+| add_text | Adds a title or text. |
+| edit_event, split, delete_events, add_track | Moves, trims, splits and deletes events; adds tracks. |
+| list_effects | Lists every effect with its settings. |
+| add_effect, set_effect, remove_effect | Effects (with keyframes and masks) on events, tracks, the output, the audio master, the Live FX, pads and the layer. Remove Background, freehand masks and VST3 plugins work through these. |
+| list_vst3_plugins | The VST3 plugins installed. |
+| add_marker, detect_beats | Markers, and markers on the beat. |
+| captions | Auto Captions (any model on this computer, translation, speakers), and importing or exporting SRT / WebVTT. |
+| list_voices | Curated Kokoro voices, metadata, installed status, and local worker/model availability. |
+| generate_voice, voice_status | Starts local caption-to-speech generation and polls or cancels it; optional bundled RVC conversion with an imported `.pth` model. A completed job adds one undoable Voice track. |
+| get_frame | Looks at any frame as an image. |
+| transport | Plays, stops and moves the cursor. |
+| render, render_status | Renders in the background with any Render As template; opens the detailed Render Status window and exposes statistics in `render_status.details`. |
+| undo, redo, save_project, set_project_settings | Undo, save, frame size and rate. |
+| collect_project | Creates a portable project/media folder, opens copying progress, and returns the project, report, missing files and dependency warnings. |
+
+**The Live tab**
+
+| Tool | What it does |
+|---|---|
+| live_status | Reads everything on the Live tab. |
+| set_live_source | Chooses the sources. |
+| live_action | Start / stop, pads, scenes and setlist songs, filling pads, recording, cue and take. |
+| set_tempo, set_pad, save_scene | Tempo, pad chains, scenes. |
+| live_switcher | The switcher's inputs, preview, Cut and Auto. |
+| get_live_frame | Looks at the output. |
+
+## Safety
+
+- Only programs on this computer can connect (127.0.0.1). Requests from web pages are refused.
+- **Going live on a streaming site is left to you**: there is no tool for it.
+- The stream key is never shown to the assistant.
+- Turn it off again with **Options > Allow AI Control (MCP)**.
+
+## Try it
+
+The [Letting an AI Assistant Edit](tutorials/16-ai-assistant.md) tutorial walks through a session.
+
+## Documentary tools
+
+`story_chapters` lists, adds, adopts, updates, reorders, assigns or deletes chapters. Durations are seconds; `get_project.chapters` contains saved microsecond strings. A chapter has a narration window followed by listening-only time. `adopt` turns an existing `from`/`to` range into a chapter, splitting boundary clips and retaining their sync.
+
+`compound_sequence` packs `event_ids`, returns its embedded timeline with `get`, replaces that content with `update`, and restores editable tracks with `unpack`. The JSON returned by `get` uses the same microsecond string fields as project files. Import media into the parent pool first. Paired picture/audio containers share the same immutable child content; updating either updates its linked partner. `ripple` defaults to true.
+
+`generate_voice` also accepts a standalone `script`, `start` and `window`, or `replace_event` to regenerate one narration event. Earlier takes remain in the event's `narration.takes`. `pronunciations` maps spellings to spoken forms; `leading_pause`, `trailing_pause`, `sentence_pause` and inline `[pause=0.5]` create real silence. `align_captions: true` uses an installed local Whisper model to create word captions and retain their timing with each take. `chapter_id` reserves the listening section: an overlong take is retained on disk but not inserted. RVC conversion remains available through `rvc`.
+
+GPU acceleration is automatic where available. `generate_voice.device` and
+`rvc.device` accept `auto`, `gpu`, or `cpu`; `voice_status.backends` reports the
+actual engines. `render.hardware_encoding` defaults to true and prefers a usable
+hardware encoder; false preserves the chosen template's encoder. Render status
+includes `color_conversion`. See [GPU acceleration](gpu-acceleration.md) for
+supported stages and fallbacks.
+
+`directors_dice` accepts `event_ids`, `seed`, `style` (`measured`, `restless`, `riot`) and `intensity` (0–1). It changes selected footage/image motion and visual accents without changing sound or clip timing. Each call is one undo step.
+
+While a sequence or Dice preview window owns the timeline, MCP mutation calls return an explanation; finish or cancel that window before editing remotely.

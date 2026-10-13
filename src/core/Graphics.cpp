@@ -1,0 +1,594 @@
+#include "core/Graphics.h"
+#include "core/AudioDecoder.h"
+#include "core/BeatTracker.h"
+#include "core/MotionGraphics.h"
+#include <QFileInfo>
+#include <QImageReader>
+#include <QJsonDocument>
+#include <QPainter>
+#include <QPaintEngine>
+#include <QTextLayout>
+#include <QGlyphRun>
+#include <QPainterPath>
+#include <algorithm>
+#include <cmath>
+
+namespace graphics {
+namespace {
+QJsonObject layer(QString type, QString name, double x, double y, double w,
+                  double h, QString fill) {
+  return {{"type", type}, {"name", name}, {"x", x},      {"y", y},
+          {"width", w},   {"height", h},  {"fill", fill}};
+}
+QJsonObject text(QString name, QString words, double x, double y, double w,
+                 double h, double size, QString fill) {
+  auto l = layer("text", name, x, y, w, h, fill);
+  l["text"] = words;
+  l["font_size"] = size;
+  l["bold"] = true;
+  return l;
+}
+double value(const QJsonObject &o, const QString &key, double fallback,
+             double time) {
+  auto v = o[key];
+  if (!v.isObject())
+    return v.toDouble(fallback);
+  const auto keys = v.toObject()["keyframes"].toArray();
+  if (keys.isEmpty())
+    return fallback;
+  auto first = keys.first().toArray();
+  if (time <= first[0].toDouble())
+    return first[1].toDouble();
+  for (int i = 1; i < keys.size(); ++i) {
+    auto a = keys[i - 1].toArray(), b = keys[i].toArray();
+    if (time <= b[0].toDouble()) {
+      double u = (time - a[0].toDouble()) /
+                 std::max(.000001, b[0].toDouble() - a[0].toDouble());
+      return a[1].toDouble() + (b[1].toDouble() - a[1].toDouble()) * u;
+    }
+  }
+  return keys.last().toArray()[1].toDouble();
+}
+QColor color(const QJsonObject &o, const char *key, const char *fallback) {
+  QColor c(o[key].toString(fallback));
+  return c.isValid() ? c : QColor(fallback);
+}
+ParamDef number(const char *id, const char *name, double min, double max,
+                double def) {
+  ParamDef p;
+  p.id = id;
+  p.name = name;
+  p.min = min;
+  p.max = max;
+  p.def = def;
+  p.decimals = 3;
+  return p;
+}
+ParamDef tint(const char *id, const char *name, int def) {
+  auto p = number(id, name, 0, 0xffffff, def);
+  p.type = ParamType::Color;
+  return p;
+}
+ParamDef flag(const char *id, const char *name, bool def) {
+  auto p = number(id, name, 0, 1, def);
+  p.type = ParamType::Bool;
+  return p;
+}
+void paintWave(QPainter &d, QSize image, const Params &p, const GeneratorContext &ctx) {
+  const auto data = ctx.data ? *ctx.data : QJsonObject{};
+  d.setRenderHint(QPainter::Antialiasing);
+  QRectF box(p.num("x") * image.width(), p.num("y") * image.height(),
+             p.num("width") * image.width(), p.num("height") * image.height());
+  d.setClipRect(box);
+  QColor bg = p.color("background");
+  bg.setAlphaF(p.num("background_opacity"));
+  d.fillRect(box, bg);
+  const auto left = data["left"].toArray(), right = data["right"].toArray();
+  if (!validateWaveform(data).isEmpty()) {
+    d.setPen(p.color("color"));
+    d.drawText(
+        box, Qt::AlignCenter,
+        QStringLiteral("Choose an audio source in the generator editor"));
+    return;
+  }
+  const double duration = data["duration"].toDouble(1),
+               now = double(ctx.time) / kUsPerSecond * p.num("rate") +
+                     p.num("offset");
+  double begin = 0, end = duration;
+  if (p.flag("scroll")) {
+    double window = std::min(duration, p.num("window"));
+    begin = std::clamp(now - window / 2, 0., std::max(0., duration - window));
+    end = begin + window;
+  }
+  double maximum = 0;
+  for (auto a : left)
+    maximum = std::max(maximum, a.toDouble());
+  for (auto a : right)
+    maximum = std::max(maximum, a.toDouble());
+  double gain = p.num("amplitude") /
+                (p.flag("normalize") ? std::max(.00001, maximum) : 1.);
+  int channels = p.flag("stereo") ? 2 : 1,
+      bars = std::clamp(
+          int(box.width() / std::max(1., p.num("spacing") * ctx.scale)), 8,
+          2048);
+  for (int ch = 0; ch < channels; ++ch) {
+    double center = box.top() + (ch + .5) * box.height() / channels;
+    QPainterPath shape;
+    std::vector<QPointF> lower;
+    for (int x = 0; x < bars; ++x) {
+      double a = begin + (end - begin) * x / bars,
+             b = begin + (end - begin) * (x + 1) / bars;
+      int lo = std::clamp(int(a / duration * left.size()), 0,
+                          int(left.size()) - 1),
+          hi = std::clamp(int(std::ceil(b / duration * left.size())), lo + 1,
+                          int(left.size()));
+      double peak = 0;
+      for (int k = lo; k < hi; ++k) {
+        double v =
+            channels == 2 && ch == 1 ? right[k].toDouble() : left[k].toDouble();
+        if (channels == 1)
+          v = std::max(v, right[k].toDouble());
+        peak = std::max(peak, v);
+      }
+      double px = box.left() + (x + .5) * box.width() / bars,
+             h = std::min(1., peak * gain) * box.height() * .45 / channels;
+      QColor c =
+          p.color(p.flag("progress") && a <= now ? "played_color" : "color");
+      d.setPen(QPen(c, std::max(1., p.num("thickness") * ctx.scale)));
+      if (p.choice("style") == 0)
+        d.drawLine(QPointF(px, center - h), QPointF(px, center + h));
+      else {
+        lower.emplace_back(px, center + h);
+        if (x == 0)
+          shape.moveTo(px, center - h);
+        else
+          shape.lineTo(px, center - h);
+      }
+    }
+    if (p.choice("style") != 0) {
+      d.setPen(
+          QPen(p.color("color"), std::max(1., p.num("thickness") * ctx.scale)));
+      if (p.choice("style") == 1) {
+        for (auto it = lower.rbegin(); it != lower.rend(); ++it)
+          shape.lineTo(*it);
+        shape.closeSubpath();
+        d.fillPath(shape, p.color("color"));
+      } else
+        d.drawPath(shape);
+      if (p.flag("progress")) {
+        d.save();
+        double played =
+            std::clamp((now - begin) / std::max(.00001, end - begin), 0., 1.);
+        d.setClipRect(
+            QRectF(box.left(), box.top(), box.width() * played, box.height()),
+            Qt::IntersectClip);
+        if (p.choice("style") == 1)
+          d.fillPath(shape, p.color("played_color"));
+        else {
+          d.setPen(QPen(p.color("played_color"),
+                        std::max(1., p.num("thickness") * ctx.scale)));
+          d.drawPath(shape);
+        }
+        d.restore();
+      }
+    }
+  }
+  if (p.flag("progress")) {
+    double x =
+        box.left() +
+        std::clamp((now - begin) / std::max(.00001, end - begin), 0., 1.) *
+            box.width();
+    d.setPen(QPen(p.color("played_color"), 2 * ctx.scale));
+    d.drawLine(QPointF(x, box.top()), QPointF(x, box.bottom()));
+  }
+}
+} // namespace
+QStringList presets() {
+  return QStringList{"blank", "broadcast", "lower_third", "info_card",
+                     "timeline"} +
+         motion::presets();
+}
+QJsonObject scene(const QString &preset) {
+  if (motion::presets().contains(preset))
+    return motion::preset(preset);
+  QJsonArray l;
+  if (preset == "broadcast") {
+    l.append(layer("rect", "Header", 0, 0, 1, .09, "#12243b"));
+    l.append(layer("rect", "Brand", .03, .02, .14, .052, "#1e6deb"));
+    l.append(text("Brand text", "CULTURE DESK", .04, .02, .28, .052, .027,
+                  "#ffffff"));
+    l.append(layer("rect", "Sidebar", .03, .13, .26, .59, "#12243b"));
+    l.append(layer("rect", "Accent", .03, .13, .004, .59, "#66dddf"));
+    l.append(
+        text("Artist", "ARTIST / SUBJECT", .05, .29, .22, .18, .04, "#ffffff"));
+    l.append(
+        text("Era", "LOCATION / ERA", .05, .17, .22, .08, .024, "#adc0d5"));
+    l.append(text("Description", "Explain the story behind this footage.", .05,
+                  .56, .22, .12, .027, "#adc0d5"));
+    l.append(layer("rect", "Headline bar", .03, .74, .94, .085, "#1e6deb"));
+    l.append(text("Headline", "YOUR STORY HEADLINE", .045, .75, .90, .065, .04,
+                  "#ffffff"));
+    l.append(layer("rect", "Caption background", 0, .84, 1, .10, "#091322"));
+    l.append(layer("rect", "Footer", 0, .95, 1, .05, "#12243b"));
+    l.append(text("Footer text", "SPECIAL REPORT / SOURCE CREDIT", .03, .954,
+                  .94, .04, .020, "#adc0d5"));
+  } else if (preset == "lower_third") {
+    l.append(layer("rect", "Panel", .05, .75, .90, .16, "#12243b"));
+    l.append(layer("rect", "Accent", .05, .75, .006, .16, "#66dddf"));
+    l.append(
+        text("Name", "NAME / SUBJECT", .07, .76, .85, .075, .04, "#ffffff"));
+    l.append(text("Subtitle", "Role, location or source credit", .07, .845, .85,
+                  .05, .026, "#adc0d5"));
+  } else if (preset == "info_card") {
+    l.append(layer("rect", "Card", .08, .12, .84, .70, "#12243b"));
+    l.append(text("Heading", "THE STORY IN FOUR POINTS", .11, .16, .78, .10,
+                  .042, "#66dddf"));
+    for (int i = 0; i < 4; ++i) {
+      l.append(layer("rect", QString("Bullet %1").arg(i + 1), .11,
+                     .30 + i * .115, .006, .07, "#1e6deb"));
+      l.append(text(QString("Point %1").arg(i + 1),
+                    QString("%1 / Add a fact, date or explanation").arg(i + 1),
+                    .14, .30 + i * .115, .72, .08, .030, "#ffffff"));
+    }
+  } else if (preset == "timeline") {
+    l.append(layer("rect", "Panel", .05, .2, .9, .55, "#12243b"));
+    l.append(text("Heading", "A HISTORY IN SOUND", .08, .24, .84, .1, .045,
+                  "#66dddf"));
+    l.append(layer("line", "Timeline line", .1, .5, .8, 0, "#66dddf"));
+    for (int i = 0; i < 4; ++i) {
+      l.append(layer("ellipse", QString("Node %1").arg(i), .105 + i * .24, .482,
+                     .02, .036, "#1e6deb"));
+      l.append(text(QString("Date %1").arg(i),
+                    QString("%1s").arg(1990 + i * 10), .075 + i * .24, .39, .16,
+                    .08, .031, "#ffffff"));
+      l.append(text(QString("Stage %1").arg(i),
+                    QString("Chapter %1").arg(i + 1), .075 + i * .24, .55, .16,
+                    .08, .026, "#adc0d5"));
+    }
+  }
+  return {{"version", 1}, {"layers", l}};
+}
+QString validateScene(const QJsonObject &s) {
+  if (s["version"].toInt() == 2)
+    return motion::validate(s);
+  if (s["version"].toInt() != 1 || !s["layers"].isArray())
+    return "Graphics scenes need version: 1 and a layers array.";
+  if (s["layers"].toArray().size() > 128 ||
+      QJsonDocument(s).toJson(QJsonDocument::Compact).size() > 2 * 1024 * 1024)
+    return "Use at most 128 layers and 2 MB of scene data.";
+  const QStringList numeric = {
+      "x",         "y",      "width",        "height", "opacity", "rotation",
+      "font_size", "radius", "stroke_width", "in",     "out"};
+  for (auto v : s["layers"].toArray()) {
+    if (!v.isObject())
+      return "Every layer must be an object.";
+    auto o = v.toObject();
+    if (!QStringList{"rect", "ellipse", "line", "text", "image"}.contains(
+            o["type"].toString()))
+      return "Layer types: rect, ellipse, line, text, image.";
+    for (auto key : numeric)
+      if (o.contains(key)) {
+        auto valid = [&](QJsonValue a) {
+          return a.isDouble() && std::isfinite(a.toDouble()) &&
+                 std::abs(a.toDouble()) <= 10000;
+        };
+        if (o[key].isObject()) {
+          auto keys = o[key].toObject()["keyframes"].toArray();
+          double previous = -1;
+          if (keys.isEmpty() || keys.size() > 256)
+            return "Use 1–256 keyframes per property.";
+          for (auto kv : keys) {
+            auto pair = kv.toArray();
+            if (pair.size() != 2 || !valid(pair[0]) || !valid(pair[1]) ||
+                pair[0].toDouble() < previous || pair[0].toDouble() < 0)
+              return "Keyframes must be sorted [seconds, finite value] pairs.";
+            previous = pair[0].toDouble();
+          }
+        } else if (!valid(o[key]))
+          return "Layer properties must be finite numbers.";
+      }
+    for (auto key : {"fill", "stroke"})
+      if (o.contains(key) && !QColor(o[key].toString()).isValid())
+        return "Use valid CSS-style colours such as #66dddf.";
+    for (auto key : {"text", "name", "path", "font"})
+      if (o[key].toString().size() > 20000)
+        return "Layer text is too long.";
+  }
+  return {};
+}
+void drawScene(QImage &image, const QJsonObject &s, double seconds) {
+  QPainter p(&image);
+  paintScene(p, image.size(), s, seconds);
+}
+void paintScene(QPainter &p, QSize image, const QJsonObject &s, double seconds) {
+  if (s["version"].toInt() == 2) {
+    motion::paint(p, image, s, seconds);
+    return;
+  }
+  if (!validateScene(s).isEmpty())
+    return;
+  p.setRenderHint(QPainter::Antialiasing);
+  p.setRenderHint(QPainter::SmoothPixmapTransform);
+  for (auto v : s["layers"].toArray()) {
+    auto o = v.toObject();
+    if (!o["visible"].toBool(true) || seconds < o["in"].toDouble(0) ||
+        seconds >= o["out"].toDouble(1e9))
+      continue;
+    QRectF b(value(o, "x", 0, seconds) * image.width(),
+             value(o, "y", 0, seconds) * image.height(),
+             std::clamp(value(o, "width", .3, seconds), 0., 4.) * image.width(),
+             std::clamp(value(o, "height", .1, seconds), 0., 4.) *
+                 image.height());
+    p.save();
+    p.setOpacity(p.opacity() * std::clamp(value(o, "opacity", 1, seconds), 0., 1.));
+    p.translate(b.center());
+    p.rotate(value(o, "rotation", 0, seconds));
+    p.translate(-b.center());
+    QColor fill = color(o, "fill", "#ffffff");
+    double sw = std::clamp(value(o, "stroke_width", 0, seconds), 0., .1) *
+                image.height();
+    p.setPen(sw > 0 ? QPen(color(o, "stroke", "#ffffff"), sw) : Qt::NoPen);
+    p.setBrush(fill);
+    QString type = o["type"].toString();
+    if (type == "rect")
+      p.drawRoundedRect(
+          b,
+          std::clamp(value(o, "radius", 0, seconds), 0., .5) * image.height(),
+          std::clamp(value(o, "radius", 0, seconds), 0., .5) * image.height());
+    else if (type == "ellipse")
+      p.drawEllipse(b);
+    else if (type == "line") {
+      p.setPen(QPen(fill, std::max(1., sw)));
+      p.drawLine(b.topLeft(), b.bottomRight());
+    } else if (type == "text") {
+      p.setClipRect(b);
+      QFont font(o["font"].toString("Segoe UI"));
+      font.setPixelSize(
+          std::clamp(int(value(o, "font_size", .035, seconds) * image.height()),
+                     1, image.height()));
+      font.setBold(o["bold"].toBool(false));
+      p.setFont(font);
+      p.setPen(fill);
+      int align = o["align"].toString() == "center"  ? Qt::AlignHCenter
+                  : o["align"].toString() == "right" ? Qt::AlignRight
+                                                     : Qt::AlignLeft;
+      if (p.paintEngine()->type() == QPaintEngine::OpenGL2) {
+        // Vector glyphs avoid mixing Qt's bitmap glyph atlas with Mutant Video Producer's
+        // custom texture pipeline, and retain shaped Unicode text positions.
+        QString words=o["text"].toString(); words.replace('\n',QChar(0x2028));
+        QTextLayout layout(words,font);
+        QTextOption option; option.setWrapMode(QTextOption::WordWrap);
+        option.setAlignment(Qt::Alignment(align)); layout.setTextOption(option);
+        layout.beginLayout(); double height=0;
+        while (true) {
+          auto line=layout.createLine(); if (!line.isValid()) break;
+          line.setLineWidth(std::max(1.,b.width())); line.setPosition({0,height}); height+=line.height();
+        }
+        layout.endLayout(); QPainterPath textPath;
+        for (const auto &run : layout.glyphRuns()) {
+          auto indices=run.glyphIndexes(); auto positions=run.positions();
+          for (int i=0;i<indices.size();++i) {
+            QTransform placement; placement.translate(b.x()+positions[i].x(), b.y()+(b.height()-height)/2+positions[i].y());
+            textPath.addPath(placement.map(run.rawFont().pathForGlyph(indices[i])));
+          }
+        }
+        p.fillPath(textPath,fill);
+      } else {
+        p.drawText(b, align | Qt::AlignVCenter | Qt::TextWordWrap, o["text"].toString());
+      }
+    } else if (type == "image") {
+      QImageReader reader(o["path"].toString());
+      reader.setAutoTransform(true);
+      if (reader.size().width() > 8192 || reader.size().height() > 8192)
+        reader.setScaledSize(
+            reader.size().scaled(4096, 4096, Qt::KeepAspectRatio));
+      QImage src = reader.read();
+      if (!src.isNull()) {
+        QSizeF fit = src.size();
+        fit.scale(b.size(), Qt::KeepAspectRatio);
+        p.drawImage(
+            QRectF(b.center() - QPointF(fit.width() / 2, fit.height() / 2),
+                   fit),
+            src);
+      } else {
+        p.setPen(Qt::red);
+        p.drawText(b, Qt::AlignCenter | Qt::TextWordWrap,
+                   "Image offline: " +
+                       QFileInfo(o["path"].toString()).fileName());
+      }
+    }
+    p.restore();
+  }
+}
+QString validateWaveform(const QJsonObject &data) {
+  if (data["version"].toInt() != 1 || !data["duration"].isDouble() ||
+      data["duration"].toDouble() <= 0 || data["duration"].toDouble() > 3600)
+    return "Waveform duration must be between 0 and 3600 seconds.";
+  const auto a = data["left"].toArray(), b = data["right"].toArray();
+  if (a.isEmpty() || a.size() > 8192 || a.size() != b.size())
+    return "Waveforms need matching left/right arrays with 1–8192 peaks.";
+  for (const auto &array : {a, b})
+    for (auto v : array)
+      if (!v.isDouble() || !std::isfinite(v.toDouble()) || v.toDouble() < 0 ||
+          v.toDouble() > 1)
+        return "Audio peaks must be finite numbers from 0 to 1.";
+  return {};
+}
+QJsonObject buildWaveform(const QString &path, int stream, double start,
+                          double duration, int bins, QString *error,
+                          const std::function<bool(double)> &progress,
+                          bool analyzeBeats) {
+  auto fail = [&](QString e) {
+    if (error)
+      *error = e;
+    return QJsonObject{};
+  };
+  if (!std::isfinite(start) || !std::isfinite(duration) || start < 0 ||
+      start > 1e7 || duration <= 0 || duration > 3600)
+    return fail("Choose an audio range up to one hour.");
+  bins = std::clamp(bins, 64, 8192);
+  AudioDecoder decoder;
+  QString e;
+  if (!decoder.open(path, stream, 48000, &e))
+    return fail(e);
+  QJsonArray left, right;
+  QJsonArray beats;
+  std::unique_ptr<BeatTracker> tracker;
+  if (analyzeBeats) {
+    tracker = std::make_unique<BeatTracker>(48000);
+    auto settings = tracker->settings();
+    settings.latencyMs = 0;
+    tracker->setSettings(settings);
+  }
+  std::vector<float> samples(8192 * 2);
+  int64_t count = std::max<int64_t>(1, std::llround(duration * 48000)),
+          origin = std::llround(start * 48000);
+  for (int bin = 0; bin < bins; ++bin) {
+    if (progress && !progress(double(bin) / bins))
+      return fail("Cancelled");
+    float l = 0, r = 0;
+    int64_t pos = count * bin / bins, end = count * (bin + 1) / bins;
+    while (pos < end) {
+      int frames = int(std::min<int64_t>(8192, end - pos));
+      decoder.read(origin + pos, frames, samples.data());
+      if (tracker) {
+        tracker->process(samples.data(), frames, double(pos) / 48000);
+        for (double beat : tracker->takeBeats())
+          if (beat >= 0 && beat < duration && beats.size() < 8192)
+            beats.append(beat);
+      }
+      for (int j = 0; j < frames; ++j) {
+        if (std::isfinite(samples[j * 2]))
+          l = std::max(l, std::abs(samples[j * 2]));
+        if (std::isfinite(samples[j * 2 + 1]))
+          r = std::max(r, std::abs(samples[j * 2 + 1]));
+      }
+      pos += frames;
+    }
+    left.append(std::min(1.f, l));
+    right.append(std::min(1.f, r));
+  }
+  QJsonObject result{{"version", 1},         {"source_path", path},
+                     {"stream", stream},     {"source_in", start},
+                     {"duration", duration}, {"left", left},
+                     {"right", right}};
+  if (tracker) {
+    result["beats"] = beats;
+    result["bpm"] = tracker->bpm();
+    result["beat_confidence"] = tracker->confidence();
+  }
+  return result;
+}
+void addGenerators(std::vector<GeneratorDef> &list) {
+  GeneratorDef d;
+  d.id = "graphics_overlay";
+  d.name = "Graphics Overlay";
+  d.category = "Graphics";
+  d.description =
+      "Compose editable graphics and 2D animation with groups, curves, "
+      "keyframes, cameras, reusable objects and audio bindings. Open Compose "
+      "Graphics to edit layers; presets provide broadcast and animation "
+      "layouts.";
+  d.params = {number("opacity", "Opacity", 0, 1, 1)};
+  d.render = [](QImage &img, const Params &p, const GeneratorContext &c) {
+    QImage drawn(img.size(), QImage::Format_ARGB32_Premultiplied);
+    drawn.fill(Qt::transparent);
+    drawScene(drawn,
+              c.data && !c.data->isEmpty() ? *c.data : scene("broadcast"),
+              double(c.time) / kUsPerSecond);
+    QPainter q(&img);
+    q.setOpacity(p.num("opacity"));
+    q.drawImage(0, 0, drawn);
+  };
+  d.isAnimating = [](const Params &, const GeneratorContext &c) {
+    if (!c.data)
+      return false;
+    if ((*c.data)["version"].toInt() == 2)
+      return motion::animating(*c.data);
+    for (auto v : (*c.data)["layers"].toArray()) {
+      auto o = v.toObject();
+      if (o.contains("in") || o.contains("out"))
+        return true;
+      for (auto it = o.begin(); it != o.end(); ++it)
+        if (it.value().isObject() &&
+            it.value().toObject().contains("keyframes"))
+          return true;
+    }
+    return false;
+  };
+  d.paint = [](QPainter &painter, QSize size, const Params &p, const GeneratorContext &c) {
+    painter.setOpacity(p.num("opacity"));
+    paintScene(painter, size, c.data && !c.data->isEmpty() ? *c.data : scene("broadcast"), double(c.time) / kUsPerSecond);
+    return true;
+  };
+  list.push_back(d);
+  d = {};
+  d.id = "audio_waveform";
+  d.paintScale = 2;
+  d.name = "Audio Waveform Graphic";
+  d.category = "Graphics";
+  d.description =
+      "A waveform from decoded source audio, stored in the project. Choose "
+      "Audio Source, then style bars, a filled envelope or a line; enable a "
+      "playhead or scrolling window. Does not add or change audio.";
+  d.params = {number("x", "Left", -1, 2, .1),
+              number("y", "Top", -1, 2, .72),
+              number("width", "Width", .01, 2, .8),
+              number("height", "Height", .01, 2, .18),
+              number("amplitude", "Amplitude", .01, 10, 1),
+              number("thickness", "Line width (pixels)", 1, 20, 2),
+              number("spacing", "Bar spacing (pixels)", 1, 30, 4),
+              tint("color", "Wave colour", 0x66dddf),
+              tint("played_color", "Played / playhead colour", 0xffffff),
+              tint("background", "Panel colour", 0x091322),
+              number("background_opacity", "Panel opacity", 0, 1, .85),
+              flag("stereo", "Separate stereo channels", false),
+              flag("normalize", "Normalize visual height", true),
+              flag("progress", "Show playback progress", true),
+              flag("scroll", "Scrolling window", false),
+              number("window", "Window (seconds)", .1, 3600, 10),
+              number("rate", "Playback rate", .05, 20, 1),
+              number("offset", "Playhead offset (seconds)", 0, 3600, 0)};
+  auto style = number("style", "Style", 0, 2, 0);
+  style.type = ParamType::Choice;
+  style.choices = {"Bars", "Filled envelope", "Line"};
+  d.params.push_back(style);
+  d.render = [](QImage &image, const Params &p, const GeneratorContext &c) {
+    QPainter painter(&image);
+    paintWave(painter, image.size(), p, c);
+  };
+  d.paint = [](QPainter &painter, QSize size, const Params &p, const GeneratorContext &c) {
+    paintWave(painter, size, p, c);
+    return true;
+  };
+  d.isAnimating = [](const Params &p, const GeneratorContext &) {
+    return p.flag("progress") || p.flag("scroll");
+  };
+  list.push_back(d);
+}
+void addPresets(std::vector<GeneratorPreset> &list) {
+  for (const auto &id : presets()) {
+    GeneratorPreset p;
+    p.id = "graphics_" + id;
+    p.name = id == "broadcast"     ? "Broadcast Frame"
+             : id == "lower_third" ? "Broadcast Lower Third"
+             : id == "info_card"   ? "Information Card"
+             : id == "timeline"    ? "History Timeline"
+             : id.startsWith("motion_")
+                 ? QString("Animation: %1").arg(id.mid(7).replace('_', ' '))
+                 : "Blank Graphics Canvas";
+    p.category = "Graphics";
+    p.generator = "graphics_overlay";
+    p.texts["preset"] = id;
+    p.length = 10 * kUsPerSecond;
+    list.push_back(p);
+  }
+  GeneratorPreset p;
+  p.id = "audio_waveform";
+  p.name = "Audio Waveform Graphic";
+  p.category = "Graphics";
+  p.generator = "audio_waveform";
+  p.length = 10 * kUsPerSecond;
+  list.push_back(p);
+}
+} // namespace graphics

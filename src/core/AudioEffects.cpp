@@ -1,0 +1,1031 @@
+// Built-in audio effects: native DSP (filters, dynamics, reverb, delay,
+// modulation, stereo tools) plus FFmpeg-filter based ones (noise
+// reduction, pitch shift, any filter chain).
+
+#include "core/AudioEffects.h"
+#include "core/Vst3Host.h"
+
+#include "core/FFmpeg.h"
+
+extern "C" {
+#include <libavfilter/avfilter.h>
+#include <libavfilter/buffersink.h>
+#include <libavfilter/buffersrc.h>
+}
+
+#include <algorithm>
+#include <cmath>
+#include <cstring>
+#include <deque>
+#include <map>
+#include <mutex>
+#include <vector>
+
+namespace {
+
+constexpr double kPi = 3.14159265358979323846;
+
+inline double dbToLin(double db) { return std::pow(10.0, db / 20.0); }
+inline double linToDb(double v) { return 20.0 * std::log10(std::max(v, 1e-12)); }
+inline double timeCoef(double ms, int rate) { return ms <= 0 ? 0.0 : std::exp(-1.0 / (ms * 0.001 * rate)); }
+
+// ---- Parameter helpers -------------------------------------------------------
+
+ParamDef num(const char* id, const char* name, double min, double max, double def, int decimals = 1, const char* suffix = "",
+             bool log = false)
+{
+    ParamDef p;
+    p.id = QString::fromLatin1(id);
+    p.name = QString::fromLatin1(name);
+    p.min = min;
+    p.max = max;
+    p.def = def;
+    p.decimals = decimals;
+    p.suffix = QString::fromUtf8(suffix);
+    p.logScale = log;
+    return p;
+}
+
+ParamDef choice(const char* id, const char* name, QStringList choices, int def = 0)
+{
+    ParamDef p;
+    p.id = QString::fromLatin1(id);
+    p.name = QString::fromLatin1(name);
+    p.type = ParamType::Choice;
+    p.choices = std::move(choices);
+    p.max = p.choices.size() - 1;
+    p.def = def;
+    return p;
+}
+
+ParamDef flag(const char* id, const char* name, bool def)
+{
+    ParamDef p;
+    p.id = QString::fromLatin1(id);
+    p.name = QString::fromLatin1(name);
+    p.type = ParamType::Bool;
+    p.max = 1;
+    p.def = def ? 1 : 0;
+    return p;
+}
+
+// ---- Biquad (RBJ cookbook), stereo, transposed direct form II ------------------------
+
+struct Biquad {
+    enum Type { LowPass, HighPass, BandPass, Notch, Peak, LowShelf, HighShelf };
+    double b0 = 1, b1 = 0, b2 = 0, a1 = 0, a2 = 0;
+    double z1[2] = {0, 0}, z2[2] = {0, 0};
+
+    void reset() { z1[0] = z1[1] = z2[0] = z2[1] = 0; }
+
+    void set(Type type, double rate, double freq, double q, double gainDb)
+    {
+        freq = std::clamp(freq, 1.0, rate * 0.49);
+        q = std::max(q, 0.05);
+        const double A = std::pow(10.0, gainDb / 40.0);
+        const double w0 = 2 * kPi * freq / rate, c = std::cos(w0), s = std::sin(w0);
+        const double alpha = s / (2 * q);
+        double a0 = 1;
+        switch (type) {
+        case LowPass: b0 = (1 - c) / 2; b1 = 1 - c; b2 = (1 - c) / 2; a0 = 1 + alpha; a1 = -2 * c; a2 = 1 - alpha; break;
+        case HighPass: b0 = (1 + c) / 2; b1 = -(1 + c); b2 = (1 + c) / 2; a0 = 1 + alpha; a1 = -2 * c; a2 = 1 - alpha; break;
+        case BandPass: b0 = alpha; b1 = 0; b2 = -alpha; a0 = 1 + alpha; a1 = -2 * c; a2 = 1 - alpha; break;
+        case Notch: b0 = 1; b1 = -2 * c; b2 = 1; a0 = 1 + alpha; a1 = -2 * c; a2 = 1 - alpha; break;
+        case Peak: b0 = 1 + alpha * A; b1 = -2 * c; b2 = 1 - alpha * A; a0 = 1 + alpha / A; a1 = -2 * c; a2 = 1 - alpha / A; break;
+        case LowShelf:
+        case HighShelf: {
+            const double sa = 2 * std::sqrt(A) * (s / std::sqrt(2.0)); // shelf slope 1
+            if (type == LowShelf) {
+                b0 = A * ((A + 1) - (A - 1) * c + sa);
+                b1 = 2 * A * ((A - 1) - (A + 1) * c);
+                b2 = A * ((A + 1) - (A - 1) * c - sa);
+                a0 = (A + 1) + (A - 1) * c + sa;
+                a1 = -2 * ((A - 1) + (A + 1) * c);
+                a2 = (A + 1) + (A - 1) * c - sa;
+            } else {
+                b0 = A * ((A + 1) + (A - 1) * c + sa);
+                b1 = -2 * A * ((A - 1) + (A + 1) * c);
+                b2 = A * ((A + 1) + (A - 1) * c - sa);
+                a0 = (A + 1) - (A - 1) * c + sa;
+                a1 = 2 * ((A - 1) - (A + 1) * c);
+                a2 = (A + 1) - (A - 1) * c - sa;
+            }
+            break;
+        }
+        }
+        b0 /= a0;
+        b1 /= a0;
+        b2 /= a0;
+        a1 /= a0;
+        a2 /= a0;
+    }
+
+    inline double run(int ch, double x)
+    {
+        const double y = b0 * x + z1[ch];
+        z1[ch] = b1 * x - a1 * y + z2[ch];
+        z2[ch] = b2 * x - a2 * y;
+        return y;
+    }
+
+    void process(float* s, int frames)
+    {
+        for (int i = 0; i < frames; ++i) {
+            s[i * 2] = float(run(0, s[i * 2]));
+            s[i * 2 + 1] = float(run(1, s[i * 2 + 1]));
+        }
+    }
+};
+
+// ---- Gain ------------------------------------------------------------------------
+
+class GainProcessor : public AudioProcessor {
+public:
+    void reset(int) override { m_started = false; }
+    void process(float* s, int frames, const Params& p) override
+    {
+        double target = dbToLin(p.num(QStringLiteral("gain")));
+        if (p.flag(QStringLiteral("invert")))
+            target = -target;
+        // Ramp from the previous block's gain so automation and edits don't click.
+        const double start = m_started ? m_gain : target;
+        for (int i = 0; i < frames; ++i) {
+            const double g = start + (target - start) * (i + 1) / frames;
+            s[i * 2] = float(s[i * 2] * g);
+            s[i * 2 + 1] = float(s[i * 2 + 1] * g);
+        }
+        m_gain = target;
+        m_started = true;
+    }
+
+private:
+    double m_gain = 1;
+    bool m_started = false;
+};
+
+// ---- Parametric EQ ---------------------------------------------------------------
+
+class EqProcessor : public AudioProcessor {
+public:
+    void reset(int rate) override
+    {
+        m_rate = rate;
+        for (auto& b : m_bands)
+            b.reset();
+    }
+    void process(float* s, int frames, const Params& p) override
+    {
+        struct Band {
+            Biquad::Type type;
+            double freq, q, gain;
+            bool active;
+        } bands[6] = {
+            {Biquad::HighPass, p.num(QStringLiteral("lowCut")), 0.707, 0, p.num(QStringLiteral("lowCut")) > 20.5},
+            {Biquad::LowShelf, p.num(QStringLiteral("lowFreq")), 0.707, p.num(QStringLiteral("lowGain")), p.num(QStringLiteral("lowGain")) != 0},
+            {Biquad::Peak, p.num(QStringLiteral("mid1Freq")), p.num(QStringLiteral("mid1Q")), p.num(QStringLiteral("mid1Gain")),
+             p.num(QStringLiteral("mid1Gain")) != 0},
+            {Biquad::Peak, p.num(QStringLiteral("mid2Freq")), p.num(QStringLiteral("mid2Q")), p.num(QStringLiteral("mid2Gain")),
+             p.num(QStringLiteral("mid2Gain")) != 0},
+            {Biquad::HighShelf, p.num(QStringLiteral("highFreq")), 0.707, p.num(QStringLiteral("highGain")),
+             p.num(QStringLiteral("highGain")) != 0},
+            {Biquad::LowPass, p.num(QStringLiteral("highCut")), 0.707, 0, p.num(QStringLiteral("highCut")) < 19999.5},
+        };
+        for (int i = 0; i < 6; ++i) {
+            if (!bands[i].active) {
+                m_bands[i].reset();
+                continue;
+            }
+            m_bands[i].set(bands[i].type, m_rate, bands[i].freq, bands[i].q, bands[i].gain);
+            m_bands[i].process(s, frames);
+        }
+    }
+
+private:
+    int m_rate = 48000;
+    Biquad m_bands[6];
+};
+
+// ---- Filter (LP/HP/BP/notch) ---------------------------------------------------------
+
+class FilterProcessor : public AudioProcessor {
+public:
+    void reset(int rate) override
+    {
+        m_rate = rate;
+        m_a.reset();
+        m_b.reset();
+    }
+    void process(float* s, int frames, const Params& p) override
+    {
+        static const Biquad::Type types[] = {Biquad::LowPass, Biquad::HighPass, Biquad::BandPass, Biquad::Notch};
+        const Biquad::Type type = types[std::clamp(p.choice(QStringLiteral("type")), 0, 3)];
+        const double f = p.num(QStringLiteral("frequency")), q = p.num(QStringLiteral("q"));
+        m_a.set(type, m_rate, f, q, 0);
+        m_a.process(s, frames);
+        if (p.choice(QStringLiteral("slope")) == 1) {
+            m_b.set(type, m_rate, f, q, 0);
+            m_b.process(s, frames);
+        }
+    }
+
+private:
+    int m_rate = 48000;
+    Biquad m_a, m_b;
+};
+
+// ---- Compressor -------------------------------------------------------------------------
+
+class CompressorProcessor : public AudioProcessor {
+public:
+    void reset(int rate) override
+    {
+        m_rate = rate;
+        m_env = 0;
+    }
+    void process(float* s, int frames, const Params& p) override
+    {
+        const double th = p.num(QStringLiteral("threshold")), ratio = std::max(1.0, p.num(QStringLiteral("ratio")));
+        const double knee = p.num(QStringLiteral("knee")), makeup = p.num(QStringLiteral("makeup"));
+        const double att = timeCoef(p.num(QStringLiteral("attack")), m_rate);
+        const double rel = timeCoef(p.num(QStringLiteral("release")), m_rate);
+        const double slope = 1.0 / ratio - 1.0;
+        for (int i = 0; i < frames; ++i) {
+            const double level = linToDb(std::max(std::abs(s[i * 2]), std::abs(s[i * 2 + 1])));
+            const double over = level - th;
+            double gr; // target gain change in dB (<= 0)
+            if (2 * over < -knee)
+                gr = 0;
+            else if (knee > 0 && 2 * std::abs(over) <= knee)
+                gr = slope * (over + knee / 2) * (over + knee / 2) / (2 * knee);
+            else
+                gr = slope * over;
+            m_env = gr < m_env ? att * m_env + (1 - att) * gr : rel * m_env + (1 - rel) * gr;
+            const double g = dbToLin(m_env + makeup);
+            s[i * 2] = float(s[i * 2] * g);
+            s[i * 2 + 1] = float(s[i * 2 + 1] * g);
+        }
+    }
+
+private:
+    int m_rate = 48000;
+    double m_env = 0;
+};
+
+// ---- Limiter (lookahead, no overs) ---------------------------------------------------------
+
+class LimiterProcessor : public AudioProcessor {
+public:
+    void reset(int rate) override
+    {
+        m_rate = rate;
+        m_look = std::max(1, rate / 500); // 2 ms
+        m_delay.assign(size_t(m_look) * 2, 0.0f);
+        m_req.assign(size_t(m_look), 1.0);
+        m_pos = 0;
+        m_gain = 1;
+        m_window.clear();
+        m_index = 0;
+    }
+    void process(float* s, int frames, const Params& p) override
+    {
+        const double ceiling = dbToLin(p.num(QStringLiteral("ceiling")));
+        const double rel = timeCoef(p.num(QStringLiteral("release")), m_rate);
+        for (int i = 0; i < frames; ++i) {
+            const double peak = std::max(std::abs(s[i * 2]), std::abs(s[i * 2 + 1]));
+            const double req = peak > ceiling ? ceiling / peak : 1.0;
+            // Sliding-window minimum of the required gain over the lookahead.
+            while (!m_window.empty() && m_window.back().second >= req)
+                m_window.pop_back();
+            m_window.emplace_back(m_index, req);
+            while (m_window.front().first <= m_index - m_look)
+                m_window.pop_front();
+            ++m_index;
+            const double target = m_window.front().second;
+            m_gain = target < m_gain ? target : target + (m_gain - target) * rel;
+            // Output the delayed sample with the gain that already sees it coming.
+            const float inL = s[i * 2], inR = s[i * 2 + 1];
+            float& dl = m_delay[size_t(m_pos) * 2];
+            float& dr = m_delay[size_t(m_pos) * 2 + 1];
+            const float c = float(ceiling);
+            s[i * 2] = std::clamp(float(dl * m_gain), -c, c);
+            s[i * 2 + 1] = std::clamp(float(dr * m_gain), -c, c);
+            dl = inL;
+            dr = inR;
+            m_pos = (m_pos + 1) % m_look;
+        }
+    }
+
+    int latency(const Params&) override { return m_look; }
+
+private:
+    int m_rate = 48000, m_look = 96, m_pos = 0;
+    std::vector<float> m_delay;
+    std::vector<double> m_req;
+    std::deque<std::pair<int64_t, double>> m_window;
+    int64_t m_index = 0;
+    double m_gain = 1;
+};
+
+// ---- Noise gate ------------------------------------------------------------------------------
+
+class GateProcessor : public AudioProcessor {
+public:
+    void reset(int rate) override
+    {
+        m_rate = rate;
+        m_env = 0;
+        m_gain = 0;
+        m_hold = 0;
+    }
+    void process(float* s, int frames, const Params& p) override
+    {
+        const double th = dbToLin(p.num(QStringLiteral("threshold")));
+        const double floorGain = dbToLin(p.num(QStringLiteral("range")));
+        const double att = timeCoef(p.num(QStringLiteral("attack")), m_rate);
+        const double rel = timeCoef(p.num(QStringLiteral("release")), m_rate);
+        const int hold = int(p.num(QStringLiteral("hold")) * 0.001 * m_rate);
+        const double detDecay = timeCoef(10.0, m_rate);
+        for (int i = 0; i < frames; ++i) {
+            const double peak = std::max(std::abs(s[i * 2]), std::abs(s[i * 2 + 1]));
+            m_env = std::max(peak, m_env * detDecay);
+            double target;
+            if (m_env > th) {
+                m_hold = hold;
+                target = 1.0;
+            } else if (m_hold > 0) {
+                --m_hold;
+                target = 1.0;
+            } else {
+                target = floorGain;
+            }
+            m_gain = target > m_gain ? att * m_gain + (1 - att) * target : rel * m_gain + (1 - rel) * target;
+            s[i * 2] = float(s[i * 2] * m_gain);
+            s[i * 2 + 1] = float(s[i * 2 + 1] * m_gain);
+        }
+    }
+
+private:
+    int m_rate = 48000;
+    double m_env = 0, m_gain = 0;
+    int m_hold = 0;
+};
+
+// ---- Reverb (Freeverb) --------------------------------------------------------------------------
+
+class ReverbProcessor : public AudioProcessor {
+public:
+    void reset(int rate) override
+    {
+        m_rate = rate;
+        static const int combTuning[8] = {1116, 1188, 1277, 1356, 1422, 1491, 1557, 1617};
+        static const int allpassTuning[4] = {556, 441, 341, 225};
+        const double k = rate / 44100.0;
+        for (int ch = 0; ch < 2; ++ch) {
+            const int spread = ch ? 23 : 0;
+            for (int i = 0; i < 8; ++i) {
+                m_comb[ch][i].buf.assign(size_t(std::max(1.0, (combTuning[i] + spread) * k)), 0.0f);
+                m_comb[ch][i].pos = 0;
+                m_comb[ch][i].store = 0;
+            }
+            for (int i = 0; i < 4; ++i) {
+                m_allpass[ch][i].buf.assign(size_t(std::max(1.0, (allpassTuning[i] + spread) * k)), 0.0f);
+                m_allpass[ch][i].pos = 0;
+            }
+        }
+        m_pre.assign(size_t(rate / 5 + 1) * 2, 0.0f); // up to 200 ms pre-delay
+        m_prePos = 0;
+    }
+    void process(float* s, int frames, const Params& p) override
+    {
+        const float feedback = float(0.7 + 0.28 * p.num(QStringLiteral("room")));
+        const float damp = float(0.4 * p.num(QStringLiteral("damping")));
+        const float wet = float(3.0 * p.num(QStringLiteral("wet")));
+        const float width = float(p.num(QStringLiteral("width")));
+        const float dry = float(p.num(QStringLiteral("dry")));
+        const float wet1 = wet * (width / 2 + 0.5f), wet2 = wet * ((1 - width) / 2);
+        const int preFrames = std::clamp(int(p.num(QStringLiteral("predelay")) * 0.001 * m_rate), 0, int(m_pre.size() / 2) - 1);
+        const int preLen = int(m_pre.size() / 2);
+        for (int i = 0; i < frames; ++i) {
+            const float inL = s[i * 2], inR = s[i * 2 + 1];
+            // Pre-delay line.
+            m_pre[size_t(m_prePos) * 2] = inL;
+            m_pre[size_t(m_prePos) * 2 + 1] = inR;
+            const int rd = (m_prePos - preFrames + preLen) % preLen;
+            const float input = (m_pre[size_t(rd) * 2] + m_pre[size_t(rd) * 2 + 1]) * 0.015f;
+            m_prePos = (m_prePos + 1) % preLen;
+            float out[2] = {0, 0};
+            for (int ch = 0; ch < 2; ++ch) {
+                for (auto& c : m_comb[ch]) {
+                    float& b = c.buf[size_t(c.pos)];
+                    c.store = b * (1 - damp) + c.store * damp;
+                    const float y = b;
+                    b = input + c.store * feedback;
+                    c.pos = (c.pos + 1) % int(c.buf.size());
+                    out[ch] += y;
+                }
+                for (auto& a : m_allpass[ch]) {
+                    float& b = a.buf[size_t(a.pos)];
+                    const float y = -out[ch] + b;
+                    b = out[ch] + b * 0.5f;
+                    a.pos = (a.pos + 1) % int(a.buf.size());
+                    out[ch] = y;
+                }
+            }
+            s[i * 2] = out[0] * wet1 + out[1] * wet2 + inL * dry;
+            s[i * 2 + 1] = out[1] * wet1 + out[0] * wet2 + inR * dry;
+        }
+    }
+
+private:
+    struct Comb {
+        std::vector<float> buf;
+        int pos = 0;
+        float store = 0;
+    };
+    struct Allpass {
+        std::vector<float> buf;
+        int pos = 0;
+    };
+    int m_rate = 48000;
+    Comb m_comb[2][8];
+    Allpass m_allpass[2][4];
+    std::vector<float> m_pre;
+    int m_prePos = 0;
+};
+
+// ---- Delay / echo -----------------------------------------------------------------------------
+
+class DelayProcessor : public AudioProcessor {
+public:
+    void reset(int rate) override
+    {
+        m_rate = rate;
+        m_buf.assign(size_t(rate * 2 + 2) * 2, 0.0f); // 2 s max
+        m_pos = 0;
+        m_lp[0] = m_lp[1] = 0;
+    }
+    void process(float* s, int frames, const Params& p) override
+    {
+        const int len = int(m_buf.size() / 2);
+        const int d = std::clamp(int(p.num(QStringLiteral("time")) * 0.001 * m_rate), 1, len - 1);
+        const float fb = float(p.num(QStringLiteral("feedback")));
+        const float mix = float(p.num(QStringLiteral("mix")));
+        const bool ping = p.flag(QStringLiteral("pingpong"));
+        const float a = float(std::exp(-2 * kPi * p.num(QStringLiteral("damping")) / m_rate)); // one-pole low-pass
+        for (int i = 0; i < frames; ++i) {
+            const int rd = (m_pos - d + len) % len;
+            float echo[2] = {m_buf[size_t(rd) * 2], m_buf[size_t(rd) * 2 + 1]};
+            for (int ch = 0; ch < 2; ++ch)
+                m_lp[ch] = echo[ch] + (m_lp[ch] - echo[ch]) * a;
+            const float inL = s[i * 2], inR = s[i * 2 + 1];
+            if (ping) {
+                // Mono input bounces between the channels.
+                m_buf[size_t(m_pos) * 2] = (inL + inR) * 0.5f + m_lp[1] * fb;
+                m_buf[size_t(m_pos) * 2 + 1] = m_lp[0] * fb;
+            } else {
+                m_buf[size_t(m_pos) * 2] = inL + m_lp[0] * fb;
+                m_buf[size_t(m_pos) * 2 + 1] = inR + m_lp[1] * fb;
+            }
+            m_pos = (m_pos + 1) % len;
+            s[i * 2] = inL * (1 - mix * 0.5f) + echo[0] * mix;
+            s[i * 2 + 1] = inR * (1 - mix * 0.5f) + echo[1] * mix;
+        }
+    }
+
+private:
+    int m_rate = 48000, m_pos = 0;
+    std::vector<float> m_buf;
+    float m_lp[2] = {0, 0};
+};
+
+// ---- Chorus / flanger (modulated delay) ---------------------------------------------------------
+
+class ModDelayProcessor : public AudioProcessor {
+public:
+    void reset(int rate) override
+    {
+        m_rate = rate;
+        m_buf.assign(size_t(rate / 10 + 4) * 2, 0.0f); // 100 ms
+        m_pos = 0;
+        m_phase = 0;
+    }
+    void process(float* s, int frames, const Params& p) override
+    {
+        const int len = int(m_buf.size() / 2);
+        const double rate = p.num(QStringLiteral("rate"));
+        const double depth = p.num(QStringLiteral("depth")) * 0.001 * m_rate;
+        const double base = p.num(QStringLiteral("delay")) * 0.001 * m_rate;
+        const float fb = float(p.num(QStringLiteral("feedback")));
+        const float mix = float(p.num(QStringLiteral("mix")));
+        const double inc = 2 * kPi * rate / m_rate;
+        for (int i = 0; i < frames; ++i) {
+            float wetOut[2];
+            for (int ch = 0; ch < 2; ++ch) {
+                // Right channel LFO is 90 degrees ahead for stereo width.
+                const double lfo = std::sin(m_phase + (ch ? kPi / 2 : 0));
+                const double d = std::clamp(base + depth * (0.5 + 0.5 * lfo), 1.0, double(len - 2));
+                double rp = m_pos - d;
+                while (rp < 0)
+                    rp += len;
+                const int i0 = int(rp), i1 = (i0 + 1) % len;
+                const float f = float(rp - i0);
+                wetOut[ch] = m_buf[size_t(i0) * 2 + ch] * (1 - f) + m_buf[size_t(i1) * 2 + ch] * f;
+            }
+            for (int ch = 0; ch < 2; ++ch)
+                m_buf[size_t(m_pos) * 2 + ch] = s[i * 2 + ch] + wetOut[ch] * fb;
+            m_pos = (m_pos + 1) % len;
+            m_phase += inc;
+            if (m_phase > 2 * kPi)
+                m_phase -= 2 * kPi;
+            for (int ch = 0; ch < 2; ++ch)
+                s[i * 2 + ch] = s[i * 2 + ch] * (1 - mix) + wetOut[ch] * mix;
+        }
+    }
+
+private:
+    int m_rate = 48000, m_pos = 0;
+    std::vector<float> m_buf;
+    double m_phase = 0;
+};
+
+// ---- Stereo tools -------------------------------------------------------------------------------
+
+class StereoProcessor : public AudioProcessor {
+public:
+    void reset(int) override {}
+    void process(float* s, int frames, const Params& p) override
+    {
+        const float width = float(p.num(QStringLiteral("width")));
+        const float bal = float(p.num(QStringLiteral("balance")));
+        const bool swap = p.flag(QStringLiteral("swap")), mono = p.flag(QStringLiteral("mono"));
+        const float invL = p.flag(QStringLiteral("invertL")) ? -1.f : 1.f, invR = p.flag(QStringLiteral("invertR")) ? -1.f : 1.f;
+        const float gl = bal > 0 ? 1 - bal : 1, gr = bal < 0 ? 1 + bal : 1;
+        for (int i = 0; i < frames; ++i) {
+            float l = s[i * 2] * invL, r = s[i * 2 + 1] * invR;
+            if (swap)
+                std::swap(l, r);
+            const float mid = (l + r) * 0.5f;
+            const float side = (l - r) * 0.5f * (mono ? 0.0f : width);
+            s[i * 2] = (mid + side) * gl;
+            s[i * 2 + 1] = (mid - side) * gr;
+        }
+    }
+};
+
+// ---- FFmpeg filter based -------------------------------------------------------------------------
+
+// Streams audio through an FFmpeg filter graph built from the parameters.
+// The graph keeps its state between blocks; output is aligned by keeping a
+// FIFO (the filter's own latency appears as a short delay).
+class FfmpegAudioProcessor : public AudioProcessor {
+public:
+    using SpecFn = std::function<QString(const Params&, int rate)>;
+    explicit FfmpegAudioProcessor(SpecFn spec) : m_spec(std::move(spec)) {}
+    ~FfmpegAudioProcessor() override { release(); }
+
+    void reset(int rate) override
+    {
+        m_rate = rate;
+        release();
+        m_fifo.clear();
+        m_current.clear();
+    }
+
+    int latency(const Params& p) override
+    {
+        ensure(m_spec(p, m_rate).trimmed());
+        return m_failed || m_current.isEmpty() ? 0 : m_latency;
+    }
+    bool failed() const { return m_failed; }
+    // (m_fifo starts with m_queue samples of silence; see ensure().)
+
+    void process(float* s, int frames, const Params& p) override
+    {
+        const QString spec = m_spec(p, m_rate).trimmed();
+        if (spec.isEmpty())
+            return;
+        ensure(spec);
+        if (m_failed)
+            return; // invalid chain: pass audio through untouched
+        ff::FramePtr f = ff::makeFrame();
+        f->format = AV_SAMPLE_FMT_FLT;
+        f->sample_rate = m_rate;
+        f->nb_samples = frames;
+        const AVChannelLayout stereo = AV_CHANNEL_LAYOUT_STEREO;
+        av_channel_layout_copy(&f->ch_layout, &stereo);
+        if (av_frame_get_buffer(f.get(), 0) < 0)
+            return;
+        std::memcpy(f->data[0], s, sizeof(float) * 2 * size_t(frames));
+        f->pts = m_pts;
+        m_pts += frames;
+        if (av_buffersrc_add_frame_flags(m_src, f.get(), 0) < 0)
+            return;
+        ff::FramePtr out = ff::makeFrame();
+        while (av_buffersink_get_frame(m_sink, out.get()) >= 0) {
+            const float* d = reinterpret_cast<const float*>(out->data[0]);
+            m_fifo.insert(m_fifo.end(), d, d + size_t(out->nb_samples) * 2);
+            av_frame_unref(out.get());
+        }
+        // Oldest available samples, right-aligned (silence while the filter primes).
+        const size_t want = size_t(frames) * 2;
+        const size_t have = std::min(m_fifo.size(), want);
+        std::memset(s, 0, sizeof(float) * (want - have));
+        std::memcpy(s + (want - have), m_fifo.data(), sizeof(float) * have);
+        m_fifo.erase(m_fifo.begin(), m_fifo.begin() + have);
+    }
+
+private:
+    // (Re)builds the graph for `spec`. Output is a fixed delay line: the
+    // filter's worst-case buffering (m_queue) is pre-filled with silence so
+    // the FIFO never runs dry, and m_latency = buffering + the filter's own
+    // signal delay, both measured once per spec.
+    void ensure(const QString& spec)
+    {
+        if (spec == m_current && (m_graph || m_failed))
+            return;
+        release();
+        m_fifo.clear();
+        m_current = spec;
+        if (spec.isEmpty())
+            return;
+        const Probe probe = measure(spec);
+        m_failed = probe.queue < 0 || !build(spec);
+        m_latency = probe.queue + probe.delay;
+        if (!m_failed)
+            m_fifo.assign(size_t(probe.queue) * 2, 0.0f);
+    }
+
+    struct Probe {
+        int queue = -1;   // most samples ever held back by the graph
+        int delay = 0;    // where an impulse comes out
+    };
+
+    Probe measure(const QString& spec)
+    {
+        static std::mutex mutex;
+        static std::map<std::pair<QString, int>, Probe> cache;
+        {
+            std::lock_guard lock(mutex);
+            auto it = cache.find({spec, m_rate});
+            if (it != cache.end())
+                return it->second;
+        }
+        Probe result;
+        if (build(spec)) {
+            // Feed silence with one impulse after a warm-up (some filters emit a
+            // start-up transient), pushing and draining in the same block
+            // pattern the mixer uses.
+            constexpr int kBlock = 1024;
+            constexpr int kImpulseBlock = 4;
+            constexpr int kProbeSeconds = 8; // loudnorm looks 3 s ahead
+            std::vector<float> in(size_t(kBlock) * 2, 0.0f);
+            std::vector<float> outStream;
+            int64_t fed = 0, produced = 0, worst = 0;
+            ff::FramePtr out = ff::makeFrame();
+            for (int b = 0; b < m_rate * kProbeSeconds / kBlock; ++b) {
+                std::fill(in.begin(), in.end(), 0.0f);
+                if (b == kImpulseBlock)
+                    in[0] = in[1] = 0.9f;
+                ff::FramePtr f = ff::makeFrame();
+                f->format = AV_SAMPLE_FMT_FLT;
+                f->sample_rate = m_rate;
+                f->nb_samples = kBlock;
+                const AVChannelLayout stereo = AV_CHANNEL_LAYOUT_STEREO;
+                av_channel_layout_copy(&f->ch_layout, &stereo);
+                if (av_frame_get_buffer(f.get(), 0) < 0)
+                    break;
+                std::memcpy(f->data[0], in.data(), in.size() * sizeof(float));
+                f->pts = fed;
+                fed += kBlock;
+                if (av_buffersrc_add_frame_flags(m_src, f.get(), 0) < 0)
+                    break;
+                while (av_buffersink_get_frame(m_sink, out.get()) >= 0) {
+                    const float* d = reinterpret_cast<const float*>(out->data[0]);
+                    outStream.insert(outStream.end(), d, d + size_t(out->nb_samples) * 2);
+                    produced += out->nb_samples;
+                    av_frame_unref(out.get());
+                }
+                worst = std::max(worst, fed - produced);
+            }
+            int peakAt = 0;
+            float peak = 0;
+            for (size_t i = size_t(kImpulseBlock) * kBlock; i < outStream.size() / 2; ++i)
+                if (std::abs(outStream[i * 2]) > peak) {
+                    peak = std::abs(outStream[i * 2]);
+                    peakAt = int(i);
+                }
+            result.queue = int(std::clamp<int64_t>(worst, 0, int64_t(m_rate) * 6));
+            result.delay = peak > 1e-4f ? std::clamp(peakAt - kImpulseBlock * kBlock, 0, m_rate * 6) : 0;
+            release();
+        }
+        std::lock_guard lock(mutex);
+        cache[{spec, m_rate}] = result;
+        return result;
+    }
+
+    bool build(const QString& spec)
+    {
+        m_graph = avfilter_graph_alloc();
+        m_pts = 0;
+        const QByteArray args = QStringLiteral("sample_rate=%1:sample_fmt=flt:channel_layout=stereo:time_base=1/%1").arg(m_rate).toLatin1();
+        if (avfilter_graph_create_filter(&m_src, avfilter_get_by_name("abuffer"), "in", args.constData(), nullptr, m_graph) < 0
+            || avfilter_graph_create_filter(&m_sink, avfilter_get_by_name("abuffersink"), "out", nullptr, nullptr, m_graph) < 0)
+            return false;
+        AVFilterInOut* outputs = avfilter_inout_alloc();
+        AVFilterInOut* inputs = avfilter_inout_alloc();
+        outputs->name = av_strdup("in");
+        outputs->filter_ctx = m_src;
+        inputs->name = av_strdup("out");
+        inputs->filter_ctx = m_sink;
+        const QByteArray desc = (spec + QStringLiteral(",aformat=sample_fmts=flt:channel_layouts=stereo:sample_rates=%1").arg(m_rate)).toUtf8();
+        int ret = avfilter_graph_parse_ptr(m_graph, desc.constData(), &inputs, &outputs, nullptr);
+        avfilter_inout_free(&inputs);
+        avfilter_inout_free(&outputs);
+        if (ret >= 0)
+            ret = avfilter_graph_config(m_graph, nullptr);
+        return ret >= 0;
+    }
+    void release()
+    {
+        avfilter_graph_free(&m_graph);
+        m_src = m_sink = nullptr;
+    }
+
+    SpecFn m_spec;
+    int m_rate = 48000;
+    AVFilterGraph* m_graph = nullptr;
+    AVFilterContext* m_src = nullptr;
+    AVFilterContext* m_sink = nullptr;
+    QString m_current;
+    bool m_failed = false;
+    int m_latency = 0;
+    int64_t m_pts = 0;
+    std::vector<float> m_fifo;
+};
+
+bool hasFilter(const char* name)
+{
+    return avfilter_get_by_name(name) != nullptr;
+}
+
+// ---- Registry ------------------------------------------------------------------------------------
+
+std::vector<AudioEffectDef> buildAudioEffects()
+{
+    std::vector<AudioEffectDef> list;
+    AudioEffectDef d;
+    auto make = [](auto proc) { return [proc] { return std::unique_ptr<AudioProcessor>(proc()); }; };
+
+    d = {};
+    d.id = QStringLiteral("a_gain");
+    d.name = QStringLiteral("Gain");
+    d.category = QStringLiteral("Utility");
+    d.description = QStringLiteral("Volume change in dB, optional phase invert. Normalize adds one of these.");
+    d.params = {num("gain", "Gain", -60, 24, 0, 1, " dB"), flag("invert", "Invert phase", false)};
+    d.create = make([] { return new GainProcessor; });
+    list.push_back(d);
+
+    d = {};
+    d.id = QStringLiteral("a_eq");
+    d.name = QStringLiteral("Parametric EQ");
+    d.category = QStringLiteral("EQ & Filters");
+    d.description = QStringLiteral("Low cut, low shelf, two bell bands, high shelf and high cut. Bands at 0 dB are off.");
+    d.params = {num("lowCut", "Low cut", 20, 1000, 20, 0, " Hz", true),
+                num("lowFreq", "Low shelf frequency", 20, 1000, 100, 0, " Hz", true),
+                num("lowGain", "Low shelf gain", -24, 24, 0, 1, " dB"),
+                num("mid1Freq", "Mid 1 frequency", 40, 16000, 500, 0, " Hz", true),
+                num("mid1Gain", "Mid 1 gain", -24, 24, 0, 1, " dB"),
+                num("mid1Q", "Mid 1 width (Q)", 0.1, 10, 1, 2, "", true),
+                num("mid2Freq", "Mid 2 frequency", 40, 16000, 2500, 0, " Hz", true),
+                num("mid2Gain", "Mid 2 gain", -24, 24, 0, 1, " dB"),
+                num("mid2Q", "Mid 2 width (Q)", 0.1, 10, 1, 2, "", true),
+                num("highFreq", "High shelf frequency", 1000, 20000, 8000, 0, " Hz", true),
+                num("highGain", "High shelf gain", -24, 24, 0, 1, " dB"),
+                num("highCut", "High cut", 1000, 20000, 20000, 0, " Hz", true)};
+    d.create = make([] { return new EqProcessor; });
+    list.push_back(d);
+
+    d = {};
+    d.id = QStringLiteral("a_filter");
+    d.name = QStringLiteral("Filter (low/high/band-pass, notch)");
+    d.category = QStringLiteral("EQ & Filters");
+    d.description = QStringLiteral("Resonant filter; 24 dB/octave stacks two stages.");
+    d.params = {choice("type", "Type", {QStringLiteral("Low-pass"), QStringLiteral("High-pass"), QStringLiteral("Band-pass"), QStringLiteral("Notch")}),
+                num("frequency", "Frequency", 20, 20000, 1000, 0, " Hz", true), num("q", "Resonance (Q)", 0.1, 20, 0.707, 3, "", true),
+                choice("slope", "Slope", {QStringLiteral("12 dB/octave"), QStringLiteral("24 dB/octave")})};
+    d.create = make([] { return new FilterProcessor; });
+    list.push_back(d);
+
+    d = {};
+    d.id = QStringLiteral("a_compressor");
+    d.name = QStringLiteral("Compressor");
+    d.category = QStringLiteral("Dynamics");
+    d.description = QStringLiteral("Evens out loud and quiet parts. Stereo-linked, soft knee.");
+    d.params = {num("threshold", "Threshold", -60, 0, -18, 1, " dB"), num("ratio", "Ratio", 1, 20, 4, 1, ":1"),
+                num("attack", "Attack", 0.1, 200, 10, 1, " ms", true), num("release", "Release", 5, 2000, 150, 0, " ms", true),
+                num("knee", "Knee", 0, 24, 6, 1, " dB"), num("makeup", "Makeup gain", 0, 24, 0, 1, " dB")};
+    d.create = make([] { return new CompressorProcessor; });
+    list.push_back(d);
+
+    d = {};
+    d.id = QStringLiteral("a_limiter");
+    d.name = QStringLiteral("Limiter");
+    d.category = QStringLiteral("Dynamics");
+    d.description = QStringLiteral("Brick-wall limiter with 2 ms lookahead: nothing exceeds the ceiling.");
+    d.params = {num("ceiling", "Ceiling", -24, 0, -0.3, 1, " dB"), num("release", "Release", 1, 1000, 60, 0, " ms", true)};
+    d.create = make([] { return new LimiterProcessor; });
+    list.push_back(d);
+
+    d = {};
+    d.id = QStringLiteral("a_gate");
+    d.name = QStringLiteral("Noise Gate");
+    d.category = QStringLiteral("Dynamics");
+    d.description = QStringLiteral("Silences audio below the threshold (hum, room noise between words).");
+    d.params = {num("threshold", "Threshold", -90, 0, -45, 1, " dB"), num("range", "Range (closed level)", -90, 0, -80, 0, " dB"),
+                num("attack", "Attack", 0.1, 100, 1, 1, " ms", true), num("hold", "Hold", 0, 1000, 50, 0, " ms"),
+                num("release", "Release", 5, 3000, 150, 0, " ms", true)};
+    d.create = make([] { return new GateProcessor; });
+    list.push_back(d);
+
+    d = {};
+    d.id = QStringLiteral("a_reverb");
+    d.name = QStringLiteral("Reverb");
+    d.category = QStringLiteral("Reverb & Delay");
+    d.description = QStringLiteral("Room reverb (Freeverb). On a track, the tail rings out past the end of events.");
+    d.params = {num("room", "Room size", 0, 1, 0.6, 2), num("damping", "Damping", 0, 1, 0.4, 2), num("wet", "Wet", 0, 1, 0.25, 2),
+                num("dry", "Dry", 0, 1, 1, 2), num("width", "Stereo width", 0, 1, 1, 2), num("predelay", "Pre-delay", 0, 200, 10, 0, " ms")};
+    d.create = make([] { return new ReverbProcessor; });
+    list.push_back(d);
+
+    d = {};
+    d.id = QStringLiteral("a_delay");
+    d.name = QStringLiteral("Delay / Echo");
+    d.category = QStringLiteral("Reverb & Delay");
+    d.description = QStringLiteral("Repeating echoes, optionally bouncing between left and right.");
+    d.params = {num("time", "Delay time", 1, 2000, 350, 0, " ms", true), num("feedback", "Feedback", 0, 0.95, 0.35, 2),
+                num("mix", "Mix", 0, 1, 0.3, 2), num("damping", "Echo brightness", 500, 20000, 8000, 0, " Hz", true),
+                flag("pingpong", "Ping-pong", false)};
+    d.create = make([] { return new DelayProcessor; });
+    list.push_back(d);
+
+    d = {};
+    d.id = QStringLiteral("a_chorus");
+    d.name = QStringLiteral("Chorus");
+    d.category = QStringLiteral("Modulation");
+    d.description = QStringLiteral("Thickens the sound with slowly modulated copies.");
+    d.params = {num("rate", "Rate", 0.01, 10, 0.8, 2, " Hz", true), num("depth", "Depth", 0, 15, 3, 1, " ms"),
+                num("delay", "Delay", 0.5, 40, 15, 1, " ms"), num("feedback", "Feedback", -0.95, 0.95, 0, 2), num("mix", "Mix", 0, 1, 0.5, 2)};
+    d.create = make([] { return new ModDelayProcessor; });
+    list.push_back(d);
+
+    d = {};
+    d.id = QStringLiteral("a_flanger");
+    d.name = QStringLiteral("Flanger");
+    d.category = QStringLiteral("Modulation");
+    d.description = QStringLiteral("Jet-plane sweep from a short modulated delay with feedback.");
+    d.params = {num("rate", "Rate", 0.01, 10, 0.25, 2, " Hz", true), num("depth", "Depth", 0, 10, 2, 1, " ms"),
+                num("delay", "Delay", 0.1, 10, 1.5, 1, " ms"), num("feedback", "Feedback", -0.95, 0.95, 0.6, 2), num("mix", "Mix", 0, 1, 0.5, 2)};
+    d.create = make([] { return new ModDelayProcessor; });
+    list.push_back(d);
+
+    d = {};
+    d.id = QStringLiteral("a_stereo");
+    d.name = QStringLiteral("Stereo Tools");
+    d.category = QStringLiteral("Utility");
+    d.description = QStringLiteral("Stereo width, balance, channel swap, per-channel phase invert, mono.");
+    d.params = {num("width", "Width", 0, 2, 1, 2), num("balance", "Balance", -1, 1, 0, 2), flag("swap", "Swap left/right", false),
+                flag("invertL", "Invert left phase", false), flag("invertR", "Invert right phase", false), flag("mono", "Mono", false)};
+    d.create = make([] { return new StereoProcessor; });
+    list.push_back(d);
+
+    d = {};
+    d.id = QStringLiteral("a_denoise");
+    d.name = QStringLiteral("Noise Reduction");
+    d.category = QStringLiteral("Restoration");
+    d.description = QStringLiteral("Removes steady background noise (hiss, hum, fans) with FFmpeg's FFT denoiser.");
+    d.params = {num("amount", "Reduction", 1, 60, 12, 0, " dB"), num("floor", "Noise floor", -80, -20, -40, 0, " dB"),
+                flag("adaptive", "Re-estimate noise continuously (for changing noise; weaker)", false)};
+    d.create = [] {
+        return std::unique_ptr<AudioProcessor>(new FfmpegAudioProcessor([](const Params& p, int) {
+            return QStringLiteral("afftdn=nr=%1:nf=%2:tn=%3")
+                .arg(p.num(QStringLiteral("amount")), 0, 'f', 1)
+                .arg(p.num(QStringLiteral("floor")), 0, 'f', 1)
+                .arg(p.flag(QStringLiteral("adaptive")) ? 1 : 0);
+        }));
+    };
+    list.push_back(d);
+
+    d = {};
+    d.id = QStringLiteral("a_pitch");
+    d.name = QStringLiteral("Pitch Shift");
+    d.category = QStringLiteral("Restoration");
+    d.description = QStringLiteral("Changes pitch without changing speed.");
+    d.params = {num("semitones", "Semitones", -24, 24, 0, 1), num("cents", "Fine tune", -100, 100, 0, 0, " cents")};
+    d.create = [] {
+        return std::unique_ptr<AudioProcessor>(new FfmpegAudioProcessor([](const Params& p, int rate) {
+            const double k = std::pow(2.0, (p.num(QStringLiteral("semitones")) + p.num(QStringLiteral("cents")) / 100.0) / 12.0);
+            if (std::abs(k - 1.0) < 1e-4)
+                return QString();
+            if (hasFilter("rubberband"))
+                return QStringLiteral("rubberband=pitch=%1").arg(k, 0, 'f', 6);
+            // Fallback: resample (pitch + speed), then restore the speed.
+            return QStringLiteral("asetrate=%1,aresample=%2,atempo=%3").arg(int(std::lround(rate * k))).arg(rate).arg(1.0 / k, 0, 'f', 6);
+        }));
+    };
+    list.push_back(d);
+
+    d = {};
+    d.id = QStringLiteral("a_vst3");
+    d.name = QStringLiteral("VST3 Plugin");
+    d.category = QStringLiteral("Plugins");
+    d.description = QStringLiteral("Runs a VST3 audio effect plugin. Pick it with the plug button on the device (installed plugins) "
+                                   "or Browse; the button also opens the plugin's own window. Its settings are saved with the project.");
+    {
+        ParamDef plugin;
+        plugin.id = QStringLiteral("plugin");
+        plugin.name = QStringLiteral("Plugin file");
+        plugin.type = ParamType::Text;
+        plugin.fileFilter = QStringLiteral("VST3 plugins (*.vst3);;All files (*)");
+        ParamDef cls = plugin;
+        cls.id = QStringLiteral("class");
+        cls.name = QStringLiteral("Plugin");
+        cls.fileFilter.clear();
+        cls.hidden = true;
+        ParamDef state = cls;
+        state.id = QStringLiteral("state");
+        state.name = QStringLiteral("Plugin state");
+        ParamDef mix;
+        mix.id = QStringLiteral("mix");
+        mix.name = QStringLiteral("Dry / wet");
+        mix.def = 1;
+        d.params = {plugin, cls, state, mix};
+    }
+    d.create = createVst3Processor;
+    list.push_back(d);
+
+    d = {};
+    d.id = QStringLiteral("a_ffmpeg");
+    d.name = QStringLiteral("FFmpeg Audio Filter (advanced)");
+    d.category = QStringLiteral("Advanced");
+    d.description = QStringLiteral("Runs any FFmpeg audio filter chain, e.g. \"loudnorm\", \"dynaudnorm\", \"deesser\", "
+                                   "\"acompressor=threshold=0.1\", \"highpass=f=80\". Filters that change length (atempo) "
+                                   "don't belong here - use Playback Speed instead.");
+    {
+        ParamDef t;
+        t.id = QStringLiteral("filter");
+        t.name = QStringLiteral("Filter chain");
+        t.type = ParamType::Text;
+        t.defText = QStringLiteral("highpass=f=80,lowpass=f=14000");
+        t.tooltip = d.description;
+        d.params = {t};
+    }
+    d.create = [] {
+        return std::unique_ptr<AudioProcessor>(
+            new FfmpegAudioProcessor([](const Params& p, int) { return p.text(QStringLiteral("filter")); }));
+    };
+    list.push_back(d);
+    return list;
+}
+
+} // namespace
+
+bool audioFilterSpecValid(const QString& spec, int rate)
+{
+    FfmpegAudioProcessor p([spec](const Params&, int) { return spec; });
+    p.reset(rate);
+    p.latency(Params{});
+    return !p.failed();
+}
+
+const std::vector<AudioEffectDef>& audioEffects()
+{
+    static const std::vector<AudioEffectDef> list = buildAudioEffects();
+    return list;
+}
+
+const AudioEffectDef* findAudioEffect(const QString& id)
+{
+    for (const auto& e : audioEffects())
+        if (e.id == id)
+            return &e;
+    return nullptr;
+}
+
+std::optional<EffectMeta> effectMeta(const QString& type)
+{
+    if (const EffectDef* v = findEffect(type))
+        return EffectMeta{v->name, v->category, v->description, &v->params, false};
+    if (const AudioEffectDef* a = findAudioEffect(type))
+        return EffectMeta{a->name, a->category, a->description, &a->params, true};
+    return std::nullopt;
+}
+
+EffectInstance makeEffectOfType(const QString& type, int id)
+{
+    EffectInstance e;
+    e.id = id;
+    e.type = type;
+    if (auto meta = effectMeta(type))
+        e.params = defaultParams(*meta->params);
+    return e;
+}
