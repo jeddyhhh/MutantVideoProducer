@@ -7,6 +7,7 @@
 #include <QCoreApplication>
 #include <QDataStream>
 #include <QFile>
+#include <QDir>
 #include <QTemporaryDir>
 #include <QTextStream>
 #include <cmath>
@@ -50,6 +51,14 @@ int main(int argc,char** argv) {
     auto wav=tmp.filePath("tone.wav");QFile file(wav);file.open(QIODevice::WriteOnly);QDataStream stream(&file);stream.setByteOrder(QDataStream::LittleEndian);stream.setFloatingPointPrecision(QDataStream::SinglePrecision);
     file.write("RIFF",4);stream<<quint32(36+frames*8);file.write("WAVEfmt ",8);stream<<quint32(16)<<quint16(3)<<quint16(2)<<quint32(rate)<<quint32(rate*8)<<quint16(8)<<quint16(32);file.write("data",4);stream<<quint32(frames*8);
     std::vector<float> samples(frames*2);tone(0,frames,samples.data());for(float sample:samples)stream<<sample;file.close();
+    auto workingDirectory=QDir::currentPath();QDir::setCurrent(tmp.path());
+    Project relativeProject;int relativeId=relativeProject.addMedia(probeMedia("tone.wav"));
+    QDir().mkpath("saved");QString relativeError;Project reopened;
+    bool relativeOk=relativeProject.save("saved/relative.mvp",&relativeError)&&reopened.load("saved/relative.mvp",&relativeError);
+    check(relativeOk&&QDir::isAbsolutePath(relativeProject.mediaItem(relativeId)->path)&&reopened.mediaItem(relativeId)->info.ok(),"relative media imports remain online when saved into a different folder");
+    auto urlInfo=probeMedia(wav);urlInfo.path="https://example.test/video.mp4";
+    int urlId=relativeProject.addMedia(urlInfo);check(relativeProject.mediaItem(urlId)->path==urlInfo.path,"import path normalization preserves FFmpeg URLs without accessing the network");
+    QDir::setCurrent(workingDirectory);
     Project project;int media=project.addMedia(probeMedia(wav));auto timeline=project.timeline();Track audio;audio.id=timeline.nextId++;audio.type=TrackType::Audio;audio.name="Tone";Clip c;c.id=timeline.nextId++;c.mediaId=media;c.streamIndex=0;c.length=8*kUsPerSecond;audio.clips.push_back(c);timeline.tracks={audio};project.applyEdit(timeline,"Fixture");
     auto measured=finishing::analyze(*project.snapshot());auto normalized=project.timeline();finishing::applyGain(normalized,measured,{},&error);project.applyEdit(normalized,"Finish");auto final=finishing::analyze(*project.snapshot());
     check(std::abs(final.integrated+16)<.3&&final.truePeak<=-1.5,"offline scan and gain use the actual post-master mixer");

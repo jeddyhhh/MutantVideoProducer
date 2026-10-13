@@ -300,7 +300,7 @@ if(NOT EXISTS "${MVP_VOICE_BUNDLE}" AND EXISTS "${MVP_DEPS_DIR}/voice-worker/mon
     set(MVP_VOICE_BUNDLE "${MVP_DEPS_DIR}/voice-worker/montage-voice-worker")
     set(MVP_VOICE_EXE "montage-voice-worker")
 endif()
-if(EXISTS "${MVP_VOICE_BUNDLE}")
+if(EXISTS "${MVP_VOICE_BUNDLE}/${MVP_VOICE_EXE}${MVP_WORKER_SUFFIX}")
     add_custom_command(TARGET mvp POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_directory "${MVP_VOICE_BUNDLE}" "$<TARGET_FILE_DIR:mvp>/voice/worker"
         COMMAND ${CMAKE_COMMAND} -E copy_if_different "${MVP_VOICE_BUNDLE}/${MVP_VOICE_EXE}${MVP_WORKER_SUFFIX}" "$<TARGET_FILE_DIR:mvp>/voice/worker/mvp-voice-worker${MVP_WORKER_SUFFIX}"
@@ -320,7 +320,7 @@ if(NOT EXISTS "${MVP_RVC_BUNDLE}" AND EXISTS "${MVP_DEPS_DIR}/rvc-worker/montage
     set(MVP_RVC_BUNDLE "${MVP_DEPS_DIR}/rvc-worker/montage-rvc-worker")
     set(MVP_RVC_EXE "montage-rvc-worker")
 endif()
-if(EXISTS "${MVP_RVC_BUNDLE}")
+if(EXISTS "${MVP_RVC_BUNDLE}/${MVP_RVC_EXE}${MVP_WORKER_SUFFIX}")
     add_custom_command(TARGET mvp POST_BUILD
         COMMAND ${CMAKE_COMMAND} "-DSOURCE=${MVP_RVC_BUNDLE}" "-DDESTINATION=$<TARGET_FILE_DIR:mvp>/voice/rvc-worker" -P "${CMAKE_SOURCE_DIR}/scripts/deploy-runtime.cmake"
         COMMAND ${CMAKE_COMMAND} -E copy_if_different "${MVP_RVC_BUNDLE}/${MVP_RVC_EXE}${MVP_WORKER_SUFFIX}" "$<TARGET_FILE_DIR:mvp>/voice/rvc-worker/mvp-rvc-worker${MVP_WORKER_SUFFIX}"

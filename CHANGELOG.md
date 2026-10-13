@@ -2,6 +2,17 @@
 
 What changed in each version of Mutant Video Producer. The newest is first.
 
+### Cross-platform builds and media paths
+
+- Fixed the graphics composer's Qt 6.4 string/JSON comparison that blocked Linux builds.
+- Relative file imports retain absolute paths, so saving into another folder keeps media
+  online. Regression checks cover image rendering, recovery and exported audio automation.
+- Blank/audio-reactive generator fixtures now test their intended behaviour; headless CI
+  explicitly skips unavailable GPU checks while keeping the CPU and composer assertions.
+- Windows Actions builds main and publishes an installer/ZIP; Linux Actions publishes an
+  Ubuntu 24.04 archive after tests. Packaged Windows AI workers are cached between builds.
+- Bundled workers are deployed only when an executable for the target platform exists.
+
 ### Audio finishing and graphics workflow
 
 - Audio Finishing measures the complete post-master mix: integrated, momentary and

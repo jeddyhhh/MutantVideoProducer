@@ -883,8 +883,20 @@ int cmdGenerators(const QString& outDir)
     const FrameRate fps{30, 1};
     std::vector<QImage> sheet;
 
+    auto fixture = [](const GeneratorPreset& preset) {
+        auto spec = makeGenerator(preset);
+        if (spec.type == QLatin1String("audio_waveform") || preset.id == QLatin1String("graphics_motion_audio")) {
+            QJsonArray peaks;
+            for (int i=0;i<64;++i) peaks.append(.2+.7*std::abs(std::sin(i*.3)));
+            QJsonObject envelope{{"version",1},{"duration",10},{"left",peaks},{"right",peaks}};
+            if (spec.type == QLatin1String("audio_waveform")) spec.data=envelope;
+            else spec.data["audio"]=QJsonObject{{"source",envelope}};
+        }
+        return spec;
+    };
+
     for (const GeneratorPreset& preset : generatorPresets()) {
-        const GeneratorSpec spec = makeGenerator(preset);
+        const GeneratorSpec spec = fixture(preset);
         if (!findGenerator(spec.type)) {
             check(false, QStringLiteral("preset %1 refers to an unknown generator").arg(preset.name));
             continue;
@@ -899,7 +911,8 @@ int cmdGenerators(const QString& outDir)
         QPainter(&tile).drawImage(0, 0, mid);
         sheet.push_back(tile);
         const double cov = coverage(mid);
-        check(cov > 0.002, QStringLiteral("generator preset %1  (%2% of frame drawn, %3 ms at 720p)")
+        const bool blank = preset.id == QLatin1String("graphics_blank");
+        check(!mid.isNull() && (blank ? cov == 0 : cov > 0.002), QStringLiteral("generator preset %1  (%2% of frame drawn, %3 ms at 720p)")
                                .arg(preset.name)
                                .arg(cov * 100, 0, 'f', 1)
                                .arg(ms));
@@ -910,7 +923,7 @@ int cmdGenerators(const QString& outDir)
     // move, the typewriter shows fewer characters early on.
     auto renderAt = [&](const char* presetId, double seconds) {
         const GeneratorPreset* p = findGeneratorPreset(QString::fromLatin1(presetId));
-        return renderGenerator(makeGenerator(*p), size, 1280.0 / 1920.0, TimeUs(seconds * kUsPerSecond), p->length, fps);
+        return renderGenerator(fixture(*p), size, 1280.0 / 1920.0, TimeUs(seconds * kUsPerSecond), p->length, fps);
     };
     check(imageDifference(renderAt("lower_third", 0.1), renderAt("lower_third", 2.5)) > 0.5, QStringLiteral("lower third slides in"));
     check(imageDifference(renderAt("credits", 4), renderAt("credits", 8)) > 0.5, QStringLiteral("credits roll scrolls"));
@@ -923,25 +936,32 @@ int cmdGenerators(const QString& outDir)
         QStringList still, unstable;
         int animated = 0;
         for (const GeneratorPreset& preset : generatorPresets()) {
-            const GeneratorSpec spec = makeGenerator(preset);
+            const GeneratorSpec spec = fixture(preset);
             const GeneratorDef* def = findGenerator(spec.type);
             if (!def || !def->isAnimating)
                 continue;
             GeneratorContext gc;
             gc.time = kUsPerSecond;
             gc.length = preset.length;
+            gc.data = &spec.data;
             if (!def->isAnimating(resolveParams(def->params, spec.params, gc.time), gc))
                 continue;
             ++animated;
-            const QImage a = renderGenerator(spec, size, 1280.0 / 1920.0, kUsPerSecond, preset.length, fps);
-            const QImage b = renderGenerator(spec, size, 1280.0 / 1920.0, kUsPerSecond * 3 / 2, preset.length, fps);
-            if (imageDifference(a, b) <= 0)
-                still << preset.name;
-            if (imageDifference(a, renderGenerator(spec, size, 1280.0 / 1920.0, kUsPerSecond, preset.length, fps)) > 0)
-                unstable << preset.name;
+            // Some presets finish their entrance before 1 s or intentionally hold.
+            // Sample the entrance and later frames, rather than demanding motion
+            // between two arbitrarily chosen points in a hold.
+            const QImage a = renderGenerator(spec, size, 1280.0 / 1920.0, 0, preset.length, fps);
+            bool changed=false, repeatable=true;
+            for (TimeUs at : {kUsPerSecond/10, kUsPerSecond, kUsPerSecond*3/2, preset.length/2}) {
+                const QImage b=renderGenerator(spec,size,1280.0/1920.0,at,preset.length,fps);
+                changed |= imageDifference(a,b)>0;
+                repeatable &= imageDifference(b,renderGenerator(spec,size,1280.0/1920.0,at,preset.length,fps))==0;
+            }
+            if (!changed) still << preset.name;
+            if (!repeatable) unstable << preset.name;
         }
         check(animated >= 15 && still.isEmpty() && unstable.isEmpty(),
-              QStringLiteral("%1 animated generator presets move between 1 s and 1.5 s and repeat exactly (still: %2; not repeatable: %3)")
+              QStringLiteral("%1 animated generator presets change across their duration and repeat exactly (still: %2; not repeatable: %3)")
                   .arg(animated).arg(still.join(QStringLiteral(", ")), unstable.join(QStringLiteral(", "))));
     }
     check(coverage(renderAt("kinetic_text", 0.2)) < coverage(renderAt("kinetic_text", 2.5)) * 0.5,
@@ -3203,7 +3223,10 @@ int cmdEditing(const QString& mediaDir, const QString& outDir)
         ops::insertMedia(tl, *proj.mediaItem(id), 0, -1, fps);
         tl.tracks[0].clips[0].fadeInCurve = 4;
         tl.tracks[0].clips[0].fadeOutCurve = 2;
-        tl.tracks[1].duckUnder = tl.tracks[0].id;
+        Track voice;
+        voice.id = tl.allocId(); voice.type = TrackType::Audio; voice.name = QStringLiteral("Voice");
+        tl.tracks.push_back(voice);
+        tl.tracks[1].duckUnder = voice.id;
         tl.tracks[1].duckAmount = -18;
         proj.applyEdit(tl, QStringLiteral("t"));
         const QString path = QDir(outDir).filePath(QStringLiteral("curves.mvp"));
@@ -3212,7 +3235,7 @@ int cmdEditing(const QString& mediaDir, const QString& outDir)
         Project back;
         back.load(path, &error);
         const Timeline& b = back.timeline();
-        check(b.tracks[0].clips[0].fadeInCurve == 4 && b.tracks[0].clips[0].fadeOutCurve == 2 && b.tracks[1].duckUnder == tl.tracks[0].id
+        check(b.tracks[0].clips[0].fadeInCurve == 4 && b.tracks[0].clips[0].fadeOutCurve == 2 && b.tracks[1].duckUnder == voice.id
                   && b.tracks[1].duckAmount == -18.0f,
               QStringLiteral("fade curves and auto duck settings are saved with the project"));
     }

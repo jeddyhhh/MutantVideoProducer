@@ -92,13 +92,33 @@ jobs:
         with:
           python-version: '3.12'
 
+      - name: Restore packaged AI workers
+        id: worker_cache
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            deps/voice-worker/mvp-voice-worker
+            deps/rvc-worker/mvp-rvc-worker
+          key: ai-workers-${{ runner.os }}-py312-${{ hashFiles('scripts/build-voice-worker.ps1', 'scripts/build-rvc-worker.ps1', 'data/voice/worker.py', 'data/voice/requirements.txt', 'data/rvc/**') }}
+
       - name: Build local voice worker
+        if: steps.worker_cache.outputs.cache-hit != 'true'
         shell: pwsh
         run: ./scripts/build-voice-worker.ps1
 
       - name: Build bundled RVC engine
+        if: steps.worker_cache.outputs.cache-hit != 'true'
         shell: pwsh
         run: ./scripts/build-rvc-worker.ps1
+
+      - name: Cache packaged AI workers
+        if: steps.worker_cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            deps/voice-worker/mvp-voice-worker
+            deps/rvc-worker/mvp-rvc-worker
+          key: ${{ steps.worker_cache.outputs.cache-primary-key }}
 
       - name: Prepare YouTube JavaScript runtime
         shell: pwsh
@@ -206,6 +226,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: mvp-win64
+          compression-level: 0 # the files are already compressed archives/installers
           path: |
             ${{ steps.package.outputs.zip }}
             ${{ steps.package.outputs.setup }}

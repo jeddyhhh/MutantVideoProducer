@@ -5,6 +5,7 @@
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
+#include <QUrl>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -415,8 +416,12 @@ int Project::addMedia(const MediaInfo& info)
             return id;
     auto item = std::make_shared<MediaItem>();
     item->id = m_nextMediaId++;
-    item->path = info.path;
+    // Imported relative files are relative to the current working directory, not
+    // whichever folder the project is later saved into. Keep FFmpeg URLs intact.
+    const bool url = QUrl(info.path).scheme().size() > 1 && !QDir::isAbsolutePath(info.path);
+    item->path = info.path.isEmpty() || url ? info.path : QFileInfo(info.path).absoluteFilePath();
     item->info = info;
+    item->info.path = item->path;
     m_media[item->id] = item;
     m_dirtyExtra = true;
     m_snapshot.reset();

@@ -561,8 +561,9 @@ void addGenerators(std::vector<GeneratorDef> &list) {
     paintWave(painter, size, p, c);
     return true;
   };
-  d.isAnimating = [](const Params &p, const GeneratorContext &) {
-    return p.flag("progress") || p.flag("scroll");
+  d.isAnimating = [](const Params &p, const GeneratorContext &c) {
+    return c.data && validateWaveform(*c.data).isEmpty() &&
+           (p.flag("progress") || p.flag("scroll"));
   };
   list.push_back(d);
 }
