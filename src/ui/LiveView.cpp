@@ -2517,7 +2517,7 @@ int LiveView::runSelfTest(QStringList& log)
         Timeline tl = m_project->timeline();
         tl.livePads[3].name = QStringLiteral("Test pad");
         m_project->setTimelineLive(tl);
-        const QString path = QDir(QFileInfo(liveRecordingsFolder()).absoluteFilePath()).filePath(QStringLiteral("pads.mtg"));
+        const QString path = QDir(QFileInfo(liveRecordingsFolder()).absoluteFilePath()).filePath(QStringLiteral("pads.mvp"));
         QString error;
         Project reloaded;
         const bool ok = m_project->save(path, &error) && reloaded.load(path, &error);

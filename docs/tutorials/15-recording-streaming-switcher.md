@@ -3,7 +3,7 @@
 You learn: recording clips, the replay buffer, full screen and Pop Out, Spout and the virtual
 camera, streaming, the switcher, layers, and MIDI.
 
-**Example project:** [live-set](../../data/examples/live-set.mtg), started as in
+**Example project:** [live-set](../../data/examples/live-set.mvp), started as in
 [Performing Live](14-performing-live.md).
 
 ## 1. Record a clip

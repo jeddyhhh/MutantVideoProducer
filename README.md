@@ -3,8 +3,8 @@
 A video editor for Windows and Linux, with a real-time **Live** workspace for performing effects on
 cameras, screens and video files. C++20 on top of FFmpeg and Qt 6.
 
-Previously named Montage. Existing `.mtg` projects, collected projects, saved presets,
-profiles and their media libraries remain compatible. See [rename compatibility](docs/rename.md).
+Previously named Montage. Projects now use `.mvp`; the old `.mtg` format is retired
+and cannot be opened or converted by this program. See [project format and settings](docs/rename.md).
 
 Anything FFmpeg can read can be imported: more than 360 container formats and about 520 audio and
 video decoders, from AV1 and HEVC 10-bit down to Nintendo 3DS camera AVIs, `.3gp` phone clips,
@@ -83,7 +83,7 @@ edit with you, one undoable step at a time.
 ## Getting Mutant Video Producer
 
 From the [Releases](../../releases) page, download and run **MutantVideoProducer-&lt;version&gt;-win64-setup.exe**: it
-installs Mutant Video Producer in Program Files (or only for you, without admin rights), adds it to the Start menu, opens `.mtg` projects with a
+installs Mutant Video Producer in Program Files (or only for you, without admin rights), adds it to the Start menu, opens `.mvp` projects with a
 double-click, and can be removed from Windows' *Installed apps*. Or download the zip and unpack it
 anywhere. The *offline* zip also holds every speech model for Auto Captions, for computers without
 internet.

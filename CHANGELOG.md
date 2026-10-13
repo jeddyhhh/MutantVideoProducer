@@ -2,13 +2,21 @@
 
 What changed in each version of Mutant Video Producer. The newest is first.
 
+### New project format and icon
+
+- Projects now use `.mvp` and a Mutant Video Producer format identifier with a mandatory
+  version. Old `.mtg` projects are unsupported, with no import or conversion path.
+- Updated project dialogs, autosaves, collection, MCP, examples, tutorials and installer
+  associations to the new format. Unsupported files are omitted from recent-project menus.
+- Added a cyberpunk neon green and blue icon to the executable, installer and app windows.
+
 ### Product rename
 
 - Renamed the application to Mutant Video Producer, including Windows metadata,
   installer, MCP identity, documentation, tutorials and example narration.
 - Source, support and update links now point to `jeddyhhh/MutantVideoProducer`.
-- Existing projects, presets, profile libraries, preferences and default media/model
-  folders remain compatible; isolated tests verify the settings migration.
+- Presets, profile libraries, preferences and default media/model folders are retained;
+  isolated tests verify the settings migration. The project format is now superseded above.
 - Command-line media imports resolve absolute paths so saving and recovery work
   when the program was started with a relative filename.
 
@@ -102,7 +110,7 @@ damaged files, mangled projects and random edits, and everything that went wrong
 
 - A welcome window, File > New with common shapes (16:9, vertical, square...), Help on This
   (Shift+F1) and Help buttons in dialogs, a system check, and a daily check for new versions.
-- A Windows installer: Start menu, `.mtg` files open in Mutant Video Producer, an uninstaller.
+- A Windows installer: Start menu, `.mvp` files open in Mutant Video Producer, an uninstaller.
 - A user guide, 16 tutorials and example projects in the Help menu.
 - Themes: View > Theme with Classic, Neon Grid, Night City, Synthwave Sunset, Terminal, Arctic and
   Studio Light.

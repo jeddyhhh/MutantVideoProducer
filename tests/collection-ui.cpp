@@ -22,7 +22,7 @@ int runCollectionUiTests(MainWindow* window,QStringList& log) {
     check(project&&server,"collection UI and MCP fixture available");if(!project||!server)return failures;
     const QDir work(QFileInfo(MainWindow::autosaveDir()).absolutePath());QDir().mkpath(work.absolutePath());
     if(project->filePath().isEmpty()) {
-        QString error;check(project->save(work.filePath("collection-source.mtg"),&error),"collection source fixture saved");
+        QString error;check(project->save(work.filePath("collection-source.mvp"),&error),"collection source fixture saved");
         auto edit=project->timeline();Marker marker;marker.id=edit.allocId();marker.time=100000;edit.markers.push_back(marker);project->applyEdit(edit,"unsaved collection marker");
     }
     const QString destination=work.filePath(QString("collection-ui-%1").arg(QDateTime::currentMSecsSinceEpoch()));

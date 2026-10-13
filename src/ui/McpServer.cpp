@@ -795,8 +795,8 @@ QJsonArray McpServer::toolList()
                   {{QStringLiteral("cancel"), prop("boolean", "Stop it")}}));
     t.append(tool("undo", "Undoes the last change(s), the same as Ctrl+Z.", {{QStringLiteral("steps"), prop("integer", "How many (default 1)")}}));
     t.append(tool("redo", "Redoes undone changes.", {{QStringLiteral("steps"), prop("integer", "How many (default 1)")}}));
-    t.append(tool("save_project", "Saves the project (to its file, or to a new .mtg path).",
-                  {{QStringLiteral("path"), prop("string", "A .mtg file (default: the project's own file)")}}));
+    t.append(tool("save_project", "Saves the project (to its file, or to a new .mvp path).",
+                  {{QStringLiteral("path"), prop("string", "A .mvp file (default: the project's own file)")}}));
     t.append(tool("collect_project", "Creates a portable project and media folder from the current edit, with progress and a missing-file/dependency report. Does not change the open project.",
                   {{"destination",prop("string","New folder inside an existing parent; existing folders are never overwritten")},
                    {"include_unused_media",prop("boolean","Include unused Project Media (default true)")},
@@ -1520,9 +1520,9 @@ QJsonObject McpServer::callTool(const QString& name, const QJsonObject& a)
     if (name == QLatin1String("save_project")) {
         QString path = has("path") ? QFileInfo(str("path")).absoluteFilePath() : project->filePath();
         if (path.isEmpty())
-            return errorResult(QStringLiteral("the project has no file yet: give a path (.mtg)"));
-        if (!path.endsWith(QLatin1String(".mtg"), Qt::CaseInsensitive))
-            return errorResult(QStringLiteral("project files end in .mtg"));
+            return errorResult(QStringLiteral("the project has no file yet: give a path (.mvp)"));
+        if (!path.endsWith(QLatin1String(".mvp"), Qt::CaseInsensitive))
+            return errorResult(QStringLiteral("project files end in .mvp"));
         QString error;
         if (!project->save(path, &error))
             return errorResult(error);

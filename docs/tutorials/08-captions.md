@@ -3,7 +3,7 @@
 You learn: Auto Captions, caption styles, editing captions, translating, subtitle files, and
 subtitle tracks in renders.
 
-**Example project:** [audio-mixing](../../data/examples/audio-mixing.mtg), for its narration.
+**Example project:** [audio-mixing](../../data/examples/audio-mixing.mvp), for its narration.
 
 ## 1. Auto Captions
 

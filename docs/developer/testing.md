@@ -44,7 +44,7 @@ build/Release/bin/mvp_selftest harden testmedia data/examples build/harden [iter
 build/Release/bin/MutantVideoProducer --live-test build/live_test.txt
 build/Release/bin/MutantVideoProducer --devices-test build/devices_test.txt testmedia/h264_aac.mp4
 build/Release/bin/MutantVideoProducer --editor-test build/editor_test.txt testmedia/h264_aac.mp4
-build/Release/bin/MutantVideoProducer --monkey-test build/monkey.txt [--steps 3000] [--seed 1] [--live] <a copy of an example project>.mtg
+build/Release/bin/MutantVideoProducer --monkey-test build/monkey.txt [--steps 3000] [--seed 1] [--live] <a copy of an example project>.mvp
 ```
 
 Each prints `PASS` / `FAIL` lines and exits with the number of failures. The `MutantVideoProducer --...-test`

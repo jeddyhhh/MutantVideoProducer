@@ -32,7 +32,7 @@ The build copies the RVC engine from `deps/rvc-worker/mvp-rvc-worker` into
 official inference modules and model catalog are in `data/rvc`.
 
 Pre-rename portable worker bundles are also accepted and deployed with the new
-executable names; see [rename compatibility](../rename.md).
+executable names; see [settings and worker compatibility](../rename.md).
 
 The build copies `data/voice` into `bin/voice`, and copies a packaged worker from
 `deps/voice-worker/mvp-voice-worker` when present. It also copies optional offline

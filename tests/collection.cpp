@@ -53,6 +53,12 @@ int main(int argc,char** argv) {
     project.applyEdit(tl,"unsaved fixture");QString error;const auto before=project.snapshot();const auto oldPath=project.filePath();int undo=project.undoStack()->count();bool dirty=project.isModified();
     QImage expectedPicture;{Compositor originalRenderer;expectedPicture=originalRenderer.render(*before,250000,{64,36});}
     auto document=project.collectionDocument();
+    check(document["format"]=="mutant-video-producer-project" && document["version"]==1,"collection snapshot uses the new explicit project header");
+    const QString refused=temp.path()+"/refused";
+    auto obsolete=document;obsolete["format"]="montage-project";
+    check(!collection::collect(obsolete,sources,refused,"obsolete",{}).ok && !QFileInfo::exists(refused),"collection rejects the retired project identifier without creating a folder");
+    auto unversioned=document;unversioned.remove("version");
+    check(!collection::collect(unversioned,sources,refused,"unversioned",{}).ok && !QFileInfo::exists(refused),"collection rejects a missing project version without creating a folder");
     QJsonObject unrelated{{"media",QJsonArray{1,2,3}},{"rvc",QJsonValue::Null},{"params",42},{"follow",QJsonObject{{"path","layer-id"}}}};
     const auto unchanged=unrelated;collection::rewriteFiles(unrelated,[](const QString&,collection::Role){return QString("rewritten");});
     check(unrelated==unchanged,"file traversal preserves unrelated numeric arrays, null values and layer IDs");
@@ -63,33 +69,33 @@ int main(int argc,char** argv) {
         const QString cwd=QDir::currentPath();QDir::setCurrent(sources);Project relative;
         auto edit=defaultTimeline();int id=ops::insertGenerated(edit,*findGeneratorPreset("solid_white"),0,-1,{});
         edit.findClip(id)->generator.type="graphics_overlay";edit.findClip(id)->generator.data=QJsonObject{{"layers",QJsonArray{QJsonObject{{"type","image"},{"path","one/same.png"}}}}};
-        relative.applyEdit(edit,"relative graphic");relative.save(temp.path()+"/Outside.mtg",nullptr);
+        relative.applyEdit(edit,"relative graphic");relative.save(temp.path()+"/Outside.mvp",nullptr);
         auto captured=relative.collectionDocument();QDir::setCurrent(cwd);
         QString capturedPath;collection::rewriteFiles(captured,[&](const QString& path,collection::Role role){if(role==collection::Role::Asset)capturedPath=path;return path;});
         check(capturedPath==a,"runtime-relative assets are captured independently of the project save folder");
     }
-    const auto full=collection::collect(document,sources,temp.path()+"/full","CON.mtg");
+    const auto full=collection::collect(document,sources,temp.path()+"/full","CON.mvp");
     check(full.ok&&full.copiedFiles==8&&full.missing.size()==1,"collect bins, nested media, takes, keyed graphics, LUT and RVC assets once");
     check(project.snapshot()==before&&project.filePath()==oldPath&&project.isModified()==dirty&&project.undoStack()->count()==undo,"collection preserves unsaved edit, session, path and undo history");
-    check(QFileInfo(full.projectPath).fileName()=="_CON.mtg","portable project name avoids reserved Windows device names");
+    check(QFileInfo(full.projectPath).fileName()=="_CON.mvp","portable project name avoids reserved Windows device names");
     QFile reportFile(full.reportPath);reportFile.open(QIODevice::ReadOnly);auto report=QJsonDocument::fromJson(reportFile.readAll()).object();
     reportFile.close();
     check(report["plugins"].toArray().size()==1&&!report["fonts"].toArray().isEmpty(),"report identifies external plugins and fonts");
     bool hashes=true,relative=true;QSet<QString> names;
     for(auto v:report["files"].toArray()){auto item=v.toObject();QString path=item["collected"].toString();relative&=QDir::isRelativePath(path);if(item["status"]=="copied"){QFile f(temp.path()+"/full/"+path);hashes&=f.open(QIODevice::ReadOnly)&&QString::fromLatin1(QCryptographicHash::hash(f.readAll(),QCryptographicHash::Sha256).toHex())==item["sha256"].toString();names.insert(path);}}
     check(hashes&&relative&&names.size()==8,"report hashes match copied bytes and duplicate basenames stay separate");
-    auto reduced=collection::collect(document,sources,temp.path()+"/reduced","Edit.mtg",{false,false});
+    auto reduced=collection::collect(document,sources,temp.path()+"/reduced","Edit.mvp",{false,false});
     check(reduced.ok&&reduced.missing.isEmpty()&&reduced.copiedFiles==5,"used-only option retains nested clips and alternate takes, excluding unused bins and models");
     QFile reducedReport(reduced.reportPath);reducedReport.open(QIODevice::ReadOnly);check(QJsonDocument::fromJson(reducedReport.readAll()).object()["excludedVoiceModels"].toArray().size()==2,"excluded regeneration models are reported");
-    auto existing=collection::collect(document,sources,temp.path()+"/full","Other.mtg");check(!existing.ok&&!existing.error.isEmpty()&&QFileInfo::exists(full.projectPath),"existing collection never overwritten");
-    auto cancelled=collection::collect(document,sources,temp.path()+"/cancelled","Edit.mtg",{},[](qint64 done,qint64,const QString&){return done==0;});
+    auto existing=collection::collect(document,sources,temp.path()+"/full","Other.mvp");check(!existing.ok&&!existing.error.isEmpty()&&QFileInfo::exists(full.projectPath),"existing collection never overwritten");
+    auto cancelled=collection::collect(document,sources,temp.path()+"/cancelled","Edit.mvp",{},[](qint64 done,qint64,const QString&){return done==0;});
     check(cancelled.cancelled&&!QFileInfo::exists(temp.path()+"/cancelled"),"mid-copy cancellation publishes no partial collection");
     check(QDir(temp.path()).entryList({".mvp-collect-*"},QDir::Dirs|QDir::Hidden).isEmpty(),"cancelled collection staging files cleaned up");
-    auto changed=collection::collect(document,sources,temp.path()+"/changed","Edit.mtg",{},[&](qint64 done,qint64,const QString& current){if(done>0&&!current.isEmpty())bytes(current,"changed during copy");return true;});
+    auto changed=collection::collect(document,sources,temp.path()+"/changed","Edit.mvp",{},[&](qint64 done,qint64,const QString& current){if(done>0&&!current.isEmpty())bytes(current,"changed during copy");return true;});
     check(!changed.ok&&!changed.error.isEmpty()&&!QFileInfo::exists(temp.path()+"/changed"),"changing source detected without publishing a damaged collection");
     // Move the collection and hide all original source paths; loading must use the new folder.
     check(QDir().rename(sources,sources+"-hidden")&&QDir().rename(temp.path()+"/full",temp.path()+"/moved"),"fixture moved independently of originals");
-    Project moved;QStringList missing;const QString movedPath=temp.path()+"/moved/_CON.mtg";
+    Project moved;QStringList missing;const QString movedPath=temp.path()+"/moved/_CON.mvp";
     const bool loaded=moved.load(movedPath,&error,&missing);
     check(loaded&&missing.size()==1,"relocated project loads and reports only the originally missing media: "+error);
     if(!loaded)return failures;
@@ -104,7 +110,7 @@ int main(int argc,char** argv) {
     {AudioMixer mixer(48000);std::vector<float> samples(2048);mixer.mix(*moved.snapshot(),0,1024,samples.data());double energy=0;for(float sample:samples)energy+=sample*sample;check(energy>.01,"generated narration audio plays with originals unavailable");}
     check(moved.save(movedPath,&error),"collected project can be edited and saved");
     QFile saved(movedPath);saved.open(QIODevice::ReadOnly);auto savedRoot=QJsonDocument::fromJson(saved.readAll()).object();check(QDir::isRelativePath(savedRoot["media"].toArray()[0].toObject()["path"].toString()),"saving a collected project preserves relative media paths");saved.close();
-    check(QDir().rename(temp.path()+"/moved",temp.path()+"/moved-again"),"saved collection moved a second time");Project again;check(again.load(temp.path()+"/moved-again/_CON.mtg",&error)&&QFileInfo::exists(again.mediaItem(aid)->path),"saved collection remains portable on subsequent moves");
-    check(collection::collect(again.collectionDocument(),temp.path()+"/moved-again",temp.path()+"/recollected","Again.mtg").ok,"already portable collection can be collected again");
+    check(QDir().rename(temp.path()+"/moved",temp.path()+"/moved-again"),"saved collection moved a second time");Project again;check(again.load(temp.path()+"/moved-again/_CON.mvp",&error)&&QFileInfo::exists(again.mediaItem(aid)->path),"saved collection remains portable on subsequent moves");
+    check(collection::collect(again.collectionDocument(),temp.path()+"/moved-again",temp.path()+"/recollected","Again.mvp").ok,"already portable collection can be collected again");
     return failures;
 }

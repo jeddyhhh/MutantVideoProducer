@@ -17,6 +17,7 @@
 #include <QAbstractButton>
 #include <QAction>
 #include <QApplication>
+#include <QIcon>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
@@ -44,6 +45,7 @@ int main(int argc, char** argv)
     QApplication::setApplicationName(QStringLiteral("Mutant Video Producer"));
     QApplication::setOrganizationName(QStringLiteral("Mutant Video Producer"));
     QApplication::setApplicationVersion(QStringLiteral(MVP_VERSION));
+    QApplication::setWindowIcon(QIcon(QStringLiteral(":/data/mvp-icon.png")));
     // Test and screenshot sessions must never import real user settings.
     bool isolated = false;
     for (int i = 1; i < argc; ++i) {
@@ -147,7 +149,7 @@ int main(int argc, char** argv)
         qputenv("MVP_NO_DEVICES", "1");
         QVariantList playlists;
         for (const QString& a : args)
-            if (a.endsWith(QLatin1String(".mtg"), Qt::CaseInsensitive))
+            if (a.endsWith(QLatin1String(".mvp"), Qt::CaseInsensitive))
                 for (const QFileInfo& f : QDir(QFileInfo(a).absoluteDir().filePath(QStringLiteral("media"))).entryInfoList({QStringLiteral("*.mp4")}, QDir::Files))
                     playlists << QStringList{f.absoluteFilePath()};
         QSettings().setValue(QStringLiteral("live/playlists"), playlists);
@@ -201,7 +203,7 @@ int main(int argc, char** argv)
         *nowhere = 1;
     }
 
-    // One Mutant Video Producer per user: files opened while it runs (a double-click on a .mtg) go to it.
+    // One Mutant Video Producer per user: files opened while it runs (a double-click on a .mvp) go to it.
     const bool tests = !devicesTest.isEmpty() || !liveTest.isEmpty() || !editorTest.isEmpty() || !monkeyTest.isEmpty();
     const QString instanceKey =
         QStringLiteral("%1-%2").arg(QApplication::applicationName(), qEnvironmentVariable("USERNAME", qEnvironmentVariable("USER")));
@@ -269,7 +271,7 @@ int main(int argc, char** argv)
     QStringList media;
     bool projectGiven = false;
     for (const QString& a : args) {
-        if (QFileInfo(a).suffix().compare(QStringLiteral("mtg"), Qt::CaseInsensitive) == 0) {
+        if (QFileInfo(a).suffix().compare(QStringLiteral("mvp"), Qt::CaseInsensitive) == 0) {
             projectGiven = true;
             window.openProject(a);
         } else if (QFileInfo::exists(a)) {

@@ -510,7 +510,7 @@ QString tryProject(const QString& path)
         return QStringLiteral("after editing: %1").arg(t);
     project.applyEdit(tl, QStringLiteral("fuzz"));
     // It must save and come back the same.
-    const QString again = path + QStringLiteral(".again.mtg");
+    const QString again = path + QStringLiteral(".again.mvp");
     if (!project.save(again, &error))
         return QStringLiteral("could not save: %1").arg(error);
     Project back;
@@ -518,7 +518,7 @@ QString tryProject(const QString& path)
         return QStringLiteral("its own save does not load: %1").arg(error);
     if (!(back.timeline() == project.timeline()) || !(back.settings() == project.settings())) {
         // Say where: the first line that differs between the two saves.
-        const QString twice = path + QStringLiteral(".twice.mtg");
+        const QString twice = path + QStringLiteral(".twice.mvp");
         back.save(twice, &error);
         QFile a(again), b(twice);
         a.open(QIODevice::ReadOnly);
@@ -573,7 +573,7 @@ void projectFuzz(const QString& examplesDir, const QString& outDir, int iteratio
     const QString dir = QDir(outDir).filePath(QStringLiteral("projects"));
     QDir().mkpath(dir);
     QStringList bases;
-    for (const QFileInfo& fi : QDir(examplesDir).entryInfoList({QStringLiteral("*.mtg")}, QDir::Files, QDir::Name)) {
+    for (const QFileInfo& fi : QDir(examplesDir).entryInfoList({QStringLiteral("*.mvp")}, QDir::Files, QDir::Name)) {
         if (fi.fileName().startsWith(QLatin1String("fuzz-"))) // left by an earlier run that stopped
             QFile::remove(fi.absoluteFilePath());
         else
@@ -627,7 +627,7 @@ void projectFuzz(const QString& examplesDir, const QString& outDir, int iteratio
             bytes = QJsonDocument(root).toJson();
         }
         // Next to the example, so its media (relative paths) is found.
-        const QString path = QDir(examplesDir).filePath(QStringLiteral("fuzz-%1.mtg").arg(seed));
+        const QString path = QDir(examplesDir).filePath(QStringLiteral("fuzz-%1.mvp").arg(seed));
         QFile o(path);
         o.open(QIODevice::WriteOnly);
         o.write(bytes);
@@ -645,7 +645,7 @@ void projectFuzz(const QString& examplesDir, const QString& outDir, int iteratio
         } else {
             ++loaded;
         }
-        for (const QString& p : {path, path + QStringLiteral(".again.mtg"), path + QStringLiteral(".twice.mtg")})
+        for (const QString& p : {path, path + QStringLiteral(".again.mvp"), path + QStringLiteral(".twice.mvp")})
             QFile::remove(p);
     }
     check(problems.isEmpty(), QStringLiteral("project files: %1 mangled copies of the examples (values replaced or removed, cut short, scribbled over, ids repeated) are refused with a message or load sound, render, edit and save back the same%2")
@@ -1049,7 +1049,7 @@ void bigProject(const QString& mediaDir, const QString& outDir)
     check(perEdit < 100, QStringLiteral("big project (%1 events, 2 effects on each video one): an edit takes %2 ms").arg(events).arg(perEdit, 0, 'f', 1));
     check(perStepMB < 2, QStringLiteral("big project: each undo step costs %1 MB of memory (500 edits: %2 MB)").arg(perStepMB, 0, 'f', 2).arg(perStepMB * 500, 0, 'f', 0));
     stage(QStringLiteral("saving and loading the big project"), 300);
-    const QString path = QDir(outDir).filePath(QStringLiteral("big.mtg"));
+    const QString path = QDir(outDir).filePath(QStringLiteral("big.mvp"));
     QString error;
     clock.restart();
     const bool saved = project.save(path, &error);

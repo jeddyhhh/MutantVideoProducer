@@ -3,7 +3,7 @@
 You learn: the Audio Mixer, auto ducking, volume envelopes, voice chains, master effects, audio
 presets and VST3 plugins.
 
-**Example project:** [audio-mixing](../../data/examples/audio-mixing.mtg)
+**Example project:** [audio-mixing](../../data/examples/audio-mixing.mvp)
 
 ## What's in it
 

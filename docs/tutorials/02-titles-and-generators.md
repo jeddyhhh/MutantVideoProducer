@@ -3,7 +3,7 @@
 You learn: titles and their styles, animating text in and out, kinetic text, credits, animated
 backgrounds, overlays, shapes, and keyframing a title.
 
-**Example project:** [titles-and-generators](../../data/examples/titles-and-generators.mtg)
+**Example project:** [titles-and-generators](../../data/examples/titles-and-generators.mvp)
 
 ## What's in it
 

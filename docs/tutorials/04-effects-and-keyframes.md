@@ -3,7 +3,7 @@
 You learn: the device chain, keyframes and their curves, racks, track and output effects, presets,
 masks and Track Motion.
 
-**Example project:** [effects-and-keyframes](../../data/examples/effects-and-keyframes.mtg)
+**Example project:** [effects-and-keyframes](../../data/examples/effects-and-keyframes.mvp)
 
 ## What's in it
 

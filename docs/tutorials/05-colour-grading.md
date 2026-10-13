@@ -3,7 +3,7 @@
 You learn: reading the scopes, Curves, Color Wheels, LUTs, the grading presets, and grading a whole
 track or the whole video at once.
 
-**Example project:** [colour-grading](../../data/examples/colour-grading.mtg)
+**Example project:** [colour-grading](../../data/examples/colour-grading.mvp)
 
 ## What's in it
 

@@ -160,7 +160,7 @@ streams differently, events use its first video or audio stream.
 
 ## Collect Project and Media
 
-**File > Collect Project and Media...** creates a portable folder containing a `.mtg` copy of the current edit and its assets. Unsaved changes are included; the open project's filename, undo history and saved state stay unchanged.
+**File > Collect Project and Media...** creates a portable folder containing a `.mvp` copy of the current edit and its assets. Unsaved changes are included; the open project's filename, undo history and saved state stay unchanged.
 
 Choose a new destination folder, or use **Choose Parent Folder...** to suggest a new folder there. Existing folders are never overwritten. You can include unused **Project Media** items and saved RVC models. The collection copies whole source files, preserving trims and editable clips, rather than rendering or shortening them.
 
@@ -168,13 +168,13 @@ Assets include nested-sequence media, generated narration and alternate takes, g
 
 A cancellable progress window shows copying progress. A completed collection includes `collection-report.json`, listing copied files with SHA-256 hashes, missing sources and dependencies. Missing sources remain offline in the copy; the completion window calls them out. Installed fonts and VST plugins are not copied: install the report's listed dependencies for matching appearance and processing. Mutant Video Producer supplies its own voice runtime; saved RVC model files can be included for regenerating narration.
 
-Move or share the **entire collection folder**, then open its `.mtg` file. Paths resolve against that folder and remain relative when the collected project is saved again. If you subsequently import assets from outside the folder, collect again before moving it. Cancelling or encountering a copy error removes temporary files and does not publish a partial collection.
+Move or share the **entire collection folder**, then open its `.mvp` file. Paths resolve against that folder and remain relative when the collected project is saved again. If you subsequently import assets from outside the folder, collect again before moving it. Cancelling or encountering a copy error removes temporary files and does not publish a partial collection.
 
 The report records original source paths for troubleshooting; inspect it before sharing if those paths contain personal information.
 
 ## One window
 
-Mutant Video Producer runs once: opening a `.mtg` project (a double-click in Explorer, with the installer's file
+Mutant Video Producer runs once: opening a `.mvp` project (a double-click in Explorer, with the installer's file
 link) or a media file with Mutant Video Producer while it is already open sends it to the open window, which asks
 to save the current project first. Starting Mutant Video Producer itself again opens a second window.
 

@@ -28,7 +28,7 @@ collection::Result MainWindow::collectProjectTo(const QString& destination,const
     struct Reset {bool& value;~Reset(){value=false;}} reset{m_collecting};
     const auto document=m_project->collectionDocument();
     const QString source=m_project->filePath().isEmpty()?QDir::currentPath():QFileInfo(m_project->filePath()).absolutePath();
-    const QString name=m_project->filePath().isEmpty()?QStringLiteral("Project.mtg"):QFileInfo(m_project->filePath()).fileName();
+    const QString name=m_project->filePath().isEmpty()?QStringLiteral("Project.mvp"):QFileInfo(m_project->filePath()).fileName();
     QProgressDialog dialog(tr("Preparing project collection..."),tr("Cancel"),0,1000,this);
     dialog.setWindowTitle(tr("Collect Project and Media"));dialog.setWindowModality(Qt::ApplicationModal);
     dialog.setMinimumDuration(0);dialog.setAutoClose(false);dialog.setAutoReset(false);dialog.resize(550,130);

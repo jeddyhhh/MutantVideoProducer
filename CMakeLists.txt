@@ -268,6 +268,7 @@ add_executable(mvp WIN32
     src/ui/ProjectSettingsDialog.h src/ui/ProjectSettingsDialog.cpp
 )
 set_target_properties(mvp PROPERTIES OUTPUT_NAME "MutantVideoProducer")
+qt_add_resources(mvp "mvp_icon" PREFIX "/" FILES data/mvp-icon.png)
 target_link_libraries(mvp PRIVATE mvp_core Qt6::Widgets Qt6::Multimedia Qt6::Network)
 if(WIN32)
     # VS2019's CMake autogen worker can stall with concurrent parsing of this target.

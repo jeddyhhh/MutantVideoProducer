@@ -10,7 +10,7 @@ guide, and **Help > Tutorials** to open the step-by-step tutorials and their exa
 ## Start here
 
 - [Getting Started](getting-started.md): the window, a first edit from import to render.
-- [Rename Compatibility](rename.md): existing projects, profiles, settings and MCP clients.
+- [Project Format and Settings](rename.md): `.mvp` projects, profiles, settings and MCP clients.
 - [Tutorials](tutorials/README.md): sixteen step-by-step lessons, most with an example project to open.
 - [Keyboard Shortcuts](shortcuts.md): every key, and how to change them.
 

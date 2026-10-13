@@ -2,7 +2,7 @@
 
 You learn: changing speed, reversing, frame blending, keeping the pitch, speed ramps and freeze frames.
 
-**Example project:** [speed-and-time](../../data/examples/speed-and-time.mtg)
+**Example project:** [speed-and-time](../../data/examples/speed-and-time.mvp)
 
 ## What's in it
 

@@ -3,7 +3,7 @@
 You learn: Detect Beats, markers and regions, the beat grid, Split at Markers, Beat Montage, and
 looping a section.
 
-**Example project:** [cutting-to-the-beat](../../data/examples/cutting-to-the-beat.mtg)
+**Example project:** [cutting-to-the-beat](../../data/examples/cutting-to-the-beat.mvp)
 
 ## What's in it
 

@@ -1,6 +1,6 @@
 ; The Windows installer (Inno Setup 6): the release folder's files into
 ; Program Files (or the user's own programs folder, without admin rights),
-; Start menu and optional desktop shortcuts, .mtg projects opened by Mutant Video Producer,
+; Start menu and optional desktop shortcuts, .mvp projects opened by Mutant Video Producer,
 ; and an uninstaller. The release workflow builds it:
 ;   iscc /DAppVersion=0.2.5 /DSourceDir=MutantVideoProducer-0.2.5-win64 installer\mvp.iss
 
@@ -40,7 +40,7 @@ CloseApplications=yes
 
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
-Name: "associate"; Description: "Open .mtg projects with Mutant Video Producer"; GroupDescription: "Files:"
+Name: "associate"; Description: "Open .mvp projects with Mutant Video Producer"; GroupDescription: "Files:"
 
 [Files]
 Source: "{#SourceDir}\*"; DestDir: "{app}"; Flags: recursesubdirs createallsubdirs ignoreversion; Excludes: "mvp_selftest.exe,mvp_*_test.exe,montage.exe,montage_selftest.exe,montage_*_test.exe,*.pdb"
@@ -59,16 +59,12 @@ Name: "{autodesktop}\Mutant Video Producer"; Filename: "{app}\MutantVideoProduce
 
 [Registry]
 ; HKA: the machine's or the user's classes, as installed.
-Root: HKA; Subkey: "Software\Classes\.mtg"; Flags: uninsdeletekeyifempty; Tasks: associate
-; Stable ProgID preserves Windows' existing default-app choice during upgrade.
-Root: HKA; Subkey: "Software\Classes\.mtg\OpenWithProgids"; ValueType: string; ValueName: "Montage.Project"; ValueData: ""; Flags: uninsdeletevalue uninsdeletekeyifempty; Tasks: associate
-Root: HKA; Subkey: "Software\Classes\Montage.Project"; ValueType: string; ValueName: ""; ValueData: "Mutant Video Producer Project"; Flags: uninsdeletekey; Tasks: associate
-Root: HKA; Subkey: "Software\Classes\Montage.Project\DefaultIcon"; ValueType: string; ValueName: ""; ValueData: "{app}\MutantVideoProducer.exe,0"; Tasks: associate
-Root: HKA; Subkey: "Software\Classes\Montage.Project\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\MutantVideoProducer.exe"" ""%1"""; Tasks: associate
-; Also retain choices made through Open With using the previous executable name.
-Root: HKA; Subkey: "Software\Classes\Applications\montage.exe"; ValueType: string; ValueName: "FriendlyAppName"; ValueData: "Mutant Video Producer"; Flags: uninsdeletekey; Tasks: associate
-Root: HKA; Subkey: "Software\Classes\Applications\montage.exe\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\MutantVideoProducer.exe"" ""%1"""; Tasks: associate
-Root: HKA; Subkey: "Software\Classes\Applications\MutantVideoProducer.exe\SupportedTypes"; ValueType: string; ValueName: ".mtg"; ValueData: ""; Flags: uninsdeletekey
+Root: HKA; Subkey: "Software\Classes\.mvp"; Flags: uninsdeletekeyifempty; Tasks: associate
+Root: HKA; Subkey: "Software\Classes\.mvp\OpenWithProgids"; ValueType: string; ValueName: "MutantVideoProducer.Project"; ValueData: ""; Flags: uninsdeletevalue uninsdeletekeyifempty; Tasks: associate
+Root: HKA; Subkey: "Software\Classes\MutantVideoProducer.Project"; ValueType: string; ValueName: ""; ValueData: "Mutant Video Producer Project"; Flags: uninsdeletekey; Tasks: associate
+Root: HKA; Subkey: "Software\Classes\MutantVideoProducer.Project\DefaultIcon"; ValueType: string; ValueName: ""; ValueData: "{app}\MutantVideoProducer.exe,0"; Tasks: associate
+Root: HKA; Subkey: "Software\Classes\MutantVideoProducer.Project\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\MutantVideoProducer.exe"" ""%1"""; Tasks: associate
+Root: HKA; Subkey: "Software\Classes\Applications\MutantVideoProducer.exe\SupportedTypes"; ValueType: string; ValueName: ".mvp"; ValueData: ""; Flags: uninsdeletekey
 
 [Run]
 Filename: "{app}\MutantVideoProducer.exe"; Description: "{cm:LaunchProgram,Mutant Video Producer}"; Flags: nowait postinstall skipifsilent runasoriginaluser

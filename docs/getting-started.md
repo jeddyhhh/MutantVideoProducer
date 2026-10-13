@@ -86,7 +86,7 @@ project. In short:
 7. **Add a title.** Press **Ctrl+T** to put text at the cursor. Its settings open in the Properties tab.
 8. **Add an effect.** Drag an effect from the Video FX tab onto an event. Its controls appear in the
    device chain at the bottom.
-9. **Save.** Press **Ctrl+S**. Projects are `.mtg` files. Mutant Video Producer also keeps an autosaved copy while
+9. **Save.** Press **Ctrl+S**. Projects are `.mvp` files. Mutant Video Producer also keeps an autosaved copy while
    you work (see [Media](media.md#autosave-and-recovery)).
 10. **Render.** Press **Ctrl+R** (**File > Render As**), pick a template such as *YouTube 1080p*
     and a file name, and render (see [Rendering](rendering.md)).

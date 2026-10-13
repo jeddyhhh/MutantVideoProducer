@@ -72,7 +72,7 @@ void MainWindow::profilesDialog()
             newProject();
             m_autosaveLock.reset();
             const QString base = QDir(autosaveDir()).filePath(QStringLiteral("session-%1-%2").arg(QCoreApplication::applicationPid()).arg(QDateTime::currentMSecsSinceEpoch()));
-            m_autosavePath = base + QStringLiteral(".mtg");
+            m_autosavePath = base + QStringLiteral(".mvp");
             m_autosaveLock = std::make_unique<QLockFile>(base + QStringLiteral(".lock")); m_autosaveLock->setStaleLockTime(0); m_autosaveLock->tryLock(0);
         }
         updateTitle(); dlg.accept();

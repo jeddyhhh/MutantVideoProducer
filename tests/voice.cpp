@@ -91,7 +91,7 @@ int main(int argc, char** argv)
     const auto audio = timelineSpeechAudio(*project.snapshot(), 0, project.timeline().duration());
     double sum = 0; bool finite = true; for (float sample : audio) { sum += sample * sample; finite &= std::isfinite(sample); }
     check(finite && sum > 1 && !audio.empty(), QStringLiteral("the editor mixes and stretches generated speech with finite, audible samples"));
-    check(project.save(temp.path() + QStringLiteral("/voice-project.mtg"), &error), QStringLiteral("generated speech project saves"));
+    check(project.save(temp.path() + QStringLiteral("/voice-project.mvp"), &error), QStringLiteral("generated speech project saves"));
     Project reopened; QStringList missing;
     check(reopened.load(project.filePath(), &error, &missing) && missing.empty() && reopened.timeline() == project.timeline(),
           QStringLiteral("save/load preserves voice events and their audio paths"));

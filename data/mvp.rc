@@ -1,4 +1,4 @@
-// The program icon (also for .mtg files once the installer links them to Mutant Video Producer).
+// The program icon (also for .mvp files once the installer links them to Mutant Video Producer).
 IDI_ICON1 ICON "mvp.ico"
 
 1 VERSIONINFO

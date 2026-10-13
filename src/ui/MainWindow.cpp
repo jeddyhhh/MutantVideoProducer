@@ -1,4 +1,5 @@
 #include "core/Brand.h"
+#include "core/ProjectFormat.h"
 #include "core/Profiles.h"
 #include "core/Voice.h"
 #include "core/LiveRecorder.h"
@@ -122,7 +123,7 @@
 #include <thread>
 
 namespace {
-const QString kProjectFilter = QStringLiteral("Mutant Video Producer project (*.mtg);;All files (*)");
+const QString kProjectFilter = QStringLiteral("Mutant Video Producer project (*.mvp);;All files (*)");
 }
 
 MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
@@ -151,7 +152,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
         const QString base = QDir(autosaveDir()).filePath(QStringLiteral("session-%1-%2")
                                                               .arg(QCoreApplication::applicationPid())
                                                               .arg(QDateTime::currentMSecsSinceEpoch()));
-        m_autosavePath = base + QStringLiteral(".mtg");
+        m_autosavePath = base + QStringLiteral(".mvp");
         m_autosaveLock = std::make_unique<QLockFile>(base + QStringLiteral(".lock"));
         m_autosaveLock->setStaleLockTime(0);
         m_autosaveLock->tryLock(0);
@@ -1279,8 +1280,8 @@ bool MainWindow::saveAs()
                                                 settings.value(Profiles::instance().settingsKey(QStringLiteral("dirs/project")), Profiles::instance().folder(QStringLiteral("Projects"))).toString(), kProjectFilter);
     if (path.isEmpty())
         return false;
-    if (QFileInfo(path).suffix().isEmpty())
-        path += QStringLiteral(".mtg");
+    if (QFileInfo(path).suffix().compare(QStringLiteral("mvp"), Qt::CaseInsensitive) != 0)
+        path += QStringLiteral(".mvp");
     settings.setValue(Profiles::instance().settingsKey(QStringLiteral("dirs/project")), QFileInfo(path).absolutePath());
     QString error;
     if (!m_project->save(path, &error)) {
@@ -1678,7 +1679,7 @@ QStringList MainWindow::orphanedAutosaves() const
 {
     QStringList out;
     const QDir dir(autosaveDir());
-    for (const QFileInfo& fi : dir.entryInfoList({QStringLiteral("*.mtg")}, QDir::Files, QDir::Time)) { // newest first
+    for (const QFileInfo& fi : dir.entryInfoList({QStringLiteral("*.mvp")}, QDir::Files, QDir::Time)) { // newest first
         if (fi.absoluteFilePath() == QFileInfo(m_autosavePath).absoluteFilePath())
             continue;
         // A session that is still running holds its lock.
@@ -1689,7 +1690,7 @@ QStringList MainWindow::orphanedAutosaves() const
     }
     // Locks of crashed sessions that had nothing to autosave.
     for (const QFileInfo& fi : dir.entryInfoList({QStringLiteral("*.lock")}, QDir::Files))
-        if (!QFileInfo::exists(dir.filePath(fi.completeBaseName() + QStringLiteral(".mtg")))) {
+        if (!QFileInfo::exists(dir.filePath(fi.completeBaseName() + QStringLiteral(".mvp")))) {
             QLockFile lock(fi.absoluteFilePath());
             lock.setStaleLockTime(0);
             lock.tryLock(0); // succeeds (and cleans up) only if its session is gone
@@ -1769,7 +1770,7 @@ void MainWindow::reopenLast()
     if (!settings.value(QStringLiteral("startup/reopenLast"), true).toBool())
         return;
     const QStringList recent = settings.value(Profiles::instance().settingsKey(QStringLiteral("recent/projects"))).toStringList();
-    if (recent.isEmpty() || !QFileInfo::exists(recent.front()))
+    if (recent.isEmpty() || !project_format::hasExtension(recent.front()) || !QFileInfo::exists(recent.front()))
         return;
     if (!crashedOn.isEmpty()) {
         statusBar()->showMessage(tr("%1 was not reopened: Mutant Video Producer closed while opening it last time.").arg(QFileInfo(crashedOn).fileName()), 10000);
@@ -1786,7 +1787,7 @@ void MainWindow::addRecent(const QString& path)
     QSettings settings;
     QStringList recent = settings.value(Profiles::instance().settingsKey(QStringLiteral("recent/projects"))).toStringList();
     const QString clean = QFileInfo(path).absoluteFilePath();
-    recent.erase(std::remove_if(recent.begin(), recent.end(), [&](const QString& p) { return p.compare(clean, kPathCase) == 0; }),
+    recent.erase(std::remove_if(recent.begin(), recent.end(), [&](const QString& p) { return !project_format::hasExtension(p) || p.compare(clean, kPathCase) == 0; }),
                  recent.end());
     recent.prepend(clean);
     while (recent.size() > 10)
@@ -1800,6 +1801,7 @@ void MainWindow::rebuildRecentMenu()
     const QStringList recent = QSettings().value(Profiles::instance().settingsKey(QStringLiteral("recent/projects"))).toStringList();
     for (int i = 0; i < int(recent.size()); ++i) {
         const QString path = recent[i];
+        if (!project_format::hasExtension(path)) continue;
         const QFileInfo fi(path);
         const QString number = i < 9 ? QStringLiteral("&%1  ").arg(i + 1) : QStringLiteral("%1  ").arg(i + 1);
         QAction* a = m_recentMenu->addAction(number + fi.fileName() + QStringLiteral("   ") + QDir::toNativeSeparators(fi.absolutePath()),
@@ -2542,7 +2544,7 @@ int MainWindow::runEditorTest(QStringList& log)
     }
 
     // ---- Autosave ----
-    const QString projectPath = work.filePath(QStringLiteral("project.mtg"));
+    const QString projectPath = work.filePath(QStringLiteral("project.mvp"));
     m_project->save(projectPath, nullptr);
     m_timeline->addMarker(kUsPerSecond, QStringLiteral("autosaved"));
     autosave();
@@ -2553,7 +2555,7 @@ int MainWindow::runEditorTest(QStringList& log)
             autosaveOf = QJsonDocument::fromJson(f.readAll()).object()[QStringLiteral("autosaveOf")].toString();
     }
     check(QFileInfo::exists(m_autosavePath) && autosaveOf == projectPath && m_project->filePath() == projectPath && m_project->isModified(),
-          QStringLiteral("autosave writes a copy that remembers project.mtg, without saving the project itself"));
+          QStringLiteral("autosave writes a copy that remembers project.mvp, without saving the project itself"));
     save();
     check(!QFileInfo::exists(m_autosavePath), QStringLiteral("saving removes the autosaved copy"));
     check(QSettings().value(Profiles::instance().settingsKey(QStringLiteral("recent/projects"))).toStringList().value(0) == projectPath,
@@ -2561,15 +2563,15 @@ int MainWindow::runEditorTest(QStringList& log)
     rebuildRecentMenu();
     bool listed = false;
     for (QAction* a : m_recentMenu->actions())
-        listed |= a->text().contains(QStringLiteral("project.mtg"));
-    check(listed, QStringLiteral("File > Open Recent lists project.mtg"));
+        listed |= a->text().contains(QStringLiteral("project.mvp"));
+    check(listed, QStringLiteral("File > Open Recent lists project.mvp"));
 
     // ---- Recovery ----
     // A copy left by a crashed session (no live lock) is offered; one whose
     // session is still running (lock held) is not.
     m_timeline->addMarker(2 * kUsPerSecond, QStringLiteral("unsaved"));
-    const QString crashed = QDir(autosaveDir()).filePath(QStringLiteral("session-1-1.mtg"));
-    const QString running = QDir(autosaveDir()).filePath(QStringLiteral("session-2-2.mtg"));
+    const QString crashed = QDir(autosaveDir()).filePath(QStringLiteral("session-1-1.mvp"));
+    const QString running = QDir(autosaveDir()).filePath(QStringLiteral("session-2-2.mvp"));
     m_project->saveBackup(crashed, nullptr);
     m_project->saveBackup(running, nullptr);
     QLockFile alive(QDir(autosaveDir()).filePath(QStringLiteral("session-2-2.lock")));
@@ -2582,7 +2584,7 @@ int MainWindow::runEditorTest(QStringList& log)
     const bool recovered = recoverFrom(crashed);
     check(recovered && m_project->filePath() == projectPath && m_project->isModified() && m_project->timeline().markers == markersBefore
               && !QFileInfo::exists(crashed),
-          QStringLiteral("Recover opens the copy as project.mtg, unsaved, with the unsaved marker"));
+          QStringLiteral("Recover opens the copy as project.mvp, unsaved, with the unsaved marker"));
     alive.unlock();
     QFile::remove(running);
 
@@ -2593,7 +2595,7 @@ int MainWindow::runEditorTest(QStringList& log)
     QFile::copy(mediaPath, before.filePath(QStringLiteral("two.mp4")));
     m_project->clear();
     importFiles({before.filePath(QStringLiteral("one.mp4")), before.filePath(QStringLiteral("two.mp4"))}, TimeUs(0));
-    const QString relinkProject = work.filePath(QStringLiteral("relink.mtg"));
+    const QString relinkProject = work.filePath(QStringLiteral("relink.mvp"));
     m_project->save(relinkProject, nullptr);
     m_project->clear();
     bool moved = false;
@@ -2664,7 +2666,7 @@ int MainWindow::runEditorTest(QStringList& log)
                   && youtubeTabs->currentIndex() == youtubeTab && m_youtubeBin->item(0)->data(Qt::UserRole).toInt() == id,
               QStringLiteral("downloaded clips appear in From YouTube next to From Live, and the tab opens after import"));
         m_project->setMediaDetails(id, QStringLiteral("Other Folder"), m->rating, m->markIn, m->markOut);
-        const QString savedYoutube = work.filePath(QStringLiteral("youtube-origin.mtg"));
+        const QString savedYoutube = work.filePath(QStringLiteral("youtube-origin.mvp"));
         QString youtubeError; Project restoredYoutube;
         check(m_youtubeBin->count() == 1 && m_project->save(savedYoutube, &youtubeError) && restoredYoutube.load(savedYoutube, &youtubeError)
                   && restoredYoutube.mediaItem(id)->origin == QLatin1String("youtube"),
@@ -2703,7 +2705,7 @@ int MainWindow::runEditorTest(QStringList& log)
         const std::vector<int> placed = ops::insertMedia(tl, *m_project->mediaItem(id), 100 * kUsPerSecond, -1, m_project->settings().fps);
         const Clip* c = placed.empty() ? nullptr : tl.findClip(placed.front());
         const bool marked = c && c->sourceIn == kUsPerSecond && c->length == kUsPerSecond;
-        const QString saved = work.filePath(QStringLiteral("bin.mtg"));
+        const QString saved = work.filePath(QStringLiteral("bin.mvp"));
         Project reloaded;
         QString saveError;
         const bool kept = m_project->save(saved, &saveError) && reloaded.load(saved, &saveError) && reloaded.mediaItem(id)->folder == QStringLiteral("Footage/Day 1")
@@ -2820,7 +2822,7 @@ int MainWindow::runEditorTest(QStringList& log)
         bool online = !m_project->media().empty();
         for (const auto& [id, m] : m_project->media())
             online &= m->info.ok() && m->path.startsWith(into);
-        check(guide && scrolled && tutorials >= 16 && m_project->filePath() == QDir(into).filePath(QStringLiteral("first-edit.mtg")) && titles && online,
+        check(guide && scrolled && tutorials >= 16 && m_project->filePath() == QDir(into).filePath(QStringLiteral("first-edit.mvp")) && titles && online,
               QStringLiteral("Help > User Guide shows the guide and scrolls to a heading's link; Help > Tutorials lists %1 tutorials; "
                              "an example project opens from a copy, its media with it").arg(tutorials));
     }
@@ -2842,9 +2844,9 @@ int MainWindow::runEditorTest(QStringList& log)
               QStringLiteral("a crash report is found on the next start and summed up (%1), then not offered again").arg(summary));
 
         save();
-        openFromElsewhere({QDir(work.filePath(QStringLiteral("examples"))).filePath(QStringLiteral("first-edit.mtg"))});
-        check(m_project->filePath().endsWith(QStringLiteral("first-edit.mtg")),
-              QStringLiteral("a project passed on by another start of Mutant Video Producer (a double-click on a .mtg) opens here"));
+        openFromElsewhere({QDir(work.filePath(QStringLiteral("examples"))).filePath(QStringLiteral("first-edit.mvp"))});
+        check(m_project->filePath().endsWith(QStringLiteral("first-edit.mvp")),
+              QStringLiteral("a project passed on by another start of Mutant Video Producer (a double-click on a .mvp) opens here"));
     }
 
     // ---- Find a Command (Ctrl+K): typing narrows the list to the command ----
@@ -2984,7 +2986,7 @@ int MainWindow::runEditorTest(QStringList& log)
             dialog->accept();
         });
         newProjectDialog();
-        check(m_project->filePath() == QDir(homeA).filePath(QStringLiteral("Projects/Profile Project.mtg")) && QFileInfo::exists(m_project->filePath()),
+        check(m_project->filePath() == QDir(homeA).filePath(QStringLiteral("Projects/Profile Project.mvp")) && QFileInfo::exists(m_project->filePath()),
               QStringLiteral("new projects are named and created inside the active profile home"));
         const QString clipPath = QDir(homeA).filePath(QStringLiteral("YouTube/shared.mp4"));
         QFile::copy(mediaPath, clipPath);
@@ -3046,7 +3048,7 @@ int MainWindow::runEditorTest(QStringList& log)
     }
     // Reused IDs across a successful load must not inherit transient editor state.
     {
-        const QString fixture=work.filePath("session-isolation.mtg");
+        const QString fixture=work.filePath("session-isolation.mvp");
         Timeline tl=m_project->timeline(); QString error;
         const int one=story::addChapter(tl,"Session one","First saved",kUsPerSecond,kUsPerSecond,nullptr,0,m_project->settings().fps,&error);
         const int two=story::addChapter(tl,"Session two","Second saved",kUsPerSecond,kUsPerSecond,nullptr,0,m_project->settings().fps,&error);

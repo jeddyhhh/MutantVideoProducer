@@ -3,7 +3,7 @@
 You learn: playing, trimming, splitting, moving events, crossfades, editing a title, undo, saving
 and rendering.
 
-**Example project:** [first-edit](../../data/examples/first-edit.mtg). Click the link, or in Mutant Video Producer
+**Example project:** [first-edit](../../data/examples/first-edit.mvp). Click the link, or in Mutant Video Producer
 choose **Help > Tutorials > Your First Edit** and click it there.
 
 ## What's in it

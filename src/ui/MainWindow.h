@@ -50,7 +50,7 @@ public:
     // reopens the last project if that option is on; with nothing open, the
     // welcome window. Checks for a newer release once a day.
     void startup(bool projectGiven);
-    // Files another start of Mutant Video Producer passed on (a double-click on a .mtg while it runs): a project
+    // Files another start of Mutant Video Producer passed on (a double-click on a .mvp while it runs): a project
     // opens (after asking to save), anything else is imported; the window comes to the front.
     void openFromElsewhere(const QStringList& paths);
     // Where autosaves go (MVP_AUTOSAVE_DIR overrides it).

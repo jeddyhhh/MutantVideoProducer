@@ -452,7 +452,7 @@ int main(int argc, char **argv) {
   }
   timeline.findClip(eid)->generator.data=motion::preset("motion_route");
   project.applyEdit(timeline,"restore editor fixture");
-  auto saved = dir.path() + "/motion.mtg";
+  auto saved = dir.path() + "/motion.mvp";
   check(project.save(saved, &error), "save scene graph");
   Project loaded;
   check(loaded.load(saved, &error) && loaded.timeline() == project.timeline(),

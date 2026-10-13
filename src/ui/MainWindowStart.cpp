@@ -175,8 +175,8 @@ void MainWindow::newProjectDialog()
         if (name.isEmpty()) name = tr("Untitled");
         while (name.endsWith(QLatin1Char('.')) || name.endsWith(QLatin1Char(' '))) name.chop(1);
         if (name.isEmpty()) name = tr("Untitled");
-        QString path = QDir(home).filePath(name + QStringLiteral(".mtg"));
-        for (int n = 2; QFileInfo::exists(path); ++n) path = QDir(home).filePath(name + QStringLiteral(" %1.mtg").arg(n));
+        QString path = QDir(home).filePath(name + QStringLiteral(".mvp"));
+        for (int n = 2; QFileInfo::exists(path); ++n) path = QDir(home).filePath(name + QStringLiteral(" %1.mvp").arg(n));
         QString error;
         if (m_project->save(path, &error)) addRecent(path);
         else QMessageBox::warning(this, tr("New Project"), tr("Could not save the new project: %1").arg(error));
@@ -385,7 +385,7 @@ void MainWindow::openFromElsewhere(const QStringList& paths)
     QString project;
     QStringList media;
     for (const QString& p : paths)
-        if (QFileInfo(p).suffix().compare(QLatin1String("mtg"), Qt::CaseInsensitive) == 0)
+        if (QFileInfo(p).suffix().compare(QLatin1String("mvp"), Qt::CaseInsensitive) == 0)
             project = p;
         else if (QFileInfo::exists(p))
             media << p;
@@ -531,7 +531,7 @@ void MainWindow::showWelcome()
     exampleButton->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     auto* examples = new QMenu(exampleButton);
     for (const QFileInfo& f : QDir(QDir(QCoreApplication::applicationDirPath()).filePath(QStringLiteral("examples")))
-                                  .entryInfoList({QStringLiteral("*.mtg")}, QDir::Files, QDir::Name)) {
+                                  .entryInfoList({QStringLiteral("*.mvp")}, QDir::Files, QDir::Name)) {
         QString name = f.completeBaseName().replace(QLatin1Char('-'), QLatin1Char(' '));
         name[0] = name[0].toUpper();
         examples->addAction(name, &dlg, [&, base = f.completeBaseName()] { choose([this, base] { openExample(base); }); });
@@ -545,7 +545,7 @@ void MainWindow::showWelcome()
     auto* recent = new QListWidget;
     recent->setObjectName(QStringLiteral("welcomeRecent"));
     for (const QString& path : QSettings().value(Profiles::instance().settingsKey(QStringLiteral("recent/projects"))).toStringList())
-        if (QFileInfo::exists(path)) {
+        if (QFileInfo(path).suffix().compare(QStringLiteral("mvp"), Qt::CaseInsensitive) == 0 && QFileInfo::exists(path)) {
             auto* it = new QListWidgetItem(QFileInfo(path).completeBaseName(), recent);
             it->setToolTip(QDir::toNativeSeparators(path));
             it->setData(Qt::UserRole, path);

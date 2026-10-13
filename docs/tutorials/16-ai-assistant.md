@@ -2,7 +2,7 @@
 
 You learn: connecting an AI assistant to Mutant Video Producer through MCP, what to ask it, and how to undo what it does.
 
-**Example project:** any. [first-edit](../../data/examples/first-edit.mtg) is a good start.
+**Example project:** any. [first-edit](../../data/examples/first-edit.mvp) is a good start.
 
 You need an AI assistant that supports MCP, such as
 [Claude Code](https://claude.com/claude-code) or Claude Desktop.

@@ -29,7 +29,7 @@ void write(const QString& path,const QByteArray& data) {
 }
 QJsonObject document() {
     auto tl=defaultTimeline(); ops::insertGenerated(tl,*findGeneratorPreset("solid_white"),0,-1,{});
-    auto root=nestedTimelineToJson(tl);root["format"]="montage-project";root["version"]=1;
+    auto root=nestedTimelineToJson(tl);root["format"]="mutant-video-producer-project";root["version"]=1;
     root["settings"]=QJsonObject{{"width",160},{"height",90},{"fpsNum",30},{"fpsDen",1},{"sampleRate",48000}};
     return root;
 }
@@ -43,9 +43,18 @@ void rejectUnchanged(Project& project,const QString& path,const QJsonObject& roo
             project.undoStack()->count()==undo && project.undoStack()->index()==index,"failed load changed live project or undo history");
 }
 void run(const QString& name,const QDir& out,uint32_t seed,int rounds) {
-    std::mt19937 rng(seed); auto root=document(); const QString path=out.filePath(name+".mtg");
+    std::mt19937 rng(seed); auto root=document(); const QString path=out.filePath(name+".mvp");
     Project project;auto tl=defaultTimeline();ops::insertGenerated(tl,*findGeneratorPreset("solid_blue"),0,-1,{});project.applyEdit(tl,"unsaved baseline");
     if(name=="versions") {
+        auto absent=root;absent.remove("version");rejectUnchanged(project,path,absent);
+        auto obsolete=root;obsolete["format"]="montage-project";rejectUnchanged(project,path,obsolete);
+        const QString obsoletePath=out.filePath("obsolete.mtg");
+        rejectUnchanged(project,obsoletePath,root);
+        QFile originalFile(obsoletePath);require(originalFile.open(QIODevice::ReadOnly),"read obsolete fixture");const QByteArray originalBytes=originalFile.readAll();originalFile.close();
+        QString error;
+        require(!project.save(obsoletePath,&error),"obsolete extension saved");
+        require(originalFile.open(QIODevice::ReadOnly) && originalFile.readAll()==originalBytes,"refused save overwrote existing file");originalFile.close();
+        require(!project.saveBackup(out.filePath("obsolete-backup.mtg"),&error) && !QFileInfo::exists(out.filePath("obsolete-backup.mtg")),"obsolete extension autosaved");
         for(auto version:QJsonArray{999,-1,0,"1",true,QJsonValue::Null}) {auto bad=root;bad["version"]=version;rejectUnchanged(project,path,bad);}
         root["version"]=1;write(path,QJsonDocument(root).toJson());require(project.load(path,nullptr),"supported project version loads");
     } else if(name=="media-identity") {
@@ -75,7 +84,7 @@ void run(const QString& name,const QDir& out,uint32_t seed,int rounds) {
         for(int depth=0;depth<=24;++depth) {
             QJsonObject nested=document();nested.remove("format");nested.remove("version");
             for(int d=0;d<depth;++d) {auto parent=document();auto tracks=parent["tracks"].toArray();auto t=tracks[0].toObject();auto clips=t["clips"].toArray();auto c=clips[0].toObject();c.remove("generator");c["sequence"]=nested;clips[0]=c;t["clips"]=clips;tracks[0]=t;parent["tracks"]=tracks;nested=parent;}
-            nested["format"]="montage-project";nested["version"]=1;
+            nested["format"]="mutant-video-producer-project";nested["version"]=1;
             if(depth>16) rejectUnchanged(project,path,nested);
             else {write(path,QJsonDocument(nested).toJson());QString error;require(project.load(path,&error),"bounded sequence refused: "+error);require(timelineProblem(project.timeline()).isEmpty(),"loader and sequence-depth validator disagree at depth "+QString::number(depth));
                 Compositor renderer; require(!renderer.render(*project.snapshot(),0,{32,18}).isNull(),"nested render failed");}
@@ -85,11 +94,11 @@ void run(const QString& name,const QDir& out,uint32_t seed,int rounds) {
         Track music;music.id=100;music.type=TrackType::Audio;music.duckUnder=INT_MAX-1;source.tracks.push_back(music);
         int caption=ops::insertGenerated(source,*findGeneratorPreset("solid_white"),0,0,{});source.findClip(caption)->id=INT_MAX-2;
         Clip narration;narration.id=101;narration.length=kUsPerSecond;narration.narration=QJsonObject{{"caption_owner",INT_MAX-2}};source.tracks[1].clips.push_back(narration);
-        auto bad=nestedTimelineToJson(source);bad["format"]="montage-project";bad["version"]=1;write(path,QJsonDocument(bad).toJson());require(project.load(path,nullptr),"repairable IDs refused");
+        auto bad=nestedTimelineToJson(source);bad["format"]="mutant-video-producer-project";bad["version"]=1;write(path,QJsonDocument(bad).toJson());require(project.load(path,nullptr),"repairable IDs refused");
         require(project.timeline().tracks[2].duckUnder==project.timeline().tracks[1].id,"repair renumbered track but broke its ducking reference");
         require(project.timeline().tracks[1].clips[0].narration["caption_owner"].toInt()==project.timeline().tracks[0].clips[0].id,"repair broke narration/caption ownership");
         source.tracks[2].duckUnder=source.tracks[2].id;source.tracks[2].duckAmount=-14;
-        bad=nestedTimelineToJson(source);bad["format"]="montage-project";bad["version"]=1;
+        bad=nestedTimelineToJson(source);bad["format"]="mutant-video-producer-project";bad["version"]=1;
         write(path,QJsonDocument(bad).toJson());require(project.load(path,nullptr),"self-ducking track repair failed");
         require(project.timeline().tracks[2].duckUnder==0,"self-ducking reference survived repair");
         require(project.save(path,nullptr),"save repaired ducking");Project reloaded;

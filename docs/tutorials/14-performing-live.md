@@ -3,7 +3,7 @@
 You learn: choosing a source, pads, transitions, keys, momentary pads, tempo and auto switch,
 launching on the beat, scenes, the setlist, modulation, overlays and random chains.
 
-**Example project:** [live-set](../../data/examples/live-set.mtg)
+**Example project:** [live-set](../../data/examples/live-set.mvp)
 
 ## What's in it
 

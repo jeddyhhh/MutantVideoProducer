@@ -213,7 +213,7 @@ int main(int argc, char **argv) {
   check(cpu.render(*project.snapshot(),500000,{640,360})!=wavePicture,"CPU cache invalidates when only audio peaks change");
   project.undoStack()->undo();
   if(gpu){auto waveGpu=gpu->render(*project.snapshot(),500000,{640,360}).convertToFormat(QImage::Format_RGBA8888);auto waveCpu=wavePicture.convertToFormat(QImage::Format_RGBA8888);double difference=0;for(int y=0;y<waveCpu.height();++y)for(int x=0;x<waveCpu.width()*4;++x)difference+=std::abs(int(waveCpu.constScanLine(y)[x])-int(waveGpu.constScanLine(y)[x]));check(difference/waveCpu.width()/waveCpu.height()/4<3,"CPU/GPU waveform composition parity");QTextStream(stdout)<<"Wave difference "<<difference/waveCpu.width()/waveCpu.height()/4<<Qt::endl;waveGpu.save("creative-test/gpu/wave-gpu.png");waveCpu.save("creative-test/gpu/wave-cpu.png");}
-  QString saved = dir.path() + "/graphics.mtg";
+  QString saved = dir.path() + "/graphics.mvp";
   check(project.save(saved, &error), "save native graphics project");
   Project loaded;
   check(loaded.load(saved, &error) && loaded.timeline() == project.timeline(),

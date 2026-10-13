@@ -3,7 +3,7 @@
 You learn: glitch effects, Broken Video Game Systems, analog looks, limiting a glitch to part of the
 picture, and glitch presets.
 
-**Example project:** [glitch-and-retro](../../data/examples/glitch-and-retro.mtg)
+**Example project:** [glitch-and-retro](../../data/examples/glitch-and-retro.mvp)
 
 ## What's in it
 

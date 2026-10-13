@@ -3,7 +3,7 @@
 You learn: every transition, changing one, its settings and handles, fades, transitions at the
 start and end of an event, and removing them.
 
-**Example project:** [transitions](../../data/examples/transitions.mtg)
+**Example project:** [transitions](../../data/examples/transitions.mvp)
 
 ## What's in it
 

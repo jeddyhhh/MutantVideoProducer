@@ -1,4 +1,5 @@
 #include "core/ProjectCollection.h"
+#include "core/ProjectFormat.h"
 #include "core/Effects.h"
 #include <QCryptographicHash>
 #include <QDateTime>
@@ -157,7 +158,7 @@ Result collect(QJsonObject document,const QString& sourceDirectory,const QString
     Result result;
     const QString target=QDir::cleanPath(QFileInfo(destination).absoluteFilePath());const QDir parent=QFileInfo(target).absoluteDir();
     if(destination.trimmed().isEmpty()||QFileInfo::exists(target)||!parent.exists()) {result.error="Choose a new collection folder inside an existing directory. Existing folders are never overwritten.";return result;}
-    if(document["format"]!="montage-project") {result.error="Not a Mutant Video Producer project.";return result;}
+    if(!project_format::validHeader(document)) {result.error="Not a supported Mutant Video Producer project.";return result;}
     if(!options.includeUnusedMedia) {
         QSet<int> used;usedMedia(document,used);QJsonArray media;
         for(auto value:document["media"].toArray())if(used.contains(value.toObject()["id"].toInt()))media.append(value);
@@ -225,7 +226,7 @@ Result collect(QJsonObject document,const QString& sourceDirectory,const QString
     if(!skipped.isEmpty())result.warnings<<"Voice models were excluded; existing narration plays, but regenerating it needs those models.";
     document.remove("autosaveOf");document["collection"]=QJsonObject{{"version",1},{"relativeAssets",true}};
     auto media=document["media"].toArray();for(int i=0;i<media.size();++i){auto item=media[i].toObject();item["relativePath"]=item["path"];media[i]=item;}document["media"]=media;
-    QString filename=safeName(QFileInfo(projectName).completeBaseName());filename+=".mtg";
+    QString filename=safeName(QFileInfo(projectName).completeBaseName());filename+=".mvp";
     QJsonObject report{{"project",filename},{"files",manifest},{"missing",QJsonArray::fromStringList(result.missing)},
                        {"plugins",QJsonArray::fromStringList(plugins)},{"fonts",QJsonArray::fromStringList(fonts)},
                        {"excludedVoiceModels",QJsonArray::fromStringList(skipped)},{"warnings",QJsonArray::fromStringList(result.warnings)},

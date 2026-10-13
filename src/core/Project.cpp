@@ -1,5 +1,6 @@
 #include "core/Project.h"
 #include "core/ProjectCollection.h"
+#include "core/ProjectFormat.h"
 
 #include <QDir>
 #include <QFile>
@@ -592,7 +593,6 @@ void Project::clear(const ProjectSettings& settings)
 
 namespace {
 
-constexpr int kFileVersion = 1;
 
 QJsonArray chainToJson(const EffectChain& chain)
 {
@@ -1009,9 +1009,8 @@ LivePads livePadsFromJson(const QJsonArray& a)
 QByteArray Project::toJson(const QString& baseDir, const QString& backupOf, bool backup) const
 {
     QJsonObject root;
-    // Stable disk identifier: existing .mtg files remain compatible after rebranding.
-    root[QStringLiteral("format")] = QStringLiteral("montage-project");
-    root[QStringLiteral("version")] = kFileVersion;
+    root[QStringLiteral("format")] = QLatin1String(project_format::identifier);
+    root[QStringLiteral("version")] = project_format::version;
     if (backup)
         root[QStringLiteral("autosaveOf")] = backupOf;
 
@@ -1146,6 +1145,10 @@ bool writeFile(const QString& path, const QByteArray& data, QString* error)
 
 bool Project::save(const QString& path, QString* error)
 {
+    if (!project_format::hasExtension(path)) {
+        if (error) *error = QStringLiteral("Project files must use the .mvp extension.");
+        return false;
+    }
     if (!writeFile(path, toJson(QFileInfo(path).absolutePath(), {}, false), error))
         return false;
     m_filePath = path;
@@ -1156,6 +1159,10 @@ bool Project::save(const QString& path, QString* error)
 
 bool Project::saveBackup(const QString& path, QString* error) const
 {
+    if (!project_format::hasExtension(path)) {
+        if (error) *error = QStringLiteral("Project files must use the .mvp extension.");
+        return false;
+    }
     // Relative paths are kept relative to the project's own folder.
     const QString base = m_filePath.isEmpty() ? QString() : QFileInfo(m_filePath).absolutePath();
     return writeFile(path, toJson(base, m_filePath, true), error);
@@ -1179,6 +1186,10 @@ bool Project::load(const QString& path, QString* error, QStringList* missingMedi
 
 bool Project::loadFile(const QString& path, QString* error, QStringList* missingMedia, QString* backupOf)
 {
+    if (!project_format::hasExtension(path)) {
+        if (error) *error = QStringLiteral("Project files must use the .mvp extension.");
+        return false;
+    }
     QFile f(path);
     if (!f.open(QIODevice::ReadOnly)) {
         if (error)
@@ -1193,14 +1204,14 @@ bool Project::loadFile(const QString& path, QString* error, QStringList* missing
         return false;
     }
     QJsonObject root = doc.object();
-    if (root[QStringLiteral("format")].toString() != QStringLiteral("montage-project")) {
+    if (root[QStringLiteral("format")].toString() != QLatin1String(project_format::identifier)) {
         if (error)
             *error = QStringLiteral("Not a Mutant Video Producer project file");
         return false;
     }
 
     const auto version = root[QStringLiteral("version")];
-    if (!version.isUndefined() && (!version.isDouble() || version.toDouble() != kFileVersion)) {
+    if (!version.isDouble() || version.toDouble() != project_format::version) {
         if (error) *error = QStringLiteral("Unsupported or invalid Mutant Video Producer project version.");
         return false;
     }

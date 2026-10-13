@@ -59,7 +59,7 @@ new `v*` tag (or pushing such a tag) attaches:
 
 - `MutantVideoProducer-<version>-win64-setup.exe`: the installer, made with [Inno Setup](https://jrsoftware.org/isinfo.php)
   from `installer/mvp.iss`. It installs for the current user (or, if chosen, all users), adds
-  Start menu and optional desktop shortcuts, opens `.mtg` files with Mutant Video Producer, and has an uninstaller.
+  Start menu and optional desktop shortcuts, opens `.mvp` files with Mutant Video Producer, and has an uninstaller.
   To build it by hand: `iscc /DAppVersion=0.2.5 /DSourceDir=<the release folder> installer\mvp.iss`.
 - `MutantVideoProducer-<version>-win64.zip`,
 - `MutantVideoProducer-<version>-win64-offline.zip`: the same with every Whisper speech model in
@@ -71,7 +71,9 @@ packages) and runs the self-tests that need no GPU, on every push and pull reque
 
 The version comes from the tag: the workflow sets `MVP_VERSION` (v0.2.5 gives 0.2.5), and
 `CMakeLists.txt` uses its `project(... VERSION ...)` otherwise. Help > About shows it, and the update
-check compares it with the latest release. The program icon is `data/mvp.ico` (`data/mvp.rc`).
+check compares it with the latest release. The program icon is `data/mvp.ico` (`data/mvp.rc`);
+`data/mvp-icon.png` is embedded in the app for window/taskbar icons on both platforms.
+The asset sizes and generation prompt are recorded in [icon provenance](icon.md).
 
 ## Documentation and example projects
 

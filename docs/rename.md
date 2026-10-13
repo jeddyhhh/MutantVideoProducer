@@ -1,4 +1,4 @@
-# Rename compatibility
+# Project format and settings
 
 Mutant Video Producer was previously named Montage. The source, releases, issue tracker
 and update checker now use [MutantVideoProducer on GitHub](https://github.com/jeddyhhh/MutantVideoProducer).
@@ -8,10 +8,14 @@ MCP advertises the server as `mvp`. Update any MCP client's executable path to t
 file; its tools, arguments and HTTP port are unchanged. The configuration label is yours
 to choose, so an existing client label also works.
 
-Projects retain the `.mtg` extension and `montage-project` disk identifier. Saved effect
-presets retain `montage-preset`, and shared profile libraries retain `montage-library.json`.
-These are compatibility identifiers, not the application's displayed name. Existing
-projects, collected folders and profile homes do not need conversion.
+Projects use the `.mvp` extension and `mutant-video-producer-project` identifier,
+with an explicit supported version. The old `.mtg` format is retired: it is not loaded,
+saved, recovered, collected or converted. Renaming an old file will not make it loadable.
+Bundled examples and tutorials use the new format. Collected projects remain portable.
+
+Profile homes, media libraries, preferences and downloaded models are independent of
+the project format and are retained. Saved effect presets and shared profile libraries
+keep their existing disk identifiers.
 
 On the first normal start, missing preferences are imported from the previous installation.
 New preferences take precedence, and the previous settings are left intact. This preserves
@@ -30,6 +34,4 @@ The build can reuse portable voice workers built before the rename and deploy th
 the new worker filenames.
 
 The installer retains its upgrade identity, so it recognizes an existing installation.
-Its product name, shortcuts and `.mtg` association point to Mutant Video Producer.
-The internal Windows association identifier is retained so existing default-app choices
-continue to open the renamed executable.
+Its product name, shortcuts and new `.mvp` association point to Mutant Video Producer.

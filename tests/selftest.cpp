@@ -766,7 +766,7 @@ int cmdEffects(const QString& mediaPath, const QString& outDir)
         tl.tracks[0].effects.push_back(makeEffect(*findEffect(QStringLiteral("sepia")), tl.allocId()));
         tl.outputEffects.push_back(makeEffect(*findEffect(QStringLiteral("noise")), tl.allocId()));
         proj.applyEdit(tl, QStringLiteral("test"));
-        const QString path = QDir(outDir).filePath(QStringLiteral("roundtrip.mtg"));
+        const QString path = QDir(outDir).filePath(QStringLiteral("roundtrip.mvp"));
         QString err;
         Project loaded;
         const bool ok = proj.save(path, &err) && loaded.load(path, &err) && loaded.timeline() == proj.timeline();
@@ -982,7 +982,7 @@ int cmdGenerators(const QString& outDir)
         check(imageDifference(a, b) > 0.3, QStringLiteral("keyframed title moves over a gradient background"));
         a.save(QDir(outDir).filePath(QStringLiteral("title_composited.png")));
 
-        const QString path = QDir(outDir).filePath(QStringLiteral("generators.mtg"));
+        const QString path = QDir(outDir).filePath(QStringLiteral("generators.mvp"));
         QString err;
         Project loaded;
         check(proj.save(path, &err) && loaded.load(path, &err) && loaded.timeline() == proj.timeline(),
@@ -1198,7 +1198,7 @@ int cmdSpeed(const QString& mediaPath, const QString& outDir)
         c.panCrop[QStringLiteral("zoom")].addKey(0, 1.2);
         c.panCrop[QStringLiteral("mode")].value = 1;
         proj.applyEdit(tl, QStringLiteral("test"));
-        const QString path = QDir(outDir).filePath(QStringLiteral("speed.mtg"));
+        const QString path = QDir(outDir).filePath(QStringLiteral("speed.mvp"));
         QString err;
         Project loaded;
         check(proj.save(path, &err) && loaded.load(path, &err) && loaded.timeline() == proj.timeline(),
@@ -1767,7 +1767,7 @@ int cmdAudioCache(const QString& dir)
         check(first->session == p.snapshot()->session, "ordinary edits preserve the project session");
         p.clear();
         check(first->session != p.snapshot()->session, "new project changes the playback session");
-        const QString path = QDir(dir).filePath("session.mtg");
+        const QString path = QDir(dir).filePath("session.mvp");
         QString error;
         const bool saved = p.save(path, &error);
         auto before = p.snapshot();
@@ -1775,7 +1775,7 @@ int cmdAudioCache(const QString& dir)
         check(saved && loaded && before->session != p.snapshot()->session,
               "opening even the same project starts a fresh playback session");
         before = p.snapshot();
-        check(!p.load(QDir(dir).filePath("absent.mtg"), &error) && before->session == p.snapshot()->session,
+        check(!p.load(QDir(dir).filePath("absent.mvp"), &error) && before->session == p.snapshot()->session,
               "failed project opening preserves the current session");
         SequenceSnapshotCache cache;
         NestedTimeline nested; nested.value = std::make_shared<const Timeline>(defaultTimeline());
@@ -2027,7 +2027,7 @@ int cmdAudioFx(const QString& mediaDir, const QString& outDir)
             }
         tl.audioMasterEffects.push_back(makeEffectOfType(QStringLiteral("a_limiter"), tl.allocId()));
         proj.applyEdit(tl, QStringLiteral("test"));
-        const QString path = QDir(outDir).filePath(QStringLiteral("audiofx.mtg"));
+        const QString path = QDir(outDir).filePath(QStringLiteral("audiofx.mvp"));
         QString err;
         Project loaded;
         check(proj.save(path, &err) && loaded.load(path, &err) && loaded.timeline() == proj.timeline(),
@@ -2202,7 +2202,7 @@ int cmdEnvelopes(const QString& mediaDir, const QString& outDir)
             }
         }
         proj.applyEdit(tl, QStringLiteral("test"));
-        const QString path = QDir(outDir).filePath(QStringLiteral("envelopes.mtg"));
+        const QString path = QDir(outDir).filePath(QStringLiteral("envelopes.mvp"));
         QString err;
         Project loaded;
         check(proj.save(path, &err) && loaded.load(path, &err) && loaded.timeline() == proj.timeline(),
@@ -2524,7 +2524,7 @@ int cmdRamps(const QString& mediaDir, const QString& outDir)
         check(a.velocity == tl.tracks[0].clips[0].velocity && a.length == tl.tracks[0].clips[0].length,
               QStringLiteral("grouped audio event gets the same ramp"));
         proj.applyEdit(tl, QStringLiteral("test"));
-        const QString path = QDir(outDir).filePath(QStringLiteral("ramps.mtg"));
+        const QString path = QDir(outDir).filePath(QStringLiteral("ramps.mvp"));
         QString err;
         Project loaded;
         check(proj.save(path, &err) && loaded.load(path, &err) && loaded.timeline() == proj.timeline(),
@@ -2630,7 +2630,7 @@ int cmdRacks(const QString& mediaDir, const QString& outDir)
         c.effects.front().chains[1].params[QStringLiteral("level")].addKey(kUsPerSecond, 80);
         tl.nextId = nextId; // ids came from the test's allocator
         proj.applyEdit(tl, QStringLiteral("test"));
-        const QString path = QDir(outDir).filePath(QStringLiteral("racks.mtg"));
+        const QString path = QDir(outDir).filePath(QStringLiteral("racks.mvp"));
         QString err;
         Project loaded;
         check(proj.save(path, &err) && loaded.load(path, &err) && loaded.timeline() == proj.timeline(),
@@ -2850,7 +2850,7 @@ int cmdEditing(const QString& mediaDir, const QString& outDir)
                   && timeline.tracks[1].name == QStringLiteral("Image 1") && timelineProblem(timeline).isEmpty(),
               QStringLiteral("each still image gets a distinct Image track and no extra audio track"));
         project.applyEdit(timeline, QStringLiteral("Image tracks"));
-        const QString projectPath = QDir(outDir).filePath(QStringLiteral("image-tracks.mtg"));
+        const QString projectPath = QDir(outDir).filePath(QStringLiteral("image-tracks.mvp"));
         QString error;
         Project loaded;
         check(project.save(projectPath, &error) && loaded.load(projectPath, &error) && loaded.timeline() == timeline,
@@ -2965,7 +2965,7 @@ int cmdEditing(const QString& mediaDir, const QString& outDir)
     }
 
     // ---- Save / load: markers, regions, blend modes ----
-    const QString projectPath = QDir(outDir).filePath(QStringLiteral("editing.mtg"));
+    const QString projectPath = QDir(outDir).filePath(QStringLiteral("editing.mvp"));
     {
         Project proj;
         const int id = proj.addMedia(video->info);
@@ -2984,7 +2984,7 @@ int cmdEditing(const QString& mediaDir, const QString& outDir)
               QStringLiteral("markers, regions and track blend modes are saved with the project"));
 
         // Autosave copy + recovery: the copy keeps the project's file name.
-        const QString backup = QDir(outDir).filePath(QStringLiteral("autosave-copy.mtg"));
+        const QString backup = QDir(outDir).filePath(QStringLiteral("autosave-copy.mvp"));
         Timeline more = back.timeline();
         more.markers.push_back(Marker{more.allocId(), 9 * S, 0, QStringLiteral("unsaved"), 0});
         more.sortMarkers();
@@ -2995,7 +2995,7 @@ int cmdEditing(const QString& mediaDir, const QString& outDir)
         const bool ok = rec.recover(backup, &error);
         check(unchanged && ok && rec.filePath() == projectPath && rec.isModified() && rec.timeline().markers.size() == 3
                   && rec.mediaItem(id) && rec.mediaItem(id)->info.ok(),
-              QStringLiteral("saveBackup leaves the project as it was; recover reopens it as editing.mtg, unsaved"));
+              QStringLiteral("saveBackup leaves the project as it was; recover reopens it as editing.mvp, unsaved"));
     }
 
     // ---- Relink ----
@@ -3206,7 +3206,7 @@ int cmdEditing(const QString& mediaDir, const QString& outDir)
         tl.tracks[1].duckUnder = tl.tracks[0].id;
         tl.tracks[1].duckAmount = -18;
         proj.applyEdit(tl, QStringLiteral("t"));
-        const QString path = QDir(outDir).filePath(QStringLiteral("curves.mtg"));
+        const QString path = QDir(outDir).filePath(QStringLiteral("curves.mvp"));
         QString error;
         proj.save(path, &error);
         Project back;
@@ -3314,7 +3314,7 @@ int cmdEditing(const QString& mediaDir, const QString& outDir)
             round.tracks[0].clips[0].mediaId = proj.addMedia(video->info);
             round.nextId = 50;
             proj.restoreTimeline(round);
-            const QString file = QDir(outDir).filePath(QStringLiteral("loop.mtg"));
+            const QString file = QDir(outDir).filePath(QStringLiteral("loop.mvp"));
             QString err;
             Project loaded;
             if (proj.save(file, &err) && loaded.load(file, &err))
@@ -5714,7 +5714,7 @@ int cmdDocAnimations(const QString& examplesDir, const QString& outDir)
     auto render = [&](const QString& example, const QString& name, double from, double to, const std::function<void(Project&)>& prepare = {}) {
         Project p;
         QString err;
-        bool ok = gif && p.load(QDir(examplesDir).filePath(example + QStringLiteral(".mtg")), &err);
+        bool ok = gif && p.load(QDir(examplesDir).filePath(example + QStringLiteral(".mvp")), &err);
         if (ok && prepare)
             prepare(p);
         ExportSettings es = ok ? settingsFromPreset(*gif, p.settings()) : ExportSettings{};
@@ -5754,7 +5754,7 @@ int cmdDocAnimations(const QString& examplesDir, const QString& outDir)
 
 // The user guide (docs/): every link and picture points at something that
 // exists (a heading for "#anchor" links, an example project in `examplesDir`
-// for .mtg links), every page is linked from another, and the tutorials index
+// for .mvp links), every page is linked from another, and the tutorials index
 // lists every tutorial. With `srcDir`, every page the program opens (Help
 // buttons, Shift+F1, the welcome window) is there too.
 int cmdDocs(const QString& docsDir, const QString& examplesDir, const QString& srcDir)
@@ -5803,7 +5803,7 @@ int cmdDocs(const QString& docsDir, const QString& examplesDir, const QString& s
             ++links;
             const QString file = target.section(QLatin1Char('#'), 0, 0), fragment = target.section(QLatin1Char('#'), 1);
             const QString where = docs.relativeFilePath(path) + QStringLiteral(": ") + target;
-            if (file.endsWith(QLatin1String(".mtg"))) {
+            if (file.endsWith(QLatin1String(".mvp"))) {
                 ++examples;
                 if (!QFileInfo::exists(QDir(examplesDir).filePath(QFileInfo(file).fileName())))
                     broken << where;
@@ -5976,7 +5976,7 @@ int cmdExamples(const QString& outDir, const QString& narrationWav)
     };
     auto save = [&](Project& p, const Timeline& tl, const QString& name) {
         p.applyEdit(tl, QStringLiteral("example"));
-        const QString path = out.filePath(name + QStringLiteral(".mtg"));
+        const QString path = out.filePath(name + QStringLiteral(".mvp"));
         QString err;
         bool ok = p.save(path, &err);
         // Only the paths relative to the project: nothing of this computer's folders.
@@ -6012,7 +6012,7 @@ int cmdExamples(const QString& outDir, const QString& narrationWav)
                 if (const auto m = c.mediaId ? p.mediaItem(c.mediaId) : nullptr; m && c.sourceIn + c.sourceSpan() > m->info.duration + kUsPerSecond / 10)
                     unknown << QStringLiteral("%1: event %2 runs past the end of its file").arg(name).arg(c.id);
         check(ok && least > 0.5,
-              QStringLiteral("%1.mtg: %2 s, %3 tracks, loads back and renders %4").arg(name).arg(double(tl.duration()) / kUsPerSecond, 0, 'f', 1)
+              QStringLiteral("%1.mvp: %2 s, %3 tracks, loads back and renders %4").arg(name).arg(double(tl.duration()) / kUsPerSecond, 0, 'f', 1)
                   .arg(tl.tracks.size()).arg(err + missing.join(QLatin1Char(' '))));
     };
 

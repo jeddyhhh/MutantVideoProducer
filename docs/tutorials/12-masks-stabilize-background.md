@@ -2,7 +2,7 @@
 
 You learn: freehand masks and rotoscoping, Track Motion, Pan/Crop, Stabilize, and Remove Background (AI).
 
-**Example project:** [effects-and-keyframes](../../data/examples/effects-and-keyframes.mtg) for the
+**Example project:** [effects-and-keyframes](../../data/examples/effects-and-keyframes.mvp) for the
 masks. Stabilize and Remove Background need footage of your own: a handheld clip, and a clip (or
 photo) of a person.
 

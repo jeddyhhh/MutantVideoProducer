@@ -1,6 +1,6 @@
 #include "core/Brand.h"
 // Help > User Guide and Tutorials: the Markdown pages of docs/ (copied next to
-// the program) in a window of their own. A link to an example project (.mtg)
+// the program) in a window of their own. A link to an example project (.mvp)
 // opens a copy of it in Documents/Mutant Video Producer Examples, so the original stays as it is.
 
 #include "ui/MainWindow.h"
@@ -104,7 +104,7 @@ void MainWindow::showHelp(const QString& page)
         connect(browser, &QTextBrowser::backwardAvailable, back, &QAction::setEnabled);
         connect(browser, &QTextBrowser::forwardAvailable, forward, &QAction::setEnabled);
         connect(browser, &QTextBrowser::anchorClicked, this, [this, browser](const QUrl& url) {
-            if (url.path().endsWith(QLatin1String(".mtg")))
+            if (url.path().endsWith(QLatin1String(".mvp")))
                 openExample(QFileInfo(url.path()).completeBaseName());
             else if (url.scheme().startsWith(QLatin1String("http")))
                 QDesktopServices::openUrl(url);
@@ -170,7 +170,7 @@ void addButton(QDialogButtonBox* box, const QString& page)
 void MainWindow::openExample(const QString& name, const QString& into)
 {
     const QDir from(QDir(QCoreApplication::applicationDirPath()).filePath(QStringLiteral("examples")));
-    const QString original = from.filePath(name + QStringLiteral(".mtg"));
+    const QString original = from.filePath(name + QStringLiteral(".mvp"));
     if (!QFileInfo::exists(original)) {
         QMessageBox::warning(this, tr("Example Projects"), tr("The example %1 is missing.").arg(QDir::toNativeSeparators(original)));
         return;
@@ -180,7 +180,7 @@ void MainWindow::openExample(const QString& name, const QString& into)
     QDir().mkpath(to.filePath(QStringLiteral("media")));
     for (const QFileInfo& f : QDir(from.filePath(QStringLiteral("media"))).entryInfoList(QDir::Files))
         QFile::copy(f.filePath(), to.filePath(QStringLiteral("media/") + f.fileName())); // (once: an existing file is kept)
-    const QString copy = to.filePath(name + QStringLiteral(".mtg"));
+    const QString copy = to.filePath(name + QStringLiteral(".mvp"));
     if (QFileInfo::exists(copy) && into.isEmpty()) {
         // An earlier copy may hold your changes.
         QMessageBox box(QMessageBox::Question, tr("Example Projects"),

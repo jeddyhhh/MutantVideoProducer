@@ -3,7 +3,7 @@
 You learn: Render As, choosing a template, rendering for a phone, keeping under a size limit,
 rendering part of the timeline, GPU encoding, and saving single frames.
 
-**Example project:** [first-edit](../../data/examples/first-edit.mtg), or any project of your own.
+**Example project:** [first-edit](../../data/examples/first-edit.mvp), or any project of your own.
 
 ## 1. For YouTube
 
