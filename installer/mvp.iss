@@ -22,6 +22,10 @@ AppSupportURL=https://github.com/jeddyhhh/MutantVideoProducer/issues
 AppUpdatesURL=https://github.com/jeddyhhh/MutantVideoProducer/releases
 DefaultDirName={autopf}\Mutant Video Producer
 DefaultGroupName=Mutant Video Producer
+; The shared upgrade identity can still have Montage paths saved in the registry.
+; Always offer the renamed defaults; the destination remains editable by the user.
+UsePreviousAppDir=no
+UsePreviousGroup=no
 DisableProgramGroupPage=yes
 ; Program Files for all users by default (asks for admin rights); the first page offers "only for me" instead.
 PrivilegesRequired=admin

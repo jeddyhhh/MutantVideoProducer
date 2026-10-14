@@ -11,6 +11,8 @@ What changed in each version of Mutant Video Producer. The newest is first.
   PyPI and PyTorch. CPU/CUDA choices, verified pinned wheels, visible setup output,
   cancellation and repair are built in. No separate Python installation is required.
 - One normal Windows setup EXE embeds the editor payload with disk spanning disabled.
+- Windows setup defaults to Mutant Video Producer for its installation and Start menu
+  folders, ignoring saved Montage folder names from earlier installations.
 - Per-user isolated environments are shared across profiles and projects. Atomic
   activation preserves working engines on failed repairs; bundled full/offline engines
   remain supported. Existing generated media plays without installed AI engines.
