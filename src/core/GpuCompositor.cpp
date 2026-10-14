@@ -807,7 +807,11 @@ struct GpuCompositor::Impl : protected QOpenGLExtraFunctions {
             glDeleteVertexArrays(1, &meshVao);
         if (dataTex)
             glDeleteTextures(1, &dataTex);
-        context->doneCurrent();
+        // Destroyed while current: Qt's OpenGL paint engine (one per thread, used for
+        // titles) frees its vertex array only if this context is current when it goes.
+        // Off the GUI thread it otherwise keeps a dangling handle, and the next
+        // renderer on this thread crashes in QPainter::begin.
+        context.reset();
     }
 
     // ---- Setup ----------------------------------------------------------------

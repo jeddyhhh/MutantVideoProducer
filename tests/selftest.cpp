@@ -1696,6 +1696,21 @@ int cmdGpu(const QString& mediaDir, const QString& outDir)
             c.effects.push_back(makeEffect(*findEffect(QString::fromLatin1(fx)), s.timeline.allocId()));
         bench(QStringLiteral("1080p, 2 tracks, PiP + blur + colour + vignette"), s, QSize(1920, 1080), 60);
     }
+    // The preview recreates its GPU renderer on its own thread (GPU Acceleration,
+    // Hardware Decoding): titles must still draw with each new context.
+    {
+        ProjectSnapshot s = baseSnap(main);
+        ops::insertGenerated(s.timeline, *findGeneratorPreset(QStringLiteral("title")), 0, 0, fps);
+        const QImage want = cpu.render(s, kUsPerSecond, size);
+        double worst = 0;
+        std::thread([&] {
+            for (int i = 0; i < 3; ++i) {
+                auto g = GpuCompositor::create(surface.get(), false, &err);
+                worst = std::max(worst, g ? imageDifference(want, g->render(s, kUsPerSecond, size)) : 255.0);
+            }
+        }).join();
+        check(worst <= 3, QStringLiteral("a title still draws after the GPU renderer is recreated on its thread (mean difference %1)").arg(worst, 0, 'f', 2));
+    }
     for (const char* file : {"uhd_h264.mp4", "uhd_hevc10.mp4"}) {
         auto item = loadItem(dir.filePath(QString::fromLatin1(file)), 11);
         if (item)
@@ -5529,7 +5544,7 @@ int cmdCaptions(const QString& speech, const QString& model, const QString& dial
     int longest = 0;
     for (const Caption& cap : caps)
         longest = std::max(longest, int(cap.text.size()));
-    check(ok && audio.size() == size_t(usToSamples(c.end(), 16000)) && all.contains(QStringLiteral("mvp")) && all.contains(QStringLiteral("brown fox"))
+    check(ok && audio.size() == size_t(usToSamples(c.end(), 16000)) && all.contains(QStringLiteral("mutant video producer")) && all.contains(QStringLiteral("brown fox"))
               && all.contains(QStringLiteral("lazy dog")) && caps.size() >= 3 && caps.front().start >= 15 * kUsPerSecond / 10 && longest <= 50,
           QStringLiteral("Whisper (%7) captions the speech in %1 ms (%2 captions, the first at %3 s, longest %4 characters): \"%5\" %6")
               .arg(timer.elapsed()).arg(caps.size()).arg(caps.empty() ? 0.0 : double(caps.front().start) / kUsPerSecond, 0, 'f', 2)
