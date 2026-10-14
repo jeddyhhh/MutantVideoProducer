@@ -1,0 +1,9 @@
+numpy==1.26.4
+scipy==1.15.3
+librosa==0.11.0
+numba==0.61.2
+faiss-cpu==1.12.0
+praat-parselmouth==0.4.7
+soundfile==0.13.1
+transformers==4.57.6
+torch @ https://download-r2.pytorch.org/whl/cu128/torch-2.7.1%2Bcu128-cp312-cp312-win_amd64.whl#sha256=2bb8c05d48ba815b316879a18195d53a6472a03e297d971e916753f8e1053d30

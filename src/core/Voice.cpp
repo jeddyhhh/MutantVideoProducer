@@ -1,5 +1,6 @@
 #include "core/Brand.h"
 #include "core/Voice.h"
+#include "core/AiRuntime.h"
 #include "core/Profiles.h"
 #include <QCoreApplication>
 #include <QCryptographicHash>
@@ -44,11 +45,11 @@ std::vector<VoiceAsset> rvcSharedAssets()
 }
 QString rvcWorkerPath()
 {
-    return QCoreApplication::applicationDirPath() + QStringLiteral("/voice/rvc-worker/mvp-rvc-worker")
+    return aiRuntimeWorkerPath(QStringLiteral("rvc"), QCoreApplication::applicationDirPath() + QStringLiteral("/voice/rvc-worker/mvp-rvc-worker")
 #ifdef _WIN32
         + QStringLiteral(".exe")
 #endif
-        ;
+        );
 }
 QString voiceAssetPath(const VoiceAsset& a)
 {

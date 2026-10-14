@@ -1,0 +1,26 @@
+{
+  "version": 2,
+  "platform": "windows-x86_64",
+  "uv_version": "0.13.0",
+  "uv_sha256": "2bfbe53d3cc95799e98fa08323b04844fc01d4f8c87dd5c00089e43f6554f162",
+  "components": [
+    {
+      "id": "speech",
+      "name": "Speech Generation",
+      "python": "3.12.12",
+      "lock": "locks/speech.txt",
+      "cuda_lock": "locks/speech-cuda.txt",
+      "lock_sha256": "19a2e3ed732b5ff9832c521687bcdd7cc23b7e1486be361309508e1d18f400ac",
+      "cuda_lock_sha256": "504d66615e508b01f4882ac3f54cc597ac4a74e812b6236fa1c392fa54cd60c1"
+    },
+    {
+      "id": "rvc",
+      "name": "RVC Conversion",
+      "python": "3.12.12",
+      "lock": "locks/rvc.txt",
+      "cuda_lock": "locks/rvc-cuda.txt",
+      "lock_sha256": "33a60cd0b30028e77536e2a2d41285fca2f00d5b60770ee94bba17a91bffea97",
+      "cuda_lock_sha256": "aed36a6489c647f6380d2ec57cced57523cfdbbd6e09585b745d2edbf4e555ba"
+    }
+  ]
+}

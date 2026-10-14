@@ -12,6 +12,7 @@ import tempfile
 import unittest
 import wave
 from unittest.mock import patch
+from types import SimpleNamespace
 
 spec = importlib.util.spec_from_file_location("voice_worker", Path(__file__).resolve().parents[1] / "data/voice/worker.py")
 worker = importlib.util.module_from_spec(spec)
@@ -19,6 +20,26 @@ spec.loader.exec_module(worker)
 
 
 class TimingTest(unittest.TestCase):
+    def test_downloaded_cuda_libraries_are_located_outside_the_application(self):
+        with patch.dict(worker.os.environ, {"MVP_CUDA_LIBRARY_DIR": "/downloaded/rvc-version/_internal/torch/lib"}):
+            self.assertEqual(worker.cuda_library_roots()[0], Path("/downloaded/rvc-version/_internal/torch/lib"))
+
+    def test_failed_gpu_library_loading_still_allows_cpu_inference(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / 'cudnn64_9.dll').write_bytes(b'fixture')
+            class FakeOrt:
+                ExecutionMode = SimpleNamespace(ORT_SEQUENTIAL=0)
+                def get_available_providers(self): return ['CUDAExecutionProvider', 'CPUExecutionProvider']
+                def preload_dlls(self, **kwargs): raise RuntimeError('missing dependency')
+                def SessionOptions(self): return SimpleNamespace()
+                def InferenceSession(self, path, sess_options, providers):
+                    if providers[0] != 'CPUExecutionProvider': raise RuntimeError('GPU unavailable')
+                    return SimpleNamespace(get_providers=lambda: ['CPUExecutionProvider'])
+            with patch.object(worker, 'os', SimpleNamespace(name='nt', environ={})), \
+                 patch.object(worker, 'cuda_library_roots', return_value=[root]), patch.object(worker, 'emit'):
+                self.assertEqual(worker.speech_session(FakeOrt(), root / 'model.onnx').get_providers(), ['CPUExecutionProvider'])
+
     def test_fit_preserves_short_speech_and_gaps(self):
         result = worker.plan_timing([{"start": 1, "end": 5, "text": "Short."}, {"start": 8, "end": 10, "text": "Later."}], [2, 2], True)
         self.assertEqual([r["start"] for r in result], [1, 8])

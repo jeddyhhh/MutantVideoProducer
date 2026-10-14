@@ -24,7 +24,7 @@ concurrency:
 jobs:
   build:
     runs-on: windows-latest
-    timeout-minutes: 90
+    timeout-minutes: 120
     env:
       CMAKE_BUILD_PARALLEL_LEVEL: 2
     steps:
@@ -86,12 +86,15 @@ jobs:
         run: |
           $version = if ($env:GITHUB_REF_TYPE -eq 'tag') { $env:GITHUB_REF_NAME.TrimStart('v') } else { "dev-$($env:GITHUB_SHA.Substring(0, 7))" }
           "MVP_VERSION=$version" >> $env:GITHUB_ENV
+          $bundle = if ($env:GITHUB_REF_TYPE -eq 'tag') { 'ON' } else { 'OFF' }
+          "MVP_BUNDLE_AI=$bundle" >> $env:GITHUB_ENV
 
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
 
       - name: Restore packaged AI workers
+        if: github.ref_type == 'tag'
         id: worker_cache
         uses: actions/cache/restore@v4
         with:
@@ -101,23 +104,27 @@ jobs:
           key: ai-workers-${{ runner.os }}-py312-${{ hashFiles('scripts/build-voice-worker.ps1', 'scripts/build-rvc-worker.ps1', 'data/voice/worker.py', 'data/voice/requirements.txt', 'data/rvc/**') }}
 
       - name: Build local voice worker
-        if: steps.worker_cache.outputs.cache-hit != 'true'
+        if: github.ref_type == 'tag' && steps.worker_cache.outputs.cache-hit != 'true'
         shell: pwsh
         run: ./scripts/build-voice-worker.ps1
 
       - name: Build bundled RVC engine
-        if: steps.worker_cache.outputs.cache-hit != 'true'
+        if: github.ref_type == 'tag' && steps.worker_cache.outputs.cache-hit != 'true'
         shell: pwsh
         run: ./scripts/build-rvc-worker.ps1
 
       - name: Cache packaged AI workers
-        if: steps.worker_cache.outputs.cache-hit != 'true'
+        if: github.ref_type == 'tag' && steps.worker_cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
         with:
           path: |
             deps/voice-worker/mvp-voice-worker
             deps/rvc-worker/mvp-rvc-worker
           key: ${{ steps.worker_cache.outputs.cache-primary-key }}
+
+      - name: Prepare verified AI setup helper
+        shell: pwsh
+        run: ./scripts/download-ai-bootstrap.ps1
 
       - name: Prepare YouTube JavaScript runtime
         shell: pwsh
@@ -137,11 +144,13 @@ jobs:
         shell: cmd
         # Build the complete app and every test used below. Composer/GPU suites
         # run separately on Linux; avoid redundant MSVC whole-program links here.
-        run: build.bat Release mvp mvp_selftest mvp_collection_test mvp_brand_test mvp_finishing_test mvp_voice_test mvp_docs
+        run: build.bat Release mvp mvp_selftest mvp_collection_test mvp_brand_test mvp_finishing_test mvp_voice_test mvp_runtime_test mvp_docs
 
       # The native windows platform (no window is shown): offscreen has no fonts on Windows.
       - name: Self-test
         shell: pwsh
+        env:
+          QT_FORCE_STDERR_LOGGING: '1'
         run: |
           $bin = 'build/Release/bin'
           New-Item -ItemType Directory -Force testmedia, build/ci | Out-Null
@@ -159,9 +168,18 @@ jobs:
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           & "$bin/mvp_finishing_test.exe"
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          & "$bin/mvp_runtime_test.exe"
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          python -m unittest discover -s tests -p test_ai_packaging.py
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
           python -m unittest discover -s tests -p test_ci_builds.py
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           python -m unittest discover -s tests -p test_voice_worker.py
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          $env:MVP_AI_RUNTIME_DIR = "$PWD/build/ci/ai-engines"
+          & "$bin/mvp_runtime_test.exe" --install speech cpu
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          & "$bin/mvp_runtime_test.exe" --cancel-repair speech cpu
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           python scripts/download-voice-assets.py --output build/ci/voice-assets --voice-id af_heart
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
@@ -169,48 +187,55 @@ jobs:
           & "$bin/mvp_voice_test.exe"
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
 
-      - name: Package
+      - name: Prepare standalone installer payload
         id: package
+        env:
+          GH_TOKEN: ${{ github.token }}
         shell: pwsh
         run: |
           $version = $env:MVP_VERSION
-          $dir = "MutantVideoProducer-$version-win64"
-          New-Item -ItemType Directory $dir | Out-Null
-          Copy-Item -Recurse build/Release/bin/* $dir
-          Remove-Item "$dir/mvp_selftest.exe", "$dir/mvp_*_test.exe", "$dir/platforms/qoffscreen.dll" -ErrorAction SilentlyContinue
-          # Incremental builds can contain executables from the previous product name.
-          Remove-Item "$dir/montage.exe", "$dir/montage_selftest.exe", "$dir/montage_*_test.exe" -ErrorAction SilentlyContinue
-          # Symbols stay out of the download; kept as a workflow artifact to read crash reports with.
-          New-Item -ItemType Directory symbols | Out-Null
-          Move-Item "$dir/*.pdb" symbols
-          7z a -tzip -mx=5 "$dir-symbols.zip" ./symbols/* | Out-Null
-          "symbols=$dir-symbols.zip" >> $env:GITHUB_OUTPUT
-          # MSVC runtime next to the exe, so no Visual C++ Redistributable install is needed.
+          $bin = 'build/Release/bin'
           $vs = & "${env:ProgramFiles(x86)}/Microsoft Visual Studio/Installer/vswhere.exe" -latest -products * -property installationPath
           $crt = Get-ChildItem "$vs/VC/Redist/MSVC/*/x64/Microsoft.VC*.CRT" -Directory | Sort-Object FullName | Select-Object -Last 1
-          Copy-Item "$($crt.FullName)/*.dll" $dir
-          Copy-Item deps/ffmpeg/LICENSE.txt "$dir/FFMPEG-LICENSE.txt"
-          Copy-Item deps/onnxruntime/LICENSE "$dir/ONNXRUNTIME-LICENSE.txt"
-          Copy-Item deps/onnxruntime/DIRECTML-LICENSE.txt "$dir/DIRECTML-LICENSE.txt"
-          Copy-Item deps/whisper/LICENSE "$dir/WHISPER-LICENSE.txt"
-          Copy-Item README.md, LICENSE, CHANGELOG.md $dir
-          if (-not (Test-Path "$dir/MutantVideoProducer.exe")) { throw 'MutantVideoProducer.exe missing' }
-          7z a -tzip -mx=5 "$dir.zip" $dir | Out-Null
+          Copy-Item "$($crt.FullName)/*.dll" $bin
+          Copy-Item deps/ffmpeg/LICENSE.txt "$bin/FFMPEG-LICENSE.txt"
+          Copy-Item deps/onnxruntime/LICENSE "$bin/ONNXRUNTIME-LICENSE.txt"
+          Copy-Item deps/onnxruntime/DIRECTML-LICENSE.txt "$bin/DIRECTML-LICENSE.txt"
+          Copy-Item deps/whisper/LICENSE "$bin/WHISPER-LICENSE.txt"
+          Copy-Item README.md, LICENSE, CHANGELOG.md $bin
+          python scripts/package-windows.py --bin $bin --output build/distribution --version $version
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          "zip=$dir.zip" >> $env:GITHUB_OUTPUT
-          # The installer (Inno Setup): Start menu and desktop shortcuts, .mvp files, an uninstaller.
+          "directory=$PWD/build/distribution/MutantVideoProducer-$version-win64" >> $env:GITHUB_OUTPUT
+
+      - name: Build small Windows installer
+        id: installer
+        shell: pwsh
+        run: |
+          $version = $env:MVP_VERSION
           $iscc = "${env:ProgramFiles(x86)}/Inno Setup 6/ISCC.exe"
           if (-not (Test-Path $iscc)) { choco install innosetup -y --no-progress | Out-Null }
-          & $iscc /Q "/DAppVersion=$version" "/DSourceDir=$PWD\$dir" "/O$PWD" installer/mvp.iss
+          & $iscc /Q "/DAppVersion=$version" "/DSourceDir=${{ steps.package.outputs.directory }}" "/O$PWD/build/distribution" installer/mvp.iss
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          "setup=MutantVideoProducer-$version-win64-setup.exe" >> $env:GITHUB_OUTPUT
-          # Tag builds include the large offline edition. Branch builds retain the same
-          # bundled engines and download models through the in-app libraries.
-          if ($env:GITHUB_REF_TYPE -ne 'tag') { exit 0 }
-          # The offline version: the same, plus every speech model (nothing is downloaded when used).
+          $setup = "build/distribution/MutantVideoProducer-$version-win64-setup.exe"
+          if ((Get-Item $setup).Length -ge 1GB) { throw 'Installer exceeds the 1 GiB size budget' }
+          $files = @(Get-Content build/distribution/files.json -Raw | ConvertFrom-Json)
+          $files += (Split-Path $setup -Leaf)
+          $files | ConvertTo-Json | Set-Content build/distribution/files.json
+          $hash = (Get-FileHash $setup -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash *$(Split-Path $setup -Leaf)" | Set-Content "$setup.sha256" -Encoding ascii
+          "setup=$setup" >> $env:GITHUB_OUTPUT
+          "### Windows installer`n`nSize: $([math]::Round((Get-Item $setup).Length / 1MB,1)) MiB. AI engines download directly from upstream sources through Tools > AI Components. The installer is a single EXE." >> $env:GITHUB_STEP_SUMMARY
+
+      - name: Optional complete offline edition (version tags)
+        if: github.ref_type == 'tag'
+        shell: pwsh
+        run: |
+          $version = $env:MVP_VERSION
           $ProgressPreference = 'SilentlyContinue'
-          $off = "$dir-offline"
-          Rename-Item $dir $off
+          $off = "build/distribution/MutantVideoProducer-$version-win64-offline"
+          Copy-Item -Recurse "${{ steps.package.outputs.directory }}" $off
+          Copy-Item -Recurse build/Release/bin/voice/worker "$off/voice/worker"
+          Copy-Item -Recurse build/Release/bin/voice/rvc-worker "$off/voice/rvc-worker"
           python scripts/download-voice-assets.py --output "$off/voice/assets"
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           python scripts/download-voice-assets.py --catalog data/rvc/catalog.json --output "$off/voice/assets"
@@ -224,7 +249,9 @@ jobs:
           }
           7z a -tzip -mx=1 "$off.zip" $off | Out-Null
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          "offline=$off.zip" >> $env:GITHUB_OUTPUT
+          python -c "import importlib.util,pathlib; s=importlib.util.spec_from_file_location('pack','scripts/package-windows.py'); m=importlib.util.module_from_spec(s); s.loader.exec_module(m); p=pathlib.Path('$off.zip'); digest=m.sha256(p); size=p.stat().st_size; parts=m.split_archive(p); p.with_name(p.name+'.sha256').write_text(digest+' *'+p.name+'\n',encoding='ascii')"
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          Copy-Item scripts/join-build-parts.py build/distribution/
 
       - uses: actions/upload-artifact@v4
         if: github.ref_type == 'tag'
@@ -233,23 +260,31 @@ jobs:
           name: mvp-win64
           compression-level: 0 # the files are already compressed archives/installers
           path: |
-            ${{ steps.package.outputs.zip }}
-            ${{ steps.package.outputs.setup }}
-            ${{ steps.package.outputs.symbols }}
+            build/distribution/*.exe
+            build/distribution/*.zip
+            build/distribution/*.part*
+            build/distribution/*.sha256
+            build/distribution/*.py
 
       - name: Store development build downloads
         if: github.ref_type != 'tag'
         env:
           GH_TOKEN: ${{ github.token }}
         shell: pwsh
-        run: python scripts/store-ci-build.py "${{ steps.package.outputs.zip }}" "${{ steps.package.outputs.setup }}" "${{ steps.package.outputs.symbols }}"
+        run: |
+          $files = Get-Content build/distribution/files.json -Raw | ConvertFrom-Json
+          $paths = @($files | ForEach-Object { Join-Path 'build/distribution' $_ })
+          python scripts/store-ci-build.py @paths
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
 
       - name: Publish release
         if: github.ref_type == 'tag'
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            ${{ steps.package.outputs.setup }}
-            ${{ steps.package.outputs.zip }}
-            ${{ steps.package.outputs.offline }}
+            build/distribution/*.exe
+            build/distribution/*.zip
+            build/distribution/*.part*
+            build/distribution/*.sha256
+            build/distribution/*.py
           generate_release_notes: true

@@ -1,5 +1,6 @@
 #include "core/Brand.h"
 #include "ui/VoiceJob.h"
+#include "core/AiRuntime.h"
 #include "core/Profiles.h"
 #include "core/MediaInfo.h"
 #include "core/AudioDecoder.h"
@@ -66,17 +67,17 @@ QString VoiceJob::workerPath()
 {
     const QString overridePath = qEnvironmentVariable("MVP_VOICE_WORKER");
     if (!overridePath.isEmpty()) return overridePath;
-    return QCoreApplication::applicationDirPath() + QStringLiteral("/voice/worker/mvp-voice-worker")
+    return aiRuntimeWorkerPath(QStringLiteral("speech"), QCoreApplication::applicationDirPath() + QStringLiteral("/voice/worker/mvp-voice-worker")
 #ifdef _WIN32
         + QStringLiteral(".exe")
 #endif
-        ;
+        );
 }
 bool VoiceJob::start(const std::vector<Caption>& captions, const LocalVoice& voice, const QJsonObject& options, bool preview, QString* error)
 {
     auto fail = [&](const QString& message) { if (error) *error = message; return false; };
     if (m_busy) return fail(tr("Voice generation is already running."));
-    if (!QFileInfo::exists(workerPath())) return fail(tr("The local voice worker is missing. Install a build with voice support."));
+    if (!QFileInfo::exists(workerPath())) return fail(tr("Install the Speech Generation component in Tools > AI Components first."));
     const VoiceAsset model = kokoroModelAsset();
     if (!verifyVoiceAsset(voiceAssetPath(model), model) || !verifyVoiceAsset(voiceAssetPath(voice.asset), voice.asset))
         return fail(tr("Download the Kokoro model and this voice in Tools > Captions > Generate Voice first."));
@@ -88,7 +89,7 @@ bool VoiceJob::start(const std::vector<Caption>& captions, const LocalVoice& voi
         return fail(tr("Use a speech rate from 0.5 to 2 and fit or natural timing."));
     QJsonObject rvc = options.value("rvc").toObject();
     if (!rvc.empty() && rvc.value("engine").toString() != QLatin1String("external")) {
-        if (!QFileInfo::exists(rvcWorkerPath())) return fail(tr("The bundled RVC engine is missing from this build."));
+        if (!QFileInfo::exists(rvcWorkerPath())) return fail(tr("Install the RVC Conversion component in Tools > AI Components first."));
         const QString path = rvc.value("model").toString();
         if (!QFileInfo::exists(path) || QFileInfo(path).suffix().compare(QStringLiteral("pth"), Qt::CaseInsensitive))
             return fail(tr("Import an RVC .pth voice in Tools > Captions > Generate Voice."));
@@ -100,6 +101,7 @@ bool VoiceJob::start(const std::vector<Caption>& captions, const LocalVoice& voi
             list.append(assetJson(a));
         }
         rvc["engine"] = "bundled"; rvc["worker"] = rvcWorkerPath(); rvc["assets"] = list;
+        rvc["worker_args"] = QJsonArray::fromStringList(aiRuntimeWorkerArguments(QStringLiteral("rvc"),rvcWorkerPath()));
     }
     const int replacement=options.value("replace_event").toInt();
     if(replacement) {
@@ -139,7 +141,15 @@ bool VoiceJob::start(const std::vector<Caption>& captions, const LocalVoice& voi
     m_count = m_warnings = m_trackId = 0; m_error.clear(); m_pending.clear(); m_progress = 0;
     m_message = tr("Starting local speech engine"); m_voiceName = voice.name;
     if (!rvc.empty()) m_voiceName += tr(" → %1").arg(QFileInfo(rvc.value("model").toString()).completeBaseName());
-    m_process.start(workerPath(), {file.fileName()});
+    auto environment=QProcessEnvironment::systemEnvironment();
+    QString cuda=aiRuntimeCudaLibraries();
+    if(cuda.isEmpty())cuda=QFileInfo(rvcWorkerPath()).dir().filePath(QStringLiteral("_internal/torch/lib"));
+    if(!environment.contains(QStringLiteral("MVP_CUDA_LIBRARY_DIR")) && QFileInfo::exists(cuda))
+        environment.insert(QStringLiteral("MVP_CUDA_LIBRARY_DIR"),cuda);
+    m_process.setProcessEnvironment(environment);
+    const QString program=workerPath();
+    QStringList arguments=qEnvironmentVariableIsSet("MVP_VOICE_WORKER")?QStringList{}:aiRuntimeWorkerArguments(QStringLiteral("speech"),program);
+    arguments.append(file.fileName());m_process.start(program,arguments);
     return true;
 }
 void VoiceJob::readOutput()

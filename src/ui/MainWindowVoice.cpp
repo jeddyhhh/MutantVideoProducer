@@ -53,6 +53,9 @@ void MainWindow::generateVoice()
     auto* layout = new QVBoxLayout(&dlg);
     auto* intro = new QLabel(tr("Turn captions into local AI speech on a new audio track. Download voices once, then work offline."), &dlg);
     intro->setWordWrap(true); layout->addWidget(intro);
+    auto* engines = new QPushButton(tr("Install / Manage AI Components..."), &dlg);
+    layout->addWidget(engines);
+    connect(engines, &QPushButton::clicked, &dlg, [this] { aiComponents(); });
     auto* tabs = new QTabWidget(&dlg); layout->addWidget(tabs);
     auto* speechPage = new QWidget(tabs); auto* form = new QFormLayout(speechPage); tabs->addTab(speechPage, tr("Speech & Voices"));
     auto* source = new QComboBox(&dlg);
@@ -170,6 +173,10 @@ void MainWindow::generateVoice()
     });
     auto ensureVoice = [&] {
         if (voiceJob()->busy()) return false;
+        if (!QFileInfo::exists(VoiceJob::workerPath())) {
+            aiComponents();
+            if (!QFileInfo::exists(VoiceJob::workerPath())) return false;
+        }
         const auto& v = voices[size_t(voice->currentIndex())];
         for (const VoiceAsset& asset : {kokoroModelAsset(), kokoroGpuModelAsset(), v.asset}) {
             if (verifyVoiceAsset(voiceAssetPath(asset), asset)) continue;
@@ -199,7 +206,7 @@ void MainWindow::generateVoice()
     auto run = [&](const std::vector<Caption>& captions, bool isPreview) {
         player.stop();
         if (rvcBox->isChecked() && (rvcModel->currentData().toString().isEmpty() || !QFileInfo::exists(rvcWorkerPath()))) {
-            QMessageBox::warning(&dlg, tr("RVC"), rvcModel->currentData().toString().isEmpty() ? tr("Import an RVC .pth voice first.") : tr("The bundled RVC engine is missing from this build.")); return false;
+            QMessageBox::warning(&dlg, tr("RVC"), rvcModel->currentData().toString().isEmpty() ? tr("Import an RVC .pth voice first.") : tr("Install RVC Conversion using the AI Components button first.")); return false;
         }
         if (!ensureVoice()) return false;
         if (rvcBox->isChecked() && !ensureRvc()) return false;

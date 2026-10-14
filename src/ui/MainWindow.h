@@ -82,6 +82,9 @@ protected:
 
 private:
     void generateVoice();
+    void aiComponents();
+    bool installAiComponent(const QString& id, const QString& device, QString* error);
+    bool m_aiInstallBusy = false;
     void narrationStudio(const std::vector<Caption>& supplied = {}, const QJsonObject& suppliedOptions = {});
     void createCompound();
     void editCompound(int id = 0);
@@ -155,7 +158,7 @@ private:
     // and on the timeline at the cursor; its media id (0: it could not be imported).
     int placeDownloadedClip(const QString& path, TimeUs from, TimeUs to);
     // Downloads `url` to `dest` with a progress dialog that can cancel; false with `error`.
-    static bool downloadFile(QWidget* parent, const QUrl& url, const QString& dest, const QString& what, QString* error);
+    static bool downloadFile(QWidget* parent, const QUrl& url, const QString& dest, const QString& what, QString* error, qint64 maximumBytes = 0);
     // A Whisper model's file: bundled with the program (the offline release), else in the downloads folder.
     static QString whisperModelPath(const QString& file);
     // Right-click a video event > Stabilize: how much, analysing it first if needed.

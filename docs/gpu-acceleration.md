@@ -30,12 +30,15 @@ remain respected. Explicit GPU templates still select their hardware encoder.
 
 ## Offline speech and RVC
 
-The Windows speech worker bundles CUDA ONNX Runtime. A pinned full-precision
+The optional Windows Speech Generation CUDA option downloads CUDA ONNX Runtime. Install
+it through Tools > AI Components. A pinned full-precision
 Kokoro model is selected when installed; compact INT8 remains the CPU fallback.
 Download Selected Voice + Model installs both models. The CUDA/cuDNN libraries
-are shared with the bundled RVC worker, so users do not install Python or a CUDA
+are shared with the RVC Conversion CUDA environment, so users do not install Python or a CUDA
 Toolkit. Voice generation logs the actual backend, and MCP `voice_status`
 returns `backends`. GPU initialization/inference failure retries on the CPU.
+Install both Speech Generation and RVC Conversion for shared CUDA libraries. Speech
+remains usable on CPU when only its own engine is installed.
 
 RVC moves its voice network, HuBERT and RMVPE to CUDA after testing a real kernel.
 It uses full precision and preserves the existing safe checkpoint loader.

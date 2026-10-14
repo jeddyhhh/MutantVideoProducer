@@ -62,10 +62,19 @@ new `v*` tag (or pushing such a tag) attaches:
   Start menu and optional desktop shortcuts, opens `.mvp` files with Mutant Video Producer, and has an uninstaller.
   To build it by hand: `iscc /DAppVersion=0.2.5 /DSourceDir=<the release folder> installer\mvp.iss`.
 - `MutantVideoProducer-<version>-win64.zip`,
-- `MutantVideoProducer-<version>-win64-offline.zip`: the same with every Whisper speech model in
-  `models\whisper` (about 700 MB more), for computers without internet.
+  The standard installer and portable ZIP omit the speech/RVC frameworks and enforce
+  a size budget below 1 GiB. Optional engines download directly from upstream sources
+  through Tools > AI Components; Python setup is automatic.
+- `MutantVideoProducer-<version>-win64-offline.zip`: version tags also build a full
+  edition with both frozen engines and Whisper models for computers without internet.
 
-Every push to a `claude/...` branch also builds a test zip, downloadable from that run's *Artifacts*.
+Main and `claude/...` branch runs store tested builds in draft development releases,
+independently of the Actions artifact quota. `scripts/package-windows.py` creates the
+small layout without requiring frozen workers. `scripts/download-ai-bootstrap.ps1`
+fetches pinned official uv with archive/executable checksums; the workflow verifies a
+real CPU speech environment before packaging. The installer has disk spanning disabled
+and must remain below 1 GiB: users download only the single setup EXE. Large optional
+offline ZIPs may be split for release storage.
 `.github/workflows/linux-build.yml` builds Mutant Video Producer on Ubuntu 24.04 (Qt 6.4 and FFmpeg from its own
 packages) and runs the self-tests that need no GPU, on every push and pull request.
 

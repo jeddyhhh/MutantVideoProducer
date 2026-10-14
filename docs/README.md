@@ -37,6 +37,7 @@ guide, and **Help > Tutorials** to open the step-by-step tutorials and their exa
 - [Audio finishing](audio-finishing.md): integrated loudness, true peaks, mix checks and safe master gain.
 - [Captions and Subtitles](captions.md): Auto Captions with Whisper, translation, speakers, SRT and
   WebVTT, subtitle tracks in renders, local AI voice generation and RVC conversion.
+- [Optional AI Components](ai-components.md): install speech and RVC engines after installing the small Windows editor.
 - [Rendering](rendering.md): Render As, the templates, size limits, framing, GPU encoders, frames as images.
 
 ## Live

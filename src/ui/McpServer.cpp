@@ -9,6 +9,7 @@
 #include "core/BeatTracker.h"
 #include "core/Captions.h"
 #include "core/Voice.h"
+#include "core/AiRuntime.h"
 #include "ui/VoiceJob.h"
 #include "ui/RenderStatusDialog.h"
 #include "core/Profiles.h"
@@ -821,6 +822,8 @@ QJsonArray McpServer::toolList()
                    {QStringLiteral("to"), prop("number", "auto: seconds (default: the end)")}},
                   {QStringLiteral("action")}));
     t.append(tool("list_voices", "Lists the local Kokoro voice catalog, licenses and installed/download status. No internet access.", {}, {}, true));
+    t.append(tool("ai_components", "Lists optional Windows AI engines. action install downloads hash-verified dependencies directly from Astral, PyPI and PyTorch into private app environments. Visible setup progress supports cancellation; failed repairs preserve existing engines.",
+        {{QStringLiteral("action"),prop("string","list (default) or install")},{QStringLiteral("component"),prop("string","speech or rvc")},{QStringLiteral("device"),prop("string","cpu (default) or cuda; CUDA speech uses libraries from CUDA RVC")}}));
     t.append(tool("generate_voice", "Starts local AI speech from a captions track. Adds a new audio track as one undo step when finished. "
                   "Download voices first in Tools > Captions > Generate Voice. Poll voice_status. Do not edit or switch projects until it finishes.",
                   {{QStringLiteral("voice"), prop("string", "Kokoro voice ID from list_voices (default af_heart)")},
@@ -1618,6 +1621,19 @@ QJsonObject McpServer::callTool(const QString& name, const QJsonObject& a)
         for (const auto& v : localVoiceCatalog()) list.append(QJsonObject{{"id", v.id}, {"name", v.name}, {"language", v.language},
             {"creator", v.creator}, {"license", v.license}, {"bytes", double(v.asset.size)}, {"installed", voiceAssetInstalled(v.asset)}});
         return jsonResult({{"voices", list}, {"model_installed", voiceAssetInstalled(kokoroModelAsset())}, {"gpu_model_installed", voiceAssetInstalled(kokoroGpuModelAsset())}, {"worker_installed", QFileInfo::exists(VoiceJob::workerPath())}});
+    }
+    if (name == QLatin1String("ai_components")) {
+        const QString action=str("action");QString error;
+        if(action=="install") {
+            if(!w->installAiComponent(str("component"),str("device"),&error))return errorResult(error);
+        } else if(!action.isEmpty() && action!="list")return errorResult("action: list or install");
+        const auto catalog=aiRuntimeCatalog();QJsonArray components;
+        for(const auto& runtime:parseAiRuntimes(catalog)) {
+            const QString path=runtime.id=="speech"?VoiceJob::workerPath():rvcWorkerPath();
+            components.append(QJsonObject{{"id",runtime.id},{"name",runtime.name},{"installed",QFileInfo::exists(path)},{"worker",path},
+                {"sources",QJsonArray{"Astral Python","PyPI","PyTorch"}},{"devices",QJsonArray{"cpu","cuda"}}});
+        }
+        return jsonResult({{"components",components},{"installing",w->m_aiInstallBusy},{"requires_browser_download",false},{"install_folder",aiRuntimeRoot()}});
     }
     if (name == QLatin1String("voice_status")) {
         if (a.value("cancel").toBool()) w->voiceJob()->cancel();

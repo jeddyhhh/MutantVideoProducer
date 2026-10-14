@@ -2,6 +2,22 @@
 
 What changed in each version of Mutant Video Producer. The newest is first.
 
+### Small Windows installer and optional AI engines
+
+- Standard Windows installer/ZIP excludes the large speech/RVC frameworks and bundled
+  model caches, with a hard size budget below 1 GiB. Native editing, rendering, captions
+  and background-removal backends remain in the base distribution.
+- Tools > AI Components downloads speech and RVC dependencies directly from Astral,
+  PyPI and PyTorch. CPU/CUDA choices, verified pinned wheels, visible setup output,
+  cancellation and repair are built in. No separate Python installation is required.
+- One normal Windows setup EXE embeds the editor payload with disk spanning disabled.
+- Per-user isolated environments are shared across profiles and projects. Atomic
+  activation preserves working engines on failed repairs; bundled full/offline engines
+  remain supported. Existing generated media plays without installed AI engines.
+- MCP ai_components exposes the same status/install flow. Tests cover invalid catalogs,
+  modified interpreters, escaped active pointers, failed repair preservation, lean
+  packaging without frozen workers, and real upstream speech generation.
+
 ### Cross-platform builds and media paths
 
 - Fixed the graphics composer's Qt 6.4 string/JSON comparison that blocked Linux builds.

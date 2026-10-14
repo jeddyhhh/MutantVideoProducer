@@ -23,7 +23,9 @@ if not defined VSINSTALL (
 call "%VSINSTALL%\VC\Auxiliary\Build\vcvars64.bat" >nul || exit /b 1
 
 set BUILD_DIR=%~dp0build\%CONFIG%
-cmake -S "%~dp0." -B "%BUILD_DIR%" -G Ninja -DCMAKE_BUILD_TYPE=%CONFIG% || exit /b 1
+set AI_BUNDLE_ARG=
+if defined MVP_BUNDLE_AI set AI_BUNDLE_ARG=-DMVP_BUNDLE_AI=%MVP_BUNDLE_AI%
+cmake -S "%~dp0." -B "%BUILD_DIR%" -G Ninja -DCMAKE_BUILD_TYPE=%CONFIG% %AI_BUNDLE_ARG% || exit /b 1
 if defined BUILD_TARGETS (
     cmake --build "%BUILD_DIR%" --target %BUILD_TARGETS% || exit /b 1
 ) else (

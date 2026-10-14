@@ -46,6 +46,24 @@ fallback when an asset is absent from the cache. `MVP_VOICE_WORKER` overrides
 the executable for diagnostics. RVC uses a separate runtime to avoid dependency
 conflicts with the lightweight Kokoro worker.
 
+The standard installer omits both frozen worker directories. Its small verified
+`runtime/uv.exe` helper installs private Python 3.12.12 from Astral, then uses
+`data/runtime/locks` to sync hash-locked binary wheels from PyPI/PyTorch. Speech and
+RVC have separate environments because their NumPy versions differ. The speech CUDA
+overlay replaces CPU ONNX Runtime; its libraries can be shared from CUDA RVC.
+
+`core/AiRuntime` creates each environment at its permanent per-user generation path.
+Windows venvs cannot simply be renamed. After successful import checks, a QSaveFile
+atomically publishes the active pointer; failed/cancelled setup removes only its new
+generation and retains the previous pointer. The marker pins dependency fingerprints
+and the interpreter checksum. Worker launches use isolated Python (`-I`) with the
+installed app's scripts. RVC receives an explicit program/argument prefix, preserving
+support for bundled executables. `MVP_AI_RUNTIME_DIR` and `MVP_AI_CATALOG` isolate tests.
+Never change the dependency inputs without regenerating locks and catalog checksums.
+Run `python scripts/lock-ai-runtimes.py` after preparing the pinned uv helper with
+`scripts/download-ai-bootstrap.ps1`. Use `MVP_BUNDLE_AI=OFF` when building the lean
+edition locally; full/offline builds keep the default `ON`.
+
 Verification:
 
 ```powershell
@@ -53,7 +71,7 @@ python -m unittest discover -s tests -p test_voice_worker.py
 .\build\Release\bin\mvp_voice_test.exe
 ```
 
-The C++ integration test needs the packaged worker and offline Kokoro assets. It
+The C++ integration test needs either an installed upstream environment or the packaged worker, and offline Kokoro assets. It
 generates real speech, mixes it through the editor, checks fit/overruns, undo/redo,
 project save/load, cancellation, missing runtime and stale-project protection.
 Python tests check checksum verification, timing and legacy RVC CLI contracts.

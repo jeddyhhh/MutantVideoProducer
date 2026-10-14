@@ -44,6 +44,7 @@ The status bar shows each tool it uses.
 | captions | Auto Captions (any model on this computer, translation, speakers), and importing or exporting SRT / WebVTT. |
 | list_voices | Curated Kokoro voices, metadata, installed status, and local worker/model availability. |
 | generate_voice, voice_status | Starts local caption-to-speech generation and polls or cancels it; optional bundled RVC conversion with an imported `.pth` model. A completed job adds one undoable Voice track. |
+| ai_components | Lists optional Windows speech/RVC engines and upstream sources; installs CPU or CUDA environments from Astral/PyPI/PyTorch. Installation shows progress, verifies locked wheels and needs no separate Python install. |
 | get_frame | Looks at any frame as an image. |
 | transport | Plays, stops and moves the cursor. |
 | render, render_status | Renders in the background with any Render As template; opens the detailed Render Status window and exposes statistics in `render_status.details`. |

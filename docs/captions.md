@@ -39,8 +39,10 @@ seconds on the CPU.
 
 **Tools > Captions > Generate Voice from Captions...** turns text and kinetic captions
 into AI speech on a new **Voice** audio track. Generation runs locally on the CPU;
-caption text is never uploaded. The Windows voice build includes a portable speech
-worker, so a separate Python installation is not needed for Kokoro.
+caption text is never uploaded. In the standard Windows build, first install
+**Speech Generation** through **Tools > AI Components...** (also available from
+Generate Voice). The app downloads its dependencies and private runtime from upstream sources; no separate Python
+installation is needed. See [optional AI components](ai-components.md).
 
 1. Choose the captions track, or **Selected captions only**. You can also limit it
    to captions starting inside the timeline time selection.
@@ -71,8 +73,9 @@ undo removes the timeline edit but leaves generated media available in Project M
 The **RVC Conversion** tab optionally converts Kokoro speech into an imported RVC
 voice. RVC is a voice converter, so it still needs Kokoro to speak the caption text.
 
-Mutant Video Producer bundles the CPU RVC engine and its Python runtime. No separate software
-installation is needed. **Download RVC Support Models** fetches the shared
+Install **RVC Conversion** through **Tools > AI Components...**. The app downloads
+the RVC dependencies and private runtime from upstream sources, with CPU/CUDA choices; no separate
+software installation is needed. **Download RVC Support Models** fetches the shared
 HuBERT/ContentVec and RMVPE models (370 MB total) once, verifying their SHA-256
 checksums. The offline build includes these models. Conversion then works offline;
 CPU conversion can take longer than speech generation.

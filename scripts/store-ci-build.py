@@ -65,6 +65,8 @@ def draft_release(repo, commit):
                '-F', 'draft=true', '-F', 'prerelease=true', '-f', f'name=Development builds {commit[:12]}',
                '-f', f'body=Tested CI downloads for commit {commit}. Windows and Linux workflows attach their files here. '
                'These builds remain drafts; formal releases use version tags. SHA-256 files accompany each download. '
+               'The small Windows installer excludes optional Speech/RVC engines. Download AI engines directly from upstream sources through Tools > AI Components; '
+               'Python setup is automatic and no AI packs need to be downloaded manually. '
                'If a large file is split into .part001, .part002, etc., download every matching part and its .sha256 file, then run '
                '`python join-build-parts.py <filename.part001>` to reconstruct it.'))
         except RuntimeError:

@@ -99,6 +99,7 @@ add_library(mvp_core STATIC
     src/core/MotionGraphics.h    src/core/MotionGraphics.cpp
     src/core/Captions.h          src/core/Captions.cpp
     src/core/Voice.h             src/core/Voice.cpp
+    src/core/AiRuntime.h         src/core/AiRuntime.cpp
     src/core/Profiles.h          src/core/Profiles.cpp
     src/core/Segmentation.h      src/core/Segmentation.cpp
     src/core/Vst3Host.h          src/core/Vst3Host.cpp
@@ -221,6 +222,7 @@ add_executable(mvp WIN32
     src/ui/MainWindow.h          src/ui/MainWindow.cpp
     src/ui/MainWindowCaptions.cpp
     src/ui/MainWindowVoice.cpp
+    src/ui/MainWindowRuntimes.cpp
     src/ui/MainWindowProfiles.cpp
     src/ui/MainWindowCollection.cpp
     src/ui/StoryPanel.h          src/ui/StoryPanel.cpp
@@ -291,22 +293,28 @@ if(WIN32 AND EXISTS "${MVP_DEPS_DIR}/deno/deno.exe")
         COMMENT "Deploying Deno for YouTube JavaScript challenges")
 endif()
 add_custom_command(TARGET mvp POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_SOURCE_DIR}/data/runtime" "$<TARGET_FILE_DIR:mvp>/runtime"
     COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_SOURCE_DIR}/data/voice" "$<TARGET_FILE_DIR:mvp>/voice"
     COMMENT "Copying the local voice catalog and worker source")
+if(WIN32 AND EXISTS "${MVP_DEPS_DIR}/ai-bootstrap/uv.exe")
+    add_custom_command(TARGET mvp POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different "${MVP_DEPS_DIR}/ai-bootstrap/uv.exe" "${MVP_DEPS_DIR}/ai-bootstrap/UV-LICENSE-MIT.txt" "${MVP_DEPS_DIR}/ai-bootstrap/UV-LICENSE-APACHE.txt" "$<TARGET_FILE_DIR:mvp>/runtime")
+endif()
 set(MVP_VOICE_BUNDLE "${MVP_DEPS_DIR}/voice-worker/mvp-voice-worker")
+option(MVP_BUNDLE_AI "Deploy frozen AI engines and offline voice assets" ON)
 set(MVP_VOICE_EXE "mvp-voice-worker")
 if(NOT EXISTS "${MVP_VOICE_BUNDLE}" AND EXISTS "${MVP_DEPS_DIR}/voice-worker/montage-voice-worker")
     # Compatibility with portable workers built before the product rename.
     set(MVP_VOICE_BUNDLE "${MVP_DEPS_DIR}/voice-worker/montage-voice-worker")
     set(MVP_VOICE_EXE "montage-voice-worker")
 endif()
-if(EXISTS "${MVP_VOICE_BUNDLE}/${MVP_VOICE_EXE}${MVP_WORKER_SUFFIX}")
+if(MVP_BUNDLE_AI AND EXISTS "${MVP_VOICE_BUNDLE}/${MVP_VOICE_EXE}${MVP_WORKER_SUFFIX}")
     add_custom_command(TARGET mvp POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy_directory "${MVP_VOICE_BUNDLE}" "$<TARGET_FILE_DIR:mvp>/voice/worker"
+        COMMAND ${CMAKE_COMMAND} "-DSOURCE=${MVP_VOICE_BUNDLE}" "-DDESTINATION=$<TARGET_FILE_DIR:mvp>/voice/worker" -P "${CMAKE_SOURCE_DIR}/scripts/deploy-runtime.cmake"
         COMMAND ${CMAKE_COMMAND} -E copy_if_different "${MVP_VOICE_BUNDLE}/${MVP_VOICE_EXE}${MVP_WORKER_SUFFIX}" "$<TARGET_FILE_DIR:mvp>/voice/worker/mvp-voice-worker${MVP_WORKER_SUFFIX}"
         COMMENT "Deploying the portable local voice worker")
 endif()
-if(EXISTS "${MVP_DEPS_DIR}/voice-assets")
+if(MVP_BUNDLE_AI AND EXISTS "${MVP_DEPS_DIR}/voice-assets")
     add_custom_command(TARGET mvp POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_directory "${MVP_DEPS_DIR}/voice-assets" "$<TARGET_FILE_DIR:mvp>/voice/assets"
         COMMENT "Deploying offline voice assets")
@@ -320,13 +328,13 @@ if(NOT EXISTS "${MVP_RVC_BUNDLE}" AND EXISTS "${MVP_DEPS_DIR}/rvc-worker/montage
     set(MVP_RVC_BUNDLE "${MVP_DEPS_DIR}/rvc-worker/montage-rvc-worker")
     set(MVP_RVC_EXE "montage-rvc-worker")
 endif()
-if(EXISTS "${MVP_RVC_BUNDLE}/${MVP_RVC_EXE}${MVP_WORKER_SUFFIX}")
+if(MVP_BUNDLE_AI AND EXISTS "${MVP_RVC_BUNDLE}/${MVP_RVC_EXE}${MVP_WORKER_SUFFIX}")
     add_custom_command(TARGET mvp POST_BUILD
         COMMAND ${CMAKE_COMMAND} "-DSOURCE=${MVP_RVC_BUNDLE}" "-DDESTINATION=$<TARGET_FILE_DIR:mvp>/voice/rvc-worker" -P "${CMAKE_SOURCE_DIR}/scripts/deploy-runtime.cmake"
         COMMAND ${CMAKE_COMMAND} -E copy_if_different "${MVP_RVC_BUNDLE}/${MVP_RVC_EXE}${MVP_WORKER_SUFFIX}" "$<TARGET_FILE_DIR:mvp>/voice/rvc-worker/mvp-rvc-worker${MVP_WORKER_SUFFIX}"
         COMMENT "Deploying the portable RVC engine")
 endif()
-if(EXISTS "${MVP_DEPS_DIR}/rvc-assets")
+if(MVP_BUNDLE_AI AND EXISTS "${MVP_DEPS_DIR}/rvc-assets")
     add_custom_command(TARGET mvp POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_directory "${MVP_DEPS_DIR}/rvc-assets" "$<TARGET_FILE_DIR:mvp>/voice/assets")
 endif()
@@ -355,6 +363,9 @@ add_executable(mvp_finishing_test tests/finishing.cpp)
 target_link_libraries(mvp_finishing_test PRIVATE mvp_core)
 target_link_libraries(mvp_collection_test PRIVATE mvp_core)
 add_executable(mvp_brand_test tests/brand.cpp)
+add_executable(mvp_runtime_test tests/ai-runtime.cpp src/core/AiRuntime.cpp)
+target_link_libraries(mvp_runtime_test PRIVATE Qt6::Core)
+target_include_directories(mvp_runtime_test PRIVATE src)
 target_link_libraries(mvp_brand_test PRIVATE Qt6::Core)
 target_include_directories(mvp_brand_test PRIVATE src)
 add_executable(mvp_selftest tests/selftest.cpp tests/hardening.cpp)
@@ -382,6 +393,7 @@ endif()
 # The user guide and the tutorials' example projects (Help menu), next to the
 # programs; copied on every build, so edited pages show up without a relink.
 add_custom_target(mvp_docs ALL
+    COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_SOURCE_DIR}/data/runtime" "$<TARGET_FILE_DIR:mvp_selftest>/runtime"
     COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_SOURCE_DIR}/docs" "$<TARGET_FILE_DIR:mvp_selftest>/docs"
     COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_SOURCE_DIR}/data/examples" "$<TARGET_FILE_DIR:mvp_selftest>/examples"
     COMMENT "Copying the user guide and example projects")

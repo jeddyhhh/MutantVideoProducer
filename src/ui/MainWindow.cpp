@@ -621,6 +621,11 @@ void MainWindow::createActions()
 
     // Tools
     QMenu* tools = menuBar()->addMenu(tr("&Tools"));
+#ifdef _WIN32
+    auto* aiAction = act(tr("AI Components..."), QKeySequence(), [this] { aiComponents(); });
+    aiAction->setObjectName(QStringLiteral("aiComponents"));
+    tools->addAction(aiAction);
+#endif
     tools->addAction(act(tr("Detect &Beats (Markers)..."), QKeySequence(QStringLiteral("Ctrl+B")), [this] {
         if (editorActive())
             detectBeats();

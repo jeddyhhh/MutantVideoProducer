@@ -100,6 +100,11 @@ double-click, and can be removed from Windows' *Installed apps*. Or download the
 anywhere. The *offline* zip also holds every speech model for Auto Captions, for computers without
 internet.
 
+The standard Windows installer stays below 1 GB by leaving the large speech and RVC
+frameworks out. Install either engine later through **Tools > AI Components...**;
+no separate Python installation is needed. See [optional AI components](docs/ai-components.md)
+for upstream downloads, private builds and offline use.
+
 The first time it starts, Mutant Video Producer shows a welcome window with the tutorials, example projects and a
 check of what your computer can do.
 

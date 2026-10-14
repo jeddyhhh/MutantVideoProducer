@@ -23,6 +23,13 @@ def emit(**message):
     print(json.dumps(message, ensure_ascii=True), flush=True)
 
 
+def cuda_library_roots():
+    override = os.environ.get("MVP_CUDA_LIBRARY_DIR", "")
+    return ([Path(override)] if override else []) + [
+        Path(sys.executable).parent.parent / "rvc-worker" / "_internal" / "torch" / "lib",
+        Path(__file__).resolve().parents[2] / "deps" / "rvc-worker-env" / "Lib" / "site-packages" / "torch" / "lib"]
+
+
 def speech_session(ort, model_path, device="auto", profile=""):
     """GPU first, retaining ONNX's CPU operator fallback and a CPU-only session."""
     if device not in ("auto", "gpu", "cpu"):
@@ -31,11 +38,12 @@ def speech_session(ort, model_path, device="auto", profile=""):
     if device != "cpu" and "CUDAExecutionProvider" in available and os.name == "nt":
         # Share the bundled CUDA/cuDNN libraries with RVC. No system Toolkit is
         # required; the driver is the only machine-level dependency.
-        roots = [Path(sys.executable).parent.parent / "rvc-worker" / "_internal" / "torch" / "lib",
-                 Path(__file__).resolve().parents[2] / "deps" / "rvc-worker-env" / "Lib" / "site-packages" / "torch" / "lib"]
-        for root in roots:
+        for root in cuda_library_roots():
             if (root / "cudnn64_9.dll").is_file():
-                ort.preload_dlls(directory=str(root))
+                try:
+                    ort.preload_dlls(directory=str(root))
+                except Exception as error:
+                    emit(message=f"GPU library loading failed; CPU fallback remains available: {error}")
                 break
     candidates = [] if device == "cpu" else [p for p in
         ("CUDAExecutionProvider", "DmlExecutionProvider", "CoreMLExecutionProvider") if p in available]
@@ -200,7 +208,10 @@ def convert_bundled_rvc(config, inputs, folder):
     stream = folder / "rvc-progress.jsonl"
     flags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
     with stream.open("wb") as output, log.open("wb") as errors, stream.open("r", encoding="utf-8") as progress:
-        child = subprocess.Popen([config["worker"], str(request)], stdout=output, stderr=errors, creationflags=flags)
+        worker_args = config.get("worker_args", [])
+        if not isinstance(worker_args, list) or not all(isinstance(arg, str) for arg in worker_args):
+            raise ValueError("Invalid RVC worker arguments")
+        child = subprocess.Popen([config["worker"], *worker_args, str(request)], stdout=output, stderr=errors, creationflags=flags)
         last_error = ""
         try:
             pending = ""

@@ -42,7 +42,7 @@
 #include <QTabWidget>
 #include <atomic>
 
-bool MainWindow::downloadFile(QWidget* parent, const QUrl& url, const QString& dest, const QString& what, QString* error)
+bool MainWindow::downloadFile(QWidget* parent, const QUrl& url, const QString& dest, const QString& what, QString* error, qint64 maximumBytes)
 {
     QDir().mkpath(QFileInfo(dest).absolutePath());
     QSaveFile out(dest);
@@ -55,7 +55,11 @@ bool MainWindow::downloadFile(QWidget* parent, const QUrl& url, const QString& d
     QProgressDialog progress(tr("Downloading %1...").arg(what), tr("Cancel"), 0, 1000, parent);
     progress.setWindowModality(Qt::WindowModal);
     progress.setMinimumDuration(0);
-    connect(reply, &QNetworkReply::readyRead, [&] { out.write(reply->readAll()); });
+    bool writeFailed=false;
+    auto write=[&] { const auto chunk=reply->readAll();
+        if((maximumBytes>0 && out.pos()+chunk.size()>maximumBytes) || out.write(chunk)!=chunk.size()) {writeFailed=true;reply->abort();}
+    };
+    connect(reply, &QNetworkReply::readyRead, write);
     connect(reply, &QNetworkReply::downloadProgress, [&](qint64 got, qint64 total) {
         if (total > 0)
             progress.setValue(int(got * 1000 / total));
@@ -64,12 +68,14 @@ bool MainWindow::downloadFile(QWidget* parent, const QUrl& url, const QString& d
     QEventLoop loop;
     connect(reply, &QNetworkReply::finished, &loop, &QEventLoop::quit);
     loop.exec();
-    out.write(reply->readAll());
-    const bool ok = reply->error() == QNetworkReply::NoError;
+    write();
+    const bool ok = !writeFailed && reply->error() == QNetworkReply::NoError;
     if (!ok)
-        *error = reply->errorString();
+        *error = writeFailed ? tr("Could not save the download, or it exceeded its declared size. Check free disk space.") : reply->errorString();
     reply->deleteLater();
-    return ok && out.commit();
+    if(!ok)return false;
+    if(!out.commit()) {if(error)*error=out.errorString();return false;}
+    return true;
 }
 
 void MainWindow::createClipFromYouTube()

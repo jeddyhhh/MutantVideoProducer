@@ -35,6 +35,9 @@ UninstallDisplayIcon={app}\MutantVideoProducer.exe
 WizardStyle=modern
 Compression=lzma2/max
 SolidCompression=yes
+; A normal standalone installer: all editor files are embedded in this EXE.
+DiskSpanning=no
+InfoAfterFile={#SourceDir}\INSTALL-NOTES.txt
 ChangesAssociations=yes
 CloseApplications=yes
 
