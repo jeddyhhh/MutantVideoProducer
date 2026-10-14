@@ -35,3 +35,5 @@ the new worker filenames.
 
 The installer retains its upgrade identity, so it recognizes an existing installation.
 Its product name, shortcuts and new `.mvp` association point to Mutant Video Producer.
+The installation and Start menu defaults use Mutant Video Producer even when the
+previous installation saved Montage folder names. The destination remains selectable.

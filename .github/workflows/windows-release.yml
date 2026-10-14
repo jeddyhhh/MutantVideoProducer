@@ -1,22 +1,20 @@
 # Builds Mutant Video Producer for Windows and publishes an installer and a zip (MutantVideoProducer.exe +
-# Qt + FFmpeg + MSVC runtime) on a GitHub release when a version tag such as v0.1.0 is pushed
-# or a release is published from the Releases page. Main/feature branch pushes
+# Qt + FFmpeg + MSVC runtime) on a GitHub release when a version tag such as v0.1.0 is pushed.
+# Publishing an already-tested release does not start another build. Main/feature branch pushes
 # and manual branch runs store tested downloads in a draft development release.
 name: Windows release
 
 on:
   push:
     tags: ['v*']
-    branches: ['main', 'claude/**'] # main and feature-branch build artifacts
+    branches: ['main', 'codex/**', 'claude/**'] # main and feature-branch build artifacts
     paths-ignore: ['**.md']
-  release:
-    types: [published]
   workflow_dispatch:
 
 permissions:
   contents: write
 
-# Publishing a release with a new tag fires both the release and the tag push.
+# Keep only the newest run for a branch or version tag.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true

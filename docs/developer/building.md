@@ -54,8 +54,8 @@ virtual camera, Remove Background on DirectML and the installer are Windows-only
 
 ## Releases
 
-GitHub Actions builds them (`.github/workflows/windows-release.yml`). Publishing a release with a
-new `v*` tag (or pushing such a tag) attaches:
+GitHub Actions builds them (`.github/workflows/windows-release.yml`). Pushing a `v*` tag,
+or manually running the workflow against that tag, builds and attaches:
 
 - `MutantVideoProducer-<version>-win64-setup.exe`: the installer, made with [Inno Setup](https://jrsoftware.org/isinfo.php)
   from `installer/mvp.iss`. It installs for the current user (or, if chosen, all users), adds
@@ -68,13 +68,17 @@ new `v*` tag (or pushing such a tag) attaches:
 - `MutantVideoProducer-<version>-win64-offline.zip`: version tags also build a full
   edition with both frozen engines and Whisper models for computers without internet.
 
-Main and `claude/...` branch runs store tested builds in draft development releases,
+Main, `codex/...` and `claude/...` branch runs store tested builds in draft development releases,
 independently of the Actions artifact quota. `scripts/package-windows.py` creates the
 small layout without requiring frozen workers. `scripts/download-ai-bootstrap.ps1`
 fetches pinned official uv with archive/executable checksums; the workflow verifies a
 real CPU speech environment before packaging. The installer has disk spanning disabled
 and must remain below 1 GiB: users download only the single setup EXE. Large optional
 offline ZIPs may be split for release storage.
+An already-tested installer can also be published by promoting its draft release;
+publishing a release itself does not start another build. Release notes identify
+which platform downloads are included and whether the installer was built locally
+or by Actions.
 `.github/workflows/linux-build.yml` builds Mutant Video Producer on Ubuntu 24.04 (Qt 6.4 and FFmpeg from its own
 packages) and runs the self-tests that need no GPU, on every push and pull request.
 

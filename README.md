@@ -47,8 +47,9 @@ Collect Project and Media for portable projects; autosave and crash recovery; Hi
 **Effects**: 68 video effects, from colour grading (Curves, Color Wheels, LUTs) to glitch,
 analog, psychedelic and 128 *Broken Video Game Systems* effects; 27 transitions; a device chain
 with keyframes, presets and racks; masks, freehand masks, rotoscoping and motion tracking;
-stabilisation; **Remove Background (AI)** on the GPU; Follow Audio; video scopes. Everything also
-renders on the GPU, with the same result as the CPU.
+stabilisation; **Remove Background (AI)** on supported GPUs; Follow Audio; video scopes.
+Preview, rendering and supported effects use GPU acceleration, with CPU fallback where needed.
+See [GPU acceleration](docs/gpu-acceleration.md) for the supported paths.
 
 **Titles and generators**: styled and animated titles, kinetic text, credits, timecode, animated
 backgrounds, overlays, shapes and colour bars.
@@ -81,7 +82,7 @@ Twitch, YouTube and others; Spout and the OBS virtual camera.
 **Themes**: seven looks under View > Theme, from Classic to two cyberpunk themes (Neon Grid, Night
 City), Synthwave Sunset, Terminal, Arctic and Studio Light.
 
-**AI control**: an AI assistant on your computer (Claude Code, Claude Desktop, any MCP client) can
+**AI control**: an AI assistant on your computer (Codex, Claude, or any MCP-compatible client) can
 edit with you, one undoable step at a time.
 
 ## Documentation
@@ -94,16 +95,28 @@ edit with you, one undoable step at a time.
 
 ## Getting Mutant Video Producer
 
-From the [Releases](../../releases) page, download and run **MutantVideoProducer-&lt;version&gt;-win64-setup.exe**: it
-installs Mutant Video Producer in Program Files (or only for you, without admin rights), adds it to the Start menu, opens `.mvp` projects with a
-double-click, and can be removed from Windows' *Installed apps*. Or download the zip and unpack it
-anywhere. The *offline* zip also holds every speech model for Auto Captions, for computers without
-internet.
+Download the **[Windows installer](https://github.com/jeddyhhh/MutantVideoProducer/releases/latest)**
+from GitHub Releases and run the `-win64-setup.exe` file. It is one standalone installer,
+about **160 MB** in the current release. It installs into **Mutant Video Producer**, adds
+Start menu and optional desktop shortcuts, opens `.mvp` projects with a double-click,
+and can be removed through Windows' *Installed apps*. You can install for all users or
+only for yourself, and choose the destination folder.
+
+The current published release contains the Windows installer and its SHA-256 checksum.
+For Linux, [build from source](docs/developer/building.md); maintainers can also access
+tested development downloads in the draft releases. Portable and full offline Windows
+archives are produced by the build workflow when requested for a version tag; download
+them only when they are listed as assets on that release.
 
 The standard Windows installer stays below 1 GB by leaving the large speech and RVC
 frameworks out. Install either engine later through **Tools > AI Components...**;
 no separate Python installation is needed. See [optional AI components](docs/ai-components.md)
 for upstream downloads, private builds and offline use.
+
+If this repository is private, GitHub downloads require an account with repository
+access. The app's unauthenticated GitHub update check cannot read private releases;
+check the Releases page while signed in. Optional AI dependencies download from their
+upstream sources independently of repository access.
 
 The first time it starts, Mutant Video Producer shows a welcome window with the tutorials, example projects and a
 check of what your computer can do.
