@@ -338,7 +338,12 @@ private:
     void answerDialogs()
     {
         checkScreen();
-        if (auto* menu = qobject_cast<QMenu*>(QApplication::activePopupWidget())) {
+        QWidget* popup = QApplication::activePopupWidget();
+        if (!popup) // Qt 6.8+ never makes an off-screen (WA_DontShowOnScreen) popup the active one
+            for (QWidget* w : QApplication::topLevelWidgets())
+                if (w->isVisible() && w->windowType() == Qt::Popup)
+                    popup = w;
+        if (auto* menu = qobject_cast<QMenu*>(popup)) {
             QList<QAction*> usable;
             for (QAction* a : menu->actions())
                 if (a->isEnabled() && !a->isSeparator() && !a->menu() && !isOffLimits(a->text(), a->objectName(), a->toolTip()))
@@ -355,7 +360,7 @@ private:
             }
             return;
         }
-        if (QWidget* popup = QApplication::activePopupWidget()) {
+        if (popup) {
             popup->close();
             return;
         }
