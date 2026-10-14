@@ -2,6 +2,23 @@
 
 What changed in each version of Mutant Video Producer. The newest is first.
 
+## 0.2.6 (2026-10-14)
+
+### Fixed
+
+- The preview no longer crashes when its GPU renderer is recreated (for example after switching
+  GPU Acceleration or Hardware Video Decoding) while titles or other drawn graphics are on the
+  timeline. The OpenGL context is now released in a way Qt's per-thread paint engine can follow.
+
+### Tests
+
+- The `gpu` suite recreates the GPU renderer on one thread and checks that a title still draws.
+- The monkey test answers menus again with Qt 6.8, where off-screen popups never become the
+  active popup; menus opened from a step no longer hang the run.
+- The captions check matches its documented fixture ("Welcome to Mutant Video Producer...").
+
+## 0.2.5 (2026-10-10)
+
 ### Small Windows installer and optional AI engines
 
 - Standard Windows installer/ZIP excludes the large speech/RVC frameworks and bundled
@@ -86,8 +103,6 @@ What changed in each version of Mutant Video Producer. The newest is first.
   progress markers and scrolling windows; source analysis has cancellable progress.
 - `graphics_overlay` and `waveform_graphic` MCP tools create, inspect and edit native graphics.
   Scene/peak data survives project saves, undo and compound sequences, and renders through CPU/GPU.
-
-## 0.2.5 (2026-10-10)
 
 ### Added
 
