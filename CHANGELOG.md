@@ -2,6 +2,17 @@
 
 What changed in each version of Mutant Video Producer. The newest is first.
 
+### Linux AppImage and milestone offline builds
+
+- Linux builds are also packaged as an AppImage (Qt and FFmpeg inside), smoke-tested in CI and
+  attached to version releases with the tar.gz.
+- The Windows offline edition is built only for milestones: run the release workflow manually
+  on the version tag with "offline" ticked. Tag pushes no longer build the frozen AI engines.
+- The build guide matches the release builds (Qt 6.8.3, Visual Studio 2022+, FFmpeg and AI
+  helper scripts).
+- `mvp_adversarial_test` writes to the temp folder by default instead of the current folder;
+  `mvp_story_test` says what it needs when started without a video.
+
 ## 0.2.6 (2026-10-14)
 
 ### Fixed

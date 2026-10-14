@@ -132,7 +132,8 @@ int main(int argc,char** argv) {
         try {run(args.value(2),QDir(args.value(3)),args.value(4).toUInt(),args.value(5).toInt());QTextStream(stdout)<<"PASS "<<args[2]<<" seed="<<args[4]<<" assertions="<<assertions<<Qt::endl;return 0;}
         catch(const std::exception& e){QTextStream(stdout)<<"FAIL "<<args[2]<<" seed="<<args[4]<<": "<<e.what()<<Qt::endl;return 1;}
     }
-    const QString out=args.value(1,"adversarial-results");QDir().mkpath(out);
+    // Without a folder, results go to the temp folder, never into wherever it was started from.
+    const QString out=args.value(1,QDir::temp().filePath("mvp-adversarial-results"));QDir().mkpath(out);QTextStream(stdout)<<"results: "<<QDir(out).absolutePath()<<Qt::endl;
     const uint32_t seed=args.value(2,"13371337").toUInt();const int rounds=std::clamp(args.value(3,"512").toInt(),1,5000);
     int failures=0;QJsonArray report;
     for(auto name:{"versions","media-identity","keyframes","nesting","references","snapshot-storm","motion-graphs"}) {

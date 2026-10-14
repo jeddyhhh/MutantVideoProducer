@@ -23,9 +23,11 @@ and install for yourself or all users. An uninstaller is included.
 The release includes a SHA-256 checksum for verification. The installer is not
 currently code-signed.
 
-For Linux, follow the [build instructions](docs/developer/building.md). Maintainers
-can also access tested development builds in the repository's draft releases.
-Download portable or offline archives when they are listed on a release.
+For Linux, releases after 0.2.6 include an AppImage with Qt and FFmpeg inside: make it
+executable (`chmod +x`) and run it. To build it yourself, follow the
+[build instructions](docs/developer/building.md). Maintainers can also access tested
+development builds in the repository's draft releases. Download portable or offline
+archives when they are listed on a release; offline archives come with milestone releases.
 
 ### Optional AI engines
 
