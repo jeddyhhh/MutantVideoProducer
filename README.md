@@ -1,149 +1,167 @@
 # Mutant Video Producer
 
-A video editor for Windows and Linux, with a real-time **Live** workspace for performing effects on
-cameras, screens and video files. C++20 on top of FFmpeg and Qt 6.
+<p align="center">
+  <img src="data/mvp-icon.png" alt="Mutant Video Producer icon" width="192">
+</p>
 
-Previously named Montage. Projects now use `.mvp`; the old `.mtg` format is retired
-and cannot be opened or converted by this program. See [project format and settings](docs/rename.md).
+**Edit videos, compose animated graphics, finish your audio, and perform live visuals.**
 
-Anything FFmpeg can read can be imported: more than 360 container formats and about 520 audio and
-video decoders, from AV1 and HEVC 10-bit down to Nintendo 3DS camera AVIs, `.3gp` phone clips,
-RealMedia, Cinepak, DV and still images. Renders can go to any of about 150 output formats.
+Mutant Video Producer is a video editor for Windows and Linux with two workspaces:
+**Editor** for building and exporting projects, and **Live** for working with cameras,
+screens, windows and video files in real time. It combines a multitrack timeline,
+native 2D graphics, local AI tools and MCP control in one application.
 
-![The editor: an editable orbital news broadcast with captions, animated graphics and a multitrack timeline](docs/screenshots/editor.png)
+## Download
 
-**Native graphics and animation**: build broadcast layouts, charts and animated scenes directly
-in the editor with a general 2D graphics engine: curved paths, reusable objects, keyframes,
-masks, cameras and motion effects.
+**[Download the Windows installer](https://github.com/jeddyhhh/MutantVideoProducer/releases/latest)**
 
-![The Graphics Overlay Composer with editable layers, curved paths and animation controls](docs/screenshots/graphics-composer.png)
+The current Windows release is one standalone `.exe`, about **160 MB**. Run it to
+install Mutant Video Producer, create Start menu and optional desktop shortcuts,
+and associate `.mvp` projects with the application. Choose an installation folder
+and install for yourself or all users. An uninstaller is included.
 
-**Waveform graphics**: turn actual source audio into styled stereo bars, envelopes or lines,
-with playback progress and optional scrolling.
+The release includes a SHA-256 checksum for verification. The installer is not
+currently code-signed.
 
-![Signal Studio: a stereo waveform graphic generated from audio, with its editable properties](docs/screenshots/waveform.png)
+For Linux, follow the [build instructions](docs/developer/building.md). Maintainers
+can also access tested development builds in the repository's draft releases.
+Download portable or offline archives when they are listed on a release.
 
-**Effects and scopes**: the device chain under the timeline, the waveform scope beside the preview.
+### Optional AI engines
 
-![The device chain, waveform scope and timeline](docs/screenshots/effects-scopes.png)
+Install speech generation and RVC conversion through **Tools > AI Components**.
+The application downloads private Python and pinned dependencies directly from
+Astral, PyPI and PyTorch, with progress, cancellation and repair controls. No
+separate Python or CUDA Toolkit installation is needed.
 
-**Live**: a video (or camera, screen, window) through effect pads in real time, ready to record,
-stream or send to OBS.
+Choose CPU or NVIDIA CUDA support, then download the voices and models you want.
+Installed engines work offline, and previously generated narration plays and renders
+without the generation engines. See [AI Components](docs/ai-components.md) for setup
+and acceleration requirements.
 
-![The Live tab with a 4x4 grid of effect pads](docs/screenshots/live.png)
+If the repository is private, GitHub downloads require repository access. Check the
+Releases page while signed in; the application's update check cannot read private
+releases. AI dependency downloads use their upstream sources independently.
 
-**Themes**: Neon Grid, Night City, Synthwave Sunset and Studio Light (View > Theme).
+## Edit and organise
 
-![The orbital broadcast project in Neon Grid, Night City, Synthwave Sunset and Studio Light](docs/screenshots/themes.png)
+Work with video, audio and dedicated image tracks. Trim, split, slip, slide and roll
+events; group related clips; use ripple editing, fades, envelopes, markers and regions.
+Adjust timing with speed ramps, reverse playback, frame blending and freeze frames.
 
-## Features
+Project Media provides folders, ratings, search and in/out marks. Proxies help with
+heavy footage, and recordings and YouTube downloads have their own media bins.
+Profiles provide selectable home folders and shared media libraries across projects.
+**Collect Project and Media** gathers a project and its dependencies for moving or
+sharing. Autosave, crash recovery and undo history support everyday editing.
 
-**Editing**: multitrack timeline; trimming, splitting, slip, slide and roll; auto ripple; groups;
-fade curves; markers and regions; a beat grid; envelopes; speed changes, reverse, frame blending,
-speed ramps and freeze frames; Project Media with folders, ratings, search and in / out marks;
-proxies for heavy footage; a dedicated From YouTube bin; profiles with shared media libraries;
-Collect Project and Media for portable projects; autosave and crash recovery; History.
+![The Editor with captions, graphics and a multitrack timeline](docs/screenshots/editor.png)
 
-**Effects**: 68 video effects, from colour grading (Curves, Color Wheels, LUTs) to glitch,
-analog, psychedelic and 128 *Broken Video Game Systems* effects; 27 transitions; a device chain
-with keyframes, presets and racks; masks, freehand masks, rotoscoping and motion tracking;
-stabilisation; **Remove Background (AI)** on supported GPUs; Follow Audio; video scopes.
-Preview, rendering and supported effects use GPU acceleration, with CPU fallback where needed.
-See [GPU acceleration](docs/gpu-acceleration.md) for the supported paths.
+## Compose graphics and animation
 
-**Titles and generators**: styled and animated titles, kinetic text, credits, timecode, animated
-backgrounds, overlays, shapes and colour bars.
+Build titles, lower thirds, broadcast layouts, charts and animated scenes directly
+inside the editor. The general 2D graphics engine supports parented layers, reusable
+objects, curved paths, keyframes, easing, morphing, masks, cameras, particles and
+repeaters. Audio and beat bindings connect animation to your soundtrack.
 
-**Native graphics and animation**: editable broadcast layouts and a general 2D composer with
-parented layers, visual keyframes, easing, curved paths, morphing, masks, cameras, reusable objects,
-data charts, audio/beat bindings, particles, repeaters and motion effects. Snapping, alignment,
-distribution, layer locks and reusable brand kits help finish layouts. All are available through
-MCP and use the same renderer in preview and export. See [Animation scenes](docs/animation-scenes.md).
+Snapping, alignment, distribution, layer locks and reusable brand kits help keep
+layouts consistent. Scenes remain editable and use the same renderer in preview
+and export. Learn more about [animation scenes](docs/animation-scenes.md).
 
-**Audio**: EQ, dynamics, reverb, delay, pitch, noise reduction and more, about 100 presets, VST3
-plugins, an Audio Mixer, auto ducking and beat detection. [Audio Finishing](docs/audio-finishing.md)
-checks final-mix loudness, true peaks and stereo compatibility, with editable targets and undoable gain.
+![The Graphics Overlay Composer with editable layers and animation controls](docs/screenshots/graphics-composer.png)
 
-**Captions**: Auto Captions with Whisper on this computer (GPU or CPU), translation, speaker
-colours, SRT and WebVTT, subtitle tracks in renders.
+Generate waveform graphics from real source audio: stereo bars, envelopes or lines,
+with playback progress and scrolling options.
 
-**Narration**: generate speech locally from captions, manage downloadable voices and convert
-generated narration with integrated RVC. Narration Studio keeps scripts and takes with the project.
+![Signal Studio with a waveform graphic generated from audio](docs/screenshots/waveform.png)
 
-**Rendering**: about 170 templates (YouTube, TikTok, Instagram, Discord size limits, ProRes,
-DNxHR, GIF, image sequences, audio only, retro consoles...), GPU encoders, framing for other shapes,
-and a detailed render status window, including renders started through MCP.
+## Shape the picture
 
-**Live**: cameras, screens, windows and video files; a four-input switcher; layers; 16 effect pads
-with transitions, launched on the beat; tempo and beat detection; scenes and setlists; modulation;
-MIDI and MIDI clock; overlays and audio visualisers; recording and a replay buffer; streaming to
-Twitch, YouTube and others; Spout and the OBS virtual camera.
+Use colour curves, colour wheels, LUTs, keying, stylisation, glitch, analog, retro and
+psychedelic effects. Build keyframed effect chains, save presets and racks, and add
+transitions between events. Masks, freehand masks, rotoscoping, motion tracking,
+stabilisation and AI background removal provide more control over the image.
 
-**Themes**: seven looks under View > Theme, from Classic to two cyberpunk themes (Neon Grid, Night
-City), Synthwave Sunset, Terminal, Arctic and Studio Light.
+Video scopes help assess the result. Supported preview, rendering and effect paths
+use GPU acceleration, with CPU fallback where needed. The
+[GPU guide](docs/gpu-acceleration.md) explains which stages use hardware acceleration.
 
-**AI control**: an AI assistant on your computer (Codex, Claude, or any MCP-compatible client) can
-edit with you, one undoable step at a time.
+![The effect device chain, video scope and timeline](docs/screenshots/effects-scopes.png)
 
-## Documentation
+## Finish sound, captions and narration
 
-- **[User Guide](docs/README.md)**: every feature, how to use it, and its details. In Mutant Video Producer,
-  **Help > User Guide**.
-- **[Tutorials](docs/tutorials/README.md)**: sixteen step-by-step lessons with example projects.
-  In Mutant Video Producer, **Help > Tutorials**.
-- [Keyboard Shortcuts](docs/shortcuts.md).
+Mix with EQ, dynamics, reverb, delay, pitch tools, noise reduction, audio presets and
+VST3 plugins. Use the Audio Mixer, automatic ducking and beat detection to balance
+speech and music. [Audio Finishing](docs/audio-finishing.md) checks final-mix loudness,
+true peaks and stereo compatibility, with editable targets and undoable gain changes.
 
-## Getting Mutant Video Producer
+Generate captions locally with Whisper, translate them, distinguish speakers, and
+import or export SRT and WebVTT subtitles. Create local speech from captions with
+downloadable voices, then use integrated RVC conversion for another voice model.
+Narration Studio keeps scripts and alternate takes with the project.
 
-Download the **[Windows installer](https://github.com/jeddyhhh/MutantVideoProducer/releases/latest)**
-from GitHub Releases and run the `-win64-setup.exe` file. It is one standalone installer,
-about **160 MB** in the current release. It installs into **Mutant Video Producer**, adds
-Start menu and optional desktop shortcuts, opens `.mvp` projects with a double-click,
-and can be removed through Windows' *Installed apps*. You can install for all users or
-only for yourself, and choose the destination folder.
+See [captions and narration](docs/captions.md) and
+[story, narration and sequences](docs/story.md) for the complete workflows.
 
-The current published release contains the Windows installer and its SHA-256 checksum.
-For Linux, [build from source](docs/developer/building.md); maintainers can also access
-tested development downloads in the draft releases. Portable and full offline Windows
-archives are produced by the build workflow when requested for a version tag; download
-them only when they are listed as assets on that release.
+## Perform live visuals
 
-The standard Windows installer stays below 1 GB by leaving the large speech and RVC
-frameworks out. Install either engine later through **Tools > AI Components...**;
-no separate Python installation is needed. See [optional AI components](docs/ai-components.md)
-for upstream downloads, private builds and offline use.
+Use cameras, screens, windows and video files as sources. Switch between four inputs,
+combine layers, launch effects from 16 pads, and use scenes and setlists to organise
+a performance. Beat-synchronised transitions, modulation, MIDI and MIDI clock help
+connect visuals to music.
 
-If this repository is private, GitHub downloads require an account with repository
-access. The app's unauthenticated GitHub update check cannot read private releases;
-check the Releases page while signed in. Optional AI dependencies download from their
-upstream sources independently of repository access.
+Add overlays and audio visualisers, record performances, capture a replay buffer,
+stream to services such as Twitch and YouTube, or send video to OBS. Spout and the
+OBS virtual camera are available on Windows. See the [Live guide](docs/live.md).
 
-The first time it starts, Mutant Video Producer shows a welcome window with the tutorials, example projects and a
-check of what your computer can do.
+![The Live workspace with source controls and effect pads](docs/screenshots/live.png)
 
-The installer isn't code-signed yet, so Windows may say "Windows protected your PC": click **More
-info**, then **Run anyway**.
+## Render and automate
 
-To build it yourself, see [Building Mutant Video Producer](docs/developer/building.md). In short, on Windows with
-Visual Studio and Qt and FFmpeg in `deps\`:
+Export using templates for social video, editing formats, GIFs, image sequences and
+audio. Adjust framing for different aspect ratios and use supported GPU encoders.
+A detailed render status window reports progress, including exports started through
+MCP. See [rendering](docs/rendering.md).
+
+Enable **Options > Allow AI Control (MCP)** to let a compatible assistant work with
+the open project. MCP tools cover editing, graphics, animation, captions, narration,
+Live controls and rendering. The assistant's changes remain visible in the editor.
+See [AI Control](docs/ai-control.md) for connection instructions and available tools.
+
+## Make the workspace yours
+
+Choose from Classic, Neon Grid, Night City, Synthwave Sunset, Terminal, Arctic and
+Studio Light under **View > Theme**.
+
+![The editor in four selectable themes](docs/screenshots/themes.png)
+
+## Learn and build
+
+- [User Guide](docs/README.md): features, settings and workflows; also available in **Help > User Guide**.
+- [Tutorials](docs/tutorials/README.md): sixteen guided lessons with example projects; open **Help > Tutorials**.
+- [Keyboard Shortcuts](docs/shortcuts.md): commands and custom key bindings.
+- [Building](docs/developer/building.md): dependencies and platform-specific instructions.
+- [Architecture](docs/developer/architecture.md): how the application is organised.
+- [Testing](docs/developer/testing.md): verification tools and regression suites.
+- [Changelog](CHANGELOG.md): changes and release history.
+
+The application is written in C++20 with Qt 6 and FFmpeg. After preparing the
+dependencies described in the build guide, run:
+
+**Windows**
 
 ```bat
 build.bat
 ```
 
-and on Linux:
+**Linux**
 
 ```sh
 ./build.sh
 ```
 
-[Architecture](docs/developer/architecture.md) and [Testing](docs/developer/testing.md) describe
-the code and its self-tests.
-
 ## Licence
 
-Mutant Video Producer is free software: you can redistribute it and/or modify it under the terms of the
-[GNU General Public License, version 3](LICENSE) or (at your option) any later version. It comes
-with no warranty. The parts it is built with and their licences are listed in
-[Building Mutant Video Producer](docs/developer/building.md#licences); what changed in each version is in the
-[changelog](CHANGELOG.md).
+Mutant Video Producer is free software under the
+[GNU General Public License, version 3 or later](LICENSE). Third-party components
+and their licences are listed in the [build guide](docs/developer/building.md#licences).
