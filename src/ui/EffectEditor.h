@@ -1,5 +1,6 @@
 #pragma once
 
+#include "core/KeyframeOps.h"
 #include "core/Project.h"
 #include "ui/FxTarget.h"
 
@@ -54,6 +55,8 @@ public:
 
 signals:
     void seekRequested(TimeUs t);
+    // "Edit in Keyframe Editor" on a setting's keyframe button.
+    void keyframeEditorRequested(const keyops::Address& address);
     void opened();
     void closed();
 

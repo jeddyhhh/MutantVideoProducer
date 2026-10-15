@@ -150,7 +150,7 @@ jobs:
         shell: cmd
         # Build the complete app and every test used below. Composer/GPU suites
         # run separately on Linux; avoid redundant MSVC whole-program links here.
-        run: build.bat Release mvp mvp_selftest mvp_collection_test mvp_brand_test mvp_finishing_test mvp_voice_test mvp_runtime_test mvp_docs
+        run: build.bat Release mvp mvp_selftest mvp_collection_test mvp_brand_test mvp_finishing_test mvp_keyframes_test mvp_voice_test mvp_runtime_test mvp_docs
 
       # The native windows platform (no window is shown): offscreen has no fonts on Windows.
       - name: Self-test
@@ -173,6 +173,8 @@ jobs:
           & "$bin/mvp_brand_test.exe"
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           & "$bin/mvp_finishing_test.exe"
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          & "$bin/mvp_keyframes_test.exe"
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           & "$bin/mvp_runtime_test.exe"
           if ($LASTEXITCODE) { exit $LASTEXITCODE }

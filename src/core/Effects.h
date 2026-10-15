@@ -42,13 +42,30 @@ struct ParamDef {
 };
 
 struct Keyframe {
-    enum class Interp { Linear, Hold, Smooth };
+    // Saved as numbers, new ones last: builds that know only the first three read the rest as Smooth.
+    enum class Interp { Linear, Hold, Smooth, EaseIn, EaseOut, EaseInOut, Bezier, Bounce, Elastic };
     TimeUs time = 0;           // event-local for event FX, timeline time otherwise
     double value = 0.0;
     Interp interp = Interp::Linear; // curve towards the next keyframe
+    // Bezier: the two handles of the curve to the next keyframe, at fractions x1, x2 (0..1) of
+    // the way there, y1 above this keyframe's value and y2 above the next one's (setting units).
+    double x1 = 1.0 / 3, y1 = 0.0, x2 = 2.0 / 3, y2 = 0.0;
 
     bool operator==(const Keyframe&) const = default;
 };
+inline constexpr int kKeyInterps = 9;
+QString keyInterpName(Keyframe::Interp interp);           // "Ease In"
+QString keyInterpId(Keyframe::Interp interp);             // "ease_in" (as the graphics engine names them)
+std::optional<Keyframe::Interp> keyInterpFromId(const QString& id);
+// The value on the curve from keyframe a to b, at fraction f (0..1) of the way.
+double keyframeValue(const Keyframe& a, const Keyframe& b, double f);
+// How far along from a's value to b's (0..1; Bezier and Elastic can go past): for colours.
+double keyframeProgress(const Keyframe& a, const Keyframe& b, double f);
+// Bezier handles that draw a's current curve to b as closely as a cubic can (Linear: a straight line).
+void fitBezierHandles(Keyframe& a, const Keyframe& b);
+// Keyframes to and from JSON: [[time, value, curve], ...] in `keysName`, Bezier handles beside it in "bez".
+void keysToJson(const std::vector<Keyframe>& keys, QJsonObject& o, const QString& keysName);
+std::vector<Keyframe> keysFromJson(const QJsonObject& o, const QString& keysName);
 
 // Live tab: a setting that moves by itself, on the beat, with the sound, or
 // from a MIDI controller (see LiveModulation.h).

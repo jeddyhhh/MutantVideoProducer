@@ -5,6 +5,7 @@
 #include "core/Proxy.h"
 #include "ui/DeviceChainView.h"
 #include "ui/EffectEditor.h"
+#include "ui/KeyframeEditor.h"
 #include "ui/CrashReport.h"
 #include "ui/ExportDialog.h"
 #include "ui/LiveView.h"
@@ -26,6 +27,7 @@
 #include <QSettings>
 #include <QSplitter>
 #include <QTabWidget>
+#include <QToolButton>
 #include <QTreeWidget>
 #include <QTimer>
 #include <memory>
@@ -173,6 +175,9 @@ int main(int argc, char** argv)
             break;
         }
     const bool fxEditor = args.removeAll(QStringLiteral("--fx-editor")) > 0;
+    // Developer options: the Keyframes tab on the first event with keyframes (its Dope Sheet, or Graph).
+    const bool keyframesGraph = args.removeAll(QStringLiteral("--keyframes-graph")) > 0;
+    const bool keyframesTab = args.removeAll(QStringLiteral("--keyframes")) > 0 || keyframesGraph;
     const bool mixer = args.removeAll(QStringLiteral("--mixer")) > 0; // developer option: open the Audio Mixer
     int dockTab = -1; // --tab <n>: developer option, picks a tab of the media / FX browser
     if (const int i = args.indexOf(QStringLiteral("--tab")); i >= 0 && i + 1 < args.size()) {
@@ -300,6 +305,24 @@ int main(int argc, char** argv)
                     break;
                 }
     }
+    if (keyframesTab) {
+        auto* editor = window.findChild<KeyframeEditor*>();
+        if (auto* project = window.findChild<Project*>()) {
+            int found = 0;
+            for (const Track& t : project->timeline().tracks)
+                for (const Clip& c : t.clips)
+                    for (const keyops::Channel& ch : keyops::channels(project->timeline(), keyops::Scope::Clip, c.id))
+                        if (const ParamValue* p = keyops::find(project->timeline(), ch); p && !p->keys.empty() && !found)
+                            found = c.id;
+            if (found)
+                editor->setTarget({FxTarget::Kind::Clip, found});
+        }
+        if (auto* tabs = window.findChild<QTabWidget*>(QStringLiteral("editorBottomTabs")))
+            tabs->setCurrentWidget(editor);
+        if (keyframesGraph)
+            if (auto* graph = editor->findChild<QToolButton*>(QStringLiteral("keyGraphMode")))
+                graph->click();
+    }
     if (mixer)
         QMetaObject::invokeMethod(&window, "showMixerForTests", Qt::DirectConnection);
     if (dockTab >= 0)
@@ -328,6 +351,7 @@ int main(int argc, char** argv)
             QStringList log;
             int failures = view->runSelfTest(log);
             failures += window.findChild<TimelineWidget*>()->runDropTest(log);
+            failures += window.findChild<KeyframeEditor*>()->runSelfTest(log);
             // The header click above should have switched the device panel to Track FX.
             const bool trackShown = view->target().kind == FxTarget::Kind::Track;
             log << QStringLiteral("%1  the device panel shows Track FX after a header click").arg(trackShown ? QStringLiteral("PASS") : QStringLiteral("FAIL"));

@@ -93,6 +93,7 @@ add_library(mvp_core STATIC
     src/core/Story.h             src/core/Story.cpp
     src/core/TimelineOps.h       src/core/TimelineOps.cpp
     src/core/Effects.h           src/core/Effects.cpp
+    src/core/KeyframeOps.h       src/core/KeyframeOps.cpp
     src/core/Generators.h        src/core/Generators.cpp
     src/core/GeneratorsAnimated.cpp
     src/core/Graphics.h          src/core/Graphics.cpp
@@ -266,6 +267,7 @@ add_executable(mvp WIN32
     src/ui/FxTarget.h
     src/ui/Knob.h                src/ui/Knob.cpp
     src/ui/DeviceChainView.h     src/ui/DeviceChainView.cpp
+    src/ui/KeyframeEditor.h      src/ui/KeyframeEditor.cpp
     src/ui/PanCropView.h         src/ui/PanCropView.cpp
     src/ui/EventPropertiesDialog.h src/ui/EventPropertiesDialog.cpp
     src/ui/RenderStatusDialog.h   src/ui/RenderStatusDialog.cpp
@@ -360,6 +362,8 @@ add_executable(mvp_adversarial_test tests/adversarial.cpp)
 target_link_libraries(mvp_adversarial_test PRIVATE mvp_core)
 add_executable(mvp_collection_test tests/collection.cpp)
 add_executable(mvp_finishing_test tests/finishing.cpp)
+add_executable(mvp_keyframes_test tests/keyframes.cpp)
+target_link_libraries(mvp_keyframes_test PRIVATE mvp_core)
 target_link_libraries(mvp_finishing_test PRIVATE mvp_core)
 target_link_libraries(mvp_collection_test PRIVATE mvp_core)
 add_executable(mvp_brand_test tests/brand.cpp)

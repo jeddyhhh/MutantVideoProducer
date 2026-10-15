@@ -2,6 +2,20 @@
 
 What changed in each version of Mutant Video Producer. The newest is first.
 
+### Keyframe Editor
+
+- A **Keyframes** tab shows every keyframe of an event (Event FX with racks, Pan/Crop, generated
+  media, transitions), a track, the output or the master. The **Dope Sheet** picks keyframes by
+  click or box, then moves, copies, stretches, reverses, nudges, copies and pastes them, also into
+  another event. The **Graph** drags values and Bezier handles on the real curves.
+- New keyframe curves: Ease In, Ease Out, Ease In/Out, Bezier (with handles), Bounce and Elastic,
+  also on volume, pan and speed envelopes (no Bezier there). Smooth handles fit Bezier curves
+  without overshoot. Projects stay readable by older builds, which show the new curves as Smooth.
+- Controls' right-click menus offer every curve and **Edit in Keyframe Editor...**. MCP keyframes
+  take `[seconds, value, curve, [x1, y1, x2, y2]]`.
+- `mvp_keyframes_test` covers the curves, their file format, speed-ramp spans and every edit.
+  `--devices-test` drives the editor.
+
 ### Linux AppImage and milestone offline builds
 
 - Linux builds are also packaged as an AppImage (Qt and FFmpeg inside), smoke-tested in CI and

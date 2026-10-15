@@ -69,6 +69,7 @@ jobs:
           build/Release/bin/mvp_collection_test || failed=1
           build/Release/bin/mvp_brand_test || failed=1
           build/Release/bin/mvp_finishing_test || failed=1
+          build/Release/bin/mvp_keyframes_test || failed=1
           build/Release/bin/mvp_graphics_test || failed=1
           build/Release/bin/mvp_motion_test || failed=1
           python3 -m unittest discover -s tests -p test_ci_builds.py || failed=1

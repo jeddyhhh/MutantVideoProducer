@@ -79,6 +79,20 @@ already in use can be moved to the new command. **Reset All** brings back the de
 | Ctrl+Shift+M | Audio Mixer |
 | 0-5 (Project Media) | Rate the selected files |
 
+## The Keyframe Editor
+
+| Key | Action |
+|---|---|
+| 1-9 | Curve after the picked keyframes: Linear, Hold, Smooth, Ease In, Ease Out, Ease In/Out, Bezier, Bounce, Elastic |
+| ← / → (Shift: 10) | Move the picked keyframes a frame |
+| ↑ / ↓ (Shift: 10%) | Graph: raise or lower their values by 1% of the range |
+| K | Keyframe at the cursor on the settings worked on |
+| Delete | Delete the picked keyframes |
+| Ctrl+C / Ctrl+X / Ctrl+V | Copy / cut / paste at the cursor |
+| Ctrl+A / Esc | Pick all / none |
+| G | Dope Sheet / Graph |
+| F | Show everything |
+
 ## The Live tab
 
 | Key | Action |

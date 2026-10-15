@@ -125,13 +125,7 @@ double Envelope::at(TimeUs t) const
     auto next = std::upper_bound(points.begin(), points.end(), t, [](TimeUs v, const Keyframe& k) { return v < k.time; });
     const Keyframe& a = *std::prev(next);
     const Keyframe& b = *next;
-    double f = double(t - a.time) / double(std::max<TimeUs>(1, b.time - a.time));
-    switch (a.interp) {
-    case Keyframe::Interp::Hold: f = 0.0; break;
-    case Keyframe::Interp::Smooth: f = f * f * (3.0 - 2.0 * f); break;
-    case Keyframe::Interp::Linear: break;
-    }
-    return a.value + (b.value - a.value) * f;
+    return keyframeValue(a, b, double(t - a.time) / double(std::max<TimeUs>(1, b.time - a.time)));
 }
 
 namespace {
@@ -143,9 +137,16 @@ double segmentArea(const Keyframe& a, const Keyframe& b, double f)
     switch (a.interp) {
     case Keyframe::Interp::Hold: return d * a.value * f;
     case Keyframe::Interp::Smooth: return d * (a.value * f + dv * (f * f * f - 0.5 * f * f * f * f)); // smoothstep
-    case Keyframe::Interp::Linear: break;
+    case Keyframe::Interp::Linear: return d * (a.value * f + dv * 0.5 * f * f);
+    default: break;
     }
-    return d * (a.value * f + dv * 0.5 * f * f);
+    // Other curves: Simpson's rule (exact for the cubic eases, within 1e-6 of the rest).
+    const int n = 128;
+    const double h = f / n;
+    double sum = keyframeValue(a, b, 0.0) + keyframeValue(a, b, f);
+    for (int i = 1; i < n; ++i)
+        sum += (i % 2 ? 4.0 : 2.0) * keyframeValue(a, b, i * h);
+    return d * sum * h / 3.0;
 }
 
 // Antiderivative of the line, zero at the first point.
@@ -192,19 +193,21 @@ double Envelope::maxIntegral(double t) const
             continue;
         const Keyframe& a = points[i];
         const Keyframe& b = points[i + 1];
-        if (a.interp == Keyframe::Interp::Hold || !(a.value > 0 && b.value < 0))
+        if (a.interp == Keyframe::Interp::Hold)
             continue;
-        const double target = a.value / (a.value - b.value); // shape value where the line is 0
-        double f = target;
-        if (a.interp == Keyframe::Interp::Smooth) {
-            double lo = 0, hi = 1;
+        // Wherever the line crosses from forwards to backwards (Bezier, Bounce and Elastic can
+        // cross more than once, and between keys of the same sign).
+        const int n = 64;
+        for (int s = 0; s < n; ++s) {
+            double lo = double(s) / n, hi = double(s + 1) / n;
+            if (!(keyframeValue(a, b, lo) > 0 && keyframeValue(a, b, hi) <= 0))
+                continue;
             for (int k = 0; k < 40; ++k) {
                 const double mid = (lo + hi) / 2;
-                (mid * mid * (3.0 - 2.0 * mid) < target ? lo : hi) = mid;
+                (keyframeValue(a, b, mid) > 0 ? lo : hi) = mid;
             }
-            f = (lo + hi) / 2;
+            consider(double(a.time) + (lo + hi) / 2 * double(b.time - a.time));
         }
-        consider(double(a.time) + f * double(b.time - a.time));
     }
     return best;
 }
@@ -620,10 +623,7 @@ QJsonObject envelopeToJson(const Envelope& e)
     QJsonObject o;
     o[QStringLiteral("active")] = e.active;
     o[QStringLiteral("value")] = e.value;
-    QJsonArray pts;
-    for (const auto& k : e.points)
-        pts.append(QJsonArray{QString::number(k.time), k.value, int(k.interp)});
-    o[QStringLiteral("points")] = pts;
+    keysToJson(e.points, o, QStringLiteral("points"));
     return o;
 }
 
@@ -636,8 +636,7 @@ Envelope envelopeFromJson(const QJsonValue& v, double neutral)
     const QJsonObject o = v.toObject();
     e.active = o[QStringLiteral("active")].toBool();
     e.value = o[QStringLiteral("value")].toDouble(neutral);
-    auto parsed = paramsFromJson(QJsonObject{{QStringLiteral("envelope"), QJsonObject{{QStringLiteral("keys"), o[QStringLiteral("points")]}}}});
-    e.points = std::move(parsed.begin()->second.keys);
+    e.points = keysFromJson(o, QStringLiteral("points"));
     return e;
 }
 

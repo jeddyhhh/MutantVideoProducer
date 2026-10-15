@@ -698,10 +698,14 @@ void EffectEditor::setKeyInterp(const QString& id, Keyframe::Interp interp)
     const TimeUs t = keyTime();
     const TimeUs tol = keyTolerance();
     editNow([&](Timeline& tl) {
-        if (ParamMap* params = currentParams(tl))
-            for (auto& k : (*params)[id].keys)
+        if (ParamMap* params = currentParams(tl)) {
+            ParamValue& pv = (*params)[id];
+            keyops::Times at;
+            for (const auto& k : pv.keys)
                 if (std::llabs(k.time - t) <= tol)
-                    k.interp = interp;
+                    at.insert(k.time);
+            keyops::setInterp(pv, at, interp);
+        }
     }, tr("Keyframe Curve"));
 }
 
@@ -943,9 +947,16 @@ void EffectEditor::rebuildParams()
             QToolButton* kb = row.keyButton;
             connect(row.keyButton, &QToolButton::customContextMenuRequested, this, [this, id, kb](const QPoint& pos) {
                 QMenu menu;
-                menu.addAction(tr("Linear"), this, [this, id] { setKeyInterp(id, Keyframe::Interp::Linear); });
-                menu.addAction(tr("Smooth"), this, [this, id] { setKeyInterp(id, Keyframe::Interp::Smooth); });
-                menu.addAction(tr("Hold"), this, [this, id] { setKeyInterp(id, Keyframe::Interp::Hold); });
+                for (int i = 0; i < kKeyInterps; ++i)
+                    menu.addAction(keyInterpName(Keyframe::Interp(i)), this, [this, id, i] { setKeyInterp(id, Keyframe::Interp(i)); });
+                menu.addSeparator();
+                menu.addAction(tr("Edit in Keyframe Editor..."), this, [this, id] {
+                    keyops::Address a;
+                    a.source = isPanCrop() ? keyops::Address::Source::PanCrop : keyops::Address::Source::Generator;
+                    a.owner = m_target.id;
+                    a.param = id;
+                    emit keyframeEditorRequested(a);
+                });
                 menu.exec(kb->mapToGlobal(pos));
             });
         }

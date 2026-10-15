@@ -284,9 +284,10 @@ private:
             menu.addAction(QObject::tr("Previous Keyframe"), [this, id] { m_view->jumpKey(m_ref, id, -1); });
             menu.addAction(QObject::tr("Next Keyframe"), [this, id] { m_view->jumpKey(m_ref, id, 1); });
             QMenu* curve = menu.addMenu(QObject::tr("Keyframe Curve"));
-            curve->addAction(QObject::tr("Linear"), [this, id] { m_view->setKeyInterp(m_ref, id, Keyframe::Interp::Linear); });
-            curve->addAction(QObject::tr("Smooth"), [this, id] { m_view->setKeyInterp(m_ref, id, Keyframe::Interp::Smooth); });
-            curve->addAction(QObject::tr("Hold"), [this, id] { m_view->setKeyInterp(m_ref, id, Keyframe::Interp::Hold); });
+            for (int i = 0; i < kKeyInterps; ++i)
+                curve->addAction(keyInterpName(Keyframe::Interp(i)), [this, id, i] { m_view->setKeyInterp(m_ref, id, Keyframe::Interp(i)); });
+            if (m_view->m_target.kind != FxTarget::Kind::Live)
+                menu.addAction(QObject::tr("Edit in Keyframe Editor..."), [this, id] { emit m_view->keyframeEditorRequested(m_view->keyAddress(m_ref, id)); });
             menu.addSeparator();
         }
         if (m_knob)
@@ -1729,11 +1730,31 @@ void DeviceChainView::setKeyInterp(const ParamRef& ref, const QString& id, Keyfr
     const TimeUs t = keyTime();
     const TimeUs tol = keyTolerance();
     editNow([&](Timeline& tl) {
-        if (ParamMap* map = params(tl, ref))
-            for (auto& k : (*map)[id].keys)
+        if (ParamMap* map = params(tl, ref)) {
+            ParamValue& pv = (*map)[id];
+            keyops::Times at;
+            for (const auto& k : pv.keys)
                 if (std::llabs(k.time - t) <= tol)
-                    k.interp = interp;
+                    at.insert(k.time);
+            keyops::setInterp(pv, at, interp);
+        }
     }, tr("Keyframe Curve"));
+}
+
+keyops::Address DeviceChainView::keyAddress(const ParamRef& ref, const QString& id) const
+{
+    keyops::Address a;
+    using S = keyops::Address::Source;
+    a.source = m_target.kind == FxTarget::Kind::Track    ? S::TrackFx
+               : m_target.kind == FxTarget::Kind::Output ? S::OutputFx
+               : m_target.kind == FxTarget::Kind::AudioMaster ? S::MasterFx
+                                                              : S::ClipFx;
+    a.owner = m_target.kind == FxTarget::Kind::Clip || m_target.kind == FxTarget::Kind::Track ? m_target.id : 0;
+    if (const EffectInstance* e = effectAt(ref.path, ref.index))
+        a.effect = e->id;
+    a.chain = ref.chain;
+    a.param = id;
+    return a;
 }
 
 void DeviceChainView::resetParam(const ParamRef& ref, const ParamDef& def)

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "core/KeyframeOps.h"
 #include "core/Project.h"
 #include "ui/FxTarget.h"
 
@@ -60,6 +61,8 @@ signals:
     void seekRequested(TimeUs t);
     // A chain was put up (an event's, a track's, the output's...).
     void targetChanged(const FxTarget& target);
+    // A control's "Edit in Keyframe Editor": show that setting there.
+    void keyframeEditorRequested(const keyops::Address& address);
 
 private:
     friend class ParamControl;
@@ -99,6 +102,7 @@ private:
     void toggleKey(const ParamRef& ref, const ParamDef& def);
     void jumpKey(const ParamRef& ref, const QString& id, int direction);
     void setKeyInterp(const ParamRef& ref, const QString& id, Keyframe::Interp interp);
+    keyops::Address keyAddress(const ParamRef& ref, const QString& id) const;
     void resetParam(const ParamRef& ref, const ParamDef& def);
     // Live tab: what moves the setting by itself (nullopt: nothing).
     void setModulation(const ParamRef& ref, const ParamDef& def, const std::optional<Modulation>& mod);
