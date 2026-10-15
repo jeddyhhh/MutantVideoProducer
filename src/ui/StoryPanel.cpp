@@ -78,5 +78,5 @@ void StoryPanel::loadChapter()
 bool StoryPanel::saveChapter()
 {
     Timeline tl=m_project->timeline();QString error;const auto fps=m_project->settings().fps;
-    if(story::updateChapter(tl,currentId(),m_name->text(),m_script->toPlainText(),fps.snap(TimeUs(m_narration->value()*kUsPerSecond)),fps.snap(TimeUs(m_listening->value()*kUsPerSecond)),&error)){m_project->applyEdit(tl,tr("Edit Story Chapter"));refresh();return true;}else {report(error);return false;}
+    if(story::updateChapter(tl,currentId(),m_name->text(),m_script->toPlainText(),fps.snap(TimeUs(m_narration->value()*kUsPerSecond)),fps.snap(TimeUs(m_listening->value()*kUsPerSecond)),fps,&error)){m_project->applyEdit(tl,tr("Edit Story Chapter"));refresh();return true;}else {report(error);return false;}
 }

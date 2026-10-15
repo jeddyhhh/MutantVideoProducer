@@ -5,8 +5,10 @@ namespace story {
 // Chapter data and all affected timeline edits commit together through Project::applyEdit.
 int addChapter(Timeline& timeline, const QString& name, const QString& script, TimeUs narration, TimeUs listening,
                const MediaItem* source, TimeUs sourceIn, const FrameRate& fps, QString* error = nullptr);
+// Chapter boundaries are absolute frame times (start+narration, start+narration+listening are snapped), so
+// summed durations cannot drift off the grid that the chapter's clips are placed on.
 bool updateChapter(Timeline& timeline, int id, const QString& name, const QString& script, TimeUs narration,
-                   TimeUs listening, QString* error = nullptr);
+                   TimeUs listening, const FrameRate& fps, QString* error = nullptr);
 bool moveChapter(Timeline& timeline, int id, int direction, QString* error = nullptr);
 bool removeChapter(Timeline& timeline, int id, QString* error = nullptr);
 bool bindChapter(Timeline& timeline, int id, const std::set<int>& clips, QString* error = nullptr);

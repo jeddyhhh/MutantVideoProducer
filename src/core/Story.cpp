@@ -19,10 +19,13 @@ namespace story {
 int addChapter(Timeline& tl,const QString& name,const QString& script,TimeUs narration,TimeUs listening,const MediaItem* source,TimeUs sourceIn,const FrameRate& fps,QString* error)
 {
     if(name.trimmed().isEmpty()||narration<0||listening<0||narration+listening<=0||narration+listening>3600*kUsPerSecond) { fail(error,"Give the chapter a name and a duration up to one hour.");return 0; }
-    narration=fps.snap(narration);listening=fps.snap(listening);
     TimeUs chapterEnd=tl.duration();
     for(auto value:tl.chapters){auto c=value.toObject();chapterEnd=std::max(chapterEnd,time(c,"start")+time(c,"narration")+time(c,"listening"));}
-    const TimeUs at=fps.snap(chapterEnd);const int id=tl.allocId();std::set<int> clips;
+    // Never round back into the previous chapter: a legacy end 1 us off the grid is abutted exactly.
+    const TimeUs at=std::max(fps.snap(chapterEnd),chapterEnd);
+    const TimeUs narrationEnd=std::max(at,fps.snap(at+narration)),end=std::max(narrationEnd,fps.snap(at+narration+listening));
+    if(end<=at) { fail(error,"Give the chapter a name and a duration up to one hour.");return 0; }
+    narration=narrationEnd-at;listening=end-narrationEnd;const int id=tl.allocId();std::set<int> clips;
     if(source) {
         const auto placed=ops::insertMedia(tl,*source,at,-1,fps,true);
         for(int cid:placed)if(auto* c=tl.findClip(cid)) {
@@ -52,11 +55,19 @@ int addChapter(Timeline& tl,const QString& name,const QString& script,TimeUs nar
     Marker marker;marker.id=id;marker.name="Chapter: "+name.trimmed();marker.time=at;marker.length=narration+listening;marker.color=5;tl.markers.push_back(marker);tl.sortMarkers();
     return id;
 }
-bool updateChapter(Timeline& tl,int id,const QString& name,const QString& script,TimeUs narration,TimeUs listening,QString* error)
+bool updateChapter(Timeline& tl,int id,const QString& name,const QString& script,TimeUs narration,TimeUs listening,const FrameRate& fps,QString* error)
 {
     const int i=chapterIndex(tl,id);if(i<0)return fail(error,"Chapter not found.");
     if(name.trimmed().isEmpty()||narration<0||listening<0||narration+listening<=0||narration+listening>3600*kUsPerSecond)return fail(error,"Use a chapter name and a positive duration up to one hour.");
-    auto chapter=tl.chapters[i].toObject();const TimeUs at=time(chapter,"start"),old=time(chapter,"narration")+time(chapter,"listening"),duration=narration+listening,delta=duration-old;
+    auto chapter=tl.chapters[i].toObject();const TimeUs at=time(chapter,"start"),old=time(chapter,"narration")+time(chapter,"listening");
+    const TimeUs narrationEnd=std::max(at,fps.snap(at+narration)),end=std::max(narrationEnd,fps.snap(at+narration+listening));
+    if(end<=at)return fail(error,"Use a chapter name and a positive duration up to one hour.");
+    narration=narrationEnd-at;listening=end-narrationEnd;const TimeUs duration=end-at,delta=duration-old;
+    // Material starting within half a frame of the old end belongs to what follows (older projects drifted by 1 us);
+    // the next chapter is moved to abut the new end exactly, healing that drift.
+    const TimeUs oldEnd=at+old,from=oldEnd-fps.frameDuration()/2;TimeUs next=std::numeric_limits<TimeUs>::max();
+    for(int j=0;j<tl.chapters.size();++j)if(j!=i){const TimeUs s=time(tl.chapters[j].toObject(),"start");if(s>=from)next=std::min(next,s);}
+    const TimeUs shift=next<=oldEnd+fps.frameDuration()/2?end-next:delta;
     const auto own=ids(chapter);std::set<int> stretch;for(auto value:chapter["stretch"].toArray())stretch.insert(value.toInt());
     for(int cid:own)if(const auto* clip=tl.findClip(cid)) {
         if(clip->narration.contains("takes") && clip->end()>at+narration)
@@ -67,8 +78,8 @@ bool updateChapter(Timeline& tl,int id,const QString& name,const QString& script
     // A duration change must not cut or silently change unrelated overlapping material.
     if(delta>0)for(int cid:own)if(const auto* c=tl.findClip(cid);c&&c->isSequence()&&c->end()==at+old)return fail(error,"Unpack the chapter compound before extending its listening time, then pack it again after the change.");
     if(delta)for(const auto& t:tl.tracks)for(const auto& c:t.clips)
-        if(!own.count(c.id)&&c.start<at+old&&c.end()>at+old)return fail(error,"An unassigned clip crosses this chapter's end. Split and assign it before changing the duration.");
-    if(delta)ops::rippleShift(tl,at+old,delta,{},own,true);
+        if(!own.count(c.id)&&c.start<from&&c.end()>oldEnd)return fail(error,"An unassigned clip crosses this chapter's end. Split and assign it before changing the duration.");
+    if(shift)ops::rippleShift(tl,from,shift,{},own,true);
     for(int cid:own)if(auto* c=tl.findClip(cid)) {
         if(stretch.count(cid)&&c->start==at&&c->length==old) {
             c->length=duration;const auto available=c->narration["story_source_duration"].toString().toLongLong();
@@ -79,7 +90,7 @@ bool updateChapter(Timeline& tl,int id,const QString& name,const QString& script
             effect.params["storyGain"].value=1;auto& p=effect.params["gain"];p.value=-22;p.keys={{0,-22,Keyframe::Interp::Linear},{std::max<TimeUs>(0,narration-100000),-22,Keyframe::Interp::Linear},{narration,0,Keyframe::Interp::Linear}};
         }
     }
-    for(int j=0;j<tl.chapters.size();++j)if(j!=i) {auto c=tl.chapters[j].toObject();if(time(c,"start")>=at+old){shiftChapter(c,delta);tl.chapters[j]=c;} }
+    for(int j=0;j<tl.chapters.size();++j)if(j!=i) {auto c=tl.chapters[j].toObject();if(time(c,"start")>=from){shiftChapter(c,shift);tl.chapters[j]=c;} }
     chapter["name"]=name.trimmed();chapter["script"]=script;chapter["narration"]=QString::number(narration);chapter["listening"]=QString::number(listening);tl.chapters[i]=chapter;
     if(auto* m=tl.findMarker(id)){m->name="Chapter: "+name.trimmed();m->time=at;m->length=duration;}tl.sortClips();tl.sortMarkers();return true;
 }
