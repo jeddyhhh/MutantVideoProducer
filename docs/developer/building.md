@@ -81,7 +81,7 @@ or manually running the workflow against that tag, builds and attaches:
   version tag with **offline** ticked. That run builds the frozen engines too and attaches
   everything to the same release.
 
-Main, `codex/...` and `claude/...` branch runs store tested builds in draft development releases,
+Pushes to main (and manual runs on other branches) store tested builds in draft development releases,
 independently of the Actions artifact quota. `scripts/package-windows.py` creates the
 small layout without requiring frozen workers. `scripts/download-ai-bootstrap.ps1`
 fetches pinned official uv with archive/executable checksums; the workflow verifies a

@@ -1,6 +1,6 @@
 # Builds Mutant Video Producer for Windows and publishes an installer and a zip (MutantVideoProducer.exe +
 # Qt + FFmpeg + MSVC runtime) on a GitHub release when a version tag such as v0.1.0 is pushed.
-# Publishing an already-tested release does not start another build. Main/feature branch pushes
+# Publishing an already-tested release does not start another build. Main pushes
 # and manual branch runs store tested downloads in a draft development release.
 # The offline edition (frozen AI engines and Whisper models, several GB) is built only for
 # milestones: run this workflow manually on the version tag with "offline" ticked.
@@ -9,7 +9,7 @@ name: Windows release
 on:
   push:
     tags: ['v*']
-    branches: ['main', 'codex/**', 'claude/**'] # main and feature-branch build artifacts
+    branches: ['main']
     paths-ignore: ['**.md']
   workflow_dispatch:
     inputs:

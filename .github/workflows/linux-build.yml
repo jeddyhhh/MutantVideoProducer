@@ -1,6 +1,6 @@
 # Builds Mutant Video Producer on Linux (Ubuntu 24.04: Qt 6.4 and FFmpeg 6.1 from its own
-# packages) and runs the self-tests that need no GPU, on every push and pull
-# request, so the Linux build keeps working. Every build is also packaged as an AppImage
+# packages) and runs the self-tests that need no GPU, on every push to main, so the
+# Linux build keeps working. Every build is also packaged as an AppImage
 # (Qt and FFmpeg inside, runs on most distributions from 2024 on); version tags attach it,
 # with the tar.gz, to the release.
 name: Linux build
@@ -8,9 +8,8 @@ name: Linux build
 on:
   push:
     tags: ['v*']
-    branches: ['**']
+    branches: ['main']
     paths-ignore: ['**.md']
-  pull_request:
   workflow_dispatch:
 
 permissions:
@@ -123,18 +122,8 @@ jobs:
           timeout 120 "build/MutantVideoProducer-$MVP_VERSION-x86_64.AppImage" --screenshot "$PWD/build/appimage.png"
           test -s build/appimage.png
 
-      - uses: actions/upload-artifact@v4
-        if: github.event_name == 'pull_request'
-        continue-on-error: true
-        with:
-          name: mvp-linux-x86_64
-          path: |
-            build/MutantVideoProducer-linux-x86_64.tar.gz
-            build/MutantVideoProducer-*-x86_64.AppImage
-          if-no-files-found: error
-
       - name: Store development build downloads
-        if: github.event_name != 'pull_request' && github.ref_type != 'tag'
+        if: github.ref_type != 'tag'
         env:
           GH_TOKEN: ${{ github.token }}
         run: python3 scripts/store-ci-build.py build/MutantVideoProducer-linux-x86_64.tar.gz "build/MutantVideoProducer-$MVP_VERSION-x86_64.AppImage"
