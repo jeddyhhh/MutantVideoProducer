@@ -2,6 +2,8 @@
 
 What changed in each version of Mutant Video Producer. The newest is first.
 
+## 0.2.7 (2026-10-16)
+
 ### Keyframe Editor
 
 - A **Keyframes** tab shows every keyframe of an event (Event FX with racks, Pan/Crop, generated
@@ -33,6 +35,12 @@ What changed in each version of Mutant Video Producer. The newest is first.
   so GPU narration no longer requires the 12 GB CUDA RVC engine; it needs 6 GB free to install.
   Measured: 37.7 s of narration in 7.9 s including start-up, with no CUDA Toolkit on the system.
 - The voice worker prefers those libraries and falls back to CUDA RVC's.
+
+### Fixed
+
+- Resizing a story chapter keeps every chapter on its own clips. At 24 fps, chapter ends drifted
+  1 µs off the frame grid, so later edits failed with "Chapter ranges must not overlap". Projects
+  saved with the drift are healed the next time a chapter is resized.
 
 ## 0.2.6 (2026-10-14)
 
