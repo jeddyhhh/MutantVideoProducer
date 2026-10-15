@@ -53,6 +53,7 @@
 #include <QTcpSocket>
 #include <QToolButton>
 #include <QUrl>
+#include <algorithm>
 #include <cmath>
 #include <functional>
 #include <set>
@@ -193,8 +194,14 @@ QJsonValue paramValueJson(const ParamDef& def, const ParamValue& v)
     if (v.keys.empty())
         return plain(v.value);
     QJsonArray keys;
-    for (const Keyframe& k : v.keys)
-        keys.append(QJsonArray{sec(k.time), plain(k.value)});
+    for (const Keyframe& k : v.keys) {
+        QJsonArray key{sec(k.time), plain(k.value)};
+        if (k.interp != Keyframe::Interp::Linear) // the curve to the next keyframe (and Bezier handles)
+            key.append(keyInterpId(k.interp));
+        if (k.interp == Keyframe::Interp::Bezier)
+            key.append(QJsonArray{k.x1, k.y1, k.x2, k.y2});
+        keys.append(key);
+    }
     return QJsonObject{{QStringLiteral("keyframes"), keys}};
 }
 
@@ -294,11 +301,24 @@ QString setParam(ParamMap& params, const std::vector<ParamDef>& defs, const QStr
         for (const QJsonValue& k : v.toObject()[QStringLiteral("keyframes")].toArray()) {
             const QJsonArray pair = k.toArray();
             double x = 0;
-            if (pair.size() != 2)
-                return QStringLiteral("keyframes are [seconds, value] pairs");
+            if (pair.size() < 2 || pair.size() > 4)
+                return QStringLiteral("keyframes are [seconds, value] or [seconds, value, curve] or [seconds, value, \"bezier\", [x1, y1, x2, y2]]");
             if (const QString e = number(pair[1], &x); !e.isEmpty())
                 return e;
-            pv.addKey(us(pair[0].toDouble()), x);
+            const TimeUs t = us(pair[0].toDouble());
+            pv.addKey(t, x);
+            if (pair.size() >= 3) {
+                const auto interp = keyInterpFromId(pair[2].toString());
+                if (!interp)
+                    return QStringLiteral("unknown keyframe curve \"%1\" (linear, hold, smooth, ease_in, ease_out, ease_in_out, bezier, bounce, elastic)").arg(pair[2].toString());
+                for (Keyframe& key : pv.keys)
+                    if (key.time == t) {
+                        key.interp = *interp;
+                        const QJsonArray h = pair.size() == 4 ? pair[3].toArray() : QJsonArray{};
+                        if (h.size() == 4 && std::all_of(h.begin(), h.end(), [](const QJsonValue& v) { return v.isDouble() && std::isfinite(v.toDouble()); }))
+                            key.x1 = std::clamp(h[0].toDouble(), 0.0, 1.0), key.y1 = h[1].toDouble(), key.x2 = std::clamp(h[2].toDouble(), 0.0, 1.0), key.y2 = h[3].toDouble();
+                    }
+            }
         }
         return {};
     }
@@ -755,7 +775,7 @@ QJsonArray McpServer::toolList()
     t.append(tool("add_effect",
                   "Adds an effect at the end of a chain: an event's, a track's, the video output's, the audio master's, the Live "
                   "FX, a Live pad's or the Live layer's. Settings as {setting_id: value}; a value can be a number, true/false, a "
-                  "choice's name, \"#rrggbb\", text, or {\"keyframes\": [[seconds, value], ...]} (event effects: seconds from the "
+                  "choice's name, \"#rrggbb\", text, or {\"keyframes\": [[seconds, value, curve?, bezier handles?], ...]} (curve: linear, hold, smooth, ease_in, ease_out, ease_in_out, bezier with [x1, y1, x2, y2], bounce, elastic; event effects: seconds from the "
                   "event's start). Video effects also take mask.shape (Off/Rectangle/Ellipse/Freehand), mask.x/y/w/h (0..1), mask.feather, "
                   "mask.invert; a freehand mask mask.points (3-16) and each point mask.p<i>x / mask.p<i>y (-0.5..0.5 across the mask's box). "
                   "remove_bg removes the background with AI (model Fast or Quality); a_vst3 runs a VST3 plugin: params plugin (its file, "

@@ -19,6 +19,7 @@
 #include "ui/AudioFinishingWindow.h"
 #include "ui/DeviceChainView.h"
 #include "ui/EffectEditor.h"
+#include "ui/KeyframeEditor.h"
 #include "ui/EventPropertiesDialog.h"
 #include "ui/EffectsBrowser.h"
 #include "ui/CrashReport.h"
@@ -340,6 +341,7 @@ void MainWindow::createLayout()
     m_devices = new DeviceChainView(m_project, [this] { return m_timeline->cursorTime(); });
     m_devices->setObjectName(QStringLiteral("editorDevices"));
     m_devices->setPreview(m_preview); // effect masks are drawn and dragged on the preview
+    m_keyframes = new KeyframeEditor(m_project, [this] { return m_timeline->cursorTime(); });
 
     m_mainSplit = new QSplitter(Qt::Vertical);
     m_mainSplit->setObjectName(QStringLiteral("editorMainSplit"));
@@ -357,6 +359,9 @@ void MainWindow::createLayout()
     m_bottomTabs->addTab(m_fxEditor, tr("Properties"));
     m_bottomTabs->setTabToolTip(1, tr("A transition, generated media (text, titles, colours) or an event's Pan/Crop: "
                                       "click a transition's label or select a text event"));
+    m_bottomTabs->addTab(m_keyframes, tr("Keyframes"));
+    m_bottomTabs->setTabToolTip(2, tr("Every keyframe of the event, track or output shown in Effects: a dope sheet "
+                                      "and a graph of the curves"));
     m_mainSplit->addWidget(m_bottomTabs);
     m_mainSplit->setStretchFactor(0, 4);
     m_mainSplit->setStretchFactor(1, 5);
@@ -984,6 +989,7 @@ void MainWindow::connectSignals()
              {m_bin, "media.md#project-media"},
              {m_devices, "effects.md#the-device-chain"},
              {m_fxEditor, "effects.md#the-properties-tab-and-handles-on-the-preview"},
+             {m_keyframes, "effects.md#the-keyframe-editor"},
              {m_preview, "getting-started.md#the-window"},
              {m_liveClips, "media.md#from-live"},
              {m_youtubeBin, "media.md#create-clip-from-youtube"},
@@ -1085,6 +1091,22 @@ void MainWindow::connectSignals()
         m_devices->setTarget({FxTarget::Kind::Clip, id});
     });
     connect(m_timeline, &TimelineWidget::cursorMoved, m_devices, &DeviceChainView::onCursorMoved);
+    // The Keyframes tab shows what Effects shows (an event: all of its settings).
+    connect(m_devices, &DeviceChainView::targetChanged, m_keyframes, [this](const FxTarget& t) {
+        if (t.kind != FxTarget::Kind::Live)
+            m_keyframes->setTarget(t);
+    });
+    connect(m_timeline, &TimelineWidget::cursorMoved, m_keyframes, &KeyframeEditor::onCursorMoved);
+    connect(m_keyframes, &KeyframeEditor::seekRequested, this, [this](TimeUs t) {
+        seekTo(t);
+        m_keyframes->onCursorMoved();
+    });
+    auto showKeyframes = [this](const keyops::Address& a) {
+        m_keyframes->focusSetting(a);
+        m_bottomTabs->setCurrentWidget(m_keyframes);
+    };
+    connect(m_devices, &DeviceChainView::keyframeEditorRequested, this, showKeyframes);
+    connect(m_fxEditor, &EffectEditor::keyframeEditorRequested, this, showKeyframes);
     // Clicking a track header shows that track's FX.
     connect(m_timeline, &TimelineWidget::trackSelected, this, [this](int id) { m_devices->setTarget({FxTarget::Kind::Track, id}); });
     connect(m_devices, &DeviceChainView::seekRequested, this, [this](TimeUs t) {
@@ -1092,6 +1114,7 @@ void MainWindow::connectSignals()
         m_devices->onCursorMoved();
     });
     connect(m_timeline, &TimelineWidget::transitionRequested, this, [this](int id, bool in) {
+        m_keyframes->setTarget({FxTarget::Kind::Clip, id});
         m_fxEditor->setTarget({in ? FxTarget::Kind::TransitionIn : FxTarget::Kind::TransitionOut, id});
     });
     connect(m_timeline, &TimelineWidget::cursorMoved, m_fxEditor, &EffectEditor::onCursorMoved);

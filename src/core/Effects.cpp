@@ -3,6 +3,7 @@
 #include <QJsonArray>
 #include <algorithm>
 #include <cmath>
+#include <numbers>
 
 // ---------------------------------------------------------------------------
 // Keyframes
@@ -16,12 +17,160 @@ double lerpColor(double a, double b, double f)
     uint32_t out = 0;
     for (int shift : {16, 8, 0}) {
         const double ca = (ia >> shift) & 0xff, cb = (ib >> shift) & 0xff;
-        out |= uint32_t(std::lround(ca + (cb - ca) * f)) << shift;
+        out |= uint32_t(std::clamp<long>(std::lround(ca + (cb - ca) * f), 0, 255)) << shift; // (Elastic overshoots)
     }
     return double(out);
 }
 
+double cubic(double t, double p0, double p1, double p2, double p3)
+{
+    const double s = 1.0 - t;
+    return s * s * s * p0 + 3.0 * s * s * t * p1 + 3.0 * s * t * t * p2 + t * t * t * p3;
+}
+
+double bounce(double x)
+{
+    const double a = 7.5625, b = 2.75;
+    if (x < 1 / b)
+        return a * x * x;
+    if (x < 2 / b)
+        return x -= 1.5 / b, a * x * x + 0.75;
+    if (x < 2.5 / b)
+        return x -= 2.25 / b, a * x * x + 0.9375;
+    return x -= 2.625 / b, a * x * x + 0.984375;
+}
+
 } // namespace
+
+QString keyInterpName(Keyframe::Interp interp)
+{
+    static const char* names[] = {"Linear", "Hold", "Smooth", "Ease In", "Ease Out", "Ease In/Out", "Bezier", "Bounce", "Elastic"};
+    return QString::fromLatin1(names[std::clamp(int(interp), 0, kKeyInterps - 1)]);
+}
+
+QString keyInterpId(Keyframe::Interp interp)
+{
+    static const char* ids[] = {"linear", "hold", "smooth", "ease_in", "ease_out", "ease_in_out", "bezier", "bounce", "elastic"};
+    return QString::fromLatin1(ids[std::clamp(int(interp), 0, kKeyInterps - 1)]);
+}
+
+std::optional<Keyframe::Interp> keyInterpFromId(const QString& id)
+{
+    for (int i = 0; i < kKeyInterps; ++i)
+        if (keyInterpId(Keyframe::Interp(i)) == id)
+            return Keyframe::Interp(i);
+    return std::nullopt;
+}
+
+double keyframeProgress(const Keyframe& a, const Keyframe& b, double f)
+{
+    f = std::clamp(f, 0.0, 1.0);
+    switch (a.interp) {
+    case Keyframe::Interp::Linear: return f;
+    case Keyframe::Interp::Hold: return f < 1.0 ? 0.0 : 1.0;
+    case Keyframe::Interp::Smooth: return f * f * (3.0 - 2.0 * f);
+    case Keyframe::Interp::EaseIn: return f * f * f;
+    case Keyframe::Interp::EaseOut: return 1.0 - std::pow(1.0 - f, 3.0);
+    case Keyframe::Interp::EaseInOut: return f < 0.5 ? 4.0 * f * f * f : 1.0 - std::pow(-2.0 * f + 2.0, 3.0) / 2.0;
+    case Keyframe::Interp::Bounce: return bounce(f);
+    case Keyframe::Interp::Elastic:
+        return f <= 0.0 || f >= 1.0 ? f : std::pow(2.0, -10.0 * f) * std::sin((f * 10.0 - 0.75) * 2.0 * std::numbers::pi / 3.0) + 1.0;
+    case Keyframe::Interp::Bezier:
+        // Packed colours have no "above": the handles' timing only would mislead, so a smooth curve.
+        if (b.value == a.value)
+            return f * f * (3.0 - 2.0 * f);
+        return (keyframeValue(a, b, f) - a.value) / (b.value - a.value);
+    }
+    return f;
+}
+
+double keyframeValue(const Keyframe& a, const Keyframe& b, double f)
+{
+    f = std::clamp(f, 0.0, 1.0);
+    if (a.interp != Keyframe::Interp::Bezier)
+        return a.value + (b.value - a.value) * keyframeProgress(a, b, f);
+    // The curve's time runs 0, x1, x2, 1 (x1, x2 within 0..1: one value per time); find its t at f.
+    const double x1 = std::clamp(a.x1, 0.0, 1.0), x2 = std::clamp(a.x2, 0.0, 1.0);
+    double lo = 0.0, hi = 1.0;
+    for (int i = 0; i < 40; ++i) {
+        const double mid = (lo + hi) / 2;
+        (cubic(mid, 0.0, x1, x2, 1.0) < f ? lo : hi) = mid;
+    }
+    return cubic((lo + hi) / 2, a.value, a.value + a.y1, b.value + a.y2, b.value);
+}
+
+void fitBezierHandles(Keyframe& a, const Keyframe& b)
+{
+    const double dv = b.value - a.value;
+    // Smooth, Ease In and Ease Out are cubics with evenly spaced time handles: exact.
+    switch (a.interp) {
+    case Keyframe::Interp::Linear: a.x1 = 1.0 / 3, a.y1 = dv / 3, a.x2 = 2.0 / 3, a.y2 = -dv / 3; break;
+    case Keyframe::Interp::EaseIn: a.x1 = 1.0 / 3, a.y1 = 0, a.x2 = 2.0 / 3, a.y2 = -dv; break;
+    case Keyframe::Interp::EaseOut: a.x1 = 1.0 / 3, a.y1 = dv, a.x2 = 2.0 / 3, a.y2 = 0; break;
+    case Keyframe::Interp::EaseInOut: a.x1 = 0.65, a.y1 = 0, a.x2 = 0.35, a.y2 = 0; break;
+    case Keyframe::Interp::Hold: a.x1 = 1, a.y1 = 0, a.x2 = 1, a.y2 = -dv; break;
+    case Keyframe::Interp::Bezier: return;
+    default: a.x1 = 1.0 / 3, a.y1 = 0, a.x2 = 2.0 / 3, a.y2 = 0; break; // Smooth (Bounce, Elastic: near enough)
+    }
+    a.interp = Keyframe::Interp::Bezier;
+}
+
+void keysToJson(const std::vector<Keyframe>& keys, QJsonObject& o, const QString& keysName)
+{
+    QJsonArray list, bez;
+    for (size_t i = 0; i < keys.size(); ++i) {
+        const Keyframe& k = keys[i];
+        list.append(QJsonArray{QString::number(k.time), k.value, int(k.interp)});
+        if (k.interp == Keyframe::Interp::Bezier)
+            bez.append(QJsonArray{int(i), k.x1, k.y1, k.x2, k.y2});
+    }
+    o[keysName] = list;
+    if (!bez.isEmpty())
+        o[QStringLiteral("bez")] = bez;
+}
+
+std::vector<Keyframe> keysFromJson(const QJsonObject& o, const QString& keysName)
+{
+    std::map<int, QJsonArray> handles; // by position in the list
+    for (const auto& h : o[QStringLiteral("bez")].toArray())
+        if (const QJsonArray a = h.toArray(); a.size() == 5 && a[0].isDouble())
+            handles[a[0].toInt()] = a;
+    std::vector<Keyframe> keys;
+    const QJsonArray list = o[keysName].toArray();
+    for (int i = 0; i < list.size(); ++i) {
+        const QJsonArray a = list[i].toArray();
+        if (a.size() < 2 || a.size() > 3 || !a[1].isDouble() || !std::isfinite(a[1].toDouble()))
+            continue;
+        bool ok = false;
+        const double time = a[0].isString() ? double(a[0].toString().toLongLong(&ok)) : a[0].toDouble();
+        if (a[0].isDouble()) ok = true;
+        if (!ok || !std::isfinite(time) || std::abs(time) > 1'000'000'000'000.0 || std::trunc(time) != time)
+            continue;
+        Keyframe k;
+        k.time = TimeUs(time);
+        k.value = a[1].toDouble();
+        const int curve = a.size() == 3 ? a[2].toInt() : 0;
+        k.interp = Keyframe::Interp(curve < 0 ? 0 : curve < kKeyInterps ? curve : int(Keyframe::Interp::Smooth)); // (a newer curve)
+        if (k.interp == Keyframe::Interp::Bezier) {
+            auto h = handles.find(i);
+            double v[4] = {k.x1, k.y1, k.x2, k.y2};
+            if (h != handles.end())
+                for (int j = 0; j < 4; ++j)
+                    if (const double x = h->second[j + 1].toDouble(v[j]); std::isfinite(x) && std::abs(x) < 1e12)
+                        v[j] = x;
+            k.x1 = std::clamp(v[0], 0.0, 1.0), k.y1 = v[1], k.x2 = std::clamp(v[2], 0.0, 1.0), k.y2 = v[3];
+        }
+        keys.push_back(k);
+    }
+    std::stable_sort(keys.begin(), keys.end(), [](const Keyframe& a, const Keyframe& b) { return a.time < b.time; });
+    // The last entry at a timestamp wins, matching an interactive key edit.
+    std::vector<Keyframe> unique;
+    for (const auto& key : keys) {
+        if (!unique.empty() && unique.back().time == key.time) unique.back() = key;
+        else unique.push_back(key);
+    }
+    return unique;
+}
 
 double ParamValue::at(TimeUs t, ParamType type) const
 {
@@ -34,15 +183,10 @@ double ParamValue::at(TimeUs t, ParamType type) const
     auto next = std::upper_bound(keys.begin(), keys.end(), t, [](TimeUs v, const Keyframe& k) { return v < k.time; });
     const Keyframe& a = *std::prev(next);
     const Keyframe& b = *next;
-    double f = double(t - a.time) / double(std::max<TimeUs>(1, b.time - a.time));
-    switch (a.interp) {
-    case Keyframe::Interp::Hold: f = 0.0; break;
-    case Keyframe::Interp::Smooth: f = f * f * (3.0 - 2.0 * f); break;
-    case Keyframe::Interp::Linear: break;
-    }
+    const double f = double(t - a.time) / double(std::max<TimeUs>(1, b.time - a.time));
     if (type == ParamType::Color)
-        return lerpColor(a.value, b.value, f);
-    return a.value + (b.value - a.value) * f;
+        return lerpColor(a.value, b.value, keyframeProgress(a, b, f));
+    return keyframeValue(a, b, f);
 }
 
 bool ParamValue::hasKeyAt(TimeUs t, TimeUs tolerance) const
@@ -360,17 +504,8 @@ QJsonObject paramsToJson(const ParamMap& params)
         p[QStringLiteral("v")] = v.value;
         if (!v.text.isEmpty())
             p[QStringLiteral("text")] = v.text;
-        if (!v.keys.empty()) {
-            QJsonArray keys;
-            for (const auto& k : v.keys) {
-                QJsonArray kv;
-                kv.append(QString::number(k.time));
-                kv.append(k.value);
-                kv.append(int(k.interp));
-                keys.append(kv);
-            }
-            p[QStringLiteral("keys")] = keys;
-        }
+        if (!v.keys.empty())
+            keysToJson(v.keys, p, QStringLiteral("keys"));
         if (v.mod) {
             const Modulation& m = *v.mod;
             QJsonObject mo;
@@ -397,29 +532,7 @@ ParamMap paramsFromJson(const QJsonObject& o)
         ParamValue v;
         v.value = p[QStringLiteral("v")].toDouble();
         v.text = p[QStringLiteral("text")].toString();
-        for (const auto& kv : p[QStringLiteral("keys")].toArray()) {
-            const QJsonArray a = kv.toArray();
-            if (a.size() < 2 || a.size() > 3 || !a[1].isDouble() || !std::isfinite(a[1].toDouble()))
-                continue;
-            bool ok = false;
-            const double time = a[0].isString() ? double(a[0].toString().toLongLong(&ok)) : a[0].toDouble();
-            if (a[0].isDouble()) ok = true;
-            if (!ok || !std::isfinite(time) || std::abs(time) > 1'000'000'000'000.0 || std::trunc(time) != time)
-                continue;
-            Keyframe k;
-            k.time = TimeUs(time);
-            k.value = a[1].toDouble();
-            k.interp = Keyframe::Interp(std::clamp(a.size() == 3 ? a[2].toInt() : 0, 0, 2));
-            v.keys.push_back(k);
-        }
-        std::stable_sort(v.keys.begin(), v.keys.end(), [](const Keyframe& a, const Keyframe& b) { return a.time < b.time; });
-        // The last entry at a timestamp wins, matching an interactive key edit.
-        std::vector<Keyframe> unique;
-        for (const auto& key : v.keys) {
-            if (!unique.empty() && unique.back().time == key.time) unique.back() = key;
-            else unique.push_back(key);
-        }
-        v.keys = std::move(unique);
+        v.keys = keysFromJson(p, QStringLiteral("keys"));
         if (p.contains(QStringLiteral("mod"))) {
             const QJsonObject mo = p[QStringLiteral("mod")].toObject();
             Modulation mod;

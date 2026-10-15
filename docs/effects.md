@@ -62,8 +62,70 @@ Any number, and any colour, can change over time.
 - Right-click the control:
   - **Add / Remove Keyframe at Cursor**,
   - **Previous Keyframe** / **Next Keyframe**,
-  - **Keyframe Curve**: Linear, Smooth or Hold.
+  - **Keyframe Curve**: the curve to the next keyframe (see below),
+  - **Edit in Keyframe Editor...**.
 - Event FX keyframes move with the event. Track and output keyframes follow timeline time.
+
+The curves:
+
+| Curve | Between this keyframe and the next |
+|---|---|
+| Linear | Changes at a steady rate. |
+| Hold | Stays, then jumps at the next keyframe. |
+| Smooth | Starts and arrives gently. |
+| Ease In / Ease Out / Ease In/Out | Starts slowly / arrives slowly / both, more strongly than Smooth. |
+| Bezier | Any shape: drag its two handles in the Keyframe Editor's graph. |
+| Bounce | Arrives, then bounces like a dropped ball. |
+| Elastic | Overshoots and springs back. |
+
+Colours follow the same timing; a Bezier curve between colours runs as Smooth.
+
+## The Keyframe Editor
+
+The **Keyframes** tab, beside Effects and Properties, shows every keyframe of what Effects shows:
+an event (its Event FX with racks, Pan/Crop, its text or generated media, and its transitions), a
+track's FX, the video output or the audio master. **Animated Only** lists the settings that have
+keyframes; turn it off to add keyframes to any of them.
+
+On the left, each setting shows its value at the cursor. **◀ ▶** go to its previous or next
+keyframe, and **◇** adds or removes one at the cursor. Click a group's name to fold it.
+
+**Dope Sheet** shows one row per setting, with each keyframe as a mark. Its shape shows the curve
+that follows it: a diamond (Linear), square (Hold), circle (Smooth and the eases), dotted diamond
+(Bezier) or triangle (Bounce, Elastic). A group's row has a mark wherever any of its settings has a
+keyframe; moving that mark moves them all.
+
+- Click a keyframe to pick it. **Shift+click** adds, **Ctrl+click** adds or removes, and dragging
+  a box over empty space picks what is inside. Click a setting's name to pick all of its keyframes.
+- Drag picked keyframes to move them, in whole frames. With **Snap** on they also stop at the
+  cursor, other keyframes and the event's ends. **Alt+drag** copies them.
+- With two or more picked, a bar over the ruler spans them: drag either end to stretch or squeeze
+  their timing.
+- Double-click a row to add a keyframe there. Double-click a keyframe to move the cursor to it.
+
+**Graph** draws the curves themselves, each scaled to its setting's range. Click setting names to
+choose which curves show (Ctrl+click for more); with none chosen, every animated one shows.
+
+- Drag a keyframe to change its time and value. Hold **Shift** to keep to one direction.
+- A picked keyframe on a **Bezier** curve shows its handles. Drag them to shape the curve; the
+  handles on either side of a keyframe stay in line (**Alt+drag** moves one alone).
+- Double-click a curve to add a keyframe on it.
+
+In both views:
+
+- The curve buttons (or keys **1-9**) set the curve after each picked keyframe. Choosing Bezier
+  keeps the shape the curve had, ready to adjust.
+- **Smooth** gives the picked keyframes Bezier curves with smooth handles. They are flat at peaks
+  and dips, so nothing overshoots.
+- **Time** and **Value** show the picked keyframe and can be typed into.
+- Right-click for **Copy**, **Cut**, **Paste at Cursor** or **Paste Here**, **Delete**, **Reverse**,
+  **Set Value...** and more. Pasting into another event puts keyframes on the same effect's
+  settings, with the same spacing.
+- **Ctrl+wheel** zooms in time, **Shift+wheel** scrolls in time, and the wheel scrolls the rows (in
+  the graph: the values; **Alt+wheel** zooms them). Drag with the middle button to pan. **F** shows
+  everything.
+
+Each drag or command is one step of undo.
 
 ## Presets
 

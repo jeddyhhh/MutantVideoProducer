@@ -191,6 +191,7 @@ private:
     MediaBin* m_youtubeBin = nullptr;
     EffectEditor* m_fxEditor;       // transitions, titles, pan/crop
     DeviceChainView* m_devices;     // effect chains
+    class KeyframeEditor* m_keyframes; // every keyframe of the event, track or output shown in Effects
     class QTabWidget* m_bottomTabs = nullptr; // Effects (the device chain) / Properties (transition, generator, pan/crop)
     bool m_editorTransaction = false; // modal sequence or live variation preview owns the timeline
     bool m_holdProperties = false;  // the Properties tab just opened: the selection that came with it doesn't switch away

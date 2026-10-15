@@ -3240,9 +3240,11 @@ void TimelineWidget::envelopeMenu(QMenu& menu, const EnvHit& hit)
         });
         QMenu* curve = menu.addMenu(tr("Curve to Next Point"));
         const Keyframe::Interp interpNow = current->points[size_t(i)].interp;
-        for (auto [label, interp] : {std::pair{tr("Linear"), Keyframe::Interp::Linear}, std::pair{tr("Smooth"), Keyframe::Interp::Smooth},
-                                     std::pair{tr("Hold"), Keyframe::Interp::Hold}}) {
-            QAction* a = curve->addAction(label, this, [edit, i, interp = interp] {
+        for (int n = 0; n < kKeyInterps; ++n) {
+            const auto interp = Keyframe::Interp(n);
+            if (interp == Keyframe::Interp::Bezier) // (its handles are drawn in the Keyframe Editor only)
+                continue;
+            QAction* a = curve->addAction(keyInterpName(interp), this, [edit, i, interp] {
                 edit(QObject::tr("Envelope Curve"), [i, interp](Envelope& e) {
                     if (i < int(e.points.size()))
                         e.points[size_t(i)].interp = interp;
