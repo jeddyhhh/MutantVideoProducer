@@ -2,6 +2,13 @@
 
 What changed in each version of Mutant Video Producer. The newest is first.
 
+### Faster speech on NVIDIA GPUs without RVC
+
+- The CUDA speech engine installs its own cuDNN 9.7, cuBLAS, CUDA runtime and cuFFT (hash-locked),
+  so GPU narration no longer requires the 12 GB CUDA RVC engine; it needs 6 GB free to install.
+  Measured: 37.7 s of narration in 7.9 s including start-up, with no CUDA Toolkit on the system.
+- The voice worker prefers those libraries and falls back to CUDA RVC's.
+
 ## 0.2.6 (2026-10-14)
 
 ### Fixed

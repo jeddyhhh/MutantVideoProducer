@@ -107,7 +107,9 @@ bool installAiRuntime(const AiRuntime& r,const QString& device,const AiRuntimePr
     const QString root=aiRuntimeRoot();if(!QDir().mkpath(root))return fail("Could not create the AI components folder.");
     QLockFile guard(QDir(root).filePath("setup.lock"));if(!guard.tryLock(0))return fail("AI setup is already running in another window.");
     const QStorageInfo disk(root);
-    const qint64 required=r.id=="speech"?2LL*1024*1024*1024:(device=="cuda"?12LL:5LL)*1024*1024*1024;
+    // Free space for the engine and uv's download cache. CUDA speech brings its own cuDNN, cuBLAS and
+    // CUDA runtime (~2.3 GB installed); RVC CUDA brings PyTorch.
+    const qint64 required=(r.id=="speech"?(device=="cuda"?6LL:2LL):(device=="cuda"?12LL:5LL))*1024*1024*1024;
     if(disk.isValid() && disk.bytesAvailable()>=0 && disk.bytesAvailable()<required)return fail("There is not enough disk space for this AI engine and its download cache.");
     const QString generation=r.id+"-"+QUuid::createUuid().toString(QUuid::WithoutBraces);
     const QString destination=QDir(root).filePath(generation);
@@ -145,7 +147,8 @@ bool installAiRuntime(const AiRuntime& r,const QString& device,const AiRuntimePr
         ok=run(uv,{"pip","uninstall","--python",python,"onnxruntime"},.75,"Selecting the CUDA speech backend")
             && run(uv,{"pip","install","--python",python,"--no-deps","--require-hashes","--only-binary",":all:","-r",cudaLock},.8,"Downloading CUDA speech support from PyPI");
     }
-    const QString smoke=r.id=="speech"?"import kokoro_onnx,phonemizer,espeakng_loader,onnxruntime; print(onnxruntime.get_available_providers())":
+    const QString smoke=r.id=="speech"?QString("import kokoro_onnx,phonemizer,espeakng_loader,onnxruntime%1; print(onnxruntime.get_available_providers())")
+                                             .arg(device=="cuda"?",nvidia.cudnn,nvidia.cublas,nvidia.cuda_runtime,nvidia.cufft":""):
         "import torch,numpy,scipy,librosa,faiss,parselmouth,soundfile,transformers; import sys; sys.path.insert(0,sys.argv[1]); from infer.module.models import SynthesizerTrnMs768NSFsid; from infer.vc.pipeline import Pipeline; import infer.hubert; print(torch.__version__)";
     if(ok)ok=run(python,{"-I","-c",smoke,QCoreApplication::applicationDirPath()+"/voice/rvc/vendor"},.92,"Checking the installed engine");
     if(ok && progress && !progress(.98,"Finishing AI setup"))ok=fail("Cancelled");

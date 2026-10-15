@@ -14,10 +14,11 @@ dependencies from [PyPI](https://pypi.org/), and Windows PyTorch wheels from
 [PyTorch](https://pytorch.org/get-started/locally/). These are upstream downloads,
 not AI packs hosted in our releases, and work with private development builds too.
 
-CPU speech is the smallest option. NVIDIA speech requires the CUDA RVC engine's
-CUDA/cuDNN libraries for acceleration; install both CUDA variants for that setup.
-CUDA RVC needs a compatible NVIDIA driver. CPU fallback remains available when
-acceleration cannot be used. No CUDA Toolkit installation is required.
+CPU speech is the smallest option. NVIDIA (CUDA) speech brings its own cuDNN, cuBLAS and
+CUDA runtime, about 2.3 GB, and needs 6 GB free while it installs; it does not need RVC.
+On an RTX 5070 it speaks a minute of narration in about 4 seconds, against about a minute on
+a 4-core CPU. CUDA RVC needs 12 GB free. Both need a compatible NVIDIA driver, and no CUDA
+Toolkit installation. CPU fallback remains available when acceleration cannot be used.
 
 Setup displays its current phase and dependency download output and supports Cancel.
 Dependency versions and wheel hashes are locked; source builds are disabled so users

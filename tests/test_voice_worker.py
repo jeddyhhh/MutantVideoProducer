@@ -40,6 +40,26 @@ class TimingTest(unittest.TestCase):
                  patch.object(worker, 'cuda_library_roots', return_value=[root]), patch.object(worker, 'emit'):
                 self.assertEqual(worker.speech_session(FakeOrt(), root / 'model.onnx').get_providers(), ['CPUExecutionProvider'])
 
+    def test_cuda_speech_prefers_its_own_libraries_over_rvc(self):
+        calls = []
+        class FakeOrt:
+            ExecutionMode = SimpleNamespace(ORT_SEQUENTIAL=0)
+            def get_available_providers(self): return ['CUDAExecutionProvider', 'CPUExecutionProvider']
+            def preload_dlls(self, **kwargs): calls.append(kwargs)
+            def SessionOptions(self): return SimpleNamespace()
+            def InferenceSession(self, path, sess_options, providers):
+                return SimpleNamespace(get_providers=lambda: ['CUDAExecutionProvider'])
+        with tempfile.TemporaryDirectory() as directory:
+            rvc = Path(directory)
+            (rvc / 'cudnn64_9.dll').write_bytes(b'fixture')
+            with patch.object(worker, 'os', SimpleNamespace(name='nt', environ={})), patch.object(worker, 'emit'), \
+                 patch.object(worker, 'cuda_library_roots', return_value=[rvc]):
+                with patch.object(worker, 'own_cuda_libraries', return_value=True):
+                    worker.speech_session(FakeOrt(), rvc / 'model.onnx', 'gpu')
+                with patch.object(worker, 'own_cuda_libraries', return_value=False):
+                    worker.speech_session(FakeOrt(), rvc / 'model.onnx', 'gpu')
+        self.assertEqual(calls, [{}, {'directory': str(rvc)}])  # its own wheels first; RVC's only without them
+
     def test_fit_preserves_short_speech_and_gaps(self):
         result = worker.plan_timing([{"start": 1, "end": 5, "text": "Short."}, {"start": 8, "end": 10, "text": "Later."}], [2, 2], True)
         self.assertEqual([r["start"] for r in result], [1, 8])
