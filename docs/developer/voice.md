@@ -50,7 +50,9 @@ The standard installer omits both frozen worker directories. Its small verified
 `runtime/uv.exe` helper installs private Python 3.12.12 from Astral, then uses
 `data/runtime/locks` to sync hash-locked binary wheels from PyPI/PyTorch. Speech and
 RVC have separate environments because their NumPy versions differ. The speech CUDA
-overlay replaces CPU ONNX Runtime; its libraries can be shared from CUDA RVC.
+overlay replaces CPU ONNX Runtime and adds pinned cuDNN 9.7 / cuBLAS / CUDA runtime / cuFFT
+wheels (the set PyTorch 2.7.1+cu128 ships; cuDNN 9.27 fails on Kokoro's grouped ConvTranspose).
+The worker preloads them from its own environment, and falls back to CUDA RVC's libraries.
 
 `core/AiRuntime` creates each environment at its permanent per-user generation path.
 Windows venvs cannot simply be renamed. After successful import checks, a QSaveFile

@@ -11,7 +11,7 @@
       "lock": "locks/speech.txt",
       "cuda_lock": "locks/speech-cuda.txt",
       "lock_sha256": "19a2e3ed732b5ff9832c521687bcdd7cc23b7e1486be361309508e1d18f400ac",
-      "cuda_lock_sha256": "504d66615e508b01f4882ac3f54cc597ac4a74e812b6236fa1c392fa54cd60c1"
+      "cuda_lock_sha256": "f944e756d90535dae8c72e569966c82eebeb101ed6e7bc0241f6a15cf610d049"
     },
     {
       "id": "rvc",

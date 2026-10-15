@@ -30,21 +30,25 @@ def cuda_library_roots():
         Path(__file__).resolve().parents[2] / "deps" / "rvc-worker-env" / "Lib" / "site-packages" / "torch" / "lib"]
 
 
+def own_cuda_libraries():
+    """The CUDA speech install's own cuDNN / cuBLAS / runtime wheels (nvidia-* in this environment)."""
+    return (Path(sys.prefix) / "Lib" / "site-packages" / "nvidia" / "cudnn" / "bin" / "cudnn64_9.dll").is_file()
+
+
 def speech_session(ort, model_path, device="auto", profile=""):
     """GPU first, retaining ONNX's CPU operator fallback and a CPU-only session."""
     if device not in ("auto", "gpu", "cpu"):
         raise ValueError("Voice device must be auto, gpu or cpu")
     available = ort.get_available_providers()
     if device != "cpu" and "CUDAExecutionProvider" in available and os.name == "nt":
-        # Share the bundled CUDA/cuDNN libraries with RVC. No system Toolkit is
-        # required; the driver is the only machine-level dependency.
-        for root in cuda_library_roots():
-            if (root / "cudnn64_9.dll").is_file():
-                try:
-                    ort.preload_dlls(directory=str(root))
-                except Exception as error:
-                    emit(message=f"GPU library loading failed; CPU fallback remains available: {error}")
-                break
+        # The CUDA libraries installed with the speech engine, else RVC's bundled ones.
+        # No system Toolkit is required; the driver is the only machine-level dependency.
+        roots = [None] if own_cuda_libraries() else [r for r in cuda_library_roots() if (r / "cudnn64_9.dll").is_file()][:1]
+        for root in roots:
+            try:
+                ort.preload_dlls() if root is None else ort.preload_dlls(directory=str(root))
+            except Exception as error:
+                emit(message=f"GPU library loading failed; CPU fallback remains available: {error}")
     candidates = [] if device == "cpu" else [p for p in
         ("CUDAExecutionProvider", "DmlExecutionProvider", "CoreMLExecutionProvider") if p in available]
     for provider in candidates + ["CPUExecutionProvider"]:
