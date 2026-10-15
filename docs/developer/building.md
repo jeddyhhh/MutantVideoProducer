@@ -5,21 +5,25 @@ Mutant Video Producer is C++20 on top of [FFmpeg](https://ffmpeg.org) (all media
 
 ## Windows
 
-Requirements: Visual Studio 2019 or 2022 with the C++ x64 toolset (the Build Tools are enough).
-Qt and FFmpeg live in `deps\` (not in git):
+Requirements: Visual Studio 2022 or newer with the C++ x64 toolset (the Build Tools are enough),
+and CMake and Ninja on the PATH (Visual Studio's "C++ CMake tools for Windows", or
+`python -m pip install cmake ninja`). Qt and FFmpeg live in `deps\` (not in git), the same
+versions the release builds use:
 
 ```bat
 python -m pip install aqtinstall
-python -m aqt install-qt windows desktop 6.5.3 win64_msvc2019_64 -m qtmultimedia -O deps\Qt
-rem FFmpeg shared dev build (headers + import libs + DLLs), unpacked to deps\ffmpeg:
-rem https://github.com/BtbN/FFmpeg-Builds/releases  ->  ffmpeg-n8.1-latest-win64-gpl-shared-8.1.zip
+python -m aqt install-qt windows desktop 6.8.3 win64_msvc2022_64 -m qtmultimedia -O deps\Qt
+rem FFmpeg 8.1 shared dev build (headers + import libs + DLLs) into deps\ffmpeg, checksum verified:
+pwsh -File scripts\download-ffmpeg.ps1
+rem The verified uv helper that Tools > AI Components uses to install the speech and RVC engines:
+pwsh -File scripts\download-ai-bootstrap.ps1
 build.bat
 ```
 
-The result is `build\Release\bin\MutantVideoProducer.exe` with all its DLLs, the user guide (`docs`) and the
-example projects (`examples`) next to it.
+The scripts need PowerShell 7 (`pwsh`). The result is `build\Release\bin\MutantVideoProducer.exe` with
+all its DLLs, the user guide (`docs`) and the example projects (`examples`) next to it.
 
-With Visual Studio 2026 use Qt 6.8 or newer (`6.8.3 win64_msvc2022_64`): older Qt headers use
+Qt older than 6.8 does not build with Visual Studio 2026: its headers use
 `stdext::checked_array_iterator`, which that compiler removed.
 
 ### Optional parts
@@ -52,6 +56,12 @@ optional parts in `deps/` work the same way (whisper.cpp builds anywhere). On Li
 YouTube uses `yt-dlp` and `ffmpeg` from the PATH (or downloads yt-dlp the first time); Spout, the OBS
 virtual camera, Remove Background on DirectML and the installer are Windows-only.
 
+`.github/workflows/linux-build.yml` also packages each build as an AppImage with
+[linuxdeploy](https://github.com/linuxdeploy/linuxdeploy) and its Qt plugin (pinned versions,
+checksums verified): Qt with its plugins and FFmpeg go inside, and the program's data stays next to
+it in `usr/bin`. The workflow starts it off-screen with `--screenshot` as a smoke test. Version tags
+attach the AppImage and the tar.gz to the release.
+
 ## Releases
 
 GitHub Actions builds them (`.github/workflows/windows-release.yml`). Pushing a `v*` tag,
@@ -65,8 +75,11 @@ or manually running the workflow against that tag, builds and attaches:
   The standard installer and portable ZIP omit the speech/RVC frameworks and enforce
   a size budget below 1 GiB. Optional engines download directly from upstream sources
   through Tools > AI Components; Python setup is automatic.
-- `MutantVideoProducer-<version>-win64-offline.zip`: version tags also build a full
-  edition with both frozen engines and Whisper models for computers without internet.
+- `MutantVideoProducer-<version>-win64-offline.zip`: milestones only. A full edition with
+  both frozen engines and Whisper models for computers without internet (several GB, split
+  into parts). Tag pushes leave it out; for a milestone, run the workflow manually on the
+  version tag with **offline** ticked. That run builds the frozen engines too and attaches
+  everything to the same release.
 
 Main, `codex/...` and `claude/...` branch runs store tested builds in draft development releases,
 independently of the Actions artifact quota. `scripts/package-windows.py` creates the

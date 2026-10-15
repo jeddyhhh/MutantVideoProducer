@@ -12,7 +12,7 @@
 int main(int argc,char** argv) {
     QGuiApplication app(argc,argv);int failures=0;
     auto check=[&](bool ok,const QString& what){QTextStream(stdout)<<(ok?"PASS ":"FAIL ")<<what<<Qt::endl;if(!ok)++failures;};
-    if(argc<2)return 2;Project p;const auto info=probeMedia(QString::fromLocal8Bit(argv[1]));check(info.ok()&&info.hasAudio()&&info.hasVideo(),"audio/video fixture");if(!info.ok())return 1;
+    if(argc<2){QTextStream(stderr)<<"usage: mvp_story_test <video with sound, e.g. testmedia/h264_aac.mp4>"<<Qt::endl;return 2;}Project p;const auto info=probeMedia(QString::fromLocal8Bit(argv[1]));check(info.ok()&&info.hasAudio()&&info.hasVideo(),"audio/video fixture");if(!info.ok())return 1;
     int media=p.addMedia(info);Timeline original=p.timeline();auto placed=ops::insertMedia(original,*p.mediaItem(media),2*kUsPerSecond,-1,p.settings().fps,true);std::set<int> ids(placed.begin(),placed.end());
     for(int id:ids)original.findClip(id)->length=2*kUsPerSecond;
     int video=-1,audio=-1;for(size_t i=0;i<original.tracks.size();++i)if(!original.tracks[i].clips.empty())(isVisualTrack(original.tracks[i].type)?video:audio)=int(i);

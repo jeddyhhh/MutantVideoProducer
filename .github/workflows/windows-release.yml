@@ -2,6 +2,8 @@
 # Qt + FFmpeg + MSVC runtime) on a GitHub release when a version tag such as v0.1.0 is pushed.
 # Publishing an already-tested release does not start another build. Main/feature branch pushes
 # and manual branch runs store tested downloads in a draft development release.
+# The offline edition (frozen AI engines and Whisper models, several GB) is built only for
+# milestones: run this workflow manually on the version tag with "offline" ticked.
 name: Windows release
 
 on:
@@ -10,6 +12,11 @@ on:
     branches: ['main', 'codex/**', 'claude/**'] # main and feature-branch build artifacts
     paths-ignore: ['**.md']
   workflow_dispatch:
+    inputs:
+      offline:
+        description: 'Milestone: also build the offline edition (run on a version tag)'
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -25,6 +32,7 @@ jobs:
     timeout-minutes: 120
     env:
       CMAKE_BUILD_PARALLEL_LEVEL: 2
+      OFFLINE: ${{ github.ref_type == 'tag' && inputs.offline == true }}
     steps:
       - uses: actions/checkout@v4
 
@@ -84,7 +92,7 @@ jobs:
         run: |
           $version = if ($env:GITHUB_REF_TYPE -eq 'tag') { $env:GITHUB_REF_NAME.TrimStart('v') } else { "dev-$($env:GITHUB_SHA.Substring(0, 7))" }
           "MVP_VERSION=$version" >> $env:GITHUB_ENV
-          $bundle = if ($env:GITHUB_REF_TYPE -eq 'tag') { 'ON' } else { 'OFF' }
+          $bundle = if ($env:OFFLINE -eq 'true') { 'ON' } else { 'OFF' }
           "MVP_BUNDLE_AI=$bundle" >> $env:GITHUB_ENV
 
       - uses: actions/setup-python@v5
@@ -92,7 +100,7 @@ jobs:
           python-version: '3.12'
 
       - name: Restore packaged AI workers
-        if: github.ref_type == 'tag'
+        if: env.OFFLINE == 'true'
         id: worker_cache
         uses: actions/cache/restore@v4
         with:
@@ -102,17 +110,17 @@ jobs:
           key: ai-workers-${{ runner.os }}-py312-${{ hashFiles('scripts/build-voice-worker.ps1', 'scripts/build-rvc-worker.ps1', 'data/voice/worker.py', 'data/voice/requirements.txt', 'data/rvc/**') }}
 
       - name: Build local voice worker
-        if: github.ref_type == 'tag' && steps.worker_cache.outputs.cache-hit != 'true'
+        if: env.OFFLINE == 'true' && steps.worker_cache.outputs.cache-hit != 'true'
         shell: pwsh
         run: ./scripts/build-voice-worker.ps1
 
       - name: Build bundled RVC engine
-        if: github.ref_type == 'tag' && steps.worker_cache.outputs.cache-hit != 'true'
+        if: env.OFFLINE == 'true' && steps.worker_cache.outputs.cache-hit != 'true'
         shell: pwsh
         run: ./scripts/build-rvc-worker.ps1
 
       - name: Cache packaged AI workers
-        if: github.ref_type == 'tag' && steps.worker_cache.outputs.cache-hit != 'true'
+        if: env.OFFLINE == 'true' && steps.worker_cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
         with:
           path: |
@@ -224,8 +232,8 @@ jobs:
           "setup=$setup" >> $env:GITHUB_OUTPUT
           "### Windows installer`n`nSize: $([math]::Round((Get-Item $setup).Length / 1MB,1)) MiB. AI engines download directly from upstream sources through Tools > AI Components. The installer is a single EXE." >> $env:GITHUB_STEP_SUMMARY
 
-      - name: Optional complete offline edition (version tags)
-        if: github.ref_type == 'tag'
+      - name: Complete offline edition (milestones)
+        if: env.OFFLINE == 'true'
         shell: pwsh
         run: |
           $version = $env:MVP_VERSION
