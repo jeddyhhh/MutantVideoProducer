@@ -140,6 +140,21 @@ QImage MediaCache::thumbnail(const std::shared_ptr<const MediaItem>& media, int 
     return best ? *best : QImage();
 }
 
+QImage MediaCache::decodeThumbnail(VideoDecoder& decoder, FrameConverter& converter, const VideoStreamInfo& vs, TimeUs t)
+{
+    const AVFrame* f = decoder.frameAt(t, false);
+    if (!f)
+        return {};
+    const QSize disp = vs.displaySize();
+    const int h = kThumbHeight;
+    const int w = std::max(8, int(std::lround(double(h) * disp.width() / std::max(1, disp.height()))));
+    const bool sideways = vs.rotation == 90 || vs.rotation == 270;
+    QImage img = converter.convert(f, sideways ? QSize(h, w) : QSize(w, h), false);
+    if (!img.isNull() && vs.rotation)
+        img = img.transformed(QTransform().rotate(vs.rotation));
+    return img;
+}
+
 void MediaCache::thumbThreadMain()
 {
     struct Dec {
@@ -183,17 +198,8 @@ void MediaCache::thumbThreadMain()
 
         QImage img;
         const VideoStreamInfo* vs = req.media->info.videoStream(req.stream);
-        if (it->decoder && vs) {
-            if (const AVFrame* f = it->decoder->frameAt(req.t, false)) {
-                const QSize disp = vs->displaySize();
-                const int h = kThumbHeight;
-                const int w = std::max(8, int(std::lround(double(h) * disp.width() / std::max(1, disp.height()))));
-                const bool sideways = vs->rotation == 90 || vs->rotation == 270;
-                img = it->converter.convert(f, sideways ? QSize(h, w) : QSize(w, h), false);
-                if (!img.isNull() && vs->rotation)
-                    img = img.transformed(QTransform().rotate(vs->rotation));
-            }
-        }
+        if (it->decoder && vs)
+            img = decodeThumbnail(*it->decoder, it->converter, *vs, req.t);
         if (img.isNull()) {
             img = QImage(16, 9, QImage::Format_ARGB32_Premultiplied);
             img.fill(Qt::black);

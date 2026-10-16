@@ -1,5 +1,6 @@
 #include "ui/TimelineWidget.h"
 
+#include "core/AudioFinishing.h"
 #include "core/AudioMixer.h"
 #include "core/PanCrop.h"
 #include "core/Presets.h"
@@ -10,7 +11,10 @@
 #include "ui/MediaBin.h"
 #include "ui/Theme.h"
 
+#include <QClipboard>
 #include <QContextMenuEvent>
+#include <QCursor>
+#include <QPixmap>
 #include <QInputDialog>
 #include <QMenu>
 #include <QMessageBox>
@@ -19,6 +23,7 @@
 #include <QApplication>
 #include <QPainterPath>
 #include <QToolTip>
+#include <QWheelEvent>
 #include <QTemporaryDir>
 #include <QScrollBar>
 #include <algorithm>
@@ -42,6 +47,23 @@ constexpr int kMarkerBarH = 17;
 constexpr int kRulerTop = kRegionBarH + kMarkerBarH;
 constexpr int kRulerH = 26;
 constexpr int kTopH = kRulerTop + kRulerH;
+// As in Ableton Live, the wheel zooms only over the time ruler; elsewhere it scrolls the tracks.
+bool overRuler(QPointF p) { return p.x() >= kHeaderWidth && p.y() >= kRulerTop && p.y() < kTopH; }
+QCursor magnifierCursor()
+{
+    // (Not a static: a pixmap must not outlive the application.)
+    QPixmap pm(24, 24);
+    pm.fill(Qt::transparent);
+    QPainter p(&pm);
+    p.setRenderHint(QPainter::Antialiasing);
+    for (const auto& [colour, width] : {std::pair{QColor(Qt::white), 4.0}, std::pair{QColor(Qt::black), 2.0}}) {
+        p.setPen(QPen(colour, width, Qt::SolidLine, Qt::RoundCap));
+        p.drawEllipse(QPointF(10, 10), 6.5, 6.5);
+        p.drawLine(QPointF(15, 15), QPointF(21, 21));
+    }
+    p.end();
+    return QCursor(pm, 10, 10);
+}
 constexpr int kEdgeGrab = 6;
 constexpr int kFadeGrab = 8;
 constexpr int kTitleH = 15;
@@ -2335,7 +2357,7 @@ void TimelineWidget::updateHoverCursor(QPoint p)
         if (std::abs(p.x() - timeToX(m_regionStart)) <= 5 || std::abs(p.x() - timeToX(m_regionEnd)) <= 5)
             shape = Qt::SizeHorCursor;
     }
-    viewport()->setCursor(shape);
+    viewport()->setCursor(overRuler(p) ? magnifierCursor() : QCursor(shape));
     viewport()->setToolTip(tip);
 }
 
@@ -2343,16 +2365,15 @@ void TimelineWidget::wheelEvent(QWheelEvent* e)
 {
     const QPoint delta = e->angleDelta();
     const double x = e->position().x();
-    if (e->modifiers() & Qt::ControlModifier || std::abs(delta.x()) > std::abs(delta.y())) {
+    if (e->modifiers() & (Qt::ControlModifier | Qt::ShiftModifier) || std::abs(delta.x()) > std::abs(delta.y())) {
         const int d = std::abs(delta.x()) > std::abs(delta.y()) ? delta.x() : delta.y();
         m_viewStart = std::max<TimeUs>(0, m_viewStart - TimeUs(d * visibleDuration() / 1200));
         updateScrollBars();
         viewport()->update();
-    } else if (e->modifiers() & Qt::ShiftModifier) {
-        verticalScrollBar()->setValue(verticalScrollBar()->value() - delta.y() / 2);
+    } else if (overRuler(e->position())) {
+        zoomAround(x, std::pow(1.0015, delta.y()));
     } else {
-        // Plain wheel zooms around the mouse.
-        zoomAround(std::max<double>(x, kHeaderWidth), std::pow(1.0015, delta.y()));
+        verticalScrollBar()->setValue(verticalScrollBar()->value() - delta.y() / 2);
     }
     e->accept();
 }
@@ -2377,6 +2398,21 @@ void TimelineWidget::contextMenuEvent(QContextMenuEvent* e)
             if (trk.type == TrackType::Audio) {
                 envAction(tr("Volume Envelope\tV"), EnvelopeKind::Volume);
                 envAction(tr("Pan Envelope\tP"), EnvelopeKind::Pan);
+                menu.addAction(tr("Track Listing for YouTube..."), this, [this, ti] {
+                    const QString listing = finishing::trackListing(*m_project, ti);
+                    if (listing.isEmpty()) {
+                        emit message(tr("This track has no events to list."));
+                        return;
+                    }
+                    bool ok = false;
+                    const QString text = QInputDialog::getMultiLineText(
+                        this, tr("Track Listing"), tr("Each event on this track with its start time. Edit the names, then OK copies the list."),
+                        listing, &ok);
+                    if (ok) {
+                        QApplication::clipboard()->setText(text);
+                        emit message(tr("Track listing copied for the video description."));
+                    }
+                });
                 QMenu* duck = menu.addMenu(tr("Auto Duck Under"));
                 duck->setToolTipsVisible(true);
                 const float amount = trk.duckAmount;
@@ -4198,6 +4234,19 @@ int TimelineWidget::runEditTest(QStringList& log)
         mouse(QEvent::MouseButtonRelease, to);
     };
     const int markerY = kRegionBarH + kMarkerBarH / 2;
+    {
+        auto wheel = [&](QPoint pos) {
+            QWheelEvent ev(QPointF(pos), mapToGlobal(QPointF(pos)), {}, QPoint(0, 120), Qt::NoButton, Qt::NoModifier, Qt::NoScrollPhase, false);
+            QApplication::sendEvent(viewport(), &ev);
+        };
+        wheel(QPoint(kHeaderWidth + 100, kRulerTop + kRulerH / 2));
+        const double zoomed = m_pxPerSec;
+        wheel(QPoint(kHeaderWidth + 100, kTopH + 20));
+        check(zoomed > 100 && m_pxPerSec == zoomed, QStringLiteral("wheel zooms over the time ruler only, elsewhere scrolls the tracks"));
+        m_viewStart = 0;
+        m_pxPerSec = 100;
+        updateScrollBars();
+    }
 
     // Two grouped video + audio events of 2 s, A at 0 and B at 3 s.
     Timeline base = defaultTimeline();

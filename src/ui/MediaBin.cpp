@@ -4,7 +4,13 @@
 #include "ui/Help.h"
 #include "core/Project.h"
 #include "core/Profiles.h"
+#include <QApplication>
+#include <QCryptographicHash>
+#include <QStandardPaths>
+#include "core/Brand.h"
 #include <QFileInfo>
+#include <QPointer>
+#include <QThreadPool>
 #include <QDir>
 #include <QJsonObject>
 #include <QUrl>
@@ -44,6 +50,28 @@ QIcon placeholderIcon(bool audio)
     QPainter p(&pm);
     p.setPen(theme::c().dim);
     p.drawText(pm.rect(), Qt::AlignCenter, audio ? QStringLiteral("♪ audio") : QStringLiteral("…"));
+    return QIcon(pm);
+}
+
+QIcon thumbIcon(const QImage& img, bool proxyBadge)
+{
+    QPixmap pm(kIconW, kIconH);
+    pm.fill(Qt::black);
+    QPainter p(&pm);
+    const QImage scaled = img.scaled(kIconW, kIconH, Qt::KeepAspectRatio, Qt::SmoothTransformation);
+    p.drawImage((kIconW - scaled.width()) / 2, (kIconH - scaled.height()) / 2, scaled);
+    if (proxyBadge) { // a "P" badge in the corner
+        p.setRenderHint(QPainter::Antialiasing);
+        p.setPen(Qt::NoPen);
+        p.setBrush(QColor(40, 140, 220));
+        p.drawRoundedRect(QRectF(kIconW - 17, 3, 14, 13), 3, 3);
+        QFont f = p.font();
+        f.setPixelSize(10);
+        f.setBold(true);
+        p.setFont(f);
+        p.setPen(Qt::white);
+        p.drawText(QRectF(kIconW - 17, 3, 14, 13), Qt::AlignCenter, QStringLiteral("P"));
+    }
     return QIcon(pm);
 }
 
@@ -341,8 +369,11 @@ void MediaBin::refreshIcons()
     for (int i = 0; i < count(); ++i) {
         QListWidgetItem* it = item(i);
         auto media = m_project->mediaItem(it->data(Qt::UserRole).toInt());
-        if (!media)
+        if (!media) {
+            if (const QIcon icon = libraryIcon(it->data(Qt::UserRole + 2).toString()); !icon.isNull())
+                it->setIcon(icon);
             continue;
+        }
         if (media->info.hasVideo()) {
             const TimeUs t = media->info.isStill ? 0 : std::min<TimeUs>(kUsPerSecond, media->info.duration / 2);
             const int stream = media->info.video.front().index;
@@ -353,32 +384,50 @@ void MediaBin::refreshIcons()
                                + (hasProxy ? tr("\nProxy: ready (the preview plays it when Proxies is on)")
                                   : proxy::recommended(media->info) ? tr("\nA heavy file: right-click > Create Proxy for smooth previews")
                                                                      : QString()));
-            if (img.isNull()) {
-                it->setIcon(placeholderIcon(false));
-            } else {
-                QPixmap pm(kIconW, kIconH);
-                pm.fill(Qt::black);
-                QPainter p(&pm);
-                const QImage scaled = img.scaled(kIconW, kIconH, Qt::KeepAspectRatio, Qt::SmoothTransformation);
-                p.drawImage((kIconW - scaled.width()) / 2, (kIconH - scaled.height()) / 2, scaled);
-                if (hasProxy) { // a "P" badge in the corner
-                    p.setRenderHint(QPainter::Antialiasing);
-                    p.setPen(Qt::NoPen);
-                    p.setBrush(QColor(40, 140, 220));
-                    p.drawRoundedRect(QRectF(kIconW - 17, 3, 14, 13), 3, 3);
-                    QFont f = p.font();
-                    f.setPixelSize(10);
-                    f.setBold(true);
-                    p.setFont(f);
-                    p.setPen(Qt::white);
-                    p.drawText(QRectF(kIconW - 17, 3, 14, 13), Qt::AlignCenter, QStringLiteral("P"));
-                }
-                it->setIcon(QIcon(pm));
-            }
+            it->setIcon(img.isNull() ? placeholderIcon(false) : thumbIcon(img, hasProxy));
         } else {
             it->setIcon(placeholderIcon(true));
         }
     }
+}
+
+QIcon MediaBin::libraryIcon(const QString& path)
+{
+    auto [entry, added] = m_library.try_emplace(path);
+    if (!added || !QFileInfo::exists(path))
+        return entry->second;
+    const QFileInfo fi(path);
+    const QByteArray id = (fi.absoluteFilePath() + QString::number(fi.size()) + QString::number(fi.lastModified().toMSecsSinceEpoch())).toUtf8();
+    const QString dir = QDir(brand::storageLocation(QStandardPaths::CacheLocation)).filePath(QStringLiteral("thumbnails"));
+    const QString saved = QDir(dir).filePath(QString::fromLatin1(QCryptographicHash::hash(id, QCryptographicHash::Md5).toHex()) + QStringLiteral(".jpg"));
+    QThreadPool::globalInstance()->start([bin = QPointer<MediaBin>(this), path, dir, saved] {
+        QImage img(saved);
+        bool audio = false;
+        if (img.isNull()) {
+            const MediaInfo info = probeMedia(path);
+            audio = info.ok() && !info.hasVideo();
+            if (info.hasVideo()) {
+                const VideoStreamInfo& vs = info.video.front();
+                const QString source = proxy::playbackPath(path, vs.index); // quicker for heavy files
+                VideoDecoder decoder;
+                FrameConverter converter;
+                if (decoder.open(source, source == path ? vs.index : 0, nullptr, false))
+                    img = MediaCache::decodeThumbnail(decoder, converter, vs, info.isStill ? 0 : std::min<TimeUs>(kUsPerSecond, info.duration / 2));
+                if (!img.isNull() && QDir().mkpath(dir))
+                    img.save(saved, "JPG", 85);
+            }
+        }
+        QMetaObject::invokeMethod(qApp, [bin, path, img, audio] {
+            if (!bin)
+                return;
+            const QIcon icon = img.isNull() ? placeholderIcon(audio) : thumbIcon(img, false);
+            bin->m_library[path] = icon;
+            for (int i = 0; i < bin->count(); ++i)
+                if (QListWidgetItem* it = bin->item(i); !it->data(Qt::UserRole).toInt() && it->data(Qt::UserRole + 2).toString() == path)
+                    it->setIcon(icon);
+        });
+    });
+    return {};
 }
 
 QStringList MediaBin::mimeTypes() const

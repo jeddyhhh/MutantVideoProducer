@@ -28,4 +28,7 @@ QStringList warnings(const Report& report, const Target& target);
 // Linear adjustment preserves dynamics and is limited by measured true-peak headroom.
 double safeGain(const Report& report, const Target& target);
 bool applyGain(Timeline& timeline, const Report& report, const Target& target, QString* error);
+// A track's events as a YouTube description list: "01. Name - 04:19" ("1:04:19" from an hour on).
+// Names are the event's own name, or its file name without the extension and a leading track number.
+QString trackListing(const Project& project, int track);
 }

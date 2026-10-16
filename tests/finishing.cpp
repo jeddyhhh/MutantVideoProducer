@@ -3,6 +3,7 @@
 #include "core/Graphics.h"
 #include "core/MotionGraphics.h"
 #include "core/AudioMixer.h"
+#include "core/TimelineOps.h"
 #include "core/FFmpeg.h"
 #include <QCoreApplication>
 #include <QDataStream>
@@ -112,5 +113,16 @@ int main(int argc,char** argv) {
     check(!dynamicBrand.isEmpty()&&dynamicBrand["layers"].toArray()[0].toObject()["fill"]==dynamic["fill"],"brand kits do not flatten animated colours");
     brand["primary"]="no colour";check(graphics_workflow::applyBrand(tagged,brand,&error).isEmpty(),"invalid brand kits fail before scene changes");
     QJsonObject legacy{{"version",1},{"layers",QJsonArray{QJsonObject{{"type","rect"},{"x",.1},{"y",.1},{"width",.1},{"height",.1}}}}};auto prepared=graphics_workflow::prepare(legacy);check(!prepared["layers"].toArray()[0].toObject()["id"].toString().isEmpty()&&prepared==graphics_workflow::prepare(prepared),"legacy scene layer IDs are stable and preparation is idempotent");
+    {
+        Project p;Timeline tl=p.timeline();const int track=ops::addTrack(tl,TrackType::Audio);
+        const char* files[]={"C:/Music/01. Beta Boyz.flac","C:/Music/02 - Not A Chance.mp3","C:/Music/2Pac Übergang.wav"};
+        const TimeUs starts[]={0,259600000,742*kUsPerSecond};
+        for(int i=2;i>=0;--i){MediaInfo info;info.path=QString::fromUtf8(files[i]);info.duration=300*kUsPerSecond;const int id=p.addMedia(info);
+            Clip c;c.id=tl.allocId();c.mediaId=id;c.start=starts[i];c.length=kUsPerSecond;c.name=p.mediaItem(id)->displayName();tl.tracks[size_t(track)].clips.push_back(c);}
+        p.applyEdit(tl,"album");
+        check(finishing::trackListing(p,track)==QString::fromUtf8("01. Beta Boyz - 00:00\n02. Not A Chance - 04:19\n03. 2Pac Übergang - 12:22"),"track listing numbers events by start, names them from files without track numbers (2Pac keeps its 2)");
+        Clip renamed=tl.tracks[size_t(track)].clips[0];renamed.id=tl.allocId();renamed.start=3725*kUsPerSecond;renamed.name="The Romper Stomp";tl.tracks[size_t(track)].clips.push_back(renamed);p.applyEdit(tl,"long album");
+        check(finishing::trackListing(p,track).endsWith("\n03. "+QString::fromUtf8("2Pac Übergang")+" - 0:12:22\n04. The Romper Stomp - 1:02:05"),"track listing keeps renamed events and shows hours past an hour: "+finishing::trackListing(p,track));
+    }
     return failures;
 }

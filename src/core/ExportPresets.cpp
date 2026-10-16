@@ -179,6 +179,8 @@ const std::vector<ExportPreset>& exportPresets()
         add(T(kYouTube, "YouTube 8K - AV1", "mp4", "mp4", "libsvtav1", "aac").size(7680, 4320).crf(28).preset("8").audio(384)
                 .note("YouTube shows 8K for AV1 uploads; slow to render."));
         add(vertical(kYouTube, "YouTube Shorts (1080x1920)", 10000).audio(384).maxLen(180).note("Vertical 9:16, up to 3 minutes."));
+        add(h264(kYouTube, "Audio-Only YouTube (album art, 5 fps)", 1920, 1080, 0).rate(5).crf(18).opt("tune=stillimage").gop(2).audio(384)
+                .note("Music over a still picture: 5 fps keeps the picture to a few MB per hour; AAC 384 kb/s, as YouTube recommends."));
 
         // ---- Social media -----------------------------------------------------------
         add(vertical(kSocial, "TikTok (1080x1920)").maxLen(600).note("9:16, up to 10 minutes; up to 1 GB through the web uploader."));

@@ -38,6 +38,9 @@ public:
     // exact one. Pass already-quantised times to get good cache reuse.
     QImage thumbnail(const std::shared_ptr<const MediaItem>& media, int stream, TimeUs t);
 
+    // A frame as a thumbnail kThumbHeight high, turned upright; null if it can't be decoded.
+    static QImage decodeThumbnail(class VideoDecoder& decoder, class FrameConverter& converter, const VideoStreamInfo& stream, TimeUs t);
+
     // Drops what was made for a media item (it was relinked to another file,
     // now at `revision`); work still running for older revisions is discarded.
     void forget(int mediaId, int revision);

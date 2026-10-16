@@ -155,9 +155,10 @@ Envelopes change a track's volume, pan or video level over time.
 | Ctrl+← / Ctrl+→ | Previous / next edit point. |
 | Home / End | Start / end. |
 | [ / ] | Previous / next marker. |
-| ↑ / ↓, mouse wheel | Zoom in / out. |
+| ↑ / ↓, or mouse wheel over the time ruler | Zoom in / out. |
+| Mouse wheel | Scroll the tracks up and down. |
 | Ctrl+0 | Zoom to fit. |
-| Ctrl+wheel / Shift+wheel | Scroll sideways / up and down. |
+| Ctrl+wheel or Shift+wheel | Scroll sideways. |
 
 - Shuttling faster than 1x, or backwards, has no sound.
 - **Clicking the timeline while it plays** jumps there and keeps playing. With **Options > Click

@@ -2,7 +2,7 @@
 ; Program Files (or the user's own programs folder, without admin rights),
 ; Start menu and optional desktop shortcuts, .mvp projects opened by Mutant Video Producer,
 ; and an uninstaller. The release workflow builds it:
-;   iscc /DAppVersion=0.2.7 /DSourceDir=MutantVideoProducer-0.2.7-win64 installer\mvp.iss
+;   iscc /DAppVersion=0.5.0 /DSourceDir=MutantVideoProducer-0.5.0-win64 installer\mvp.iss
 
 #ifndef AppVersion
   #define AppVersion "0.0.0"

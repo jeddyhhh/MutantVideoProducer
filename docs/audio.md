@@ -89,6 +89,20 @@ While the voice track has sound, the music comes down in about 25 ms. It holds 0
 voice stops, then recovers over about 0.5 s. A *duck* badge shows on the track header. It works in
 playback and in renders.
 
+## Track listing for YouTube
+
+Right-click an audio track's header > **Track Listing for YouTube...** lists its events in start
+order, ready for a video description:
+
+```
+01. Beta Boyz - 00:00
+02. Not A Chance - 04:19
+```
+
+Names come from the file names, without the extension or a leading track number; a renamed event
+keeps its name. Past an hour, times show hours (`1:02:05`). Edit the names in the box, then **OK**
+copies the list.
+
 ## Volume and pan
 
 - Each track's **Vol** and **Pan** bars, and its volume and pan [envelopes](editing.md#envelopes).

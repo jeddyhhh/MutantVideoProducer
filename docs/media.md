@@ -71,6 +71,9 @@ marks, relinking and proxies work there too. Download origin is saved with the
 project and survives folder changes. Older projects' YouTube-folder media is
 recognised when reopened.
 
+The tab shows only this project's downloads. Tick **Show downloads from other projects** to
+also list the profile's earlier downloads; double-click or drag one to import it.
+
 ### YouTube troubleshooting
 
 An update fixes extractor changes; it cannot fix every YouTube access check.

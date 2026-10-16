@@ -2,6 +2,27 @@
 
 What changed in each version of Mutant Video Producer. The newest is first.
 
+## 0.5.0 (2026-10-16)
+
+### Timeline wheel works like Ableton Live
+
+- The mouse wheel zooms only over the time ruler, where the pointer becomes a magnifying glass.
+  Anywhere else on the timeline the wheel scrolls the tracks up and down. Ctrl+wheel or
+  Shift+wheel scrolls sideways.
+
+### Music uploads to YouTube
+
+- **Audio-Only YouTube (album art, 5 fps)** render template: 1080p H.264 tuned for a still
+  picture at 5 fps, with AAC 384 kb/s.
+- Right-click an audio track's header > **Track Listing for YouTube...** lists its events as
+  `01. Name - 04:19` with names from the file names, editable before copying.
+
+### From YouTube shows this project's downloads
+
+- The **From YouTube** tab lists only the current project's downloads. **Show downloads from
+  other projects** lists the rest of the profile's downloads, now with thumbnails (also in
+  Profile Media).
+
 ## 0.2.7 (2026-10-16)
 
 ### Keyframe Editor

@@ -51,7 +51,8 @@ MCP `render_status` retains its existing progress and completion fields and adds
 There are about 170, in groups:
 
 - **General**: H.264, HEVC (8 and 10-bit), AV1, VP9, VP8, H.266 / VVC, Theora.
-- **YouTube**: 720p to 8K at 30 or 60 fps with YouTube's recommended bitrates, and Shorts.
+- **YouTube**: 720p to 8K at 30 or 60 fps with YouTube's recommended bitrates, Shorts, and
+  **Audio-Only YouTube** (album art, 5 fps): music over a still picture, with a tiny picture stream.
 - **Social Media**: TikTok, Instagram (Reels, square, 4:5, Stories), Facebook, X, Threads,
   Bluesky, LinkedIn, Snapchat Spotlight, Pinterest, Reddit, Tumblr.
 - **Video Sites & Streaming**: Vimeo, Twitch, Dailymotion, Rumble, Steam trailers, Kickstarter,

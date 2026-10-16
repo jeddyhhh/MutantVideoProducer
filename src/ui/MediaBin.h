@@ -2,6 +2,7 @@
 
 #include <QListWidget>
 #include <functional>
+#include <map>
 
 class Project;
 class MediaCache;
@@ -54,12 +55,16 @@ private:
     QStringList folders() const;
     // Changes the folder / rating of the selected files.
     void setDetails(const std::function<void(QString& folder, int& rating)>& change);
+    // The icon of a profile library file (not in this project): a thumbnail saved on disk, or made on a
+    // pool thread (many in parallel) and saved for next time. Null while it is being made.
+    QIcon libraryIcon(const QString& path);
 
     Project* m_project;
     MediaCache* m_cache;
     QString m_search, m_folder; // m_folder empty: all
     QString m_origin;
     bool m_sharedProfile = false;
+    std::map<QString, QIcon> m_library;
     int m_minRating = 0;
     class QComboBox* m_folderBox = nullptr;
 };

@@ -255,8 +255,12 @@ void MainWindow::createLayout()
         connect(download, &QPushButton::clicked, this, &MainWindow::createClipFromYouTube);
         m_youtubeBin = new MediaBin(m_project, m_cache); m_youtubeBin->setObjectName(QStringLiteral("youtubeMedia"));
         m_youtubeBin->setOriginFilter(QStringLiteral("youtube"));
-        m_youtubeBin->setSharedProfile(true);
-        v->addWidget(download); v->addWidget(m_youtubeBin->createFilterBar()); v->addWidget(m_youtubeBin, 1);
+        // Only this project's downloads by default; the profile library holds every project's.
+        auto* others = new QCheckBox(tr("Show downloads from other projects"));
+        others->setObjectName(QStringLiteral("youtubeOtherProjects"));
+        connect(others, &QCheckBox::toggled, m_youtubeBin, &MediaBin::setSharedProfile);
+        auto* row = new QHBoxLayout; row->addWidget(download, 1); row->addWidget(others);
+        v->addLayout(row); v->addWidget(m_youtubeBin->createFilterBar()); v->addWidget(m_youtubeBin, 1);
         tabs->addTab(youtube, tr("From YouTube"));
         tabs->setTabToolTip(tabs->count() - 1, tr("Clips imported through the YouTube downloader"));
     }
@@ -3065,6 +3069,10 @@ int MainWindow::runEditorTest(QStringList& log)
         check(imported && profiles.findMedia(clipPath).value("origin").toString() == QLatin1String("youtube"),
               QStringLiteral("profile media library persists download origins and marks"));
         newProject();
+        auto* others = findChild<QCheckBox*>(QStringLiteral("youtubeOtherProjects"));
+        check(others && !others->isChecked() && m_youtubeBin->count() == 0,
+              QStringLiteral("From YouTube shows only this project's downloads until other projects' are asked for"));
+        if (others) others->setChecked(true);
         auto* sharedBin = findChild<MediaBin*>(QStringLiteral("profileMedia"));
         check(m_project->media().empty() && m_youtubeBin->count() == 1 && sharedBin && sharedBin->count() == 1
                   && m_youtubeBin->item(0)->data(Qt::UserRole).toInt() == 0,
@@ -3085,6 +3093,7 @@ int MainWindow::runEditorTest(QStringList& log)
         check(!profiles.remember({QJsonObject{{"path", mediaPath}}}, &error), QStringLiteral("a corrupt profile library is preserved instead of overwritten"));
         profiles.saveAndActivate({QStringLiteral("test-a"), QStringLiteral("Profile A"), homeA}, &error); newProject();
         check(m_youtubeBin->count() == 1 && profiles.list().size() == 2, QStringLiteral("returning to a profile restores its shared library"));
+        if (others) others->setChecked(false);
         check(!profiles.saveAndActivate({{}, QStringLiteral("Duplicate"), homeA}, &error) && profiles.active().id == QLatin1String("test-a"),
               QStringLiteral("two profiles cannot accidentally share the same home folder"));
         Timeline dirty = m_project->timeline();
