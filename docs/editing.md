@@ -41,6 +41,11 @@ drawn over the ones below it. A file or generated picture placed on a track is a
 
 - Drag an event's **left or right edge** to trim it.
 - **S** splits at the cursor.
+- **Tools > Split Selected Events at Scene Changes...** cuts the selected video events (and the
+  sound grouped with them) where the picture jumps to a new shot, such as a downloaded video's cuts.
+  Choose a sensitivity: low finds only clear cuts, high finds subtler changes too. Fast motion and
+  camera moves within a shot don't count, and shots are at least half a second. Reversed and
+  speed-ramped events are left whole.
 - **Alt+[** and **Alt+]** trim the selected events' start or end to the cursor.
 - **Del** deletes. **Ctrl+Del** ripple-deletes: what follows moves back to fill the gap.
 - **Loop past the end**: drag an event's end beyond the end of its file, and the file plays again

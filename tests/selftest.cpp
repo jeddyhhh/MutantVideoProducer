@@ -72,6 +72,7 @@
 #include "core/Presets.h"
 #include "core/Project.h"
 #include "core/TimelineOps.h"
+#include "core/SceneDetect.h"
 #include "core/VideoDecoder.h"
 
 #include <QDir>
@@ -2927,6 +2928,44 @@ int cmdEditing(const QString& mediaDir, const QString& outDir)
         const QImage exportedFrame = exportedMedia ? checkExport.render(exportedSnapshot, 0, size) : QImage{};
         check(exported && !exportedFrame.isNull() && imageDifference(frame, exportedFrame) < 5,
               QStringLiteral("exported video includes Image tracks %1").arg(exporter.error()));
+    }
+    // ---- Scene changes: black, then moving test video, then blue -------------------------------
+    {
+        ProjectSnapshot snap;
+        snap.settings.width = 640;
+        snap.settings.height = 360;
+        snap.settings.fps = fps;
+        snap.timeline = defaultTimeline();
+        snap.media[video->id] = video;
+        auto solid = [&](const char* preset, TimeUs at) {
+            Clip c;
+            c.id = snap.timeline.allocId();
+            c.start = at;
+            c.length = S;
+            c.generator = makeGenerator(*findGeneratorPreset(QString::fromLatin1(preset)));
+            snap.timeline.tracks[0].clips.push_back(c);
+        };
+        solid("solid_black", 0);
+        for (int id : ops::insertMedia(snap.timeline, *video, S, 0, fps))
+            snap.timeline.findClip(id)->length = 2 * S;
+        solid("solid_blue", 3 * S);
+        snap.timeline.sortClips();
+        ExportSettings s = settingsFromPreset(exportPresets().front(), snap.settings);
+        s.path = QDir(outDir).filePath(QStringLiteral("scenes.mp4"));
+        s.rangeStart = 0;
+        s.rangeEnd = 4 * S;
+        Exporter exporter;
+        const bool exported = exporter.run(snap, s, {});
+        const auto shots = exported ? loadItem(s.path, 98) : nullptr;
+        std::vector<TimeUs> cuts;
+        if (shots)
+            cuts = scenes::detect(*shots, shots->info.video.front().index, 0, shots->info.duration, 0.5);
+        QStringList found;
+        for (TimeUs t : cuts)
+            found << QString::number(double(t) / S, 'f', 3);
+        const TimeUs frame = fps.frameDuration();
+        check(cuts.size() == 2 && std::llabs(cuts[0] - S) <= frame && std::llabs(cuts[1] - 3 * S) <= frame,
+              QStringLiteral("scene detection finds the two cuts and nothing in the moving shot (%1) %2").arg(found.join(QStringLiteral(", ")), exporter.error()));
     }
     auto starts = [](const Track& t) {
         QStringList out;

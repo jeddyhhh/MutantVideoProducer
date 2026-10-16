@@ -16,6 +16,12 @@ What changed in each version of Mutant Video Producer. The newest is first.
 - **Tools > YouTube > Thumbnail from the Cursor Frame...**: a 1280x720 JPEG of the frame at the
   cursor with an optional outlined title, kept under 2 MB.
 
+### Split at scene changes
+
+- **Tools > Split Selected Events at Scene Changes...** finds the cuts between shots (colour
+  histograms of every frame, compared with the shot's own motion) and splits the selected video
+  events and their grouped sound there, with a sensitivity setting.
+
 ## 0.5.0 (2026-10-16)
 
 ### Timeline wheel works like Ableton Live

@@ -13,6 +13,7 @@
 #include "core/Hardware.h"
 #include "core/FormatRegistry.h"
 #include "core/Project.h"
+#include "core/SceneDetect.h"
 #include "engine/MediaCache.h"
 #include "engine/PlaybackEngine.h"
 #include "ui/AudioMeter.h"
@@ -75,6 +76,7 @@
 #include <QDialogButtonBox>
 #include <QFormLayout>
 #include <QProgressDialog>
+#include <QInputDialog>
 #include "core/BeatMarkers.h"
 #include "core/Captions.h"
 #include "core/Vst3Host.h"
@@ -228,6 +230,71 @@ void MainWindow::splitAtMarkers()
     }
     m_project->applyEdit(tl, tr("Split at Markers"));
     statusBar()->showMessage(tr("Split into %1 more pieces").arg(pieces.size()), 4000);
+}
+
+void MainWindow::splitAtSceneChanges()
+{
+    Timeline tl = m_project->timeline();
+    // Video events (each group once) whose source plays forwards at a steady speed.
+    std::vector<int> events;
+    std::set<int> seen;
+    bool skipped = false;
+    for (int id : m_timeline->selection()) {
+        const Clip* c = tl.findClip(id);
+        const auto media = c ? m_project->mediaItem(c->mediaId) : nullptr;
+        if (!c || !media || !media->info.videoStream(c->streamIndex) || media->info.isStill || seen.count(id))
+            continue;
+        if (c->reverse || c->hasRamp()) {
+            skipped = true;
+            continue;
+        }
+        for (int g : ops::expandToGroups(tl, {id}))
+            seen.insert(g);
+        events.push_back(id);
+    }
+    if (events.empty()) {
+        statusBar()->showMessage(skipped ? tr("Scene changes: reversed or speed-ramped events aren't split") : tr("Select video events to split first"), 5000);
+        return;
+    }
+    QSettings settings;
+    bool ok = false;
+    const int sensitivity = QInputDialog::getInt(this, tr("Split at Scene Changes"),
+                                                 tr("Sensitivity (1: only clear cuts, 100: subtler changes too):"),
+                                                 settings.value(QStringLiteral("scenes/sensitivity"), 50).toInt(), 1, 100, 1, &ok);
+    if (!ok)
+        return;
+    settings.setValue(QStringLiteral("scenes/sensitivity"), sensitivity);
+    stopPlayback(false);
+    QProgressDialog progress(tr("Looking for scene changes..."), tr("Cancel"), 0, 1000, this);
+    progress.setWindowModality(Qt::WindowModal);
+    progress.setMinimumDuration(300);
+    int pieces = 0;
+    for (size_t i = 0; i < events.size(); ++i) {
+        const Clip c = *tl.findClip(events[i]);
+        const auto media = m_project->mediaItem(c.mediaId);
+        const TimeUs from = c.sourceIn, to = c.sourceIn + TimeUs(double(c.length) * c.speed);
+        QString error;
+        const std::vector<TimeUs> cuts = scenes::detect(*media, c.streamIndex, from, to, sensitivity / 100.0, [&](double f) {
+            progress.setValue(int(1000 * (double(i) + f) / double(events.size())));
+            QCoreApplication::processEvents();
+            return !progress.wasCanceled();
+        }, &error);
+        if (progress.wasCanceled())
+            return;
+        // Latest first: the original event keeps the part before each cut.
+        for (auto it = cuts.rbegin(); it != cuts.rend(); ++it) {
+            const TimeUs at = m_project->settings().fps.snap(c.start + TimeUs(double(*it - c.sourceIn) / c.speed));
+            if (at > c.start && at < c.end())
+                pieces += int(ops::splitClips(tl, ops::expandToGroups(tl, {c.id}), at).size() > 0);
+        }
+    }
+    progress.setValue(1000);
+    if (!pieces) {
+        statusBar()->showMessage(tr("No scene changes found (try a higher sensitivity)"), 5000);
+        return;
+    }
+    m_project->applyEdit(tl, tr("Split at Scene Changes"));
+    statusBar()->showMessage(tr("Split at %n scene change(s)", nullptr, pieces), 5000);
 }
 
 void MainWindow::beatMontage()

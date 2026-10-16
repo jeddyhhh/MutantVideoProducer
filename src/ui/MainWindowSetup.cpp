@@ -573,6 +573,10 @@ void MainWindow::createActions()
         if (editorActive())
             splitAtMarkers();
     }));
+    tools->addAction(act(tr("Split Selected Events at Scene &Changes..."), QKeySequence(), [this] {
+        if (editorActive())
+            splitAtSceneChanges();
+    }));
     tools->addAction(act(tr("Make Beat &Montage..."), QKeySequence(), [this] {
         if (editorActive())
             beatMontage();
