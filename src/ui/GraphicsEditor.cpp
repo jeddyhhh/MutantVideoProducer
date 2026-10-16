@@ -1052,10 +1052,10 @@ public:
     }
     void openScene()
     {
-        auto path = QFileDialog::getOpenFileName(this, tr("Open graphics template"), templateFolder(), tr("Graphics templates (*.json)"));
-        if (path.isEmpty())
+        auto chosen = QFileDialog::getOpenFileName(this, tr("Open graphics template"), templateFolder(), tr("Graphics templates (*.json)"));
+        if (chosen.isEmpty())
             return;
-        QFile file(path);
+        QFile file(chosen);
         if (!file.open(QIODevice::ReadOnly) || file.size() > 4 * 1024 * 1024) {
             QMessageBox::warning(this, tr("Template"), tr("Cannot open this template (maximum 4 MB)."));
             return;
@@ -1085,11 +1085,11 @@ public:
             return;
         }
         QDir().mkpath(templateFolder());
-        auto path = QFileDialog::getSaveFileName(this, tr("Save reusable graphics template"), templateFolder() + "/Animation.json",
+        auto chosen = QFileDialog::getSaveFileName(this, tr("Save reusable graphics template"), templateFolder() + "/Animation.json",
                                                  tr("Graphics templates (*.json)"));
-        if (path.isEmpty())
+        if (chosen.isEmpty())
             return;
-        QSaveFile file(path);
+        QSaveFile file(chosen);
         if (!file.open(QIODevice::WriteOnly) || file.write(QJsonDocument(data).toJson()) < 0 || !file.commit())
             QMessageBox::warning(this, tr("Template"), tr("Could not save this template."));
     }
@@ -1210,10 +1210,10 @@ public:
     }
     void setKey()
     {
-        auto path = propertyBox->currentText();
+        auto property = propertyBox->currentText();
         auto value = readValue(keyValue->text());
         QString error;
-        auto changed = motion::withKeyframe(data, targetId(), path, currentTime, value, easing(), &error);
+        auto changed = motion::withKeyframe(data, targetId(), property, currentTime, value, easing(), &error);
         if (changed.isEmpty()) {
             QMessageBox::warning(this, tr("Animation key"), error);
             return;
@@ -1705,16 +1705,16 @@ public:
                 fields.append(cell);
                 records.append(fields);
             }
-            for (auto record : records) {
-                if (record.size() < 2)
+            for (auto item : records) {
+                if (item.size() < 2)
                     continue;
                 bool ok = false;
-                double value = record[1].trimmed().toDouble(&ok);
+                double value = item[1].trimmed().toDouble(&ok);
                 if (!ok)
                     continue;
-                QJsonObject row{{"label", record[0]}, {"value", value}};
-                if (record.size() > 2)
-                    row["color"] = record[2].trimmed();
+                QJsonObject row{{"label", item[0]}, {"value", value}};
+                if (item.size() > 2)
+                    row["color"] = item[2].trimmed();
                 rows.append(row);
             }
         }

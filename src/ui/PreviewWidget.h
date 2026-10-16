@@ -17,7 +17,7 @@ public:
     virtual void release() = 0;
     virtual Qt::CursorShape cursor(QPointF pos, const QRectF& picture) const = 0;
     // A turn of the wheel over the picture (in notches); true: used.
-    virtual bool wheel(QPointF pos, const QRectF& picture, double steps) { return false; }
+    virtual bool wheel(QPointF, const QRectF&, double) { return false; }
 };
 
 // Shows the rendered preview frame, letterboxed into the widget.

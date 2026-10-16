@@ -438,19 +438,19 @@ QStringList MediaBin::mimeTypes() const
 QMimeData* MediaBin::mimeData(const QList<QListWidgetItem*>& items) const
 {
     if (std::any_of(items.begin(), items.end(), [](auto* it) { return it->data(Qt::UserRole).toInt() == 0; })) {
-        auto* data = new QMimeData; QList<QUrl> urls;
+        auto* mime = new QMimeData; QList<QUrl> urls;
         for (auto* it : items) {
             const auto m = m_project->mediaItem(it->data(Qt::UserRole).toInt());
             urls << QUrl::fromLocalFile(m ? m->path : it->data(Qt::UserRole + 2).toString());
         }
-        data->setUrls(urls); return data;
+        mime->setUrls(urls); return mime;
     }
     QStringList ids;
     for (auto* item : items)
         ids << QString::number(item->data(Qt::UserRole).toInt());
-    auto* data = new QMimeData;
-    data->setData(QString::fromLatin1(kMimeType), ids.join(QLatin1Char(',')).toUtf8());
-    return data;
+    auto* mime = new QMimeData;
+    mime->setData(QString::fromLatin1(kMimeType), ids.join(QLatin1Char(',')).toUtf8());
+    return mime;
 }
 
 void MediaBin::dragEnterEvent(QDragEnterEvent* e)

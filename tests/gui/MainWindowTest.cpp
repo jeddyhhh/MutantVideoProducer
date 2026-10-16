@@ -507,11 +507,11 @@ int MainWindow::runEditorTest(QStringList& log)
                 QJsonDocument::fromJson(http("POST", QJsonDocument(msg).toJson(QJsonDocument::Compact), {}, &status)).object();
             return r[QStringLiteral("result")].toObject();
         };
-        auto data = [](const QJsonObject& result) { return result[QStringLiteral("structuredContent")].toObject(); };
+        auto content = [](const QJsonObject& result) { return result[QStringLiteral("structuredContent")].toObject(); };
         auto failed = [](const QJsonObject& result) { return result[QStringLiteral("isError")].toBool(); };
 
-        const auto voiceList = data(call(QStringLiteral("list_voices"), {}));
-        const auto voiceState = data(call(QStringLiteral("voice_status"), {}));
+        const auto voiceList = content(call(QStringLiteral("list_voices"), {}));
+        const auto voiceState = content(call(QStringLiteral("voice_status"), {}));
         check(voiceList.value(QStringLiteral("voices")).toArray().size() == 28 && !voiceState.value(QStringLiteral("busy")).toBool()
                   && failed(call(QStringLiteral("generate_voice"), {{QStringLiteral("voice"), QStringLiteral("missing-voice")}})),
               QStringLiteral("AI control exposes the voice library and async status, and rejects unknown voices without edits"));
@@ -551,7 +551,7 @@ int MainWindow::runEditorTest(QStringList& log)
         {
             const auto original = m_project->timeline();
             const int undoIndex = m_project->undoStack()->index();
-            const auto report = data(call("audio_finishing", {{"action", "analyze"}}));
+            const auto report = content(call("audio_finishing", {{"action", "analyze"}}));
             check(report["ok"].toBool() && report.contains("true_peak_dbtp") && m_project->timeline() == original
                       && failed(call("audio_finishing", {{"action", "apply_gain"}, {"lufs", 0}})),
                   "AI audio finishing measures the final mix without edits and rejects invalid targets");
@@ -559,11 +559,11 @@ int MainWindow::runEditorTest(QStringList& log)
                               {"width", .2},    {"height", .2},  {"fill", "#ffffff"}, {"brand_role", "accent"}};
             QJsonObject scene{{"version", 2}, {"layers", QJsonArray{shape}}};
             auto created = call("graphics_overlay", {{"action", "create"}, {"scene", scene}, {"length", 2}});
-            int id = data(created)["event_id"].toInt();
+            int id = content(created)["event_id"].toInt();
             auto arrangement = call(
                 "graphics_overlay",
                 {{"action", "layout"}, {"event_id", id}, {"layer_ids", QJsonArray{"shape"}}, {"operation", "left"}, {"reference", "safe"}});
-            auto arranged = data(arrangement);
+            auto arranged = content(arrangement);
             auto locked =
                 call("graphics_overlay", {{"action", "lock"}, {"event_id", id}, {"layer_ids", QJsonArray{"shape"}}, {"locked", true}});
             const auto protectedTimeline = m_project->timeline();
@@ -573,7 +573,7 @@ int MainWindow::runEditorTest(QStringList& log)
             call("graphics_overlay", {{"action", "lock"}, {"event_id", id}, {"layer_ids", QJsonArray{"shape"}}, {"locked", false}});
             QJsonObject kit{{"version", 1},           {"name", "Test"},      {"font", "Arial"},         {"primary", "#00ff00"},
                             {"secondary", "#0000ff"}, {"accent", "#ff6600"}, {"foreground", "#ffffff"}, {"background", "#000000"}};
-            auto branded = data(call("graphics_overlay", {{"action", "brand"}, {"event_id", id}, {"brand", kit}}));
+            auto branded = content(call("graphics_overlay", {{"action", "brand"}, {"event_id", id}, {"brand", kit}}));
             bool styled = branded["data"].toObject()["layers"].toArray().first().toObject()["fill"] == "#ff6600";
             if (!id || failed(arrangement) || failed(locked) || !styled)
                 note("Workflow replies: "
@@ -587,10 +587,10 @@ int MainWindow::runEditorTest(QStringList& log)
                   "AI graphics workflow aligns, locks, refuses protected edits, applies brands and undoes exactly");
         }
         // Edit through the tools.
-        const QJsonObject project = data(call(QStringLiteral("get_project"), {}));
+        const QJsonObject project = content(call(QStringLiteral("get_project"), {}));
         const int mediaId = project[QStringLiteral("media")].toArray().first().toObject()[QStringLiteral("media_id")].toInt();
         const QJsonArray placed =
-            data(call(QStringLiteral("add_media_to_timeline"),
+            content(call(QStringLiteral("add_media_to_timeline"),
                       {{QStringLiteral("media_id"), mediaId}, {QStringLiteral("at"), 30}}))[QStringLiteral("event_ids")]
                 .toArray();
         const int eventId = placed.isEmpty() ? 0 : placed.first().toInt();
@@ -605,7 +605,7 @@ int MainWindow::runEditorTest(QStringList& log)
             return img;
         };
         const QImage plainFrame = frame(31);
-        const QJsonObject added = data(call(QStringLiteral("add_effect"),
+        const QJsonObject added = content(call(QStringLiteral("add_effect"),
                                             {{QStringLiteral("target"), QStringLiteral("event")},
                                              {QStringLiteral("id"), eventId},
                                              {QStringLiteral("effect"), QStringLiteral("invert")}}));
@@ -620,7 +620,7 @@ int MainWindow::runEditorTest(QStringList& log)
             change = n ? double(sum) / double(n) : 0;
         }
         const QJsonObject masked =
-            data(call(QStringLiteral("set_effect"),
+            content(call(QStringLiteral("set_effect"),
                       {{QStringLiteral("effect_id"), effectId},
                        {QStringLiteral("params"), QJsonObject{{QStringLiteral("mask.shape"), QStringLiteral("Ellipse")}}}}));
         const bool maskSet = masked[QStringLiteral("params")].toObject()[QStringLiteral("mask.shape")] == QStringLiteral("Ellipse");
@@ -636,19 +636,19 @@ int MainWindow::runEditorTest(QStringList& log)
                              "an audio effect on a picture and an unknown setting are refused")
                   .arg(change, 0, 'f', 1));
         const QJsonArray pieces =
-            data(call(QStringLiteral("split"),
+            content(call(QStringLiteral("split"),
                       {{QStringLiteral("time"), 32}, {QStringLiteral("event_ids"), QJsonArray{eventId}}}))[QStringLiteral("new_event_ids")]
                 .toArray();
         call(QStringLiteral("add_marker"), {{QStringLiteral("time"), 33}, {QStringLiteral("name"), QStringLiteral("from AI")}});
         const bool marker = std::any_of(m_project->timeline().markers.begin(), m_project->timeline().markers.end(),
                                         [](const Marker& m) { return m.name == QLatin1String("from AI"); });
         const QJsonObject blur =
-            data(call(QStringLiteral("list_effects"),
+            content(call(QStringLiteral("list_effects"),
                       {{QStringLiteral("kind"), QStringLiteral("video")}, {QStringLiteral("search"), QStringLiteral("blur")}}));
         const bool listed = blur[QStringLiteral("count")].toInt() > 0
             && !blur[QStringLiteral("effects")].toArray().first().toObject()[QStringLiteral("params")].toArray().isEmpty();
         const QString undoneText =
-            data(call(QStringLiteral("undo"), {{QStringLiteral("steps"), 2}}))[QStringLiteral("undone")].toArray().first().toString();
+            content(call(QStringLiteral("undo"), {{QStringLiteral("steps"), 2}}))[QStringLiteral("undone")].toArray().first().toString();
         const bool undone = !std::any_of(m_project->timeline().markers.begin(), m_project->timeline().markers.end(),
                                          [](const Marker& m) { return m.name == QLatin1String("from AI"); });
         check(pieces.size() == 1 && marker && listed && undone && undoneText.startsWith(QStringLiteral("AI: ")),
@@ -660,11 +660,11 @@ int MainWindow::runEditorTest(QStringList& log)
             f.open(QIODevice::WriteOnly);
             f.write("1\n00:00:01,000 --> 00:00:02,500\nFrom the AI\n\n2\n00:00:03,000 --> 00:00:04,000\nSecond line\n");
             f.close();
-            const int in = data(call(
+            const int in = content(call(
                 QStringLiteral("captions"),
                 {{QStringLiteral("action"), QStringLiteral("import")}, {QStringLiteral("path"), srt}}))[QStringLiteral("captions")]
                                .toInt();
-            const int out = data(call(
+            const int out = content(call(
                 QStringLiteral("captions"),
                 {{QStringLiteral("action"), QStringLiteral("export")}, {QStringLiteral("path"), back}}))[QStringLiteral("captions")]
                                 .toInt();
@@ -673,9 +673,9 @@ int MainWindow::runEditorTest(QStringList& log)
             const bool noModel =
                 failed(call(QStringLiteral("captions"),
                             {{QStringLiteral("action"), QStringLiteral("auto")}, {QStringLiteral("model"), QStringLiteral("nonsense")}}));
-            const QJsonObject plugins = data(call(QStringLiteral("list_vst3_plugins"), {}));
+            const QJsonObject plugins = content(call(QStringLiteral("list_vst3_plugins"), {}));
             const int preview =
-                data(call(QStringLiteral("live_switcher"),
+                content(call(QStringLiteral("live_switcher"),
                           {{QStringLiteral("action"), QStringLiteral("preview")}, {QStringLiteral("input"), 3}}))[QStringLiteral("preview")]
                     .toInt();
             m_project->undoStack()->undo(); // (the imported captions)
@@ -694,7 +694,7 @@ int MainWindow::runEditorTest(QStringList& log)
         rt.start();
         do {
             wait(200);
-            rs = data(call(QStringLiteral("render_status"), {}));
+            rs = content(call(QStringLiteral("render_status"), {}));
         } while (!rs[QStringLiteral("done")].toBool() && rt.elapsed() < 120000);
         const MediaInfo rendered = probeMedia(out);
         const bool noOverwrite = failed(call(QStringLiteral("render"), {{QStringLiteral("path"), out}}));
@@ -711,7 +711,7 @@ int MainWindow::runEditorTest(QStringList& log)
               {QStringLiteral("effects"), QJsonArray{QJsonObject{{QStringLiteral("type"), QStringLiteral("invert")}}}}});
         call(QStringLiteral("live_action"), {{QStringLiteral("action"), QStringLiteral("pad")}, {QStringLiteral("number"), 3}});
         call(QStringLiteral("set_tempo"), {{QStringLiteral("bpm"), 128}});
-        const QJsonObject liveNow = data(call(QStringLiteral("live_status"), {}));
+        const QJsonObject liveNow = content(call(QStringLiteral("live_status"), {}));
         const bool pad = m_project->timeline().livePads[2].name == QLatin1String("AI pad")
             && m_project->timeline().livePads[2].effects.size() == 1 && liveNow[QStringLiteral("active_pad")].toInt() == 3
             && std::abs(liveNow[QStringLiteral("bpm")].toDouble() - 128) < 0.01 && liveNow[QStringLiteral("tempo_locked")].toBool();

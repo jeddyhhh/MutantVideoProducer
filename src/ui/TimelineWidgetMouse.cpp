@@ -172,9 +172,9 @@ void TimelineWidget::mousePressEvent(QMouseEvent* e)
                     c = video;
                     t = &tl.tracks[size_t(vti)];
                 }
-                const EndTransition e = endTransition(*t, size_t(c - t->clips.data()), hit.transitionIn);
-                if (e.holder)
-                    emit transitionRequested(e.holder, e.holderIn);
+                const EndTransition end = endTransition(*t, size_t(c - t->clips.data()), hit.transitionIn);
+                if (end.holder)
+                    emit transitionRequested(end.holder, end.holderIn);
             }
             return;
         }

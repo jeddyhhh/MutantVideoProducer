@@ -2057,9 +2057,9 @@ struct GpuCompositor::Impl : protected QOpenGLExtraFunctions {
                 g.setUniformValue("uC", bytes(p.color(S("paper"))));
             });
         } else if (id == QLatin1String("emboss")) {
-            const float a = float(p.num(S("angle"))) * kPi / 180.0f, d = float(std::max(1.0, ctx.scale * 1.5));
+            const float a = float(p.num(S("angle"))) * kPi / 180.0f, dist = float(std::max(1.0, ctx.scale * 1.5));
             single(Emboss, [&](QOpenGLShaderProgram& g) {
-                g.setUniformValue("uA", QVector4D(std::cos(a) * d, std::sin(a) * d, float(p.num(S("strength"))), float(p.num(S("mix")))));
+                g.setUniformValue("uA", QVector4D(std::cos(a) * dist, std::sin(a) * dist, float(p.num(S("strength"))), float(p.num(S("mix")))));
                 setI(g, "uI", p.flag(S("keepColor")) ? 1 : 0);
             });
         } else if (id == QLatin1String("gradient_map")) {
@@ -2134,10 +2134,10 @@ struct GpuCompositor::Impl : protected QOpenGLExtraFunctions {
             }, &ago(st, 1));
         } else if (id == QLatin1String("time_split")) {
             FxState& st = fxStateFor(state);
-            const std::array<int, 3> d = fx::timeSplitDelays(p);
-            pushHistory(st, ctx, *layer, size_t(std::max({d[0], d[1], d[2]})) + 1);
+            const std::array<int, 3> delays = fx::timeSplitDelays(p);
+            pushHistory(st, ctx, *layer, size_t(std::max({delays[0], delays[1], delays[2]})) + 1);
             Layer out = acquire(size, false);
-            fxPass(*out, TimeSplit, ago(st, size_t(d[0])), {}, &ago(st, size_t(d[1])), &ago(st, size_t(d[2])));
+            fxPass(*out, TimeSplit, ago(st, size_t(delays[0])), {}, &ago(st, size_t(delays[1])), &ago(st, size_t(delays[2])));
             layer = std::move(out);
         } else if (id == QLatin1String("slit_scan")) {
             FxState& st = fxStateFor(state);
@@ -2173,15 +2173,15 @@ struct GpuCompositor::Impl : protected QOpenGLExtraFunctions {
         } else if (id == QLatin1String("stutter")) {
             FxState& st = fxStateFor(state);
             const double fps = std::max(0.1, p.num(S("fps")));
-            const int64_t tick = int64_t(std::floor(t * fps + 1e-6));
+            const int64_t frameTick = int64_t(std::floor(t * fps + 1e-6));
             bool fresh = false;
             if (!st.out || st.out.size() != size) {
                 st.frozenUntil = std::numeric_limits<int64_t>::min();
                 fresh = true;
-            } else if (tick != st.tick) {
-                fresh = fx::stutterShowsNew(p, tick, st.tick, st.frozenUntil);
+            } else if (frameTick != st.tick) {
+                fresh = fx::stutterShowsNew(p, frameTick, st.tick, st.frozenUntil);
             }
-            st.tick = tick;
+            st.tick = frameTick;
             if (fresh) {
                 copyInto(st.out, *layer);
             } else {
@@ -2328,21 +2328,21 @@ struct GpuCompositor::Impl : protected QOpenGLExtraFunctions {
                     taps[i * 4 + 2] = t.weight;
                     taps[i * 4 + 3] = dither::tapLag(t, slope);
                 }
-                QOpenGLShaderProgram& d = *progDiffuse;
-                d.bind();
+                QOpenGLShaderProgram& diffuse = *progDiffuse;
+                diffuse.bind();
                 bindTexture(0, sums->tex);
-                d.setUniformValue("uSums", 0);
+                diffuse.setUniformValue("uSums", 0);
                 for (int k = 1; k <= 8; ++k)
-                    d.setUniformValue(QStringLiteral("uPrev%1").arg(k).toLatin1().constData(), k);
-                glUniform4iv(d.uniformLocation("uTaps"), 16, taps);
-                d.setUniformValue("uTapCount", int(std::min<size_t>(16, method.taps.size())));
-                d.setUniformValue("uDivisor", method.divisor);
-                d.setUniformValue("uStrength", int(std::lround(strength * 256.0)));
-                d.setUniformValue("uSlope", slope);
-                glUniform2i(d.uniformLocation("uDims"), small.width(), small.height());
-                d.setUniformValue("uCount", int(std::min<size_t>(64, pal.size())));
-                d.setUniformValue("uLevels", levels);
-                glUniform3iv(d.uniformLocation("uPal"), 64, pal16);
+                    diffuse.setUniformValue(QStringLiteral("uPrev%1").arg(k).toLatin1().constData(), k);
+                glUniform4iv(diffuse.uniformLocation("uTaps"), 16, taps);
+                diffuse.setUniformValue("uTapCount", int(std::min<size_t>(16, method.taps.size())));
+                diffuse.setUniformValue("uDivisor", method.divisor);
+                diffuse.setUniformValue("uStrength", int(std::lround(strength * 256.0)));
+                diffuse.setUniformValue("uSlope", slope);
+                glUniform2i(diffuse.uniformLocation("uDims"), small.width(), small.height());
+                diffuse.setUniformValue("uCount", int(std::min<size_t>(64, pal.size())));
+                diffuse.setUniformValue("uLevels", levels);
+                glUniform3iv(diffuse.uniformLocation("uPal"), 64, pal16);
                 glDisable(GL_BLEND);
                 glBindVertexArray(vao);
                 // One framebuffer per slot: colour 0 = the slot, colour 1 = the whole picture.
@@ -2356,7 +2356,7 @@ struct GpuCompositor::Impl : protected QOpenGLExtraFunctions {
                     glDrawBuffers(2, buffers);
                 }
                 glViewport(0, 0, small.width(), small.height());
-                const GLint uT = d.uniformLocation("uT");
+                const GLint uT = diffuse.uniformLocation("uT");
                 const int waves = (small.width() - 1) + slope * (small.height() - 1) + 1;
                 for (int t = 0; t < waves; ++t) {
                     // Wave t - k on unit k (lags beyond the ring are never read: any slot but this wave's will do).

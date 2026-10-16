@@ -175,7 +175,7 @@ QMimeData* EffectsBrowser::mimeData(const QList<QTreeWidgetItem*>& items) const
     const QString id = items.front()->data(0, kIdRole).toString();
     if (id.isEmpty())
         return nullptr;
-    auto* data = new QMimeData;
-    data->setData(QString::fromLatin1(items.front()->data(0, kIsPresetRole).toBool() ? kPresetMime : mimeFor(m_kind)), id.toUtf8());
-    return data;
+    auto* mime = new QMimeData;
+    mime->setData(QString::fromLatin1(items.front()->data(0, kIsPresetRole).toBool() ? kPresetMime : mimeFor(m_kind)), id.toUtf8());
+    return mime;
 }

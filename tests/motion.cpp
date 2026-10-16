@@ -503,13 +503,13 @@ int main(int argc, char **argv) {
         QPointF origin((canvas->width() - size.width()) / 2,
                        (canvas->height() - size.height()) / 2),
             point = origin + hs[0].position;
-        QMouseEvent press(QEvent::MouseButtonPress, point, Qt::LeftButton,
+        QMouseEvent press(QEvent::MouseButtonPress, point, canvas->mapToGlobal(point), Qt::LeftButton,
                           Qt::LeftButton, Qt::NoModifier);
         QApplication::sendEvent(canvas, &press);
-        QMouseEvent move(QEvent::MouseMove, point + QPointF(20, 0),
+        QMouseEvent move(QEvent::MouseMove, point + QPointF(20, 0), canvas->mapToGlobal(point + QPointF(20, 0)),
                          Qt::NoButton, Qt::LeftButton, Qt::NoModifier);
         QApplication::sendEvent(canvas, &move);
-        QMouseEvent release(QEvent::MouseButtonRelease, point + QPointF(20, 0),
+        QMouseEvent release(QEvent::MouseButtonRelease, point + QPointF(20, 0), canvas->mapToGlobal(point + QPointF(20, 0)),
                             Qt::LeftButton, Qt::NoButton, Qt::NoModifier);
         QApplication::sendEvent(canvas, &release);
         qobject_cast<QDialog *>(widget)->accept();

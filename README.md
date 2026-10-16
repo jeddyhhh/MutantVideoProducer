@@ -146,6 +146,7 @@ Studio Light under **View > Theme**.
 - [Architecture](docs/developer/architecture.md): how the application is organised.
 - [Testing](docs/developer/testing.md): verification tools and regression suites.
 - [Changelog](CHANGELOG.md): changes and release history.
+- [Contributing](CONTRIBUTING.md): building, testing, code style and the changelog.
 
 The application is written in C++20 with Qt 6 and FFmpeg. After preparing the
 dependencies described in the build guide, run:

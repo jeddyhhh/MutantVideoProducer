@@ -422,15 +422,15 @@ struct Builder {
         for (auto& r : plan.rowEx)
             r[1] = 1;
     }
-    void garbageTile(Px4& t, Rng& r) { t = {float(r.i(std::max(1, palN()))), 0, float(TileGarbage), float(r.u() & 0xffffffu)}; }
-    void copyTile(Px4& t, Rng& r, bool flips)
+    void garbageTile(Px4& tile, Rng& r) { tile = {float(r.i(std::max(1, palN()))), 0, float(TileGarbage), float(r.u() & 0xffffffu)}; }
+    void copyTile(Px4& tile, Rng& r, bool flips)
     {
         int m = TileCopy;
         if (flips && r.chance(0.3f))
             m |= 8;
         if (flips && r.chance(0.2f))
             m |= 16;
-        t = {float(r.i(TX)), float(r.i(TY)), float(m), 0};
+        tile = {float(r.i(TX)), float(r.i(TY)), float(m), 0};
     }
 };
 

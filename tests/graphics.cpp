@@ -236,10 +236,10 @@ int main(int argc, char **argv) {
         auto* canvas=widget->findChild<QWidget*>("graphicsCanvas");
         double height=std::min(double(canvas->height()),canvas->width()*9./16.);double width=height*16./9.;
         QPointF center((canvas->width()-width)/2+width*(.07+.85/2),(canvas->height()-height)/2+height*(.76+.075/2));
-        QMouseEvent press(QEvent::MouseButtonPress,center,Qt::LeftButton,Qt::LeftButton,Qt::NoModifier);QApplication::sendEvent(canvas,&press);
+        QMouseEvent press(QEvent::MouseButtonPress,center,canvas->mapToGlobal(center),Qt::LeftButton,Qt::LeftButton,Qt::NoModifier);QApplication::sendEvent(canvas,&press);
         // Alt requests the exact free-drag offset instead of snapping to the safe guides.
-        QMouseEvent move(QEvent::MouseMove,center+QPointF(width*.04,0),Qt::NoButton,Qt::LeftButton,Qt::AltModifier);QApplication::sendEvent(canvas,&move);
-        QMouseEvent release(QEvent::MouseButtonRelease,center+QPointF(width*.04,0),Qt::LeftButton,Qt::NoButton,Qt::NoModifier);QApplication::sendEvent(canvas,&release);
+        QMouseEvent move(QEvent::MouseMove,center+QPointF(width*.04,0),canvas->mapToGlobal(center+QPointF(width*.04,0)),Qt::NoButton,Qt::LeftButton,Qt::AltModifier);QApplication::sendEvent(canvas,&move);
+        QMouseEvent release(QEvent::MouseButtonRelease,center+QPointF(width*.04,0),canvas->mapToGlobal(center+QPointF(width*.04,0)),Qt::LeftButton,Qt::NoButton,Qt::NoModifier);QApplication::sendEvent(canvas,&release);
         if(!qEnvironmentVariable("MVP_TEST_ARTIFACTS").isEmpty())widget->grab().save(qEnvironmentVariable("MVP_TEST_ARTIFACTS")+"/composer.png");
         qobject_cast<QDialog *>(widget)->accept();
       }

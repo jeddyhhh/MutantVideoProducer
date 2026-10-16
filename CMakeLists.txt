@@ -47,7 +47,7 @@ if(FFMPEG_ROOT)
         find_library(FFMPEG_${_c}_LIBRARY NAMES ${_c} lib${_c} PATHS "${FFMPEG_ROOT}/lib" NO_DEFAULT_PATH REQUIRED)
         target_link_libraries(mvp_ffmpeg INTERFACE "${FFMPEG_${_c}_LIBRARY}")
     endforeach()
-    target_include_directories(mvp_ffmpeg INTERFACE "${FFMPEG_ROOT}/include")
+    target_include_directories(mvp_ffmpeg SYSTEM INTERFACE "${FFMPEG_ROOT}/include")
     file(GLOB FFMPEG_RUNTIME_DLLS "${FFMPEG_ROOT}/bin/*.dll")
 else()
     find_package(PkgConfig REQUIRED)
@@ -61,7 +61,7 @@ endif()
 # Compiler settings
 # ---------------------------------------------------------------------------
 if(MSVC)
-    add_compile_options(/W3 /utf-8 /permissive- /Zc:__cplusplus /EHsc)
+    add_compile_options(/utf-8 /permissive- /Zc:__cplusplus /EHsc) # (warning level: per target, at the end)
     add_compile_definitions(NOMINMAX WIN32_LEAN_AND_MEAN _CRT_SECURE_NO_WARNINGS)
     # Symbols (.pdb) for every build, release too: crash and hang reports name the
     # functions and lines. They are left out of the zip and the installer.
@@ -187,7 +187,7 @@ endif()
 
 # VST3 audio plugins: the interface headers in deps/vst3/pluginterfaces (optional).
 if(WIN32 AND EXISTS "${MVP_DEPS_DIR}/vst3/pluginterfaces/vst/ivstcomponent.h")
-    target_include_directories(mvp_core PRIVATE "${MVP_DEPS_DIR}/vst3")
+    target_include_directories(mvp_core SYSTEM PRIVATE "${MVP_DEPS_DIR}/vst3")
     target_compile_definitions(mvp_core PRIVATE MVP_VST3)
 endif()
 
@@ -195,7 +195,7 @@ endif()
 # with the model from data/models copied next to the programs.
 set(MVP_ORT_DIR "${MVP_DEPS_DIR}/onnxruntime")
 if(WIN32 AND EXISTS "${MVP_ORT_DIR}/include/onnxruntime_cxx_api.h")
-    target_include_directories(mvp_core PRIVATE "${MVP_ORT_DIR}/include")
+    target_include_directories(mvp_core SYSTEM PRIVATE "${MVP_ORT_DIR}/include")
     target_link_libraries(mvp_core PRIVATE "${MVP_ORT_DIR}/lib/onnxruntime.lib")
     target_compile_definitions(mvp_core PRIVATE MVP_ONNX)
     set(MVP_ORT_DLLS "${MVP_ORT_DIR}/lib/onnxruntime.dll" "${MVP_ORT_DIR}/lib/onnxruntime_providers_shared.dll")
@@ -492,3 +492,24 @@ if(WIN32)
             COMMENT "Deploying Qt runtime")
     endif()
 endif()
+
+# ---------------------------------------------------------------------------
+# Warnings for this project's own programs and libraries (not the bundled deps):
+# MSVC /W4; GCC/Clang -Wall -Wextra (set above). MVP_WARNINGS_AS_ERRORS=ON fails the
+# build on any of them.
+# ---------------------------------------------------------------------------
+option(MVP_WARNINGS_AS_ERRORS "Treat compiler warnings as errors" OFF)
+get_property(_mvp_targets DIRECTORY PROPERTY BUILDSYSTEM_TARGETS)
+foreach(_target ${_mvp_targets})
+    get_target_property(_type ${_target} TYPE)
+    if(NOT _type MATCHES "EXECUTABLE|STATIC_LIBRARY")
+        continue()
+    endif()
+    if(MSVC)
+        # Not reported: C4456, a local hiding an outer local (GCC's -Wall -Wextra doesn't either);
+        # C5105, raised by the Windows SDK's own winbase.h.
+        target_compile_options(${_target} PRIVATE /W4 /wd4456 /wd5105 $<$<BOOL:${MVP_WARNINGS_AS_ERRORS}>:/WX>)
+    else()
+        target_compile_options(${_target} PRIVATE $<$<BOOL:${MVP_WARNINGS_AS_ERRORS}>:-Werror>)
+    endif()
+endforeach()

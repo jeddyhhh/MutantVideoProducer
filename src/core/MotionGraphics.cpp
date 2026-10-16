@@ -200,8 +200,8 @@ QString checkCommands(const QJsonValue &v) {
   if (a.first().toArray().isEmpty() ||
       a.first().toArray().first().toString() != "M")
     return "A path must begin with M.";
-  for (auto v : a) {
-    auto c = v.toArray();
+  for (auto command : a) {
+    auto c = command.toArray();
     if (c.isEmpty())
       return "Empty path command.";
     auto op = c.first().toString();

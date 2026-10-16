@@ -10,7 +10,6 @@
 #include <vector>
 
 #ifdef Q_OS_WIN
-#define NOMINMAX
 #include <windows.h>
 #include <mmsystem.h>
 #else

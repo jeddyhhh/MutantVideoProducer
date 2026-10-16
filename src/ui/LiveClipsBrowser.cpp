@@ -177,9 +177,9 @@ QMimeData* LiveClipsBrowser::mimeData(const QList<QListWidgetItem*>& items) cons
         urls << QUrl::fromLocalFile(it->data(kPathRole).toString());
     if (urls.isEmpty())
         return nullptr;
-    auto* data = new QMimeData;
-    data->setUrls(urls);
-    return data;
+    auto* mime = new QMimeData;
+    mime->setUrls(urls);
+    return mime;
 }
 
 void LiveClipsBrowser::contextMenuEvent(QContextMenuEvent* e)

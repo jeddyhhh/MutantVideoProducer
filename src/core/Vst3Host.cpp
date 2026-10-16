@@ -38,9 +38,9 @@ bool same(const TUID a, const TUID b)
 // FUnknown for the host's objects. Owned ones live as long as the plugin
 // instance and are never deleted through release().
 #define MVP_FUNKNOWN(Iface)                                                                 \
-    tresult PLUGIN_API queryInterface(const TUID iid, void** obj) override                     \
+    tresult PLUGIN_API queryInterface(const TUID queried, void** obj) override                     \
     {                                                                                           \
-        if (same(iid, FUnknown_iid) || same(iid, Iface##_iid)) {                               \
+        if (same(queried, FUnknown_iid) || same(queried, Iface##_iid)) {                               \
             addRef();                                                                           \
             *obj = static_cast<Iface*>(this);                                                   \
             return kResultOk;                                                                   \

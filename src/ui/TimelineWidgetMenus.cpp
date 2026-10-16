@@ -213,15 +213,15 @@ void TimelineWidget::contextMenuEvent(QContextMenuEvent* e)
                 const size_t vi = size_t(vc - vt.clips.data());
                 bool anyTransition = false;
                 for (bool in : {true, false}) {
-                    const EndTransition e = endTransition(vt, vi, in);
-                    anyTransition |= e.spec != nullptr;
-                    const QString current = e.spec ? endTransitionName(e, in) : tr("none");
+                    const EndTransition end = endTransition(vt, vi, in);
+                    anyTransition |= end.spec != nullptr;
+                    const QString current = end.spec ? endTransitionName(end, in) : tr("none");
                     QMenu* sub = menu.addMenu((in ? tr("Transition In (%1)") : tr("Transition Out (%1)")).arg(current));
                     QAction* none = sub->addAction(tr("None (hard cut)"), this, [this, cid, in] { removeTransitionAt(cid, in); });
                     none->setCheckable(true);
-                    none->setChecked(!e.spec);
+                    none->setChecked(!end.spec);
                     sub->addSeparator();
-                    const QString type = e.spec ? (e.spec->isPlainFade() ? QStringLiteral("dissolve") : e.spec->type) : QString();
+                    const QString type = end.spec ? (end.spec->isPlainFade() ? QStringLiteral("dissolve") : end.spec->type) : QString();
                     for (const TransitionDef& t : transitions()) {
                         QAction* a = sub->addAction(t.name, this, [this, cid, in, id = t.id] {
                             Timeline tl = m_project->timeline();
@@ -234,10 +234,10 @@ void TimelineWidget::contextMenuEvent(QContextMenuEvent* e)
                         a->setChecked(t.id == type);
                     }
                     sub->addSeparator();
-                    const int holder = e.holder;
-                    const bool holderIn = e.holderIn;
+                    const int holder = end.holder;
+                    const bool holderIn = end.holderIn;
                     sub->addAction(tr("Properties..."), this, [this, holder, holderIn] { emit transitionRequested(holder, holderIn); })
-                        ->setEnabled(e.spec != nullptr);
+                        ->setEnabled(end.spec != nullptr);
                 }
                 menu.addAction(tr("Remove Transitions (both ends)"), this, &TimelineWidget::removeTransitionsFromSelection)
                     ->setEnabled(anyTransition || m_selection.size() > 1);
