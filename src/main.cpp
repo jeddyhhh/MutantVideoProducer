@@ -34,7 +34,6 @@
 #include <optional>
 #include <QLineEdit>
 #ifdef Q_OS_WIN
-#define NOMINMAX
 #include <windows.h>
 #endif
 

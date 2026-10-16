@@ -236,6 +236,7 @@ add_executable(mvp WIN32
     src/ui/MainWindowStory.cpp
     src/ui/VoiceJob.h            src/ui/VoiceJob.cpp
     src/ui/MainWindowYouTube.cpp
+    src/ui/MainWindowSetup.cpp src/ui/MainWindowTools.cpp
     src/ui/MainWindowHelp.cpp
     src/ui/CrashReport.h         src/ui/CrashReport.cpp
     src/ui/MonkeyTest.h          src/ui/MonkeyTest.cpp
@@ -244,6 +245,7 @@ add_executable(mvp WIN32
     src/ui/Vst3Window.h          src/ui/Vst3Window.cpp
     src/ui/ShortcutsDialog.h     src/ui/ShortcutsDialog.cpp
     src/ui/TimelineWidget.h      src/ui/TimelineWidget.cpp src/ui/TimelineLayout.h
+    src/ui/TimelineWidgetMouse.cpp src/ui/TimelineWidgetMenus.cpp src/ui/TimelineWidgetDrop.cpp src/ui/TimelineWidgetPaint.cpp
     src/ui/PreviewWidget.h       src/ui/PreviewWidget.cpp
     src/ui/LiveView.h            src/ui/LiveView.cpp
     src/ui/LiveClipsBrowser.h    src/ui/LiveClipsBrowser.cpp

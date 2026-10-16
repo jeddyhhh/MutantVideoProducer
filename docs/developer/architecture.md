@@ -54,8 +54,14 @@ src/engine/
 src/ui/        Qt widgets: timeline, preview, media bin, device chain, dialogs, the Live tab, the themes
                (Theme: every colour comes from theme::c(), so View > Theme switches live),
                the MCP server (AI control), the help window
+  TimelineWidget*.cpp  the timeline: core edits, Mouse, Menus, Drop, Paint; TimelineLayout.h
+               holds the geometry and drawing helpers they share
+  MainWindow*.cpp  the main window, by area (Setup: layout, menus, signals; Tools, Story,
+               Captions, Voice, YouTube...)
+  McpServer    one method per tool (McpServer::ToolCall), found by name in callTool's table
 tests/
   selftest.cpp        the self-test suites (see Testing), and the example projects
+  gui/                the Editor and Live tab tests (members of the windows they drive)
   make_test_media.sh  generates ~65 test clips in modern, legacy and odd formats
 docs/          this guide (copied next to the program for Help > User Guide)
 data/models    the Remove Background models
@@ -82,3 +88,9 @@ CPU effects work in place on a `QImage`, usually from several threads (`parallel
 effect runs, the compositor makes sure the image's memory is not shared: a shared image would be
 copied ("detached") by each thread's `scanLine()` at once. `Compositor::applyChain` detaches it
 once on its own thread whenever it keeps a copy for a mask or a glitch post-mask.
+
+## Code style
+
+`.clang-format` holds the house style. Format a file when you change much of it
+(`clang-format -i src/ui/File.cpp`, clang-format 19); formatting only what you touch keeps
+diffs readable.

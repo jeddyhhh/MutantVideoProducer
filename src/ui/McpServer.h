@@ -56,6 +56,7 @@ private:
     void onConnection();
     void onReadable(QTcpSocket* socket);
     QJsonObject callTool(const QString& name, const QJsonObject& args);
+    struct ToolCall; // one call's arguments and context; each tool is a method
 
     MainWindow* m_window;
     QTcpServer* m_server;
