@@ -148,11 +148,12 @@ qint64 memoryBytes()
 
 QString ffmpegExe()
 {
-    const QString local = QDir(QCoreApplication::applicationDirPath()).filePath(
+    const QString local = QDir(QCoreApplication::applicationDirPath())
+                              .filePath(
 #ifdef Q_OS_WIN
-        QStringLiteral("ffmpeg.exe"));
+                                  QStringLiteral("ffmpeg.exe"));
 #else
-        QStringLiteral("ffmpeg"));
+                                  QStringLiteral("ffmpeg"));
 #endif
     if (QFileInfo::exists(local))
         return local;
@@ -162,8 +163,8 @@ QString ffmpegExe()
 bool runFfmpeg(const QStringList& args)
 {
     QProcess p;
-    p.start(ffmpegExe(), QStringList{QStringLiteral("-hide_banner"), QStringLiteral("-loglevel"), QStringLiteral("error"),
-                                     QStringLiteral("-y")} + args);
+    p.start(ffmpegExe(),
+            QStringList{QStringLiteral("-hide_banner"), QStringLiteral("-loglevel"), QStringLiteral("error"), QStringLiteral("-y")} + args);
     return p.waitForFinished(120000) && p.exitStatus() == QProcess::NormalExit && p.exitCode() == 0;
 }
 
@@ -240,9 +241,9 @@ void damagedMedia(const QString& mediaDir, const QString& outDir)
 {
     const QString dir = QDir(outDir).filePath(QStringLiteral("damaged"));
     QDir().mkpath(dir);
-    const QStringList sources = {QStringLiteral("h264_aac.mp4"), QStringLiteral("vp9_vorbis.webm"), QStringLiteral("hevc_opus.mkv"),
-                                 QStringLiteral("mpeg2_mp2.ts"), QStringLiteral("audio.mp3"), QStringLiteral("audio.wav"),
-                                 QStringLiteral("still.png"), QStringLiteral("still.jpg"), QStringLiteral("animated.gif"),
+    const QStringList sources = {QStringLiteral("h264_aac.mp4"),    QStringLiteral("vp9_vorbis.webm"), QStringLiteral("hevc_opus.mkv"),
+                                 QStringLiteral("mpeg2_mp2.ts"),    QStringLiteral("audio.mp3"),       QStringLiteral("audio.wav"),
+                                 QStringLiteral("still.png"),       QStringLiteral("still.jpg"),       QStringLiteral("animated.gif"),
                                  QStringLiteral("prores_pcm24.mov")};
     std::mt19937 rng(1234);
     int made = 0, opened = 0;
@@ -308,9 +309,12 @@ void damagedMedia(const QString& mediaDir, const QString& outDir)
             }
         }
     }
-    check(failures.isEmpty(), QStringLiteral("damaged files: %1 made from %2 good ones (%3 still open); none crashed or hung, every picture came back%4")
-                                  .arg(made).arg(sources.size()).arg(opened)
-                                  .arg(failures.isEmpty() ? QString() : QStringLiteral(" (not: %1)").arg(failures.join(QStringLiteral(", ")))));
+    check(failures.isEmpty(),
+          QStringLiteral("damaged files: %1 made from %2 good ones (%3 still open); none crashed or hung, every picture came back%4")
+              .arg(made)
+              .arg(sources.size())
+              .arg(opened)
+              .arg(failures.isEmpty() ? QString() : QStringLiteral(" (not: %1)").arg(failures.join(QStringLiteral(", ")))));
 
     // A file that changes under us: probed, then cut short before rendering
     // (a recording still being written, a download that failed).
@@ -326,7 +330,8 @@ void damagedMedia(const QString& mediaDir, const QString& outDir)
     }
     Compositor comp;
     AudioMixer mixer(48000);
-    check(exercise(snap, comp, mixer), QStringLiteral("a file cut to a third after it was placed still renders (the rest is missing, nothing crashes)"));
+    check(exercise(snap, comp, mixer),
+          QStringLiteral("a file cut to a third after it was placed still renders (the rest is missing, nothing crashes)"));
     QFile::remove(live);
     stage(QStringLiteral("a file deleted after it was placed"), 60);
     Compositor comp2;
@@ -348,39 +353,78 @@ void oddMedia(const QString& outDir)
     QDir().mkpath(dir);
     auto p = [&](const QString& n) { return QDir(dir).filePath(n); };
     const QString lavfi = QStringLiteral("lavfi");
-    struct Case { QString name; QStringList args; };
+    struct Case {
+        QString name;
+        QStringList args;
+    };
     const std::vector<Case> cases = {
-        {QStringLiteral("1x1.mkv"), {QStringLiteral("-f"), lavfi, QStringLiteral("-i"), QStringLiteral("color=c=orange:s=1x1:d=1"), QStringLiteral("-c:v"), QStringLiteral("png")}},
-        {QStringLiteral("odd_3x7.mkv"), {QStringLiteral("-f"), lavfi, QStringLiteral("-i"), QStringLiteral("color=c=orange:s=3x7:d=1"), QStringLiteral("-c:v"), QStringLiteral("png")}},
-        {QStringLiteral("odd_641x479.mp4"), {QStringLiteral("-f"), lavfi, QStringLiteral("-i"), QStringLiteral("testsrc2=s=641x479:d=1"), QStringLiteral("-c:v"), QStringLiteral("mpeg4")}},
-        {QStringLiteral("wide_4000x16.mkv"), {QStringLiteral("-f"), lavfi, QStringLiteral("-i"), QStringLiteral("testsrc2=s=4000x16:d=1"), QStringLiteral("-c:v"), QStringLiteral("ffv1")}},
-        {QStringLiteral("tall_16x4000.mkv"), {QStringLiteral("-f"), lavfi, QStringLiteral("-i"), QStringLiteral("testsrc2=s=16x4000:d=1"), QStringLiteral("-c:v"), QStringLiteral("ffv1")}},
-        {QStringLiteral("one_frame.mp4"), {QStringLiteral("-f"), lavfi, QStringLiteral("-i"), QStringLiteral("testsrc2=s=320x240:r=30"), QStringLiteral("-frames:v"), QStringLiteral("1"), QStringLiteral("-c:v"), QStringLiteral("mpeg4")}},
-        {QStringLiteral("fps_1000.mkv"), {QStringLiteral("-f"), lavfi, QStringLiteral("-i"), QStringLiteral("testsrc2=s=160x120:r=1000:d=0.5"), QStringLiteral("-c:v"), QStringLiteral("ffv1")}},
-        {QStringLiteral("fps_1.mkv"), {QStringLiteral("-f"), lavfi, QStringLiteral("-i"), QStringLiteral("testsrc2=s=160x120:r=1:d=3"), QStringLiteral("-c:v"), QStringLiteral("ffv1")}},
-        {QStringLiteral("vfr.mkv"), {QStringLiteral("-f"), lavfi, QStringLiteral("-i"), QStringLiteral("testsrc2=s=320x240:r=30:d=3"), QStringLiteral("-vf"),
-                                      QStringLiteral("setpts='if(lt(N,30),N/30/TB,if(lt(N,60),(1+(N-30)/5)/TB,(7+(N-60)/60)/TB))'"), QStringLiteral("-fps_mode"), QStringLiteral("vfr"),
-                                      QStringLiteral("-c:v"), QStringLiteral("ffv1")}},
-        {QStringLiteral("starts_late.mp4"), {QStringLiteral("-f"), lavfi, QStringLiteral("-i"), QStringLiteral("testsrc2=s=320x240:d=2"), QStringLiteral("-output_ts_offset"), QStringLiteral("10"),
-                                              QStringLiteral("-c:v"), QStringLiteral("mpeg4")}},
-        {QStringLiteral("audio_1sample.wav"), {QStringLiteral("-f"), lavfi, QStringLiteral("-i"), QStringLiteral("sine=r=48000"), QStringLiteral("-frames:a"), QStringLiteral("1"),
-                                                QStringLiteral("-af"), QStringLiteral("atrim=end_sample=1")}},
-        {QStringLiteral("audio_8k_mono.wav"), {QStringLiteral("-f"), lavfi, QStringLiteral("-i"), QStringLiteral("sine=r=8000:d=1"), QStringLiteral("-ac"), QStringLiteral("1")}},
-        {QStringLiteral("audio_384k_8ch.wav"), {QStringLiteral("-f"), lavfi, QStringLiteral("-i"), QStringLiteral("sine=r=384000:d=0.5"), QStringLiteral("-ac"), QStringLiteral("8")}},
-        {QStringLiteral("audio_silence_long.flac"), {QStringLiteral("-f"), lavfi, QStringLiteral("-i"), QStringLiteral("anullsrc=r=44100:cl=mono"), QStringLiteral("-t"), QStringLiteral("600")}},
-        {QStringLiteral("video_no_audio_but_audio_stream_empty.mkv"), {QStringLiteral("-f"), lavfi, QStringLiteral("-i"), QStringLiteral("testsrc2=s=320x240:d=2"), QStringLiteral("-f"), lavfi, QStringLiteral("-i"),
-                                                                       QStringLiteral("anullsrc=r=48000"), QStringLiteral("-t"), QStringLiteral("2"), QStringLiteral("-c:v"), QStringLiteral("ffv1"),
-                                                                       QStringLiteral("-c:a"), QStringLiteral("pcm_s16le"), QStringLiteral("-af"), QStringLiteral("atrim=end=0.001")}},
-        {QStringLiteral("two_video_streams.mkv"), {QStringLiteral("-f"), lavfi, QStringLiteral("-i"), QStringLiteral("testsrc2=s=320x240:d=1"), QStringLiteral("-f"), lavfi, QStringLiteral("-i"),
-                                                   QStringLiteral("testsrc=s=64x48:d=3"), QStringLiteral("-map"), QStringLiteral("0"), QStringLiteral("-map"), QStringLiteral("1"),
-                                                   QStringLiteral("-c:v"), QStringLiteral("ffv1")}},
-        {QStringLiteral("huge_still.png"), {QStringLiteral("-f"), lavfi, QStringLiteral("-i"), QStringLiteral("color=c=red:s=12000x8000"), QStringLiteral("-frames:v"), QStringLiteral("1")}},
-        {QStringLiteral("rgba64.png"), {QStringLiteral("-f"), lavfi, QStringLiteral("-i"), QStringLiteral("testsrc2=s=300x200"), QStringLiteral("-frames:v"), QStringLiteral("1"),
-                                        QStringLiteral("-pix_fmt"), QStringLiteral("rgba64be")}},
-        {QStringLiteral("gray16.tiff"), {QStringLiteral("-f"), lavfi, QStringLiteral("-i"), QStringLiteral("testsrc2=s=300x200"), QStringLiteral("-frames:v"), QStringLiteral("1"),
-                                         QStringLiteral("-pix_fmt"), QStringLiteral("gray16le")}},
-        {QStringLiteral("Ünïcødé 日本語 ✓ clip.mp4"), {QStringLiteral("-f"), lavfi, QStringLiteral("-i"), QStringLiteral("testsrc2=s=320x240:d=1"), QStringLiteral("-c:v"), QStringLiteral("mpeg4")}},
-        {QStringLiteral("name with %20 & ; ' $HOME #1.mp4"), {QStringLiteral("-f"), lavfi, QStringLiteral("-i"), QStringLiteral("testsrc2=s=320x240:d=1"), QStringLiteral("-c:v"), QStringLiteral("mpeg4")}},
+        {QStringLiteral("1x1.mkv"),
+         {QStringLiteral("-f"), lavfi, QStringLiteral("-i"), QStringLiteral("color=c=orange:s=1x1:d=1"), QStringLiteral("-c:v"),
+          QStringLiteral("png")}},
+        {QStringLiteral("odd_3x7.mkv"),
+         {QStringLiteral("-f"), lavfi, QStringLiteral("-i"), QStringLiteral("color=c=orange:s=3x7:d=1"), QStringLiteral("-c:v"),
+          QStringLiteral("png")}},
+        {QStringLiteral("odd_641x479.mp4"),
+         {QStringLiteral("-f"), lavfi, QStringLiteral("-i"), QStringLiteral("testsrc2=s=641x479:d=1"), QStringLiteral("-c:v"),
+          QStringLiteral("mpeg4")}},
+        {QStringLiteral("wide_4000x16.mkv"),
+         {QStringLiteral("-f"), lavfi, QStringLiteral("-i"), QStringLiteral("testsrc2=s=4000x16:d=1"), QStringLiteral("-c:v"),
+          QStringLiteral("ffv1")}},
+        {QStringLiteral("tall_16x4000.mkv"),
+         {QStringLiteral("-f"), lavfi, QStringLiteral("-i"), QStringLiteral("testsrc2=s=16x4000:d=1"), QStringLiteral("-c:v"),
+          QStringLiteral("ffv1")}},
+        {QStringLiteral("one_frame.mp4"),
+         {QStringLiteral("-f"), lavfi, QStringLiteral("-i"), QStringLiteral("testsrc2=s=320x240:r=30"), QStringLiteral("-frames:v"),
+          QStringLiteral("1"), QStringLiteral("-c:v"), QStringLiteral("mpeg4")}},
+        {QStringLiteral("fps_1000.mkv"),
+         {QStringLiteral("-f"), lavfi, QStringLiteral("-i"), QStringLiteral("testsrc2=s=160x120:r=1000:d=0.5"), QStringLiteral("-c:v"),
+          QStringLiteral("ffv1")}},
+        {QStringLiteral("fps_1.mkv"),
+         {QStringLiteral("-f"), lavfi, QStringLiteral("-i"), QStringLiteral("testsrc2=s=160x120:r=1:d=3"), QStringLiteral("-c:v"),
+          QStringLiteral("ffv1")}},
+        {QStringLiteral("vfr.mkv"),
+         {QStringLiteral("-f"), lavfi, QStringLiteral("-i"), QStringLiteral("testsrc2=s=320x240:r=30:d=3"), QStringLiteral("-vf"),
+          QStringLiteral("setpts='if(lt(N,30),N/30/TB,if(lt(N,60),(1+(N-30)/5)/TB,(7+(N-60)/60)/TB))'"), QStringLiteral("-fps_mode"),
+          QStringLiteral("vfr"), QStringLiteral("-c:v"), QStringLiteral("ffv1")}},
+        {QStringLiteral("starts_late.mp4"),
+         {QStringLiteral("-f"), lavfi, QStringLiteral("-i"), QStringLiteral("testsrc2=s=320x240:d=2"), QStringLiteral("-output_ts_offset"),
+          QStringLiteral("10"), QStringLiteral("-c:v"), QStringLiteral("mpeg4")}},
+        {QStringLiteral("audio_1sample.wav"),
+         {QStringLiteral("-f"), lavfi, QStringLiteral("-i"), QStringLiteral("sine=r=48000"), QStringLiteral("-frames:a"),
+          QStringLiteral("1"), QStringLiteral("-af"), QStringLiteral("atrim=end_sample=1")}},
+        {QStringLiteral("audio_8k_mono.wav"),
+         {QStringLiteral("-f"), lavfi, QStringLiteral("-i"), QStringLiteral("sine=r=8000:d=1"), QStringLiteral("-ac"),
+          QStringLiteral("1")}},
+        {QStringLiteral("audio_384k_8ch.wav"),
+         {QStringLiteral("-f"), lavfi, QStringLiteral("-i"), QStringLiteral("sine=r=384000:d=0.5"), QStringLiteral("-ac"),
+          QStringLiteral("8")}},
+        {QStringLiteral("audio_silence_long.flac"),
+         {QStringLiteral("-f"), lavfi, QStringLiteral("-i"), QStringLiteral("anullsrc=r=44100:cl=mono"), QStringLiteral("-t"),
+          QStringLiteral("600")}},
+        {QStringLiteral("video_no_audio_but_audio_stream_empty.mkv"),
+         {QStringLiteral("-f"), lavfi, QStringLiteral("-i"), QStringLiteral("testsrc2=s=320x240:d=2"), QStringLiteral("-f"), lavfi,
+          QStringLiteral("-i"), QStringLiteral("anullsrc=r=48000"), QStringLiteral("-t"), QStringLiteral("2"), QStringLiteral("-c:v"),
+          QStringLiteral("ffv1"), QStringLiteral("-c:a"), QStringLiteral("pcm_s16le"), QStringLiteral("-af"),
+          QStringLiteral("atrim=end=0.001")}},
+        {QStringLiteral("two_video_streams.mkv"),
+         {QStringLiteral("-f"), lavfi, QStringLiteral("-i"), QStringLiteral("testsrc2=s=320x240:d=1"), QStringLiteral("-f"), lavfi,
+          QStringLiteral("-i"), QStringLiteral("testsrc=s=64x48:d=3"), QStringLiteral("-map"), QStringLiteral("0"), QStringLiteral("-map"),
+          QStringLiteral("1"), QStringLiteral("-c:v"), QStringLiteral("ffv1")}},
+        {QStringLiteral("huge_still.png"),
+         {QStringLiteral("-f"), lavfi, QStringLiteral("-i"), QStringLiteral("color=c=red:s=12000x8000"), QStringLiteral("-frames:v"),
+          QStringLiteral("1")}},
+        {QStringLiteral("rgba64.png"),
+         {QStringLiteral("-f"), lavfi, QStringLiteral("-i"), QStringLiteral("testsrc2=s=300x200"), QStringLiteral("-frames:v"),
+          QStringLiteral("1"), QStringLiteral("-pix_fmt"), QStringLiteral("rgba64be")}},
+        {QStringLiteral("gray16.tiff"),
+         {QStringLiteral("-f"), lavfi, QStringLiteral("-i"), QStringLiteral("testsrc2=s=300x200"), QStringLiteral("-frames:v"),
+          QStringLiteral("1"), QStringLiteral("-pix_fmt"), QStringLiteral("gray16le")}},
+        {QStringLiteral("Ünïcødé 日本語 ✓ clip.mp4"),
+         {QStringLiteral("-f"), lavfi, QStringLiteral("-i"), QStringLiteral("testsrc2=s=320x240:d=1"), QStringLiteral("-c:v"),
+          QStringLiteral("mpeg4")}},
+        {QStringLiteral("name with %20 & ; ' $HOME #1.mp4"),
+         {QStringLiteral("-f"), lavfi, QStringLiteral("-i"), QStringLiteral("testsrc2=s=320x240:d=1"), QStringLiteral("-c:v"),
+          QStringLiteral("mpeg4")}},
     };
     QStringList made, unusable, bad;
     for (const Case& c : cases) {
@@ -402,8 +446,12 @@ void oddMedia(const QString& outDir)
         if (!exercise(snap, comp, mixer) || timelineProblem(snap.timeline).size())
             bad << c.name;
     }
-    check(bad.isEmpty(), QStringLiteral("odd media: %1 files (1x1, 3x7, 4000x16, one frame, 1 and 1000 fps, variable rate, a late start, 1 audio sample, 384 kHz 8 channels, 10 min of silence, two video streams, a 12000x8000 still, 16-bit pictures, other scripts and symbols in the name) render and mix%2")
-                                .arg(made.size()).arg(bad.isEmpty() ? QString() : QStringLiteral(": not %1").arg(bad.join(QStringLiteral(", ")))));
+    check(bad.isEmpty(),
+          QStringLiteral("odd media: %1 files (1x1, 3x7, 4000x16, one frame, 1 and 1000 fps, variable rate, a late start, 1 audio sample, "
+                         "384 kHz 8 channels, 10 min of silence, two video streams, a 12000x8000 still, 16-bit pictures, other scripts and "
+                         "symbols in the name) render and mix%2")
+              .arg(made.size())
+              .arg(bad.isEmpty() ? QString() : QStringLiteral(": not %1").arg(bad.join(QStringLiteral(", ")))));
     if (!unusable.isEmpty())
         print(QStringLiteral("NOTE  refused at import (fine if the message is clear): %1").arg(unusable.join(QStringLiteral("; "))));
 }
@@ -526,27 +574,40 @@ QString tryProject(const QString& path)
         const QList<QByteArray> la = a.readAll().split('\n'), lb = b.readAll().split('\n');
         for (qsizetype i = 0; i < std::min(la.size(), lb.size()); ++i)
             if (la[i] != lb[i])
-                return QStringLiteral("saved and loaded it is not the same: line %1 \"%2\" became \"%3\"").arg(i + 1)
+                return QStringLiteral("saved and loaded it is not the same: line %1 \"%2\" became \"%3\"")
+                    .arg(i + 1)
                     .arg(QString::fromUtf8(la[i].trimmed()), QString::fromUtf8(lb[i].trimmed()));
         const Timeline& x = project.timeline();
         const Timeline& y = back.timeline();
-        QString where = !(project.settings() == back.settings()) ? QStringLiteral("the settings")
-                        : !(x.markers == y.markers) ? QStringLiteral("the markers")
-                        : !(x.outputEffects == y.outputEffects) || !(x.audioMasterEffects == y.audioMasterEffects) ? QStringLiteral("the output FX")
-                        : !(x.liveEffects == y.liveEffects) || !(x.livePads == y.livePads) || !(x.liveLayerEffects == y.liveLayerEffects) ? QStringLiteral("the Live FX or pads")
-                        : !(x.liveOverlays == y.liveOverlays) || !(x.liveScenes == y.liveScenes) || !(x.liveSetlist == y.liveSetlist) ? QStringLiteral("the Live overlays, scenes or setlist")
-                        : x.nextId != y.nextId ? QStringLiteral("nextId %1 / %2").arg(x.nextId).arg(y.nextId)
-                        : QStringLiteral("not in the tracks");
+        QString where = !(project.settings() == back.settings())                                       ? QStringLiteral("the settings")
+            : !(x.markers == y.markers)                                                                ? QStringLiteral("the markers")
+            : !(x.outputEffects == y.outputEffects) || !(x.audioMasterEffects == y.audioMasterEffects) ? QStringLiteral("the output FX")
+            : !(x.liveEffects == y.liveEffects) || !(x.livePads == y.livePads) || !(x.liveLayerEffects == y.liveLayerEffects)
+            ? QStringLiteral("the Live FX or pads")
+            : !(x.liveOverlays == y.liveOverlays) || !(x.liveScenes == y.liveScenes) || !(x.liveSetlist == y.liveSetlist)
+            ? QStringLiteral("the Live overlays, scenes or setlist")
+            : x.nextId != y.nextId ? QStringLiteral("nextId %1 / %2").arg(x.nextId).arg(y.nextId)
+                                   : QStringLiteral("not in the tracks");
         const auto& ta = project.timeline().tracks;
         const auto& tb = back.timeline().tracks;
         for (size_t i = 0; i < std::min(ta.size(), tb.size()) && where.startsWith(QLatin1String("not")); ++i) {
             if (!(ta[i].effects == tb[i].effects))
                 where = QStringLiteral("track %1's effects").arg(i);
             else if (ta[i].id != tb[i].id || ta[i].level != tb[i].level || ta[i].pan != tb[i].pan || ta[i].duckUnder != tb[i].duckUnder
-                     || ta[i].duckAmount != tb[i].duckAmount || ta[i].blend != tb[i].blend || ta[i].name != tb[i].name || ta[i].clips.size() != tb[i].clips.size())
-                where = QStringLiteral("track %1's settings (id %2/%3, level %4/%5, pan %6/%7, duck %8/%9, %10/%11 events)").arg(i).arg(ta[i].id).arg(tb[i].id)
-                            .arg(ta[i].level).arg(tb[i].level).arg(ta[i].pan).arg(tb[i].pan).arg(ta[i].duckUnder).arg(tb[i].duckUnder)
-                            .arg(ta[i].clips.size()).arg(tb[i].clips.size());
+                     || ta[i].duckAmount != tb[i].duckAmount || ta[i].blend != tb[i].blend || ta[i].name != tb[i].name
+                     || ta[i].clips.size() != tb[i].clips.size())
+                where = QStringLiteral("track %1's settings (id %2/%3, level %4/%5, pan %6/%7, duck %8/%9, %10/%11 events)")
+                            .arg(i)
+                            .arg(ta[i].id)
+                            .arg(tb[i].id)
+                            .arg(ta[i].level)
+                            .arg(tb[i].level)
+                            .arg(ta[i].pan)
+                            .arg(tb[i].pan)
+                            .arg(ta[i].duckUnder)
+                            .arg(tb[i].duckUnder)
+                            .arg(ta[i].clips.size())
+                            .arg(tb[i].clips.size());
             else if (!(ta[i].volume == tb[i].volume) || !(ta[i].panEnvelope == tb[i].panEnvelope) || !(ta[i].composite == tb[i].composite))
                 where = QStringLiteral("track %1's envelopes").arg(i);
             for (size_t k = 0; k < std::min(ta[i].clips.size(), tb[i].clips.size()); ++k) {
@@ -554,10 +615,12 @@ QString tryProject(const QString& path)
                 const Clip& b = tb[i].clips[k];
                 if (a == b)
                     continue;
-                where = !(a.effects == b.effects) ? QStringLiteral("effects") : !(a.generator == b.generator) ? QStringLiteral("generator")
-                        : !(a.panCrop == b.panCrop) ? QStringLiteral("pan/crop") : !(a.velocity == b.velocity) ? QStringLiteral("speed ramp")
-                        : !(a.transitionIn == b.transitionIn) || !(a.transitionOut == b.transitionOut) ? QStringLiteral("transition")
-                        : QStringLiteral("a plain field");
+                where = !(a.effects == b.effects)                                                  ? QStringLiteral("effects")
+                    : !(a.generator == b.generator)                                                ? QStringLiteral("generator")
+                    : !(a.panCrop == b.panCrop)                                                    ? QStringLiteral("pan/crop")
+                    : !(a.velocity == b.velocity)                                                  ? QStringLiteral("speed ramp")
+                    : !(a.transitionIn == b.transitionIn) || !(a.transitionOut == b.transitionOut) ? QStringLiteral("transition")
+                                                                                                   : QStringLiteral("a plain field");
                 where = QStringLiteral("event %1's %2").arg(a.id).arg(where);
                 break;
             }
@@ -648,8 +711,11 @@ void projectFuzz(const QString& examplesDir, const QString& outDir, int iteratio
         for (const QString& p : {path, path + QStringLiteral(".again.mvp"), path + QStringLiteral(".twice.mvp")})
             QFile::remove(p);
     }
-    check(problems.isEmpty(), QStringLiteral("project files: %1 mangled copies of the examples (values replaced or removed, cut short, scribbled over, ids repeated) are refused with a message or load sound, render, edit and save back the same%2")
-                                  .arg(iterations).arg(problems.isEmpty() ? QString() : QStringLiteral(":\n      ") + problems.join(QStringLiteral("\n      "))));
+    check(problems.isEmpty(),
+          QStringLiteral("project files: %1 mangled copies of the examples (values replaced or removed, cut short, scribbled over, ids "
+                         "repeated) are refused with a message or load sound, render, edit and save back the same%2")
+              .arg(iterations)
+              .arg(problems.isEmpty() ? QString() : QStringLiteral(":\n      ") + problems.join(QStringLiteral("\n      "))));
 }
 
 // ---------------------------------------------------------------------------
@@ -659,7 +725,8 @@ void projectFuzz(const QString& examplesDir, const QString& outDir, int iteratio
 void editFuzz(const QString& mediaDir, int iterations)
 {
     Project project;
-    QStringList files = {QStringLiteral("h264_aac.mp4"), QStringLiteral("audio.wav"), QStringLiteral("still.png"), QStringLiteral("vp9_vorbis.webm")};
+    QStringList files = {QStringLiteral("h264_aac.mp4"), QStringLiteral("audio.wav"), QStringLiteral("still.png"),
+                         QStringLiteral("vp9_vorbis.webm")};
     std::vector<int> mediaIds;
     for (const QString& f : files) {
         const MediaInfo info = probeMedia(QDir(mediaDir).filePath(f));
@@ -705,9 +772,12 @@ void editFuzz(const QString& mediaDir, int iterations)
         const auto media = project.media();
         stage(QStringLiteral("editing step %1 (op %2)").arg(i).arg(op), 60);
         switch (op) {
-        case 0: case 1: case 2: {
+        case 0:
+        case 1:
+        case 2: {
             const int id = mediaIds[rng() % mediaIds.size()];
-            ops::insertMedia(tl, *media.at(id), std::max<TimeUs>(0, anyTime()), tl.tracks.empty() ? -1 : int(rng() % (tl.tracks.size() + 1)) - 1, settings.fps);
+            ops::insertMedia(tl, *media.at(id), std::max<TimeUs>(0, anyTime()),
+                             tl.tracks.empty() ? -1 : int(rng() % (tl.tracks.size() + 1)) - 1, settings.fps);
             break;
         }
         case 3: ops::splitClips(tl, rng() % 2 ? std::set<int>{} : someClips(tl), anyTime()); break;
@@ -719,10 +789,18 @@ void editFuzz(const QString& mediaDir, int iterations)
         case 9: ops::groupClips(tl, someClips(tl)); break;
         case 10: ops::ungroupClips(tl, someClips(tl)); break;
         case 11: ops::addTrack(tl, rng() % 2 ? TrackType::Video : TrackType::Audio, int(rng() % (tl.tracks.size() + 2)) - 1); break;
-        case 12: if (!tl.tracks.empty()) ops::removeTrack(tl, int(rng() % tl.tracks.size())); break;
-        case 13: if (!tl.tracks.empty()) ops::moveTrack(tl, int(rng() % tl.tracks.size()), int(rng() % tl.tracks.size())); break;
+        case 12:
+            if (!tl.tracks.empty())
+                ops::removeTrack(tl, int(rng() % tl.tracks.size()));
+            break;
+        case 13:
+            if (!tl.tracks.empty())
+                ops::moveTrack(tl, int(rng() % tl.tracks.size()), int(rng() % tl.tracks.size()));
+            break;
         case 14: ops::insertGenerated(tl, presets[rng() % presets.size()], std::max<TimeUs>(0, anyTime()), -1, settings.fps); break;
-        case 15: case 16: case 17: { // per-event changes through the same calls the UI makes
+        case 15:
+        case 16:
+        case 17: { // per-event changes through the same calls the UI makes
             for (Track& t : tl.tracks)
                 for (Clip& c : t.clips) {
                     if (rng() % 4)
@@ -732,20 +810,51 @@ void editFuzz(const QString& mediaDir, int iterations)
                     const Clip was = c;
                     switch (sub) {
                     case 0: ops::setClipSpeed(c, m, std::pow(10.0, (int(rng() % 400) - 200) / 100.0), rng() % 2, settings.fps); break;
-                    case 1: { auto [lo, hi] = ops::trimRange(c, m, true); lo = std::max(lo, -c.start); hi = std::min(hi, c.length - 1); /* the UI's limits */ ops::trimClipStart(c, std::clamp<TimeUs>(anyTime() * (rng() % 2 ? 1 : -1), lo, hi)); break; }
-                    case 2: { auto [lo, hi] = ops::trimRange(c, m, false); lo = std::max(lo, 1 - c.length); ops::trimClipEnd(c, std::clamp<TimeUs>(anyTime() * (rng() % 2 ? 1 : -1), lo, hi)); break; }
+                    case 1: {
+                        auto [lo, hi] = ops::trimRange(c, m, true);
+                        lo = std::max(lo, -c.start);
+                        hi = std::min(hi, c.length - 1); /* the UI's limits */
+                        ops::trimClipStart(c, std::clamp<TimeUs>(anyTime() * (rng() % 2 ? 1 : -1), lo, hi));
+                        break;
+                    }
+                    case 2: {
+                        auto [lo, hi] = ops::trimRange(c, m, false);
+                        lo = std::max(lo, 1 - c.length);
+                        ops::trimClipEnd(c, std::clamp<TimeUs>(anyTime() * (rng() % 2 ? 1 : -1), lo, hi));
+                        break;
+                    }
                     case 3: ops::applyRampPreset(c, m, ops::RampPreset(rng() % 5), settings.fps); break;
                     case 4: c.reverse = !c.reverse; break;
-                    case 5: c.fadeIn = std::clamp<TimeUs>(anyTime(), 0, c.length); c.fadeOut = std::clamp<TimeUs>(anyTime(), 0, c.length); break;
-                    case 6: if (t.type == TrackType::Video) c.effects.push_back(makeEffect(vfx[rng() % vfx.size()], tl.allocId()));
-                            else c.effects.push_back(makeEffectOfType(afx[rng() % afx.size()].id, tl.allocId())); break;
+                    case 5:
+                        c.fadeIn = std::clamp<TimeUs>(anyTime(), 0, c.length);
+                        c.fadeOut = std::clamp<TimeUs>(anyTime(), 0, c.length);
+                        break;
+                    case 6:
+                        if (t.type == TrackType::Video)
+                            c.effects.push_back(makeEffect(vfx[rng() % vfx.size()], tl.allocId()));
+                        else
+                            c.effects.push_back(makeEffectOfType(afx[rng() % afx.size()].id, tl.allocId()));
+                        break;
                     case 7: c.loopLength = rng() % 2 ? 0 : TimeUs(1 + rng() % 3000000); break;
-                    case 8: c.frameBlend = !c.frameBlend; c.stabilize = rng() % 2 ? 0.0 : 0.5; break;
+                    case 8:
+                        c.frameBlend = !c.frameBlend;
+                        c.stabilize = rng() % 2 ? 0.0 : 0.5;
+                        break;
                     }
                     if (c.sourceIn < 0 || c.length <= 0 || c.start < 0)
-                        print(QStringLiteral("NOTE  change %1 on event %2 (start %3, length %4, in %5, speed %6, reverse %7, ramp %8) gave start %9, length %10, in %11")
-                                  .arg(sub).arg(c.id).arg(was.start).arg(was.length).arg(was.sourceIn).arg(was.speed).arg(was.reverse).arg(was.hasRamp())
-                                  .arg(c.start).arg(c.length).arg(c.sourceIn));
+                        print(QStringLiteral("NOTE  change %1 on event %2 (start %3, length %4, in %5, speed %6, reverse %7, ramp %8) gave "
+                                             "start %9, length %10, in %11")
+                                  .arg(sub)
+                                  .arg(c.id)
+                                  .arg(was.start)
+                                  .arg(was.length)
+                                  .arg(was.sourceIn)
+                                  .arg(was.speed)
+                                  .arg(was.reverse)
+                                  .arg(was.hasRamp())
+                                  .arg(c.start)
+                                  .arg(c.length)
+                                  .arg(c.sourceIn));
                 }
             tl.sortClips();
             break;
@@ -760,7 +869,11 @@ void editFuzz(const QString& mediaDir, int iterations)
             break;
         }
         case 19: ops::overwriteOverlaps(tl, someClips(tl)); break;
-        case 20: for (const int id : someClips(tl)) { ops::removeTransition(tl, id, rng() % 2); } break;
+        case 20:
+            for (const int id : someClips(tl)) {
+                ops::removeTransition(tl, id, rng() % 2);
+            }
+            break;
         default: { // a marker or region
             Marker m;
             m.id = tl.allocId();
@@ -786,8 +899,11 @@ void editFuzz(const QString& mediaDir, int iterations)
         if (i % 10 == 0 && !exercise(*project.snapshot(), comp, mixer))
             problem = QStringLiteral("step %1 (op %2): a picture came back empty or the sound had NaN").arg(i).arg(op);
     }
-    check(problem.isEmpty(), QStringLiteral("random editing: %1 edits (insert, split, delete, ripple, group, tracks, titles, speed, trims, ramps, reverse, fades, FX, loops, overwrite, transitions, markers) keep the timeline sound%2")
-                                 .arg(steps).arg(problem.isEmpty() ? QString() : QStringLiteral(": ") + problem));
+    check(problem.isEmpty(),
+          QStringLiteral("random editing: %1 edits (insert, split, delete, ripple, group, tracks, titles, speed, trims, ramps, reverse, "
+                         "fades, FX, loops, overwrite, transitions, markers) keep the timeline sound%2")
+              .arg(steps)
+              .arg(problem.isEmpty() ? QString() : QStringLiteral(": ") + problem));
     // Undo to the start, checking each step, and redo to the end.
     stage(QStringLiteral("undo and redo of the random edits"), 300);
     bool undoOk = true, redoOk = true;
@@ -823,14 +939,20 @@ void exportEdges(const QString& mediaDir, const QString& outDir)
         s.rangeEnd = kUsPerSecond;
         return s;
     };
-    struct Result { bool ok; QString error; };
+    struct Result {
+        bool ok;
+        QString error;
+    };
     auto run = [&](const ProjectSnapshot& snap, const ExportSettings& s, const Exporter::Progress& progress = {}) {
         stage(QStringLiteral("export %1").arg(QFileInfo(s.path).fileName()), 120);
         Exporter e;
         const bool ok = e.run(snap, s, progress);
         return Result{ok, e.error()};
     };
-    auto fileOk = [](const QString& path) { const MediaInfo i = probeMedia(path); return i.ok() && i.hasVideo(); };
+    auto fileOk = [](const QString& path) {
+        const MediaInfo i = probeMedia(path);
+        return i.ok() && i.hasVideo();
+    };
 
     {
         ProjectSnapshot empty = base;
@@ -838,21 +960,27 @@ void exportEdges(const QString& mediaDir, const QString& outDir)
         ExportSettings s = settings(QStringLiteral("empty.mp4"));
         s.rangeEnd = 0;
         const Result r = run(empty, s);
-        check(r.ok ? fileOk(s.path) : !r.error.isEmpty(), QStringLiteral("an empty timeline: %1").arg(r.ok ? QStringLiteral("exports a playable file") : QStringLiteral("refused: \"%1\"").arg(r.error)));
+        check(r.ok ? fileOk(s.path) : !r.error.isEmpty(),
+              QStringLiteral("an empty timeline: %1")
+                  .arg(r.ok ? QStringLiteral("exports a playable file") : QStringLiteral("refused: \"%1\"").arg(r.error)));
     }
     {
         ExportSettings s = settings(QStringLiteral("backwards.mp4"));
         s.rangeStart = 2 * kUsPerSecond;
         s.rangeEnd = kUsPerSecond;
         const Result r = run(base, s);
-        check(r.ok ? fileOk(s.path) : !r.error.isEmpty(), QStringLiteral("a range that ends before it starts: %1").arg(r.ok ? QStringLiteral("exports") : QStringLiteral("refused: \"%1\"").arg(r.error)));
+        check(r.ok ? fileOk(s.path) : !r.error.isEmpty(),
+              QStringLiteral("a range that ends before it starts: %1")
+                  .arg(r.ok ? QStringLiteral("exports") : QStringLiteral("refused: \"%1\"").arg(r.error)));
     }
     {
         ExportSettings s = settings(QStringLiteral("past_end.mp4"));
         s.rangeStart = base.timeline.duration() + 10 * kUsPerSecond;
         s.rangeEnd = s.rangeStart + kUsPerSecond;
         const Result r = run(base, s);
-        check(r.ok ? fileOk(s.path) : !r.error.isEmpty(), QStringLiteral("a range after the end: %1").arg(r.ok ? QStringLiteral("exports black") : QStringLiteral("refused: \"%1\"").arg(r.error)));
+        check(r.ok ? fileOk(s.path) : !r.error.isEmpty(),
+              QStringLiteral("a range after the end: %1")
+                  .arg(r.ok ? QStringLiteral("exports black") : QStringLiteral("refused: \"%1\"").arg(r.error)));
     }
     for (QSize size : {QSize(2, 2), QSize(321, 181), QSize(1, 1), QSize(0, 0), QSize(-5, 100), QSize(9000, 9000)}) {
         ExportSettings s = settings(QStringLiteral("size_%1x%2.mp4").arg(size.width()).arg(size.height()));
@@ -860,33 +988,46 @@ void exportEdges(const QString& mediaDir, const QString& outDir)
         s.height = size.height();
         s.rangeEnd = kUsPerSecond / 5;
         const Result r = run(base, s);
-        check(r.ok ? fileOk(s.path) : !r.error.isEmpty(), QStringLiteral("output size %1x%2: %3").arg(size.width()).arg(size.height())
-                                                               .arg(r.ok ? QStringLiteral("exports a playable file") : QStringLiteral("refused: \"%1\"").arg(r.error)));
+        check(r.ok ? fileOk(s.path) : !r.error.isEmpty(),
+              QStringLiteral("output size %1x%2: %3")
+                  .arg(size.width())
+                  .arg(size.height())
+                  .arg(r.ok ? QStringLiteral("exports a playable file") : QStringLiteral("refused: \"%1\"").arg(r.error)));
     }
-    for (FrameRate fps : {FrameRate{0, 1}, FrameRate{30, 0}, FrameRate{-30, 1}, FrameRate{24000, 1001}, FrameRate{1, 1}, FrameRate{240, 1}}) {
+    for (FrameRate fps :
+         {FrameRate{0, 1}, FrameRate{30, 0}, FrameRate{-30, 1}, FrameRate{24000, 1001}, FrameRate{1, 1}, FrameRate{240, 1}}) {
         ExportSettings s = settings(QStringLiteral("fps_%1_%2.mp4").arg(fps.num).arg(fps.den));
         s.fps = fps;
         const Result r = run(base, s);
-        check(r.ok ? fileOk(s.path) : !r.error.isEmpty(), QStringLiteral("frame rate %1/%2: %3").arg(fps.num).arg(fps.den)
-                                                               .arg(r.ok ? QStringLiteral("exports") : QStringLiteral("refused: \"%1\"").arg(r.error)));
+        check(r.ok ? fileOk(s.path) : !r.error.isEmpty(),
+              QStringLiteral("frame rate %1/%2: %3")
+                  .arg(fps.num)
+                  .arg(fps.den)
+                  .arg(r.ok ? QStringLiteral("exports") : QStringLiteral("refused: \"%1\"").arg(r.error)));
     }
     {
         ExportSettings s = settings(QStringLiteral("no/such/folder/out.mp4"));
         const Result r = run(base, s);
-        check(!r.ok && !r.error.isEmpty(), QStringLiteral("into a folder that doesn't exist: %1").arg(r.ok ? QStringLiteral("said it worked") : QStringLiteral("\"%1\"").arg(r.error)));
+        check(!r.ok && !r.error.isEmpty(),
+              QStringLiteral("into a folder that doesn't exist: %1")
+                  .arg(r.ok ? QStringLiteral("said it worked") : QStringLiteral("\"%1\"").arg(r.error)));
     }
     {
         ExportSettings s = settings(QString());
         s.path = dir; // a folder, not a file
         const Result r = run(base, s);
-        check(!r.ok && !r.error.isEmpty() && QFileInfo(dir).isDir(), QStringLiteral("onto a folder's name: %1").arg(r.ok ? QStringLiteral("said it worked") : QStringLiteral("\"%1\"").arg(r.error)));
+        check(!r.ok && !r.error.isEmpty() && QFileInfo(dir).isDir(),
+              QStringLiteral("onto a folder's name: %1")
+                  .arg(r.ok ? QStringLiteral("said it worked") : QStringLiteral("\"%1\"").arg(r.error)));
     }
     {
         ExportSettings s = settings(QStringLiteral("nothing.mp4"));
         s.videoEncoder.clear();
         s.audioEncoder.clear();
         const Result r = run(base, s);
-        check(!r.ok && !r.error.isEmpty(), QStringLiteral("with no video and no sound: %1").arg(r.ok ? QStringLiteral("said it worked") : QStringLiteral("\"%1\"").arg(r.error)));
+        check(!r.ok && !r.error.isEmpty(),
+              QStringLiteral("with no video and no sound: %1")
+                  .arg(r.ok ? QStringLiteral("said it worked") : QStringLiteral("\"%1\"").arg(r.error)));
     }
     {
         ExportSettings s = settings(QStringLiteral("bad_encoder.mp4"));
@@ -899,13 +1040,16 @@ void exportEdges(const QString& mediaDir, const QString& outDir)
         s.videoOptions = QStringLiteral("=:::=crf=abc:nonsense");
         s.muxerOptions = QStringLiteral("::==");
         const Result r = run(base, s);
-        check(r.ok ? fileOk(s.path) : !r.error.isEmpty(), QStringLiteral("nonsense encoder options: %1").arg(r.ok ? QStringLiteral("ignored, exports") : QStringLiteral("refused: \"%1\"").arg(r.error)));
+        check(r.ok ? fileOk(s.path) : !r.error.isEmpty(),
+              QStringLiteral("nonsense encoder options: %1")
+                  .arg(r.ok ? QStringLiteral("ignored, exports") : QStringLiteral("refused: \"%1\"").arg(r.error)));
     }
     {
         ExportSettings s = settings(QStringLiteral("cancelled.mp4"));
         s.rangeEnd = 5 * kUsPerSecond;
         const Result r = run(base, s, [](double p) { return p < 0.3; });
-        check(!r.ok && !QFileInfo::exists(s.path), QStringLiteral("cancelled at 30%: stops, and no half-written file is left (%1)").arg(r.error));
+        check(!r.ok && !QFileInfo::exists(s.path),
+              QStringLiteral("cancelled at 30%: stops, and no half-written file is left (%1)").arg(r.error));
     }
     {
         // Over the source it reads from: must not destroy the source.
@@ -918,9 +1062,11 @@ void exportEdges(const QString& mediaDir, const QString& outDir)
         const Result r = run(snap, s);
         const MediaInfo after = probeMedia(src);
         const TimeUs before = snap.media.begin()->second->info.duration;
-        check(!r.ok && after.ok() && after.duration == before, QStringLiteral("over the file it reads from: %1; the file is untouched (%2 s, was %3 s)")
-                                                                  .arg(r.ok ? QStringLiteral("exported over it") : QStringLiteral("refused: \"%1\"").arg(r.error))
-                                                                  .arg(after.duration / 1e6, 0, 'f', 2).arg(before / 1e6, 0, 'f', 2));
+        check(!r.ok && after.ok() && after.duration == before,
+              QStringLiteral("over the file it reads from: %1; the file is untouched (%2 s, was %3 s)")
+                  .arg(r.ok ? QStringLiteral("exported over it") : QStringLiteral("refused: \"%1\"").arg(r.error))
+                  .arg(after.duration / 1e6, 0, 'f', 2)
+                  .arg(before / 1e6, 0, 'f', 2));
     }
     {
         // Read-only target file.
@@ -932,7 +1078,9 @@ void exportEdges(const QString& mediaDir, const QString& outDir)
         s.path = ro;
         const Result r = run(base, s);
         QFile(ro).setPermissions(QFile::ReadOwner | QFile::WriteOwner);
-        check(!r.ok && !r.error.isEmpty(), QStringLiteral("over a read-only file: %1").arg(r.ok ? QStringLiteral("said it worked") : QStringLiteral("\"%1\"").arg(r.error)));
+        check(!r.ok && !r.error.isEmpty(),
+              QStringLiteral("over a read-only file: %1")
+                  .arg(r.ok ? QStringLiteral("said it worked") : QStringLiteral("\"%1\"").arg(r.error)));
     }
 }
 
@@ -942,8 +1090,8 @@ void exportEdges(const QString& mediaDir, const QString& outDir)
 // ---------------------------------------------------------------------------
 void parallelRendering(const QString& mediaDir)
 {
-    const ProjectSnapshot snap = snapshotOf({QDir(mediaDir).filePath(QStringLiteral("h264_aac.mp4")),
-                                             QDir(mediaDir).filePath(QStringLiteral("vp9_vorbis.webm"))});
+    const ProjectSnapshot snap =
+        snapshotOf({QDir(mediaDir).filePath(QStringLiteral("h264_aac.mp4")), QDir(mediaDir).filePath(QStringLiteral("vp9_vorbis.webm"))});
     stage(QStringLiteral("rendering on 6 threads at once"), 300);
     std::atomic<int> bad{0};
     std::vector<QImage> first(6);
@@ -970,7 +1118,9 @@ void parallelRendering(const QString& mediaDir)
     bool same = true;
     for (const QImage& img : first)
         same = same && img == first[0];
-    check(bad == 0 && same, QStringLiteral("6 threads rendering and mixing at random times at once: no crash, no empty picture, and the same frame gives the same picture on each"));
+    check(bad == 0 && same,
+          QStringLiteral("6 threads rendering and mixing at random times at once: no crash, no empty picture, and the same frame gives the "
+                         "same picture on each"));
 }
 
 // ---------------------------------------------------------------------------
@@ -978,9 +1128,9 @@ void parallelRendering(const QString& mediaDir)
 // ---------------------------------------------------------------------------
 void memoryOverTime(const QString& mediaDir)
 {
-    ProjectSnapshot snap = snapshotOf({QDir(mediaDir).filePath(QStringLiteral("h264_aac.mp4")),
-                                       QDir(mediaDir).filePath(QStringLiteral("audio.wav")),
-                                       QDir(mediaDir).filePath(QStringLiteral("still.png"))});
+    ProjectSnapshot snap =
+        snapshotOf({QDir(mediaDir).filePath(QStringLiteral("h264_aac.mp4")), QDir(mediaDir).filePath(QStringLiteral("audio.wav")),
+                    QDir(mediaDir).filePath(QStringLiteral("still.png"))});
     // Some FX so their state is in play too.
     for (Track& t : snap.timeline.tracks)
         for (Clip& c : t.clips)
@@ -1001,8 +1151,10 @@ void memoryOverTime(const QString& mediaDir)
     }
     const qint64 end = memoryBytes();
     const double growMB = (end - warm) / 1048576.0;
-    check(growMB < 40, QStringLiteral("memory: 2700 more frames played (looping, with FX) grew it by %1 MB (%2 MB in all)")
-                           .arg(growMB, 0, 'f', 1).arg(end / 1048576.0, 0, 'f', 0));
+    check(growMB < 40,
+          QStringLiteral("memory: 2700 more frames played (looping, with FX) grew it by %1 MB (%2 MB in all)")
+              .arg(growMB, 0, 'f', 1)
+              .arg(end / 1048576.0, 0, 'f', 0));
 }
 
 // ---------------------------------------------------------------------------
@@ -1046,8 +1198,12 @@ void bigProject(const QString& mediaDir, const QString& outDir)
     }
     const double perEdit = clock.elapsed() / 200.0;
     const double perStepMB = (memoryBytes() - before) / 200.0 / 1048576.0;
-    check(perEdit < 100, QStringLiteral("big project (%1 events, 2 effects on each video one): an edit takes %2 ms").arg(events).arg(perEdit, 0, 'f', 1));
-    check(perStepMB < 2, QStringLiteral("big project: each undo step costs %1 MB of memory (500 edits: %2 MB)").arg(perStepMB, 0, 'f', 2).arg(perStepMB * 500, 0, 'f', 0));
+    check(perEdit < 100,
+          QStringLiteral("big project (%1 events, 2 effects on each video one): an edit takes %2 ms").arg(events).arg(perEdit, 0, 'f', 1));
+    check(perStepMB < 2,
+          QStringLiteral("big project: each undo step costs %1 MB of memory (500 edits: %2 MB)")
+              .arg(perStepMB, 0, 'f', 2)
+              .arg(perStepMB * 500, 0, 'f', 0));
     stage(QStringLiteral("saving and loading the big project"), 300);
     const QString path = QDir(outDir).filePath(QStringLiteral("big.mvp"));
     QString error;
@@ -1058,14 +1214,18 @@ void bigProject(const QString& mediaDir, const QString& outDir)
     const bool loaded = back.load(path, &error);
     const qint64 loadMs = clock.restart();
     check(saved && loaded && back.timeline() == project.timeline() && saveMs < 3000 && loadMs < 5000,
-          QStringLiteral("big project: saved in %1 ms (%2 MB), loaded in %3 ms, the same").arg(saveMs).arg(QFileInfo(path).size() / 1048576.0, 0, 'f', 1).arg(loadMs));
+          QStringLiteral("big project: saved in %1 ms (%2 MB), loaded in %3 ms, the same")
+              .arg(saveMs)
+              .arg(QFileInfo(path).size() / 1048576.0, 0, 'f', 1)
+              .arg(loadMs));
     stage(QStringLiteral("rendering the big project"), 300);
     Compositor comp;
     clock.restart();
     const auto snap = project.snapshot();
     for (int i = 0; i < 30; ++i)
         comp.render(*snap, TimeUs(i) * 7 * kUsPerSecond, QSize(640, 360));
-    check(clock.elapsed() / 30.0 < 200, QStringLiteral("big project: a frame (seeking around) renders in %1 ms").arg(clock.elapsed() / 30.0, 0, 'f', 1));
+    check(clock.elapsed() / 30.0 < 200,
+          QStringLiteral("big project: a frame (seeking around) renders in %1 ms").arg(clock.elapsed() / 30.0, 0, 'f', 1));
 }
 
 // ---------------------------------------------------------------------------
@@ -1073,15 +1233,33 @@ void bigProject(const QString& mediaDir, const QString& outDir)
 // ---------------------------------------------------------------------------
 QByteArray mangleText(QByteArray text, std::mt19937& rng)
 {
-    static const char* tokens[] = {"nan", "inf", "-inf", "1e40", "-1e40", "-", "", "99999999999", "-5", "0", "2147483648", "\xff\xfe",
-                                   "99:99:99,999", "-00:00:01,000", "999999999:00:00.000", "-->", "00:00:01,000 --> 00:00:00,500"};
+    static const char* tokens[] = {"nan",
+                                   "inf",
+                                   "-inf",
+                                   "1e40",
+                                   "-1e40",
+                                   "-",
+                                   "",
+                                   "99999999999",
+                                   "-5",
+                                   "0",
+                                   "2147483648",
+                                   "\xff\xfe",
+                                   "99:99:99,999",
+                                   "-00:00:01,000",
+                                   "999999999:00:00.000",
+                                   "-->",
+                                   "00:00:01,000 --> 00:00:00,500"};
     QList<QByteArray> words = text.split(' ');
     for (int k = 0, n = 1 + int(rng() % 3); k < n && !words.isEmpty(); ++k)
         words[qsizetype(rng() % uint32_t(words.size()))] = tokens[rng() % (sizeof tokens / sizeof *tokens)];
     text = words.join(' ');
     switch (rng() % 6) {
     case 0: text.truncate(qsizetype(rng() % uint32_t(text.size() + 1))); break;
-    case 1: for (int k = 0; k < 6 && !text.isEmpty(); ++k) text[qsizetype(rng() % uint32_t(text.size()))] = char(rng()); break;
+    case 1:
+        for (int k = 0; k < 6 && !text.isEmpty(); ++k)
+            text[qsizetype(rng() % uint32_t(text.size()))] = char(rng());
+        break;
     default: break;
     }
     return text;
@@ -1115,12 +1293,17 @@ void parserFuzz(int iterations)
                 img.setPixel(x, y, qRgb(x * 8, y * 8, (x + y) * 4));
         applyCubeLut(img, *lut, 1.0f);
     }
-    check(lutProblem.isEmpty(), QStringLiteral("LUT files: %1 mangled .cube files (nan, inf, sizes that don't fit, cut short, scribbled over): %2 load and apply, the rest are refused with a reason%3")
-                                    .arg(iterations).arg(luts).arg(lutProblem.isEmpty() ? QString() : QStringLiteral(": ") + lutProblem));
+    check(lutProblem.isEmpty(),
+          QStringLiteral("LUT files: %1 mangled .cube files (nan, inf, sizes that don't fit, cut short, scribbled over): %2 load and "
+                         "apply, the rest are refused with a reason%3")
+              .arg(iterations)
+              .arg(luts)
+              .arg(lutProblem.isEmpty() ? QString() : QStringLiteral(": ") + lutProblem));
 
     stage(QStringLiteral("mangled subtitles"), 300);
     const QByteArray srt = "1\n00:00:01,000 --> 00:00:02,500\nHello <i>there</i>\n\n2\n00:00:03,000 --> 00:00:04,000\nSecond\nline\n\n";
-    const QByteArray vtt = "WEBVTT\n\n00:01.000 --> 00:02.500 align:start\nHello\n\nNOTE a note\n\n00:00:03.000 --> 00:00:04.000\n- Second\n";
+    const QByteArray vtt =
+        "WEBVTT\n\n00:01.000 --> 00:02.500 align:start\nHello\n\nNOTE a note\n\n00:00:03.000 --> 00:00:04.000\n- Second\n";
     int captions = 0;
     QString subProblem;
     for (int i = 0; i < iterations && subProblem.isEmpty(); ++i) {
@@ -1128,11 +1311,16 @@ void parserFuzz(int iterations)
         for (const Caption& c : parseSubtitles(QString::fromUtf8(text))) {
             ++captions;
             if (c.start < 0 || c.end < c.start || c.end > TimeUs(1000) * 3600 * kUsPerSecond)
-                subProblem = QStringLiteral("a caption from %1 to %2 us from: %3").arg(c.start).arg(c.end).arg(QString::fromUtf8(text.left(120)));
+                subProblem =
+                    QStringLiteral("a caption from %1 to %2 us from: %3").arg(c.start).arg(c.end).arg(QString::fromUtf8(text.left(120)));
         }
     }
-    check(subProblem.isEmpty(), QStringLiteral("subtitle files: %1 mangled SRT and WebVTT files give %2 captions, none starting before 0, ending before it starts or absurdly late%3")
-                                    .arg(iterations).arg(captions).arg(subProblem.isEmpty() ? QString() : QStringLiteral(": ") + subProblem));
+    check(subProblem.isEmpty(),
+          QStringLiteral("subtitle files: %1 mangled SRT and WebVTT files give %2 captions, none starting before 0, ending before it "
+                         "starts or absurdly late%3")
+              .arg(iterations)
+              .arg(captions)
+              .arg(subProblem.isEmpty() ? QString() : QStringLiteral(": ") + subProblem));
 }
 
 } // namespace
@@ -1164,7 +1352,9 @@ int cmdHarden(const QString& mediaDir, const QString& examplesDir, const QString
     if (part("parsers"))
         parserFuzz(iterations);
     g_deadline = 0;
-    print(QStringLiteral("%1  harden: %2 failure(s) in %3 s").arg(g_failures ? QStringLiteral("FAIL") : QStringLiteral("PASS"))
-              .arg(g_failures).arg(clock.elapsed() / 1000));
+    print(QStringLiteral("%1  harden: %2 failure(s) in %3 s")
+              .arg(g_failures ? QStringLiteral("FAIL") : QStringLiteral("PASS"))
+              .arg(g_failures)
+              .arg(clock.elapsed() / 1000));
     return g_failures ? 1 : 0;
 }

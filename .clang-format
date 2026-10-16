@@ -1,0 +1,26 @@
+# The house style of the tidy files (TimelineWidget.cpp, MediaCache.cpp). Format a file
+# when you change it a lot: clang-format -i <file>
+BasedOnStyle: WebKit
+ColumnLimit: 140
+PointerAlignment: Left
+BreakBeforeBraces: Custom
+BraceWrapping:
+  AfterFunction: true
+NamespaceIndentation: None
+FixNamespaceComments: true
+IndentCaseLabels: false
+AlignAfterOpenBracket: Align
+BreakBeforeBinaryOperators: NonAssignment
+AllowShortFunctionsOnASingleLine: All
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortLoopsOnASingleLine: false
+AllowShortCaseLabelsOnASingleLine: true
+AllowShortBlocksOnASingleLine: Empty
+AllowShortLambdasOnASingleLine: All
+AllowShortEnumsOnASingleLine: true
+Cpp11BracedListStyle: true
+SpaceBeforeCpp11BracedList: false
+SortIncludes: Never
+BreakConstructorInitializers: BeforeColon
+PackConstructorInitializers: NextLine
+ConstructorInitializerIndentWidth: 4

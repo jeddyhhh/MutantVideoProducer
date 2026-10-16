@@ -165,70 +165,193 @@ int MainWindow::runEditorTest(QStringList& log)
         QTimer::singleShot(ms, &loop, &QEventLoop::quit);
         loop.exec();
     };
-    if(qEnvironmentVariableIsSet("MVP_ADVERSARIAL_TRANSPORT_ONLY"))
-        return runTransportHardening(m_mcp,log);
+    if (qEnvironmentVariableIsSet("MVP_ADVERSARIAL_TRANSPORT_ONLY"))
+        return runTransportHardening(m_mcp, log);
     if (m_project->media().empty()) {
         check(false, QStringLiteral("editor test: give it a media file"));
         return failures;
     }
-    if(qEnvironmentVariableIsSet("MVP_COLLECTION_ONLY"))return runCollectionUiTests(this,log);
+    if (qEnvironmentVariableIsSet("MVP_COLLECTION_ONLY"))
+        return runCollectionUiTests(this, log);
     const QString mediaPath = m_project->media().begin()->second->path;
     const QDir work(QFileInfo(autosaveDir()).absolutePath()); // the test's own folder
     QSettings().clear();
 
     {
-        const Timeline initial=m_project->timeline();Timeline tl;const auto media=m_project->media().begin()->second;
-        auto placed=ops::insertMedia(tl,*media,0,-1,m_project->settings().fps,true);for(int id:placed)tl.findClip(id)->length=2*kUsPerSecond;
-        QString error;auto compounds=story::compound(tl,std::set<int>(placed.begin(),placed.end()),"Test compound",&error);m_project->setTimelineLive(tl);
-        check(!compounds.empty(),"GUI fixture creates compound");
-        if(!compounds.empty()) {
-            const int id=compounds.front();const Timeline original=tl;
-            QTimer::singleShot(300,this,[&]{auto* dialog=qobject_cast<QDialog*>(QApplication::activeModalWidget());auto* child=dialog?dialog->findChild<TimelineWidget*>("sequenceTimeline"):nullptr;check(child&&dialog->objectName()=="sequenceEditor","sequence opens editable child timeline");if(child){child->selectAll();child->setCursorTime(kUsPerSecond);child->splitAtCursor();dialog->grab().save(work.filePath("sequence-editor.png"));}if(dialog)dialog->accept();});
-            editCompound(id);const auto* changed=m_project->timeline().findClip(id);check(changed&&changed->sequence.value->tracks.front().clips.size()==2,"saving embedded edit retains child split");m_project->undoStack()->undo();check(m_project->timeline()==original,"compound edit is one parent undo step");
-            QTimer::singleShot(300,this,[&]{auto* dialog=qobject_cast<QDialog*>(QApplication::activeModalWidget());if(dialog){if(auto* child=dialog->findChild<TimelineWidget*>("sequenceTimeline")){child->selectAll();child->deleteSelection(false);}dialog->reject();}});editCompound(id);check(m_project->timeline()==original,"cancelling embedded edits preserves parent");
-            m_project->setTimelineLive(initial);m_timeline->selectClips(std::set<int>(placed.begin(),placed.end()));
+        const Timeline initial = m_project->timeline();
+        Timeline tl;
+        const auto media = m_project->media().begin()->second;
+        auto placed = ops::insertMedia(tl, *media, 0, -1, m_project->settings().fps, true);
+        for (int id : placed)
+            tl.findClip(id)->length = 2 * kUsPerSecond;
+        QString error;
+        auto compounds = story::compound(tl, std::set<int>(placed.begin(), placed.end()), "Test compound", &error);
+        m_project->setTimelineLive(tl);
+        check(!compounds.empty(), "GUI fixture creates compound");
+        if (!compounds.empty()) {
+            const int id = compounds.front();
+            const Timeline original = tl;
+            QTimer::singleShot(300, this, [&] {
+                auto* dialog = qobject_cast<QDialog*>(QApplication::activeModalWidget());
+                auto* child = dialog ? dialog->findChild<TimelineWidget*>("sequenceTimeline") : nullptr;
+                check(child && dialog->objectName() == "sequenceEditor", "sequence opens editable child timeline");
+                if (child) {
+                    child->selectAll();
+                    child->setCursorTime(kUsPerSecond);
+                    child->splitAtCursor();
+                    dialog->grab().save(work.filePath("sequence-editor.png"));
+                }
+                if (dialog)
+                    dialog->accept();
+            });
+            editCompound(id);
+            const auto* changed = m_project->timeline().findClip(id);
+            check(changed && changed->sequence.value->tracks.front().clips.size() == 2, "saving embedded edit retains child split");
+            m_project->undoStack()->undo();
+            check(m_project->timeline() == original, "compound edit is one parent undo step");
+            QTimer::singleShot(300, this, [&] {
+                auto* dialog = qobject_cast<QDialog*>(QApplication::activeModalWidget());
+                if (dialog) {
+                    if (auto* child = dialog->findChild<TimelineWidget*>("sequenceTimeline")) {
+                        child->selectAll();
+                        child->deleteSelection(false);
+                    }
+                    dialog->reject();
+                }
+            });
+            editCompound(id);
+            check(m_project->timeline() == original, "cancelling embedded edits preserves parent");
+            m_project->setTimelineLive(initial);
+            m_timeline->selectClips(std::set<int>(placed.begin(), placed.end()));
         }
         // Use ordinary footage to exercise preview rollback and atomic undo.
-        Timeline footage;auto clips=ops::insertMedia(footage,*media,0,-1,m_project->settings().fps,true);m_project->setTimelineLive(footage);m_timeline->selectClips(std::set<int>(clips.begin(),clips.end()));const int undoCount=m_project->undoStack()->count();
-        QTimer::singleShot(250,this,[&]{auto* dialog=qobject_cast<QDialog*>(QApplication::activeModalWidget());if(dialog){for(auto* b:dialog->findChildren<QPushButton*>())if(b->text()==tr("Roll / Preview"))b->click();wait(150);if(auto* preview=dialog->findChild<PreviewWidget*>("dicePreview")){const auto frame=preview->image();bool colour=false;for(int y=0;y<frame.height();y+=20)for(int x=0;x<frame.width();x+=20)colour|=qGray(frame.pixel(x,y))>20;check(colour,"dice previews selected footage when the cursor is outside it");}dialog->grab().save(work.filePath("directors-dice.png"));dialog->reject();}});directorsDice();check(m_project->timeline()==footage&&m_project->undoStack()->count()==undoCount,"dice preview cancel restores original without undo entry");
-        QTimer::singleShot(250,this,[&]{auto* dialog=qobject_cast<QDialog*>(QApplication::activeModalWidget());if(dialog){for(auto* b:dialog->findChildren<QPushButton*>())if(b->text()==tr("Roll / Preview"))b->click();dialog->accept();}});directorsDice();check(m_project->timeline()!=footage,"dice apply commits variation");m_project->undoStack()->undo();check(m_project->timeline()==footage,"dice variation undoes atomically");
-        QTimer::singleShot(250,this,[&]{auto* dialog=qobject_cast<QDialog*>(QApplication::activeModalWidget());check(dialog&&dialog->objectName()=="narrationStudio"&&dialog->findChild<QPlainTextEdit*>("narrationScript"),"narration studio exposes script editor");if(dialog){dialog->grab().save(work.filePath("narration-studio.png"));dialog->reject();}});narrationStudio();m_project->setTimelineLive(initial);
-        check(findChild<QWidget*>("storyPanel")!=nullptr,"Story panel is available in editor");
-        if(auto* panel=findChild<QWidget*>("storyPanel")) {
-            Timeline storyTimeline=initial;QString error;const int chapter=story::addChapter(storyTimeline,"Draft test","",2*kUsPerSecond,2*kUsPerSecond,nullptr,0,m_project->settings().fps,&error);m_project->setTimelineLive(storyTimeline);
-            auto* list=panel->findChild<QListWidget*>("storyChapters");auto* script=panel->findChild<QPlainTextEdit*>("chapterScript");if(list)list->setCurrentRow(0);if(script)script->setPlainText("Keep this unsaved draft");
-            Clip extra;extra.id=storyTimeline.allocId();extra.start=initial.duration();extra.length=kUsPerSecond;extra.generator.type="text";extra.generator.params["text"].text="Extra shot";storyTimeline.tracks.front().clips.push_back(extra);m_project->setTimelineLive(storyTimeline);m_timeline->selectClips({extra.id});
-            for(auto* button:panel->findChildren<QPushButton*>())if(button->text()==tr("Assign selected clips"))button->click();
-            check(script&&script->toPlainText()=="Keep this unsaved draft","assigning chapter footage preserves the unsaved script draft");
-            for(auto* button:panel->findChildren<QPushButton*>())if(button->text()==tr("Save changes"))button->click();
-            bool saved=false;for(auto value:m_project->timeline().chapters)if(value.toObject()["id"].toInt()==chapter)saved=value.toObject()["script"]=="Keep this unsaved draft";
-            check(saved,"Story Save changes commits the script draft");m_project->setTimelineLive(initial);
+        Timeline footage;
+        auto clips = ops::insertMedia(footage, *media, 0, -1, m_project->settings().fps, true);
+        m_project->setTimelineLive(footage);
+        m_timeline->selectClips(std::set<int>(clips.begin(), clips.end()));
+        const int undoCount = m_project->undoStack()->count();
+        QTimer::singleShot(250, this, [&] {
+            auto* dialog = qobject_cast<QDialog*>(QApplication::activeModalWidget());
+            if (dialog) {
+                for (auto* b : dialog->findChildren<QPushButton*>())
+                    if (b->text() == tr("Roll / Preview"))
+                        b->click();
+                wait(150);
+                if (auto* preview = dialog->findChild<PreviewWidget*>("dicePreview")) {
+                    const auto frame = preview->image();
+                    bool colour = false;
+                    for (int y = 0; y < frame.height(); y += 20)
+                        for (int x = 0; x < frame.width(); x += 20)
+                            colour |= qGray(frame.pixel(x, y)) > 20;
+                    check(colour, "dice previews selected footage when the cursor is outside it");
+                }
+                dialog->grab().save(work.filePath("directors-dice.png"));
+                dialog->reject();
+            }
+        });
+        directorsDice();
+        check(m_project->timeline() == footage && m_project->undoStack()->count() == undoCount,
+              "dice preview cancel restores original without undo entry");
+        QTimer::singleShot(250, this, [&] {
+            auto* dialog = qobject_cast<QDialog*>(QApplication::activeModalWidget());
+            if (dialog) {
+                for (auto* b : dialog->findChildren<QPushButton*>())
+                    if (b->text() == tr("Roll / Preview"))
+                        b->click();
+                dialog->accept();
+            }
+        });
+        directorsDice();
+        check(m_project->timeline() != footage, "dice apply commits variation");
+        m_project->undoStack()->undo();
+        check(m_project->timeline() == footage, "dice variation undoes atomically");
+        QTimer::singleShot(250, this, [&] {
+            auto* dialog = qobject_cast<QDialog*>(QApplication::activeModalWidget());
+            check(dialog && dialog->objectName() == "narrationStudio" && dialog->findChild<QPlainTextEdit*>("narrationScript"),
+                  "narration studio exposes script editor");
+            if (dialog) {
+                dialog->grab().save(work.filePath("narration-studio.png"));
+                dialog->reject();
+            }
+        });
+        narrationStudio();
+        m_project->setTimelineLive(initial);
+        check(findChild<QWidget*>("storyPanel") != nullptr, "Story panel is available in editor");
+        if (auto* panel = findChild<QWidget*>("storyPanel")) {
+            Timeline storyTimeline = initial;
+            QString error;
+            const int chapter = story::addChapter(storyTimeline, "Draft test", "", 2 * kUsPerSecond, 2 * kUsPerSecond, nullptr, 0,
+                                                  m_project->settings().fps, &error);
+            m_project->setTimelineLive(storyTimeline);
+            auto* list = panel->findChild<QListWidget*>("storyChapters");
+            auto* script = panel->findChild<QPlainTextEdit*>("chapterScript");
+            if (list)
+                list->setCurrentRow(0);
+            if (script)
+                script->setPlainText("Keep this unsaved draft");
+            Clip extra;
+            extra.id = storyTimeline.allocId();
+            extra.start = initial.duration();
+            extra.length = kUsPerSecond;
+            extra.generator.type = "text";
+            extra.generator.params["text"].text = "Extra shot";
+            storyTimeline.tracks.front().clips.push_back(extra);
+            m_project->setTimelineLive(storyTimeline);
+            m_timeline->selectClips({extra.id});
+            for (auto* button : panel->findChildren<QPushButton*>())
+                if (button->text() == tr("Assign selected clips"))
+                    button->click();
+            check(script && script->toPlainText() == "Keep this unsaved draft",
+                  "assigning chapter footage preserves the unsaved script draft");
+            for (auto* button : panel->findChildren<QPushButton*>())
+                if (button->text() == tr("Save changes"))
+                    button->click();
+            bool saved = false;
+            for (auto value : m_project->timeline().chapters)
+                if (value.toObject()["id"].toInt() == chapter)
+                    saved = value.toObject()["script"] == "Keep this unsaved draft";
+            check(saved, "Story Save changes commits the script draft");
+            m_project->setTimelineLive(initial);
         }
-
     }
     {
-        ExportSettings es; es.path = work.filePath("render-window-test.mp4"); es.rangeEnd = kUsPerSecond;
+        ExportSettings es;
+        es.path = work.filePath("render-window-test.mp4");
+        es.rangeEnd = kUsPerSecond;
         auto monitor = std::make_shared<RenderMonitor>();
-        ExportStatus info; info.stage = "Rendering"; info.detail = "Compositing a test frame";
-        info.frames = 12; info.totalFrames = 30; info.progress = .4; info.renderer = "CPU";
+        ExportStatus info;
+        info.stage = "Rendering";
+        info.detail = "Compositing a test frame";
+        info.frames = 12;
+        info.totalFrames = 30;
+        info.progress = .4;
+        info.renderer = "CPU";
         monitor->update(info);
         RenderStatusDialog dialog(es, *m_project->snapshot(), monitor, this);
-        dialog.show(); wait(250);
+        dialog.show();
+        wait(250);
         check(dialog.isVisible(), "render status window opens immediately");
         dialog.reject();
         check(dialog.isVisible(), "running render cannot close before worker releases resources");
         auto buttons = dialog.findChildren<QPushButton*>();
         QPushButton* close = nullptr;
         for (auto* b : buttons) {
-            if (b->text() == tr("Close")) close = b;
-            if (b->text() == tr("Cancel render")) b->click();
+            if (b->text() == tr("Close"))
+                close = b;
+            if (b->text() == tr("Cancel render"))
+                b->click();
         }
         check(monitor->cancel && close && !close->isEnabled(), "render Cancel requests worker cancellation; Close waits for completion");
-        info.stage = "Complete"; info.detail = "File finalized and closed"; info.progress = 1;
-        monitor->update(info); monitor->done = true; wait(250);
+        info.stage = "Complete";
+        info.detail = "File finalized and closed";
+        info.progress = 1;
+        monitor->update(info);
+        monitor->done = true;
+        wait(250);
         dialog.grab().save(work.filePath("render-status-window.png"));
         check(close && close->isEnabled(), "completed render keeps report available and enables Close");
-        dialog.reject(); check(!dialog.isVisible(), "completed status window closes normally");
+        dialog.reject();
+        check(!dialog.isVisible(), "completed status window closes normally");
     }
 
     failures += m_timeline->runEditTest(log);
@@ -269,9 +392,10 @@ int MainWindow::runEditorTest(QStringList& log)
         const bool still = m_engine->isPlaying();
         const TimeUs pos = m_engine->position();
         togglePlay();
-        check(still && pos >= duration / 2 && !m_engine->isPlaying() && m_timeline->cursorTime() == duration / 2,
-              QStringLiteral("a click on the timeline while playing jumps there and keeps playing (at %1 s); Space stops, back at the click")
-                  .arg(double(pos) / kUsPerSecond, 0, 'f', 2));
+        check(
+            still && pos >= duration / 2 && !m_engine->isPlaying() && m_timeline->cursorTime() == duration / 2,
+            QStringLiteral("a click on the timeline while playing jumps there and keeps playing (at %1 s); Space stops, back at the click")
+                .arg(double(pos) / kUsPerSecond, 0, 'f', 2));
         m_clickJumpAction->setChecked(false);
         seekTo(0);
         togglePlay();
@@ -288,7 +412,8 @@ int MainWindow::runEditorTest(QStringList& log)
         stopPlayback(false);
         m_clickJumpAction->setChecked(true);
         check(playing2 && pos2 < duration / 2 && stopped2 && fromClick,
-              QStringLiteral("Jumps There off: a click while playing carries on (at %1 s) and sets the start; Space stops there and plays from it")
+              QStringLiteral(
+                  "Jumps There off: a click while playing carries on (at %1 s) and sets the start; Space stops there and plays from it")
                   .arg(double(pos2) / kUsPerSecond, 0, 'f', 2));
         // The sound output changing while playing (headphones plugged in): it carries on, from where it was.
         seekTo(0);
@@ -302,7 +427,8 @@ int MainWindow::runEditorTest(QStringList& log)
         stopPlayback(false);
         check(stillPlaying && after > before + 150000 && after < before + 1000000,
               QStringLiteral("the sound output reopened while playing (as when headphones are plugged in): it plays on from %1 s to %2 s")
-                  .arg(double(before) / kUsPerSecond, 0, 'f', 2).arg(double(after) / kUsPerSecond, 0, 'f', 2));
+                  .arg(double(before) / kUsPerSecond, 0, 'f', 2)
+                  .arg(double(after) / kUsPerSecond, 0, 'f', 2));
     }
 
     // ---- Proxies: made in the background, played by the preview, marked in Project Media, deleted ----
@@ -349,8 +475,8 @@ int MainWindow::runEditorTest(QStringList& log)
             *status = 0;
             if (s.state() != QAbstractSocket::ConnectedState)
                 return QByteArray(); // nothing listening
-            s.write(method + " /mcp HTTP/1.1\r\nHost: 127.0.0.1:" + QByteArray::number(port) + "\r\nContent-Type: application/json\r\n" + extra
-                    + "Content-Length: " + QByteArray::number(body.size()) + "\r\n\r\n" + body);
+            s.write(method + " /mcp HTTP/1.1\r\nHost: 127.0.0.1:" + QByteArray::number(port) + "\r\nContent-Type: application/json\r\n"
+                    + extra + "Content-Length: " + QByteArray::number(body.size()) + "\r\n\r\n" + body);
             QByteArray in;
             *status = 0;
             while (t.elapsed() < 120000) {
@@ -372,10 +498,13 @@ int MainWindow::runEditorTest(QStringList& log)
         };
         auto call = [&](const QString& tool, const QJsonObject& args) {
             int status = 0;
-            const QJsonObject msg{{QStringLiteral("jsonrpc"), QStringLiteral("2.0")}, {QStringLiteral("id"), nextId++},
-                                  {QStringLiteral("method"), QStringLiteral("tools/call")},
-                                  {QStringLiteral("params"), QJsonObject{{QStringLiteral("name"), tool}, {QStringLiteral("arguments"), args}}}};
-            const QJsonObject r = QJsonDocument::fromJson(http("POST", QJsonDocument(msg).toJson(QJsonDocument::Compact), {}, &status)).object();
+            const QJsonObject msg{
+                {QStringLiteral("jsonrpc"), QStringLiteral("2.0")},
+                {QStringLiteral("id"), nextId++},
+                {QStringLiteral("method"), QStringLiteral("tools/call")},
+                {QStringLiteral("params"), QJsonObject{{QStringLiteral("name"), tool}, {QStringLiteral("arguments"), args}}}};
+            const QJsonObject r =
+                QJsonDocument::fromJson(http("POST", QJsonDocument(msg).toJson(QJsonDocument::Compact), {}, &status)).object();
             return r[QStringLiteral("result")].toObject();
         };
         auto data = [](const QJsonObject& result) { return result[QStringLiteral("structuredContent")].toObject(); };
@@ -388,64 +517,82 @@ int MainWindow::runEditorTest(QStringList& log)
               QStringLiteral("AI control exposes the voice library and async status, and rejects unknown voices without edits"));
 
         int status = 0;
-        const QJsonObject init = QJsonDocument::fromJson(
-            http("POST", R"({"jsonrpc":"2.0","id":0,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"test","version":"1"}}})",
-                 {}, &status)).object();
+        const QJsonObject init =
+            QJsonDocument::fromJson(
+                http(
+                    "POST",
+                    R"({"jsonrpc":"2.0","id":0,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"test","version":"1"}}})",
+                    {}, &status))
+                .object();
         int notifyStatus = 0, getStatus = 0, foreignStatus = 0, listStatus = 0;
         http("POST", R"({"jsonrpc":"2.0","method":"notifications/initialized"})", {}, &notifyStatus);
         http("GET", {}, {}, &getStatus);
         http("POST", R"({"jsonrpc":"2.0","id":5,"method":"ping"})", "Origin: http://evil.example\r\n", &foreignStatus);
         const QJsonArray tools = QJsonDocument::fromJson(http("POST", R"({"jsonrpc":"2.0","id":6,"method":"tools/list"})", {}, &listStatus))
-                                     .object()[QStringLiteral("result")].toObject()[QStringLiteral("tools")].toArray();
+                                     .object()[QStringLiteral("result")]
+                                     .toObject()[QStringLiteral("tools")]
+                                     .toArray();
         bool schemas = tools.size() >= 25;
         for (const QJsonValue& t : tools)
             schemas = schemas && t.toObject()[QStringLiteral("inputSchema")].toObject()[QStringLiteral("type")] == QStringLiteral("object");
         check(status == 200 && init[QStringLiteral("result")].toObject()[QStringLiteral("protocolVersion")] == QStringLiteral("2025-06-18")
                   && notifyStatus == 202 && getStatus == 405 && foreignStatus == 403 && listStatus == 200 && schemas,
-              QStringLiteral("AI control: MCP over HTTP on 127.0.0.1 (initialize, a notification 202, GET 405, a web page's request 403); %1 tools listed"
+              QStringLiteral("AI control: MCP over HTTP on 127.0.0.1 (initialize, a notification 202, GET 405, a web page's request 403); "
+                             "%1 tools listed"
                              " (statuses %2 %3 %4 %5 %6)")
-                  .arg(tools.size()).arg(status).arg(notifyStatus).arg(getStatus).arg(foreignStatus).arg(listStatus));
+                  .arg(tools.size())
+                  .arg(status)
+                  .arg(notifyStatus)
+                  .arg(getStatus)
+                  .arg(foreignStatus)
+                  .arg(listStatus));
 
         // Finishing and graphics workflow use the same HTTP surface as external clients.
         {
             const auto original = m_project->timeline();
             const int undoIndex = m_project->undoStack()->index();
-            const auto report = data(call("audio_finishing", {{"action","analyze"}}));
-            check(report["ok"].toBool() && report.contains("true_peak_dbtp") &&
-                      m_project->timeline()==original &&
-                      failed(call("audio_finishing", {{"action","apply_gain"},{"lufs",0}})),
+            const auto report = data(call("audio_finishing", {{"action", "analyze"}}));
+            check(report["ok"].toBool() && report.contains("true_peak_dbtp") && m_project->timeline() == original
+                      && failed(call("audio_finishing", {{"action", "apply_gain"}, {"lufs", 0}})),
                   "AI audio finishing measures the final mix without edits and rejects invalid targets");
-            QJsonObject shape{{"type","rect"},{"id","shape"},{"x",.2},{"y",.2},
-                              {"width",.2},{"height",.2},{"fill","#ffffff"},{"brand_role","accent"}};
-            QJsonObject scene{{"version",2},{"layers",QJsonArray{shape}}};
-            auto created=call("graphics_overlay",{{"action","create"},{"scene",scene},{"length",2}});
+            QJsonObject shape{{"type", "rect"}, {"id", "shape"}, {"x", .2},           {"y", .2},
+                              {"width", .2},    {"height", .2},  {"fill", "#ffffff"}, {"brand_role", "accent"}};
+            QJsonObject scene{{"version", 2}, {"layers", QJsonArray{shape}}};
+            auto created = call("graphics_overlay", {{"action", "create"}, {"scene", scene}, {"length", 2}});
             int id = data(created)["event_id"].toInt();
-            auto arrangement=call("graphics_overlay",{{"action","layout"},{"event_id",id},
-                                {"layer_ids",QJsonArray{"shape"}},{"operation","left"},{"reference","safe"}});
-            auto arranged=data(arrangement);
-            auto locked=call("graphics_overlay",{{"action","lock"},{"event_id",id},{"layer_ids",QJsonArray{"shape"}},{"locked",true}});
-            const auto protectedTimeline=m_project->timeline();
-            bool refused=failed(call("graphics_overlay",{{"action","layout"},{"event_id",id},
-                                {"layer_ids",QJsonArray{"shape"}},{"operation","right"}}));
-            bool untouched=m_project->timeline()==protectedTimeline;
-            call("graphics_overlay",{{"action","lock"},{"event_id",id},{"layer_ids",QJsonArray{"shape"}},{"locked",false}});
-            QJsonObject kit{{"version",1},{"name","Test"},{"font","Arial"},{"primary","#00ff00"},
-                            {"secondary","#0000ff"},{"accent","#ff6600"},{"foreground","#ffffff"},{"background","#000000"}};
-            auto branded=data(call("graphics_overlay",{{"action","brand"},{"event_id",id},{"brand",kit}}));
-            bool styled=branded["data"].toObject()["layers"].toArray().first().toObject()["fill"]=="#ff6600";
+            auto arrangement = call(
+                "graphics_overlay",
+                {{"action", "layout"}, {"event_id", id}, {"layer_ids", QJsonArray{"shape"}}, {"operation", "left"}, {"reference", "safe"}});
+            auto arranged = data(arrangement);
+            auto locked =
+                call("graphics_overlay", {{"action", "lock"}, {"event_id", id}, {"layer_ids", QJsonArray{"shape"}}, {"locked", true}});
+            const auto protectedTimeline = m_project->timeline();
+            bool refused = failed(call(
+                "graphics_overlay", {{"action", "layout"}, {"event_id", id}, {"layer_ids", QJsonArray{"shape"}}, {"operation", "right"}}));
+            bool untouched = m_project->timeline() == protectedTimeline;
+            call("graphics_overlay", {{"action", "lock"}, {"event_id", id}, {"layer_ids", QJsonArray{"shape"}}, {"locked", false}});
+            QJsonObject kit{{"version", 1},           {"name", "Test"},      {"font", "Arial"},         {"primary", "#00ff00"},
+                            {"secondary", "#0000ff"}, {"accent", "#ff6600"}, {"foreground", "#ffffff"}, {"background", "#000000"}};
+            auto branded = data(call("graphics_overlay", {{"action", "brand"}, {"event_id", id}, {"brand", kit}}));
+            bool styled = branded["data"].toObject()["layers"].toArray().first().toObject()["fill"] == "#ff6600";
             if (!id || failed(arrangement) || failed(locked) || !styled)
-                note("Workflow replies: "+QString::fromUtf8(QJsonDocument(QJsonObject{{"create",created},{"layout",arrangement},{"lock",locked},{"brand",branded}}).toJson(QJsonDocument::Compact)));
+                note("Workflow replies: "
+                     + QString::fromUtf8(
+                         QJsonDocument(QJsonObject{{"create", created}, {"layout", arrangement}, {"lock", locked}, {"brand", branded}})
+                             .toJson(QJsonDocument::Compact)));
             m_project->undoStack()->setIndex(undoIndex);
-            check(id>0 && !failed(locked) && refused && untouched && styled &&
-                      std::abs(arranged["data"].toObject()["layers"].toArray().first().toObject()["x"].toDouble()-.05)<.00001 &&
-                      m_project->timeline()==original,
+            check(id > 0 && !failed(locked) && refused && untouched && styled
+                      && std::abs(arranged["data"].toObject()["layers"].toArray().first().toObject()["x"].toDouble() - .05) < .00001
+                      && m_project->timeline() == original,
                   "AI graphics workflow aligns, locks, refuses protected edits, applies brands and undoes exactly");
         }
         // Edit through the tools.
         const QJsonObject project = data(call(QStringLiteral("get_project"), {}));
         const int mediaId = project[QStringLiteral("media")].toArray().first().toObject()[QStringLiteral("media_id")].toInt();
-        const QJsonArray placed = data(call(QStringLiteral("add_media_to_timeline"), {{QStringLiteral("media_id"), mediaId}, {QStringLiteral("at"), 30}}))
-                                      [QStringLiteral("event_ids")].toArray();
+        const QJsonArray placed =
+            data(call(QStringLiteral("add_media_to_timeline"),
+                      {{QStringLiteral("media_id"), mediaId}, {QStringLiteral("at"), 30}}))[QStringLiteral("event_ids")]
+                .toArray();
         const int eventId = placed.isEmpty() ? 0 : placed.first().toInt();
         const Clip* placedClip = m_project->timeline().findClip(eventId);
         const bool atThirty = placedClip && placedClip->start == 30 * kUsPerSecond;
@@ -458,9 +605,10 @@ int MainWindow::runEditorTest(QStringList& log)
             return img;
         };
         const QImage plainFrame = frame(31);
-        const QJsonObject added = data(call(QStringLiteral("add_effect"), {{QStringLiteral("target"), QStringLiteral("event")},
-                                                                           {QStringLiteral("id"), eventId},
-                                                                           {QStringLiteral("effect"), QStringLiteral("invert")}}));
+        const QJsonObject added = data(call(QStringLiteral("add_effect"),
+                                            {{QStringLiteral("target"), QStringLiteral("event")},
+                                             {QStringLiteral("id"), eventId},
+                                             {QStringLiteral("effect"), QStringLiteral("invert")}}));
         const int effectId = added[QStringLiteral("effect_id")].toInt();
         const QImage invertedFrame = frame(31);
         double change = 0;
@@ -471,26 +619,36 @@ int MainWindow::runEditorTest(QStringList& log)
                     sum += std::abs(qGray(plainFrame.pixel(x, y)) - qGray(invertedFrame.pixel(x, y)));
             change = n ? double(sum) / double(n) : 0;
         }
-        const QJsonObject masked = data(call(QStringLiteral("set_effect"), {{QStringLiteral("effect_id"), effectId},
-                                                                            {QStringLiteral("params"), QJsonObject{{QStringLiteral("mask.shape"), QStringLiteral("Ellipse")}}}}));
+        const QJsonObject masked =
+            data(call(QStringLiteral("set_effect"),
+                      {{QStringLiteral("effect_id"), effectId},
+                       {QStringLiteral("params"), QJsonObject{{QStringLiteral("mask.shape"), QStringLiteral("Ellipse")}}}}));
         const bool maskSet = masked[QStringLiteral("params")].toObject()[QStringLiteral("mask.shape")] == QStringLiteral("Ellipse");
-        const bool audioRefused = failed(call(QStringLiteral("add_effect"), {{QStringLiteral("target"), QStringLiteral("event")},
-                                                                             {QStringLiteral("id"), eventId},
-                                                                             {QStringLiteral("effect"), audioEffects().front().id}}));
-        const bool badSetting = failed(call(QStringLiteral("set_effect"), {{QStringLiteral("effect_id"), effectId},
-                                                                           {QStringLiteral("params"), QJsonObject{{QStringLiteral("nonsense"), 1}}}}));
+        const bool audioRefused = failed(call(QStringLiteral("add_effect"),
+                                              {{QStringLiteral("target"), QStringLiteral("event")},
+                                               {QStringLiteral("id"), eventId},
+                                               {QStringLiteral("effect"), audioEffects().front().id}}));
+        const bool badSetting = failed(
+            call(QStringLiteral("set_effect"),
+                 {{QStringLiteral("effect_id"), effectId}, {QStringLiteral("params"), QJsonObject{{QStringLiteral("nonsense"), 1}}}}));
         check(plainFrame.size() == QSize(320, 180) && atThirty && effectId > 0 && change > 40 && maskSet && audioRefused && badSetting,
               QStringLiteral("AI tools: place media at 30 s, add Invert to it (the frame it sees changes by %1), give it an ellipse mask; "
-                             "an audio effect on a picture and an unknown setting are refused").arg(change, 0, 'f', 1));
-        const QJsonArray pieces = data(call(QStringLiteral("split"), {{QStringLiteral("time"), 32}, {QStringLiteral("event_ids"), QJsonArray{eventId}}}))
-                                      [QStringLiteral("new_event_ids")].toArray();
+                             "an audio effect on a picture and an unknown setting are refused")
+                  .arg(change, 0, 'f', 1));
+        const QJsonArray pieces =
+            data(call(QStringLiteral("split"),
+                      {{QStringLiteral("time"), 32}, {QStringLiteral("event_ids"), QJsonArray{eventId}}}))[QStringLiteral("new_event_ids")]
+                .toArray();
         call(QStringLiteral("add_marker"), {{QStringLiteral("time"), 33}, {QStringLiteral("name"), QStringLiteral("from AI")}});
         const bool marker = std::any_of(m_project->timeline().markers.begin(), m_project->timeline().markers.end(),
                                         [](const Marker& m) { return m.name == QLatin1String("from AI"); });
-        const QJsonObject blur = data(call(QStringLiteral("list_effects"), {{QStringLiteral("kind"), QStringLiteral("video")}, {QStringLiteral("search"), QStringLiteral("blur")}}));
+        const QJsonObject blur =
+            data(call(QStringLiteral("list_effects"),
+                      {{QStringLiteral("kind"), QStringLiteral("video")}, {QStringLiteral("search"), QStringLiteral("blur")}}));
         const bool listed = blur[QStringLiteral("count")].toInt() > 0
-                            && !blur[QStringLiteral("effects")].toArray().first().toObject()[QStringLiteral("params")].toArray().isEmpty();
-        const QString undoneText = data(call(QStringLiteral("undo"), {{QStringLiteral("steps"), 2}}))[QStringLiteral("undone")].toArray().first().toString();
+            && !blur[QStringLiteral("effects")].toArray().first().toObject()[QStringLiteral("params")].toArray().isEmpty();
+        const QString undoneText =
+            data(call(QStringLiteral("undo"), {{QStringLiteral("steps"), 2}}))[QStringLiteral("undone")].toArray().first().toString();
         const bool undone = !std::any_of(m_project->timeline().markers.begin(), m_project->timeline().markers.end(),
                                          [](const Marker& m) { return m.name == QLatin1String("from AI"); });
         check(pieces.size() == 1 && marker && listed && undone && undoneText.startsWith(QStringLiteral("AI: ")),
@@ -502,16 +660,24 @@ int MainWindow::runEditorTest(QStringList& log)
             f.open(QIODevice::WriteOnly);
             f.write("1\n00:00:01,000 --> 00:00:02,500\nFrom the AI\n\n2\n00:00:03,000 --> 00:00:04,000\nSecond line\n");
             f.close();
-            const int in = data(call(QStringLiteral("captions"), {{QStringLiteral("action"), QStringLiteral("import")}, {QStringLiteral("path"), srt}}))
-                               [QStringLiteral("captions")].toInt();
-            const int out = data(call(QStringLiteral("captions"), {{QStringLiteral("action"), QStringLiteral("export")}, {QStringLiteral("path"), back}}))
-                                [QStringLiteral("captions")].toInt();
+            const int in = data(call(
+                QStringLiteral("captions"),
+                {{QStringLiteral("action"), QStringLiteral("import")}, {QStringLiteral("path"), srt}}))[QStringLiteral("captions")]
+                               .toInt();
+            const int out = data(call(
+                QStringLiteral("captions"),
+                {{QStringLiteral("action"), QStringLiteral("export")}, {QStringLiteral("path"), back}}))[QStringLiteral("captions")]
+                                .toInt();
             QFile r(back);
             const bool vtt = r.open(QIODevice::ReadOnly) && r.readAll().startsWith("WEBVTT");
-            const bool noModel = failed(call(QStringLiteral("captions"), {{QStringLiteral("action"), QStringLiteral("auto")}, {QStringLiteral("model"), QStringLiteral("nonsense")}}));
+            const bool noModel =
+                failed(call(QStringLiteral("captions"),
+                            {{QStringLiteral("action"), QStringLiteral("auto")}, {QStringLiteral("model"), QStringLiteral("nonsense")}}));
             const QJsonObject plugins = data(call(QStringLiteral("list_vst3_plugins"), {}));
-            const int preview = data(call(QStringLiteral("live_switcher"), {{QStringLiteral("action"), QStringLiteral("preview")}, {QStringLiteral("input"), 3}}))
-                                    [QStringLiteral("preview")].toInt();
+            const int preview =
+                data(call(QStringLiteral("live_switcher"),
+                          {{QStringLiteral("action"), QStringLiteral("preview")}, {QStringLiteral("input"), 3}}))[QStringLiteral("preview")]
+                    .toInt();
             m_project->undoStack()->undo(); // (the imported captions)
             check(in == 2 && out == 2 && vtt && noModel && plugins.contains(QStringLiteral("plugins")) && preview == 3,
                   QStringLiteral("AI tools: captions imported from SRT and exported as WebVTT, an unknown model refused, the switcher's "
@@ -521,7 +687,8 @@ int MainWindow::runEditorTest(QStringList& log)
         // Render a second in the background.
         const QString out = work.filePath(QStringLiteral("ai_render.mp4"));
         QFile::remove(out);
-        const bool started = !failed(call(QStringLiteral("render"), {{QStringLiteral("path"), out}, {QStringLiteral("from"), 30}, {QStringLiteral("to"), 31}}));
+        const bool started = !failed(
+            call(QStringLiteral("render"), {{QStringLiteral("path"), out}, {QStringLiteral("from"), 30}, {QStringLiteral("to"), 31}}));
         QJsonObject rs;
         QElapsedTimer rt;
         rt.start();
@@ -531,18 +698,23 @@ int MainWindow::runEditorTest(QStringList& log)
         } while (!rs[QStringLiteral("done")].toBool() && rt.elapsed() < 120000);
         const MediaInfo rendered = probeMedia(out);
         const bool noOverwrite = failed(call(QStringLiteral("render"), {{QStringLiteral("path"), out}}));
-        check(started && rs[QStringLiteral("ok")].toBool() && rendered.ok() && std::abs(double(rendered.duration) / kUsPerSecond - 1.0) < 0.2 && noOverwrite,
+        check(started && rs[QStringLiteral("ok")].toBool() && rendered.ok()
+                  && std::abs(double(rendered.duration) / kUsPerSecond - 1.0) < 0.2 && noOverwrite,
               QStringLiteral("AI render: a second to %1 in the background (%2 s, %3); it won't overwrite a file unless asked")
-                  .arg(QFileInfo(out).fileName()).arg(double(rendered.duration) / kUsPerSecond, 0, 'f', 2).arg(rs[QStringLiteral("template")].toString()));
+                  .arg(QFileInfo(out).fileName())
+                  .arg(double(rendered.duration) / kUsPerSecond, 0, 'f', 2)
+                  .arg(rs[QStringLiteral("template")].toString()));
         // The Live tab.
-        call(QStringLiteral("set_pad"), {{QStringLiteral("pad"), 3}, {QStringLiteral("name"), QStringLiteral("AI pad")},
-                                         {QStringLiteral("effects"), QJsonArray{QJsonObject{{QStringLiteral("type"), QStringLiteral("invert")}}}}});
+        call(QStringLiteral("set_pad"),
+             {{QStringLiteral("pad"), 3},
+              {QStringLiteral("name"), QStringLiteral("AI pad")},
+              {QStringLiteral("effects"), QJsonArray{QJsonObject{{QStringLiteral("type"), QStringLiteral("invert")}}}}});
         call(QStringLiteral("live_action"), {{QStringLiteral("action"), QStringLiteral("pad")}, {QStringLiteral("number"), 3}});
         call(QStringLiteral("set_tempo"), {{QStringLiteral("bpm"), 128}});
         const QJsonObject liveNow = data(call(QStringLiteral("live_status"), {}));
-        const bool pad = m_project->timeline().livePads[2].name == QLatin1String("AI pad") && m_project->timeline().livePads[2].effects.size() == 1
-                         && liveNow[QStringLiteral("active_pad")].toInt() == 3 && std::abs(liveNow[QStringLiteral("bpm")].toDouble() - 128) < 0.01
-                         && liveNow[QStringLiteral("tempo_locked")].toBool();
+        const bool pad = m_project->timeline().livePads[2].name == QLatin1String("AI pad")
+            && m_project->timeline().livePads[2].effects.size() == 1 && liveNow[QStringLiteral("active_pad")].toInt() == 3
+            && std::abs(liveNow[QStringLiteral("bpm")].toDouble() - 128) < 0.01 && liveNow[QStringLiteral("tempo_locked")].toBool();
         call(QStringLiteral("live_action"), {{QStringLiteral("action"), QStringLiteral("pad")}, {QStringLiteral("number"), 3}}); // off
         check(pad, QStringLiteral("AI Live tools: fill pad 3 with Invert, switch it on, lock the tempo at 128 BPM, and read it all back"));
 
@@ -554,9 +726,13 @@ int MainWindow::runEditorTest(QStringList& log)
             const int undoBefore = m_project->undoStack()->index();
             const ProjectSettings settingsBefore = m_project->settings();
             int listStatus = 0;
-            const QJsonArray tools = QJsonDocument::fromJson(http("POST", R"({"jsonrpc":"2.0","id":77,"method":"tools/list"})", {}, &listStatus))
-                                         .object()[QStringLiteral("result")].toObject()[QStringLiteral("tools")].toArray();
-            const QRegularExpression skip(QStringLiteral("render|export|save|open|import|caption|youtube|stream|record|live|switcher|pad|tempo"));
+            const QJsonArray tools =
+                QJsonDocument::fromJson(http("POST", R"({"jsonrpc":"2.0","id":77,"method":"tools/list"})", {}, &listStatus))
+                    .object()[QStringLiteral("result")]
+                    .toObject()[QStringLiteral("tools")]
+                    .toArray();
+            const QRegularExpression skip(
+                QStringLiteral("render|export|save|open|import|caption|youtube|stream|record|live|switcher|pad|tempo"));
             std::mt19937 rng(5);
             auto garbage = [&]() -> QJsonValue {
                 switch (rng() % 14) {
@@ -592,13 +768,17 @@ int MainWindow::runEditorTest(QStringList& log)
                             args[it.key()] = garbage();
                     if (rng() % 10 == 0)
                         args[QStringLiteral("not_a_parameter")] = garbage();
-                    lastCall = QStringLiteral("%1 %2").arg(name, QString::fromUtf8(QJsonDocument(args).toJson(QJsonDocument::Compact)).left(200));
+                    lastCall =
+                        QStringLiteral("%1 %2").arg(name, QString::fromUtf8(QJsonDocument(args).toJson(QJsonDocument::Compact)).left(200));
                     note(QStringLiteral("    AI fuzz: ") + lastCall);
                     int st = 0;
-                    const QJsonObject msg{{QStringLiteral("jsonrpc"), QStringLiteral("2.0")}, {QStringLiteral("id"), nextId++},
-                                          {QStringLiteral("method"), QStringLiteral("tools/call")},
-                                          {QStringLiteral("params"), QJsonObject{{QStringLiteral("name"), name}, {QStringLiteral("arguments"), args}}}};
-                    const QJsonObject r = QJsonDocument::fromJson(http("POST", QJsonDocument(msg).toJson(QJsonDocument::Compact), {}, &st)).object();
+                    const QJsonObject msg{
+                        {QStringLiteral("jsonrpc"), QStringLiteral("2.0")},
+                        {QStringLiteral("id"), nextId++},
+                        {QStringLiteral("method"), QStringLiteral("tools/call")},
+                        {QStringLiteral("params"), QJsonObject{{QStringLiteral("name"), name}, {QStringLiteral("arguments"), args}}}};
+                    const QJsonObject r =
+                        QJsonDocument::fromJson(http("POST", QJsonDocument(msg).toJson(QJsonDocument::Compact), {}, &st)).object();
                     ++calls;
                     if (st != 200 || (!r.contains(QStringLiteral("result")) && !r.contains(QStringLiteral("error"))))
                         ++unanswered;
@@ -608,11 +788,12 @@ int MainWindow::runEditorTest(QStringList& log)
             }
             // Not JSON at all, the wrong JSON-RPC, a method that doesn't exist.
             int odd = 0;
-            for (const QByteArray& body : {QByteArray("not json"), QByteArray("[]"), QByteArray("{}"), QByteArray(R"({"jsonrpc":"2.0","id":1})"),
-                                           QByteArray(R"({"jsonrpc":"2.0","id":1,"method":"no/such"})"),
-                                           QByteArray(R"({"jsonrpc":"2.0","id":1,"method":"tools/call","params":"x"})"),
-                                           QByteArray(R"({"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":42}})"),
-                                           QByteArray(R"({"jsonrpc":"2.0","id":{"a":[1]},"method":"ping"})"), QByteArray(1000000, '{')}) {
+            for (const QByteArray& body :
+                 {QByteArray("not json"), QByteArray("[]"), QByteArray("{}"), QByteArray(R"({"jsonrpc":"2.0","id":1})"),
+                  QByteArray(R"({"jsonrpc":"2.0","id":1,"method":"no/such"})"),
+                  QByteArray(R"({"jsonrpc":"2.0","id":1,"method":"tools/call","params":"x"})"),
+                  QByteArray(R"({"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":42}})"),
+                  QByteArray(R"({"jsonrpc":"2.0","id":{"a":[1]},"method":"ping"})"), QByteArray(1000000, '{')}) {
                 int st = 0;
                 http("POST", body, {}, &st);
                 odd += st != 0;
@@ -622,15 +803,18 @@ int MainWindow::runEditorTest(QStringList& log)
             check(fuzzed >= 15 && unanswered == 0 && broken.isEmpty() && odd == 9,
                   QStringLiteral("AI control under garbage: %1 tools called %2 times with wrong kinds and extreme values, all answered%3; "
                                  "%4/9 malformed requests answered")
-                      .arg(fuzzed).arg(calls)
-                      .arg(broken.isEmpty() ? QStringLiteral(", the timeline stays sound") : QStringLiteral(", but the timeline broke ") + broken)
+                      .arg(fuzzed)
+                      .arg(calls)
+                      .arg(broken.isEmpty() ? QStringLiteral(", the timeline stays sound")
+                                            : QStringLiteral(", but the timeline broke ") + broken)
                       .arg(odd));
         }
 
         // The stdio bridge (what Claude Desktop starts): to this Mutant Video Producer, and when it can't be reached.
         auto bridge = [&](quint16 bridgePort, const QList<QByteArray>& lines) {
             QProcess p;
-            p.start(QCoreApplication::applicationFilePath(), {QStringLiteral("--mcp-stdio"), QStringLiteral("--port"), QString::number(bridgePort)});
+            p.start(QCoreApplication::applicationFilePath(),
+                    {QStringLiteral("--mcp-stdio"), QStringLiteral("--port"), QString::number(bridgePort)});
             p.waitForStarted(5000);
             for (const QByteArray& l : lines)
                 p.write(l + '\n');
@@ -652,17 +836,24 @@ int MainWindow::runEditorTest(QStringList& log)
                                       R"({"jsonrpc":"2.0","method":"notifications/initialized"})",
                                       R"({"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"get_project","arguments":{}}})"};
         const QList<QJsonObject> through = bridge(port, lines);
-        const bool bridged = through.size() == 2 && through[0][QStringLiteral("result")].toObject()[QStringLiteral("protocolVersion")] == QStringLiteral("2025-03-26")
-                             && through[1][QStringLiteral("result")].toObject()[QStringLiteral("structuredContent")].toObject()[QStringLiteral("width")].toInt() == m_project->settings().width;
+        const bool bridged = through.size() == 2
+            && through[0][QStringLiteral("result")].toObject()[QStringLiteral("protocolVersion")] == QStringLiteral("2025-03-26")
+            && through[1][QStringLiteral("result")]
+                    .toObject()[QStringLiteral("structuredContent")]
+                    .toObject()[QStringLiteral("width")]
+                    .toInt()
+                == m_project->settings().width;
         const QList<QJsonObject> offline = bridge(47898, lines);
         const bool explained = offline.size() == 2 && offline[0].contains(QStringLiteral("result"))
-                               && offline[1][QStringLiteral("result")].toObject()[QStringLiteral("isError")].toBool();
+            && offline[1][QStringLiteral("result")].toObject()[QStringLiteral("isError")].toBool();
         setAiControl(false);
         int offStatus = 0;
         http("POST", R"({"jsonrpc":"2.0","id":9,"method":"ping"})", {}, &offStatus);
         check(bridged && explained && offStatus == 0,
-              QStringLiteral("MutantVideoProducer --mcp-stdio passes messages to the running Mutant Video Producer (%1 answers) and, when it isn't reachable, still "
-                             "connects and says why; with AI Control off nothing answers").arg(through.size()));
+              QStringLiteral("MutantVideoProducer --mcp-stdio passes messages to the running Mutant Video Producer (%1 answers) and, when "
+                             "it isn't reachable, still "
+                             "connects and says why; with AI Control off nothing answers")
+                  .arg(through.size()));
         QSettings().remove(QStringLiteral("mcp/port"));
     }
 
@@ -697,14 +888,16 @@ int MainWindow::runEditorTest(QStringList& log)
         m_timeline->selectClips({title});
         wait(100);
         const bool titleShown = m_bottomTabs->currentWidget() == m_fxEditor && m_fxEditor->target().kind == FxTarget::Kind::Generator
-                                && m_fxEditor->target().id == title;
+            && m_fxEditor->target().id == title;
         const QStringList titleHandles = m_fxEditor->handles();
         const QRectF pic = m_preview->pictureRect();
-        const double x0 = paramAt(title, QStringLiteral("x"), true, false) == -999.0 ? 0.5 : paramAt(title, QStringLiteral("x"), true, false);
+        const double x0 =
+            paramAt(title, QStringLiteral("x"), true, false) == -999.0 ? 0.5 : paramAt(title, QStringLiteral("x"), true, false);
         drag(pic.center(), pic.center() + QPointF(pic.width() / 10, 0));
         const double x1 = paramAt(title, QStringLiteral("x"), true, false);
         const double size0 = paramAt(title, QStringLiteral("size"), true, false);
-        QWheelEvent wheel(pic.center(), m_preview->mapToGlobal(pic.center()), QPoint(), QPoint(0, 240), Qt::NoButton, Qt::NoModifier, Qt::NoScrollPhase, false);
+        QWheelEvent wheel(pic.center(), m_preview->mapToGlobal(pic.center()), QPoint(), QPoint(0, 240), Qt::NoButton, Qt::NoModifier,
+                          Qt::NoScrollPhase, false);
         QApplication::sendEvent(m_preview, &wheel);
         wait(800); // (the edit is committed after a pause)
         const double size1 = paramAt(title, QStringLiteral("size"), true, false);
@@ -712,7 +905,10 @@ int MainWindow::runEditorTest(QStringList& log)
                   && std::abs(x1 - x0 - 0.1) < 0.01 && std::abs(size1 / size0 - 1.21) < 0.02,
               QStringLiteral("selecting a title opens its Properties below (not a window); dragging on the preview moves it "
                              "(x %1 -> %2), two wheel notches size it (%3 -> %4)")
-                  .arg(x0, 0, 'f', 3).arg(x1, 0, 'f', 3).arg(size0, 0, 'f', 2).arg(size1, 0, 'f', 2));
+                  .arg(x0, 0, 'f', 3)
+                  .arg(x1, 0, 'f', 3)
+                  .arg(size0, 0, 'f', 2)
+                  .arg(size1, 0, 'f', 2));
         // A media event: back to its effects.
         int mediaClip = 0;
         for (const Track& t : m_project->timeline().tracks)
@@ -734,7 +930,8 @@ int MainWindow::runEditorTest(QStringList& log)
         wait(50);
         const bool irisShown = m_bottomTabs->currentWidget() == m_fxEditor && m_fxEditor->handles().value(0) == QStringLiteral("centerX");
         drag(pic.center(), pic.center() + QPointF(-pic.width() / 5, pic.height() / 10));
-        const double cx = paramAt(mediaClip, QStringLiteral("centerX"), false, true), cy = paramAt(mediaClip, QStringLiteral("centerY"), false, true);
+        const double cx = paramAt(mediaClip, QStringLiteral("centerX"), false, true),
+                     cy = paramAt(mediaClip, QStringLiteral("centerY"), false, true);
         // A wipe: its angle on a knob.
         tl = m_project->timeline();
         if (Clip* c = tl.findClip(mediaClip))
@@ -748,7 +945,10 @@ int MainWindow::runEditorTest(QStringList& log)
         const double angle = paramAt(mediaClip, QStringLiteral("angle"), false, true);
         check(effectsBack && irisShown && std::abs(cx - 0.3) < 0.02 && std::abs(cy - 0.6) < 0.02 && angleHandle && std::abs(angle - 90) < 2,
               QStringLiteral("a media event shows its Effects again; an iris's Properties: its centre dragged on the preview "
-                             "(%1, %2); a wipe's angle turned with the knob (%3 degrees)").arg(cx, 0, 'f', 2).arg(cy, 0, 'f', 2).arg(angle, 0, 'f', 1));
+                             "(%1, %2); a wipe's angle turned with the knob (%3 degrees)")
+                  .arg(cx, 0, 'f', 2)
+                  .arg(cy, 0, 'f', 2)
+                  .arg(angle, 0, 'f', 1));
         // Pan/Crop on the preview: drag pans, the wheel zooms.
         m_fxEditor->setTarget({FxTarget::Kind::PanCrop, mediaClip});
         wait(50);
@@ -760,7 +960,8 @@ int MainWindow::runEditorTest(QStringList& log)
         const double pz = pc && pc->panCrop.count(QStringLiteral("zoom")) ? pc->panCrop.at(QStringLiteral("zoom")).value : 1;
         check(m_bottomTabs->currentWidget() == m_fxEditor && pcx < 0.45 && std::abs(pz - 1.21) < 0.02,
               QStringLiteral("Pan/Crop on the preview: a drag to the right pans (centre %1), two wheel notches zoom (%2x)")
-                  .arg(pcx, 0, 'f', 3).arg(pz, 0, 'f', 2));
+                  .arg(pcx, 0, 'f', 3)
+                  .arg(pz, 0, 'f', 2));
         // Remove Transition puts the panel away.
         m_fxEditor->setTarget({FxTarget::Kind::TransitionIn, mediaClip});
         for (QPushButton* b : m_fxEditor->findChildren<QPushButton*>())
@@ -799,7 +1000,8 @@ int MainWindow::runEditorTest(QStringList& log)
         }
         m_scopesAction->setChecked(false);
         check(visible && drawn.size() == 4 && !m_scopes->isVisible(),
-              QStringLiteral("Scopes shows beside the preview and draws its picture as %1; hidden again").arg(drawn.join(QStringLiteral(", "))));
+              QStringLiteral("Scopes shows beside the preview and draws its picture as %1; hidden again")
+                  .arg(drawn.join(QStringLiteral(", "))));
     }
 
     // ---- Audio Mixer, scrubbing, frame export, device panels ----
@@ -827,7 +1029,9 @@ int MainWindow::runEditorTest(QStringList& log)
         exportFrame(true);
         const QImage still = QApplication::clipboard()->image();
         check(still.size() == QSize(m_project->settings().width, m_project->settings().height),
-              QStringLiteral("Copy Frame puts the frame at the cursor on the clipboard at full size (%1x%2)").arg(still.width()).arg(still.height()));
+              QStringLiteral("Copy Frame puts the frame at the cursor on the clipboard at full size (%1x%2)")
+                  .arg(still.width())
+                  .arg(still.height()));
         const int before = m_devices->deviceBodyHeight();
         m_mainSplit->setSizes({100, 200, 600});
         QApplication::processEvents();
@@ -873,7 +1077,8 @@ int MainWindow::runEditorTest(QStringList& log)
     alive.tryLock(0);
     autosave();
     const QStringList orphans = orphanedAutosaves();
-    check(orphans == QStringList{crashed}, QStringLiteral("after a crash its autosave is found; a running session's and our own are not (%1 found)").arg(orphans.size()));
+    check(orphans == QStringList{crashed},
+          QStringLiteral("after a crash its autosave is found; a running session's and our own are not (%1 found)").arg(orphans.size()));
     const auto markersBefore = m_project->timeline().markers;
     m_project->clear(); // as after a restart
     const bool recovered = recoverFrom(crashed);
@@ -937,7 +1142,8 @@ int MainWindow::runEditorTest(QStringList& log)
         int clips = 0;
         for (const Track& t : m_project->timeline().tracks)
             clips += int(t.clips.size());
-        check(n == 2 && online && clips == 4, QStringLiteral("Search Folder finds both moved files by name; their events are back (%1 relinked)").arg(n));
+        check(n == 2 && online && clips == 4,
+              QStringLiteral("Search Folder finds both moved files by name; their events are back (%1 relinked)").arg(n));
     }
     // ---- Create Clip from YouTube: a downloaded file goes in the YouTube folder, the part asked for placed ----
     {
@@ -954,21 +1160,25 @@ int MainWindow::runEditorTest(QStringList& log)
         auto* youtubeTabs = findChild<QTabWidget*>(QStringLiteral("dockTabs"));
         int liveTab = -1, youtubeTab = -1;
         for (int i = 0; i < youtubeTabs->count(); ++i) {
-            if (youtubeTabs->widget(i) == m_liveClips) liveTab = i;
-            if (youtubeTabs->widget(i)->isAncestorOf(m_youtubeBin)) youtubeTab = i;
+            if (youtubeTabs->widget(i) == m_liveClips)
+                liveTab = i;
+            if (youtubeTabs->widget(i)->isAncestorOf(m_youtubeBin))
+                youtubeTab = i;
         }
         check(m && m->origin == QLatin1String("youtube") && m_youtubeBin->count() == 1 && youtubeTab == liveTab + 1
                   && youtubeTabs->currentIndex() == youtubeTab && m_youtubeBin->item(0)->data(Qt::UserRole).toInt() == id,
               QStringLiteral("downloaded clips appear in From YouTube next to From Live, and the tab opens after import"));
         m_project->setMediaDetails(id, QStringLiteral("Other Folder"), m->rating, m->markIn, m->markOut);
         const QString savedYoutube = work.filePath(QStringLiteral("youtube-origin.mvp"));
-        QString youtubeError; Project restoredYoutube;
-        check(m_youtubeBin->count() == 1 && m_project->save(savedYoutube, &youtubeError) && restoredYoutube.load(savedYoutube, &youtubeError)
-                  && restoredYoutube.mediaItem(id)->origin == QLatin1String("youtube"),
+        QString youtubeError;
+        Project restoredYoutube;
+        check(m_youtubeBin->count() == 1 && m_project->save(savedYoutube, &youtubeError)
+                  && restoredYoutube.load(savedYoutube, &youtubeError) && restoredYoutube.mediaItem(id)->origin == QLatin1String("youtube"),
               QStringLiteral("YouTube origin survives folder changes and saving/reopening the project"));
         m_project->setMediaDetails(id, QStringLiteral("YouTube"), m->rating, m->markIn, m->markOut);
         m = m_project->mediaItem(id);
-        check(id && m && m->folder == QStringLiteral("YouTube") && placed && placed->sourceIn == kUsPerSecond && placed->length == kUsPerSecond,
+        check(id && m && m->folder == QStringLiteral("YouTube") && placed && placed->sourceIn == kUsPerSecond
+                  && placed->length == kUsPerSecond,
               QStringLiteral("Create Clip from YouTube: the file goes in Project Media's YouTube folder and the part asked for (1-2 s) "
                              "is placed at the cursor"));
         m_project->undoStack()->undo();
@@ -1003,8 +1213,9 @@ int MainWindow::runEditorTest(QStringList& log)
         const QString saved = work.filePath(QStringLiteral("bin.mvp"));
         Project reloaded;
         QString saveError;
-        const bool kept = m_project->save(saved, &saveError) && reloaded.load(saved, &saveError) && reloaded.mediaItem(id)->folder == QStringLiteral("Footage/Day 1")
-                          && reloaded.mediaItem(id)->rating == 4 && reloaded.mediaItem(id)->markOut == 2 * kUsPerSecond;
+        const bool kept = m_project->save(saved, &saveError) && reloaded.load(saved, &saveError)
+            && reloaded.mediaItem(id)->folder == QStringLiteral("Footage/Day 1") && reloaded.mediaItem(id)->rating == 4
+            && reloaded.mediaItem(id)->markOut == 2 * kUsPerSecond;
         m_project->setMediaDetails(id, {}, 0, 0, 0);
         check(rated && fiveStars == 0 && found == 1 && marked && kept,
               QStringLiteral("Project Media: 4 rates a file, the rating and folder filters and the search find it, its in / out "
@@ -1017,7 +1228,8 @@ int MainWindow::runEditorTest(QStringList& log)
                 split = a;
         const QKeySequence before = split ? split->shortcut() : QKeySequence();
         if (split) {
-            QSettings().setValue(QStringLiteral("shortcuts/") + split->text().remove(QLatin1Char('&')).remove(QStringLiteral("...")).trimmed(),
+            QSettings().setValue(QStringLiteral("shortcuts/")
+                                     + split->text().remove(QLatin1Char('&')).remove(QStringLiteral("...")).trimmed(),
                                  QStringLiteral("Ctrl+Alt+K"));
             ShortcutsDialog::applySaved(commands);
         }
@@ -1026,24 +1238,29 @@ int MainWindow::runEditorTest(QStringList& log)
         ShortcutsDialog::applySaved(commands);
         check(history && history->stack() == m_project->undoStack() && commands.size() > 60 && changed && split->shortcut() == before,
               QStringLiteral("the History tab lists the undo steps; %1 commands have editable shortcuts (%2 moved to Ctrl+Alt+K and back)")
-                  .arg(commands.size()).arg(split ? split->text() : QStringLiteral("no Split")));
+                  .arg(commands.size())
+                  .arg(split ? split->text() : QStringLiteral("no Split")));
     }
     // ---- Captions: added on a Captions track, as subtitles or kinetic text ----
     {
         const int tracksBefore = int(m_project->timeline().tracks.size());
-        addCaptions({{kUsPerSecond, 3 * kUsPerSecond, QStringLiteral("Hello there")}, {4 * kUsPerSecond, 5 * kUsPerSecond, QStringLiteral("one two three")}},
+        addCaptions({{kUsPerSecond, 3 * kUsPerSecond, QStringLiteral("Hello there")},
+                     {4 * kUsPerSecond, 5 * kUsPerSecond, QStringLiteral("one two three")}},
                     2 * kUsPerSecond, false);
         const Track& top = m_project->timeline().tracks.front();
-        const bool subs = int(m_project->timeline().tracks.size()) == tracksBefore + 1 && top.name == tr("Captions") && top.clips.size() == 2
-                          && top.clips[0].start == 3 * kUsPerSecond && top.clips[0].length == 2 * kUsPerSecond && top.clips[0].generator.type == QLatin1String("text")
-                          && top.clips[1].generator.params.at(QStringLiteral("text")).text == QStringLiteral("one two three");
+        const bool subs = int(m_project->timeline().tracks.size()) == tracksBefore + 1 && top.name == tr("Captions")
+            && top.clips.size() == 2 && top.clips[0].start == 3 * kUsPerSecond && top.clips[0].length == 2 * kUsPerSecond
+            && top.clips[0].generator.type == QLatin1String("text")
+            && top.clips[1].generator.params.at(QStringLiteral("text")).text == QStringLiteral("one two three");
         m_project->undoStack()->undo();
         addCaptions({{0, 2 * kUsPerSecond, QStringLiteral("one two three four")}}, 0, true);
         const Clip& k = m_project->timeline().tracks.front().clips.front();
-        const bool kinetic = k.generator.type == QLatin1String("kinetic_text") && std::abs(k.generator.params.at(QStringLiteral("rate")).value - 2.5) < 0.01;
+        const bool kinetic =
+            k.generator.type == QLatin1String("kinetic_text") && std::abs(k.generator.params.at(QStringLiteral("rate")).value - 2.5) < 0.01;
         m_project->undoStack()->undo();
         check(subs && kinetic && int(m_project->timeline().tracks.size()) == tracksBefore,
-              QStringLiteral("captions go on a new Captions track on top, as subtitles at their times or kinetic text paced to them (and undo)"));
+              QStringLiteral(
+                  "captions go on a new Captions track on top, as subtitles at their times or kinetic text paced to them (and undo)"));
     }
     // ---- A VST3 plugin on a track (when one is installed) ----
     if (const QStringList plugins = vst3InstalledPlugins(); vst3Available() && !plugins.isEmpty()) {
@@ -1069,14 +1286,17 @@ int MainWindow::runEditorTest(QStringList& log)
             named |= l->text() == tr("VST3: %1").arg(QFileInfo(path).completeBaseName());
             stateHidden &= l->text() != QStringLiteral("Plugin state");
         }
-        check(named && stateHidden, QStringLiteral("a VST3 Plugin device is named after its plugin (%1) and keeps its state out of sight").arg(QFileInfo(path).fileName()));
+        check(named && stateHidden,
+              QStringLiteral("a VST3 Plugin device is named after its plugin (%1) and keeps its state out of sight")
+                  .arg(QFileInfo(path).fileName()));
         m_project->undoStack()->undo();
     }
 
     // ---- Help: the user guide, a heading link, the Tutorials menu, an example project (last: it replaces the project) ----
     {
         showHelp(QStringLiteral("README.md"));
-        const bool guide = m_helpBrowser && m_helpBrowser->window()->isVisible() && m_helpBrowser->toPlainText().contains(QStringLiteral("Mutant Video Producer User Guide"));
+        const bool guide = m_helpBrowser && m_helpBrowser->window()->isVisible()
+            && m_helpBrowser->toPlainText().contains(QStringLiteral("Mutant Video Producer User Guide"));
         showHelp(QStringLiteral("editing.md#auto-ripple"));
         wait(100);
         const bool scrolled = m_helpBrowser && m_helpBrowser->verticalScrollBar()->value() > 0;
@@ -1107,9 +1327,10 @@ int MainWindow::runEditorTest(QStringList& log)
         openExample(QStringLiteral("effects-and-keyframes"), into);
         wait(300);
         const auto [afterId, after] = picture();
-        check(beforeId == afterId && !before.isNull() && !after.isNull() && before != after,
-              QStringLiteral("thumbnails follow the file, not the media id: another project's file %1 with the same id shows its own picture")
-                  .arg(m_project->media().begin()->second->displayName()));
+        check(
+            beforeId == afterId && !before.isNull() && !after.isNull() && before != after,
+            QStringLiteral("thumbnails follow the file, not the media id: another project's file %1 with the same id shows its own picture")
+                .arg(m_project->media().begin()->second->displayName()));
         openExample(QStringLiteral("first-edit"), into);
         bool titles = false;
         for (const Track& t : m_project->timeline().tracks)
@@ -1117,9 +1338,11 @@ int MainWindow::runEditorTest(QStringList& log)
         bool online = !m_project->media().empty();
         for (const auto& [id, m] : m_project->media())
             online &= m->info.ok() && m->path.startsWith(into);
-        check(guide && scrolled && tutorials >= 16 && m_project->filePath() == QDir(into).filePath(QStringLiteral("first-edit.mvp")) && titles && online,
+        check(guide && scrolled && tutorials >= 16 && m_project->filePath() == QDir(into).filePath(QStringLiteral("first-edit.mvp"))
+                  && titles && online,
               QStringLiteral("Help > User Guide shows the guide and scrolls to a heading's link; Help > Tutorials lists %1 tutorials; "
-                             "an example project opens from a copy, its media with it").arg(tutorials));
+                             "an example project opens from a copy, its media with it")
+                  .arg(tutorials));
     }
 
     // ---- A crash report is offered once; files from another start of Mutant Video Producer open here ----
@@ -1129,7 +1352,8 @@ int MainWindow::runEditorTest(QStringList& log)
         QDir().mkpath(crash::folder());
         const QString fake = QDir(crash::folder()).filePath(QStringLiteral("crash-test.txt"));
         if (QFile f(fake); f.open(QIODevice::WriteOnly))
-            f.write("MvpEditorTest 0.0 on a test\nCrashed: an exception\nTime: now\nException: 0xC0000005 (access violation) at MutantVideoProducer.exe+0x1234\n");
+            f.write("MvpEditorTest 0.0 on a test\nCrashed: an exception\nTime: now\nException: 0xC0000005 (access violation) at "
+                    "MutantVideoProducer.exe+0x1234\n");
         const QStringList found = crash::newReports();
         const QString summary = found.isEmpty() ? QString() : crash::summary(found.front());
         crash::markSeen();
@@ -1183,16 +1407,22 @@ int MainWindow::runEditorTest(QStringList& log)
         int menuEntries = 0;
         for (QMenu* m : findChildren<QMenu*>(QStringLiteral("themeMenu")))
             menuEntries = int(m->actions().size());
-        check(wrong.isEmpty() && iconRedrawn && menuEntries == int(theme::themes().size()) && qApp->palette().color(QPalette::Window) == theme::c().window,
-              QStringLiteral("View > Theme: all %1 themes recolour the palette, the widgets' style sheets and the transport icons, and switch back %2")
-                  .arg(menuEntries).arg(wrong.join(QStringLiteral(", "))));
+        check(wrong.isEmpty() && iconRedrawn && menuEntries == int(theme::themes().size())
+                  && qApp->palette().color(QPalette::Window) == theme::c().window,
+              QStringLiteral(
+                  "View > Theme: all %1 themes recolour the palette, the widgets' style sheets and the transport icons, and switch back %2")
+                  .arg(menuEntries)
+                  .arg(wrong.join(QStringLiteral(", "))));
     }
 
     // ---- Starting out: the update check's versions, File > New's shapes, the welcome window, the system check, context help ----
     {
-        check(isNewerVersion(QStringLiteral("v0.1.5"), QStringLiteral("0.1.4")) && isNewerVersion(QStringLiteral("v0.1.10"), QStringLiteral("0.1.9"))
-                  && !isNewerVersion(QStringLiteral("v0.1.4"), QStringLiteral("0.1.4")) && !isNewerVersion(QStringLiteral("v0.1.3"), QStringLiteral("0.1.4"))
-                  && !isNewerVersion(QStringLiteral("v9.0.0"), QStringLiteral("dev-1234abc")) && !isNewerVersion(QStringLiteral("nightly"), QStringLiteral("0.1.4")),
+        check(isNewerVersion(QStringLiteral("v0.1.5"), QStringLiteral("0.1.4"))
+                  && isNewerVersion(QStringLiteral("v0.1.10"), QStringLiteral("0.1.9"))
+                  && !isNewerVersion(QStringLiteral("v0.1.4"), QStringLiteral("0.1.4"))
+                  && !isNewerVersion(QStringLiteral("v0.1.3"), QStringLiteral("0.1.4"))
+                  && !isNewerVersion(QStringLiteral("v9.0.0"), QStringLiteral("dev-1234abc"))
+                  && !isNewerVersion(QStringLiteral("nightly"), QStringLiteral("0.1.4")),
               QStringLiteral("a newer release is told apart (0.1.10 after 0.1.9; never for a dev build)"));
 
         // File > New: discard unsaved work once, then make Vertical 9:16 at 60 fps.
@@ -1218,10 +1448,14 @@ int MainWindow::runEditorTest(QStringList& log)
         answerNewProject.start(50);
         newProjectDialog();
         answerNewProject.stop();
-        check(savePrompts == 1, QStringLiteral("File > New asks to save unsaved work once, before the New Project dialog (%1 prompts)").arg(savePrompts));
+        check(savePrompts == 1,
+              QStringLiteral("File > New asks to save unsaved work once, before the New Project dialog (%1 prompts)").arg(savePrompts));
         const ProjectSettings s = m_project->settings();
-        check(s.width == 1080 && s.height == 1920 && std::abs(s.fps.toDouble() - 60) < 1e-6 && m_project->media().empty() && !m_project->isModified(),
-              QStringLiteral("File > New makes an empty vertical 9:16 project at 60 fps (%1x%2), not marked as changed").arg(s.width).arg(s.height));
+        check(s.width == 1080 && s.height == 1920 && std::abs(s.fps.toDouble() - 60) < 1e-6 && m_project->media().empty()
+                  && !m_project->isModified(),
+              QStringLiteral("File > New makes an empty vertical 9:16 project at 60 fps (%1x%2), not marked as changed")
+                  .arg(s.width)
+                  .arg(s.height));
 
         // The welcome window, with what this computer can do.
         QString summary;
@@ -1237,7 +1471,9 @@ int MainWindow::runEditorTest(QStringList& log)
         });
         showWelcome();
         check(buttons >= 8 && (summary.startsWith(QStringLiteral("✓")) || summary.startsWith(QStringLiteral("✗"))),
-              QStringLiteral("the welcome window offers starting and learning (%1 buttons) and sums up this computer: %2").arg(buttons).arg(summary));
+              QStringLiteral("the welcome window offers starting and learning (%1 buttons) and sums up this computer: %2")
+                  .arg(buttons)
+                  .arg(summary));
         const std::vector<CheckItem> items = systemCheck();
         bool complete = items.size() >= 9;
         for (const CheckItem& c : items)
@@ -1246,7 +1482,7 @@ int MainWindow::runEditorTest(QStringList& log)
 
         // Shift+F1, and a dialog's Help button (its help window works while the dialog is open).
         const bool pages = help::pageFor(m_timeline) == QLatin1String("editing.md") && help::pageFor(nullptr) == QLatin1String("README.md")
-                           && help::pageFor(m_devices->findChild<QWidget*>()) == QLatin1String("effects.md#the-device-chain");
+            && help::pageFor(m_devices->findChild<QWidget*>()) == QLatin1String("effects.md#the-device-chain");
         bool dialogHelp = false;
         QTimer::singleShot(300, this, [&] {
             auto* dlg = qobject_cast<QDialog*>(QApplication::activeModalWidget());
@@ -1261,8 +1497,9 @@ int MainWindow::runEditorTest(QStringList& log)
             dlg->reject();
         });
         projectProperties();
-        check(pages && dialogHelp, QStringLiteral("Shift+F1 finds the page of the panel with the focus; a dialog's Help button opens its page in a window "
-                                                  "the dialog doesn't block"));
+        check(pages && dialogHelp,
+              QStringLiteral("Shift+F1 finds the page of the panel with the focus; a dialog's Help button opens its page in a window "
+                             "the dialog doesn't block"));
     }
     {
         const QString root = work.filePath(QStringLiteral("profile-test-") + QUuid::createUuid().toString(QUuid::WithoutBraces));
@@ -1276,12 +1513,15 @@ int MainWindow::runEditorTest(QStringList& log)
         m_project->clear();
         QTimer::singleShot(50, this, [&] {
             auto* dialog = qobject_cast<QDialog*>(QApplication::activeModalWidget());
-            if (!dialog) return;
-            if (auto* name = dialog->findChild<QLineEdit*>(QStringLiteral("newProjectName"))) name->setText(QStringLiteral("Profile Project"));
+            if (!dialog)
+                return;
+            if (auto* name = dialog->findChild<QLineEdit*>(QStringLiteral("newProjectName")))
+                name->setText(QStringLiteral("Profile Project"));
             dialog->accept();
         });
         newProjectDialog();
-        check(m_project->filePath() == QDir(homeA).filePath(QStringLiteral("Projects/Profile Project.mvp")) && QFileInfo::exists(m_project->filePath()),
+        check(m_project->filePath() == QDir(homeA).filePath(QStringLiteral("Projects/Profile Project.mvp"))
+                  && QFileInfo::exists(m_project->filePath()),
               QStringLiteral("new projects are named and created inside the active profile home"));
         const QString clipPath = QDir(homeA).filePath(QStringLiteral("YouTube/shared.mp4"));
         QFile::copy(mediaPath, clipPath);
@@ -1292,7 +1532,8 @@ int MainWindow::runEditorTest(QStringList& log)
         auto* others = findChild<QCheckBox*>(QStringLiteral("youtubeOtherProjects"));
         check(others && !others->isChecked() && m_youtubeBin->count() == 0,
               QStringLiteral("From YouTube shows only this project's downloads until other projects' are asked for"));
-        if (others) others->setChecked(true);
+        if (others)
+            others->setChecked(true);
         auto* sharedBin = findChild<MediaBin*>(QStringLiteral("profileMedia"));
         check(m_project->media().empty() && m_youtubeBin->count() == 1 && sharedBin && sharedBin->count() == 1
                   && m_youtubeBin->item(0)->data(Qt::UserRole).toInt() == 0,
@@ -1304,88 +1545,136 @@ int MainWindow::runEditorTest(QStringList& log)
               QStringLiteral("shared clip double-click imports and places it with its original marks"));
         addRecent(m_project->filePath());
         const QString keyA = profiles.settingsKey(QStringLiteral("recent/projects"));
-        check(profiles.saveAndActivate({QStringLiteral("test-b"), QStringLiteral("Profile B"), homeB}, &error), QStringLiteral("a second profile can be activated"));
+        check(profiles.saveAndActivate({QStringLiteral("test-b"), QStringLiteral("Profile B"), homeB}, &error),
+              QStringLiteral("a second profile can be activated"));
         newProject();
         check(m_youtubeBin->count() == 0 && profiles.media().empty() && keyA != profiles.settingsKey(QStringLiteral("recent/projects"))
                   && voiceDataDir() == QDir(homeB).filePath(QStringLiteral("Voice Assets")),
               QStringLiteral("media libraries, recent-project keys and downloaded voices are isolated by profile"));
-        QFile broken(QDir(homeB).filePath(QStringLiteral("montage-library.json"))); broken.open(QIODevice::WriteOnly); broken.write("invalid"); broken.close();
-        check(!profiles.remember({QJsonObject{{"path", mediaPath}}}, &error), QStringLiteral("a corrupt profile library is preserved instead of overwritten"));
-        profiles.saveAndActivate({QStringLiteral("test-a"), QStringLiteral("Profile A"), homeA}, &error); newProject();
-        check(m_youtubeBin->count() == 1 && profiles.list().size() == 2, QStringLiteral("returning to a profile restores its shared library"));
-        if (others) others->setChecked(false);
-        check(!profiles.saveAndActivate({{}, QStringLiteral("Duplicate"), homeA}, &error) && profiles.active().id == QLatin1String("test-a"),
+        QFile broken(QDir(homeB).filePath(QStringLiteral("montage-library.json")));
+        broken.open(QIODevice::WriteOnly);
+        broken.write("invalid");
+        broken.close();
+        check(!profiles.remember({QJsonObject{{"path", mediaPath}}}, &error),
+              QStringLiteral("a corrupt profile library is preserved instead of overwritten"));
+        profiles.saveAndActivate({QStringLiteral("test-a"), QStringLiteral("Profile A"), homeA}, &error);
+        newProject();
+        check(m_youtubeBin->count() == 1 && profiles.list().size() == 2,
+              QStringLiteral("returning to a profile restores its shared library"));
+        if (others)
+            others->setChecked(false);
+        check(!profiles.saveAndActivate({{}, QStringLiteral("Duplicate"), homeA}, &error)
+                  && profiles.active().id == QLatin1String("test-a"),
               QStringLiteral("two profiles cannot accidentally share the same home folder"));
         Timeline dirty = m_project->timeline();
         dirty.markers.push_back({dirty.allocId(), 0, 0, QStringLiteral("Keep this edit")});
         m_project->applyEdit(dirty, QStringLiteral("Profile rename test"));
         QTimer::singleShot(50, this, [&] {
             auto* dialog = qobject_cast<QDialog*>(QApplication::activeModalWidget());
-            if (!dialog) return;
-            if (auto* name = dialog->findChild<QLineEdit*>(QStringLiteral("profileName"))) name->setText(QStringLiteral("Renamed A"));
-            if (auto* buttons = dialog->findChild<QDialogButtonBox*>()) buttons->button(QDialogButtonBox::Ok)->click();
+            if (!dialog)
+                return;
+            if (auto* name = dialog->findChild<QLineEdit*>(QStringLiteral("profileName")))
+                name->setText(QStringLiteral("Renamed A"));
+            if (auto* buttons = dialog->findChild<QDialogButtonBox*>())
+                buttons->button(QDialogButtonBox::Ok)->click();
         });
         profilesDialog();
         check(profiles.active().name == QLatin1String("Renamed A") && m_project->timeline() == dirty && m_project->isModified(),
               QStringLiteral("renaming the current profile preserves the unsaved project without a save prompt"));
-        int savePrompts = 0; bool requestedSwitch = false;
-        QTimer answer; answer.setInterval(50);
+        int savePrompts = 0;
+        bool requestedSwitch = false;
+        QTimer answer;
+        answer.setInterval(50);
         connect(&answer, &QTimer::timeout, this, [&] {
             if (auto* box = qobject_cast<QMessageBox*>(QApplication::activeModalWidget())) {
-                ++savePrompts; if (auto* discard = box->button(QMessageBox::Discard)) discard->click(); else box->reject();
+                ++savePrompts;
+                if (auto* discard = box->button(QMessageBox::Discard))
+                    discard->click();
+                else
+                    box->reject();
             } else if (auto* dialog = qobject_cast<QDialog*>(QApplication::activeModalWidget()); dialog && !requestedSwitch) {
                 requestedSwitch = true;
-                if (auto* choices = dialog->findChild<QComboBox*>(QStringLiteral("profileChoice"))) choices->setCurrentIndex(choices->findData(QStringLiteral("test-b")));
+                if (auto* choices = dialog->findChild<QComboBox*>(QStringLiteral("profileChoice")))
+                    choices->setCurrentIndex(choices->findData(QStringLiteral("test-b")));
                 if (auto* buttons = dialog->findChild<QDialogButtonBox*>())
                     QTimer::singleShot(0, dialog, [buttons] { buttons->button(QDialogButtonBox::Ok)->click(); });
             }
         });
-        answer.start(); profilesDialog(); answer.stop();
-        check(profiles.active().id == QLatin1String("test-b") && savePrompts == 1 && !m_project->isModified() && m_project->timeline().markers.empty(),
+        answer.start();
+        profilesDialog();
+        answer.stop();
+        check(profiles.active().id == QLatin1String("test-b") && savePrompts == 1 && !m_project->isModified()
+                  && m_project->timeline().markers.empty(),
               QStringLiteral("switching profiles asks once about unsaved changes and starts an empty project"));
-        profiles.useLegacy(); m_project->clear();
-        QSettings().remove(QStringLiteral("profiles/list")); QSettings().remove(QStringLiteral("profiles/data"));
+        profiles.useLegacy();
+        m_project->clear();
+        QSettings().remove(QStringLiteral("profiles/list"));
+        QSettings().remove(QStringLiteral("profiles/data"));
     }
     // Reused IDs across a successful load must not inherit transient editor state.
     {
-        const QString fixture=work.filePath("session-isolation.mvp");
-        Timeline tl=m_project->timeline(); QString error;
-        const int one=story::addChapter(tl,"Session one","First saved",kUsPerSecond,kUsPerSecond,nullptr,0,m_project->settings().fps,&error);
-        const int two=story::addChapter(tl,"Session two","Second saved",kUsPerSecond,kUsPerSecond,nullptr,0,m_project->settings().fps,&error);
+        const QString fixture = work.filePath("session-isolation.mvp");
+        Timeline tl = m_project->timeline();
+        QString error;
+        const int one =
+            story::addChapter(tl, "Session one", "First saved", kUsPerSecond, kUsPerSecond, nullptr, 0, m_project->settings().fps, &error);
+        const int two =
+            story::addChapter(tl, "Session two", "Second saved", kUsPerSecond, kUsPerSecond, nullptr, 0, m_project->settings().fps, &error);
         m_project->setTimelineLive(tl);
-        auto* panel=findChild<QWidget*>("storyPanel");
-        auto* chapters=panel?panel->findChild<QListWidget*>("storyChapters"):nullptr;
-        auto* script=panel?panel->findChild<QPlainTextEdit*>("chapterScript"):nullptr;
-        auto selectChapter=[&](int id){if(chapters)for(int i=0;i<chapters->count();++i)if(chapters->item(i)->data(Qt::UserRole).toInt()==id)chapters->setCurrentRow(i);};
-        selectChapter(two); if(script)script->setPlainText("Draft from OLD project"); selectChapter(one);
-        const int trackId=tl.tracks.front().id;
-        m_timeline->m_trackHeights[trackId]=222;
-        m_timeline->m_meters[trackId]={.75f,.5f};
-        m_timeline->selectAll();m_timeline->copySelection();
-        auto same=tl; same.markers.clear(); m_project->setTimelineLive(same);
-        check(m_timeline->m_trackHeights[trackId]==222,"ordinary edits retain custom track heights");
+        auto* panel = findChild<QWidget*>("storyPanel");
+        auto* chapters = panel ? panel->findChild<QListWidget*>("storyChapters") : nullptr;
+        auto* script = panel ? panel->findChild<QPlainTextEdit*>("chapterScript") : nullptr;
+        auto selectChapter = [&](int id) {
+            if (chapters)
+                for (int i = 0; i < chapters->count(); ++i)
+                    if (chapters->item(i)->data(Qt::UserRole).toInt() == id)
+                        chapters->setCurrentRow(i);
+        };
         selectChapter(two);
-        check(script&&script->toPlainText()=="Draft from OLD project","ordinary edits retain chapter drafts");
+        if (script)
+            script->setPlainText("Draft from OLD project");
         selectChapter(one);
-        auto* staleWindow=new Vst3Window(m_project,900,this);
-        staleWindow->setAttribute(Qt::WA_DontShowOnScreen);staleWindow->show();
-        QPointer<Vst3Window> stale=staleWindow;
-        const bool loaded=m_project->save(fixture,&error)&&m_project->load(fixture,&error);
-        check(loaded,"project isolation fixture reloads with the same IDs");
-        check(m_timeline->selection().empty()&&m_timeline->m_trackHeights.empty()&&m_timeline->m_meters.empty(),"opening a project clears selections, track heights and meters");
-        check(m_timeline->m_clipboard.empty()&&m_timeline->m_generatedThumbs.empty(),"opening a project drops copied media IDs and generated thumbnail caches");
+        const int trackId = tl.tracks.front().id;
+        m_timeline->m_trackHeights[trackId] = 222;
+        m_timeline->m_meters[trackId] = {.75f, .5f};
+        m_timeline->selectAll();
+        m_timeline->copySelection();
+        auto same = tl;
+        same.markers.clear();
+        m_project->setTimelineLive(same);
+        check(m_timeline->m_trackHeights[trackId] == 222, "ordinary edits retain custom track heights");
         selectChapter(two);
-        check(script&&script->toPlainText()=="Second saved","matching chapter IDs cannot recover another project's draft");
-        check(stale&&!stale->isVisible()&&stale->m_session!=m_project->snapshot()->session,"an old VST editor closes when the project session changes");
-        const auto before=m_project->timeline();
-        if(stale){stale->save();stale->close();}
-        check(m_project->timeline()==before,"stale VST save and close leave the new project unchanged");
-        m_timeline->selectAll();m_timeline->copySelection();m_timeline->m_trackHeights[trackId]=200;
+        check(script && script->toPlainText() == "Draft from OLD project", "ordinary edits retain chapter drafts");
+        selectChapter(one);
+        auto* staleWindow = new Vst3Window(m_project, 900, this);
+        staleWindow->setAttribute(Qt::WA_DontShowOnScreen);
+        staleWindow->show();
+        QPointer<Vst3Window> stale = staleWindow;
+        const bool loaded = m_project->save(fixture, &error) && m_project->load(fixture, &error);
+        check(loaded, "project isolation fixture reloads with the same IDs");
+        check(m_timeline->selection().empty() && m_timeline->m_trackHeights.empty() && m_timeline->m_meters.empty(),
+              "opening a project clears selections, track heights and meters");
+        check(m_timeline->m_clipboard.empty() && m_timeline->m_generatedThumbs.empty(),
+              "opening a project drops copied media IDs and generated thumbnail caches");
+        selectChapter(two);
+        check(script && script->toPlainText() == "Second saved", "matching chapter IDs cannot recover another project's draft");
+        check(stale && !stale->isVisible() && stale->m_session != m_project->snapshot()->session,
+              "an old VST editor closes when the project session changes");
+        const auto before = m_project->timeline();
+        if (stale) {
+            stale->save();
+            stale->close();
+        }
+        check(m_project->timeline() == before, "stale VST save and close leave the new project unchanged");
+        m_timeline->selectAll();
+        m_timeline->copySelection();
+        m_timeline->m_trackHeights[trackId] = 200;
         m_project->clear();
-        check(m_timeline->selection().empty()&&m_timeline->m_clipboard.empty()&&m_timeline->m_trackHeights.empty(),"new project clears transient timeline state");
-        check(script&&script->toPlainText().isEmpty(),"new project clears displayed Story draft");
-        m_project->load(fixture,&error);
+        check(m_timeline->selection().empty() && m_timeline->m_clipboard.empty() && m_timeline->m_trackHeights.empty(),
+              "new project clears transient timeline state");
+        check(script && script->toPlainText().isEmpty(), "new project clears displayed Story draft");
+        m_project->load(fixture, &error);
     }
-    failures += runCollectionUiTests(this,log);
+    failures += runCollectionUiTests(this, log);
     return failures;
 }
