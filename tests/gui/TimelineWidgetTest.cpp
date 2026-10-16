@@ -316,6 +316,20 @@ int TimelineWidget::runEditTest(QStringList& log)
     };
     const int clipY = trackTop(videoTrack) + 40;
 
+    // ---- Track lock ----
+    {
+        selectA();
+        toggleTrackLock(videoTrack);
+        const bool dropped = !m_selection.count(idA);
+        mouse(QEvent::MouseButtonPress, QPoint(int(timeToX(kUsPerSecond)), clipY));
+        mouse(QEvent::MouseButtonRelease, QPoint(int(timeToX(kUsPerSecond)), clipY));
+        const bool unclickable = !m_selection.count(idA);
+        drag(QPoint(int(timeToX(kUsPerSecond)), clipY), QPoint(int(timeToX(2 * kUsPerSecond)), clipY));
+        check(m_project->timeline().tracks[videoTrack].locked && dropped && unclickable && clipAt(videoTrack, 0).start == 0,
+              QStringLiteral("a locked track's events drop out of the selection and can't be clicked or dragged"));
+        reset();
+    }
+
     // ---- Markers and regions ----
     addMarker(1 * kUsPerSecond);
     addMarker(3 * kUsPerSecond, QStringLiteral("drop"));

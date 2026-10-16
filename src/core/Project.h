@@ -120,6 +120,7 @@ struct Track {
     QString name;
     bool muted = false;
     bool solo = false;
+    bool locked = false;     // its events can't be selected or edited in the timeline, and ripples pass it by
     float level = 1.0f;      // video: composite opacity, audio: linear volume (0..2)
     float pan = 0.0f;        // audio only, -1..1
     std::vector<Clip> clips; // sorted by start

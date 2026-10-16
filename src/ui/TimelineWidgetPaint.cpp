@@ -465,6 +465,8 @@ void TimelineWidget::paintTrackClips(QPainter& p, const Track& track, int top, i
         p.setPen(QPen(selected ? theme::c().clipSelected : base.lighter(140), selected ? 2 : 1));
         p.drawRect(QRectF(rx0 + 0.5, r.top() + 0.5, rx1 - rx0 - 1, r.height() - 1).intersected(vr.adjusted(-1, 0, 1, 0)));
     }
+    if (track.locked) // hatched: hands off
+        p.fillRect(QRect(kHeaderWidth, top, W - kHeaderWidth, height), QBrush(ink(45), Qt::BDiagPattern));
 }
 
 void TimelineWidget::paintThumbnails(QPainter& p, const Clip& c, const QRectF& body)
@@ -656,7 +658,10 @@ void TimelineWidget::paintHeaders(QPainter& p)
         p.drawText(badge, Qt::AlignCenter, QString::number(number));
         p.setFont(font());
         p.setPen(theme::c().text);
-        const QRect nameRect(hr.left() + 30, hr.top() + 4, hr.width() - (t.duckUnder ? 118 : 90), 18);
+        const int lockW = t.locked ? 14 : 0;
+        if (t.locked)
+            drawPadlock(p, QRectF(hr.left() + 30, hr.top() + 6, 10, 13), theme::c().warn);
+        const QRect nameRect(hr.left() + 30 + lockW, hr.top() + 4, hr.width() - (t.duckUnder ? 118 : 90) - lockW, 18);
         const QString name = t.name.isEmpty() ? (t.type == TrackType::Image ? tr("Image") : isVideo ? tr("Video") : tr("Audio")) : t.name;
         p.drawText(nameRect, Qt::AlignVCenter | Qt::AlignLeft, p.fontMetrics().elidedText(name, Qt::ElideRight, nameRect.width()));
 

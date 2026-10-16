@@ -2,6 +2,12 @@
 
 What changed in each version of Mutant Video Producer. The newest is first.
 
+### Track lock
+
+- Right-click a track header > **Lock Track** protects its events. They can't be selected, moved,
+  trimmed or dropped onto, Split leaves them whole, and ripples leave them in place. The header
+  shows a padlock, the events are hatched, and the lock is saved with the project.
+
 ## 0.5.0 (2026-10-16)
 
 ### Timeline wheel works like Ableton Live

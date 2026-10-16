@@ -1055,6 +1055,8 @@ QByteArray Project::toJson(const QString& baseDir, const QString& backupOf, bool
         o[QStringLiteral("name")] = t.name;
         o[QStringLiteral("muted")] = t.muted;
         o[QStringLiteral("solo")] = t.solo;
+        if (t.locked)
+            o[QStringLiteral("locked")] = true;
         o[QStringLiteral("level")] = t.level;
         o[QStringLiteral("pan")] = t.pan;
         if (t.blend)
@@ -1304,6 +1306,7 @@ bool Project::loadFile(const QString& path, QString* error, QStringList* missing
         t.name = o[QStringLiteral("name")].toString();
         t.muted = o[QStringLiteral("muted")].toBool();
         t.solo = o[QStringLiteral("solo")].toBool();
+        t.locked = o[QStringLiteral("locked")].toBool();
         t.level = float(o[QStringLiteral("level")].toDouble(1.0));
         t.pan = float(o[QStringLiteral("pan")].toDouble(0.0));
         t.blend = std::clamp(o[QStringLiteral("blend")].toInt(0), 0, 7);
@@ -1426,6 +1429,8 @@ QJsonObject nestedTimelineToJson(const Timeline& timeline)
         o[QStringLiteral("name")] = t.name;
         o[QStringLiteral("muted")] = t.muted;
         o[QStringLiteral("solo")] = t.solo;
+        if (t.locked)
+            o[QStringLiteral("locked")] = true;
         o[QStringLiteral("level")] = t.level;
         o[QStringLiteral("pan")] = t.pan;
         if (t.blend)
@@ -1471,6 +1476,7 @@ Timeline nestedTimelineFromJson(const QJsonObject& root)
         t.name = o[QStringLiteral("name")].toString();
         t.muted = o[QStringLiteral("muted")].toBool();
         t.solo = o[QStringLiteral("solo")].toBool();
+        t.locked = o[QStringLiteral("locked")].toBool();
         t.level = float(o[QStringLiteral("level")].toDouble(1.0));
         t.pan = float(o[QStringLiteral("pan")].toDouble(0.0));
         t.blend = std::clamp(o[QStringLiteral("blend")].toInt(0), 0, 7);

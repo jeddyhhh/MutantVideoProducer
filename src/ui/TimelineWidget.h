@@ -67,6 +67,7 @@ public:
     void setOutPoint(TimeUs t);
     // Tracks.
     void moveTrack(int from, int to);
+    void toggleTrackLock(int trackIndex);
     void setTrackBlend(int trackIndex, int mode);
     // Transitions: removes the one at an event's start / end (a hard cut),
     // or at both ends of every selected video event.

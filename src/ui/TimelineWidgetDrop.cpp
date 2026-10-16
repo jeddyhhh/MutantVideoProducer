@@ -49,6 +49,12 @@ void TimelineWidget::dragEnterEvent(QDragEnterEvent* e)
 
 void TimelineWidget::dragMoveEvent(QDragMoveEvent* e)
 {
+    if (const int locked = trackAt(e->position().toPoint().y()); locked >= 0 && m_project->timeline().tracks[size_t(locked)].locked) {
+        m_dropX.reset();
+        viewport()->update();
+        e->ignore(); // nothing lands on a locked track
+        return;
+    }
     const QMimeData* md = e->mimeData();
     if (md->hasFormat(QString::fromLatin1(EffectsBrowser::kEffectMime)) || md->hasFormat(QString::fromLatin1(EffectsBrowser::kPresetMime))
         || md->hasFormat(QString::fromLatin1(EffectsBrowser::kTransitionMime))) {
@@ -132,6 +138,10 @@ void TimelineWidget::dropEvent(QDropEvent* e)
     const QPoint p = e->position().toPoint();
     const TimeUs at = std::max<TimeUs>(0, snapped(xToTime(std::max(p.x(), kHeaderWidth)), e->modifiers()));
     const int track = trackAt(p.y());
+    if (track >= 0 && m_project->timeline().tracks[size_t(track)].locked) {
+        e->ignore();
+        return;
+    }
     const QMimeData* md = e->mimeData();
     if (md->hasFormat(QString::fromLatin1(EffectsBrowser::kGeneratorMime))) {
         const int id = insertGenerator(QString::fromUtf8(md->data(QString::fromLatin1(EffectsBrowser::kGeneratorMime))), at, track);

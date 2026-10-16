@@ -151,6 +151,8 @@ TimelineWidget::Hit TimelineWidget::hitTest(QPoint p) const
     if (hit.track < 0)
         return hit;
     const Track& track = m_project->timeline().tracks[hit.track];
+    if (track.locked)
+        return hit; // its events don't respond to the mouse
     const int top = trackTop(hit.track);
     const int h = trackHeight(track);
     const double pxPerUs = m_pxPerSec / kUsPerSecond;
@@ -271,6 +273,10 @@ void TimelineWidget::setRegion(TimeUs a, TimeUs b)
 
 void TimelineWidget::setSelection(std::set<int> sel)
 {
+    for (const Track& t : m_project->timeline().tracks) // events of locked tracks can't be picked
+        if (t.locked)
+            for (const Clip& c : t.clips)
+                sel.erase(c.id);
     if (sel == m_selection)
         return;
     m_selection = std::move(sel);
@@ -379,7 +385,7 @@ void TimelineWidget::paste()
         auto media = m_project->mediaItem(c.mediaId);
         const TrackType wanted = media && media->info.isStill ? TrackType::Image
                                : c.isGenerated() || (media && media->info.videoStream(c.streamIndex)) ? TrackType::Video : TrackType::Audio;
-        if (ti >= int(tl.tracks.size()) || isVisualTrack(tl.tracks[ti].type) != isVisualTrack(wanted))
+        if (ti >= int(tl.tracks.size()) || isVisualTrack(tl.tracks[ti].type) != isVisualTrack(wanted) || tl.tracks[ti].locked)
             continue;
         c.id = tl.allocId();
         c.start += m_cursor;
@@ -666,6 +672,17 @@ void TimelineWidget::moveTrack(int from, int to)
     m_project->applyEdit(tl, tr("Move Track"));
     m_selectedTrack = to;
     viewport()->update();
+}
+
+void TimelineWidget::toggleTrackLock(int trackIndex)
+{
+    Timeline tl = m_project->timeline();
+    if (trackIndex < 0 || trackIndex >= int(tl.tracks.size()))
+        return;
+    Track& t = tl.tracks[size_t(trackIndex)];
+    t.locked = !t.locked;
+    m_project->applyEdit(tl, t.locked ? tr("Lock Track") : tr("Unlock Track"));
+    setSelection(m_selection); // drops the events that are now locked
 }
 
 void TimelineWidget::setTrackBlend(int trackIndex, int mode)
@@ -1220,6 +1237,8 @@ TimelineWidget::EnvHit TimelineWidget::envelopeHit(QPoint p) const
         return none;
     const Timeline& tl = m_project->timeline();
     const Track& track = tl.tracks[size_t(ti)];
+    if (track.locked)
+        return none;
     std::vector<EnvHit> candidates;
     for (EnvelopeKind k : {EnvelopeKind::Volume, EnvelopeKind::Pan, EnvelopeKind::Composite})
         candidates.push_back(EnvHit{ti, k, -1, 0});

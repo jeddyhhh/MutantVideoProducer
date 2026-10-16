@@ -2980,6 +2980,16 @@ int cmdEditing(const QString& mediaDir, const QString& outDir)
         check(starts(del.tracks[0]) == QStringLiteral("0.0 4.0") && starts(del.tracks[1]) == QStringLiteral("1.0") && del.markers[0].time == 5 * S,
               QStringLiteral("ripple delete on all tracks closes the 2 s on every track and moves markers (%1)").arg(starts(del.tracks[0])));
 
+        Timeline locked = layout();
+        locked.tracks[1].locked = true; // the audio event, 1-5 s
+        ops::rippleRemoveClipsAll(locked, {locked.tracks[0].clips[1].id}, true);
+        ops::rippleInsert(locked, 0, S, {}, {}, false);
+        const bool notSplit = ops::splitClips(locked, {}, 4 * S).empty();
+        check(notSplit && starts(locked.tracks[0]) == QStringLiteral("1.0 5.0") && starts(locked.tracks[1]) == QStringLiteral("1.0")
+                  && nestedTimelineFromJson(nestedTimelineToJson(locked)).tracks[1].locked,
+              QStringLiteral("a locked track keeps its events through ripples and Split, and stays locked when saved (%1 | %2)")
+                  .arg(starts(locked.tracks[0]), starts(locked.tracks[1])));
+
         // Removing transitions: a fade-out, and a crossfade seen from either event.
         Timeline tr = layout();
         tr.tracks[0].clips[2].fadeOut = S / 2;

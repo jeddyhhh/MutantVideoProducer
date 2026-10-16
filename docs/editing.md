@@ -13,6 +13,9 @@ drawn over the ones below it. A file or generated picture placed on a track is a
 - **Rename**: double-click the track name.
 - **Resize**: drag the bottom edge of the header.
 - **Reorder**: drag a header up or down, or right-click > **Move Track Up / Down**.
+- **Lock**: right-click a header > **Lock Track**. A padlock shows in the header and the events
+  are hatched. They can't be selected, moved, trimmed or dropped onto, Split at the cursor leaves
+  them whole, and ripple edits leave them in place. Mute, solo, level and pan still work.
 - **Compositing mode** (video tracks): the **Mode** in the header, or right-click > **Compositing
   Mode**, sets how the track mixes with the tracks below it: Normal, Add, Screen, Multiply,
   Overlay, Lighten, Darken or Difference, at the track's level.

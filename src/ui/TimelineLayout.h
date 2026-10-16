@@ -153,4 +153,20 @@ inline QString markerColorName(int i)
     static const char* names[kMarkerColors] = {"Orange", "Yellow", "Green", "Cyan", "Blue", "Purple", "Pink", "Red"};
     return QCoreApplication::translate("TimelineWidget", names[std::clamp(i, 0, kMarkerColors - 1)]);
 }
+// A small padlock (a locked track's header).
+inline void drawPadlock(QPainter& p, const QRectF& r, const QColor& color)
+{
+    p.save();
+    p.setRenderHint(QPainter::Antialiasing);
+    p.setPen(QPen(color, 1.6));
+    p.setBrush(Qt::NoBrush);
+    const double w = r.width();
+    p.drawArc(QRectF(r.left() + w * 0.18, r.top(), w * 0.64, r.height() * 0.7), 0, 180 * 16);
+    p.drawLine(QPointF(r.left() + w * 0.18, r.top() + r.height() * 0.35), QPointF(r.left() + w * 0.18, r.top() + r.height() * 0.45));
+    p.drawLine(QPointF(r.right() - w * 0.18, r.top() + r.height() * 0.35), QPointF(r.right() - w * 0.18, r.top() + r.height() * 0.45));
+    p.setPen(Qt::NoPen);
+    p.setBrush(color);
+    p.drawRoundedRect(QRectF(r.left(), r.top() + r.height() * 0.45, w, r.height() * 0.55), 1.5, 1.5);
+    p.restore();
+}
 } // namespace timeline_layout

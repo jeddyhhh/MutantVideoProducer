@@ -1378,6 +1378,8 @@ QJsonObject McpServer::ToolCall::tool_get_project()
                       {QStringLiteral("events"), clips}};
         if (t.muted)
             o[QStringLiteral("muted")] = true;
+        if (t.locked)
+            o[QStringLiteral("locked")] = true; // the user's: leave its events alone
         if (!t.effects.empty())
             o[QStringLiteral("effects")] = chainJson(t.effects);
         tracks.append(o);

@@ -85,6 +85,7 @@ void TimelineWidget::contextMenuEvent(QContextMenuEvent* e)
 {
     const QPoint p = e->pos();
     QMenu menu(this);
+    menu.setToolTipsVisible(true);
     if (p.x() < kHeaderWidth && p.y() >= kTopH) {
         const int ti = trackAt(p.y());
         menu.addAction(tr("Insert Video Track"), this, [this] { insertTrack(TrackType::Video); });
@@ -158,6 +159,10 @@ void TimelineWidget::contextMenuEvent(QContextMenuEvent* e)
                 }
             }
             menu.addSeparator();
+            QAction* lock = menu.addAction(tr("Lock Track"), this, [this, ti] { toggleTrackLock(ti); });
+            lock->setCheckable(true);
+            lock->setChecked(tr0.locked);
+            lock->setToolTip(tr("Protect its events from edits: they can't be selected, moved or dropped onto, and ripples leave them in place"));
             const int n = int(m_project->timeline().tracks.size());
             menu.addAction(tr("Move Track Up"), this, [this, ti] { moveTrack(ti, ti - 1); })->setEnabled(ti > 0);
             menu.addAction(tr("Move Track Down"), this, [this, ti] { moveTrack(ti, ti + 1); })->setEnabled(ti + 1 < n);

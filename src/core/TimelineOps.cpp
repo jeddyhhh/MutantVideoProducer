@@ -363,7 +363,7 @@ std::vector<int> splitClips(Timeline& tl, const std::set<int>& ids, TimeUs t)
             Clip& c = track.clips[i];
             if (t <= c.start || t >= c.end())
                 continue;
-            if (!ids.empty() && !ids.count(c.id))
+            if (ids.empty() ? track.locked : !ids.count(c.id))
                 continue;
             Clip right = c;
             right.id = tl.allocId();
@@ -585,7 +585,7 @@ void rippleShift(Timeline& tl, TimeUs from, TimeUs delta, const std::set<int>& t
     if (delta == 0)
         return;
     for (auto& track : tl.tracks) {
-        if (!trackIds.empty() && !trackIds.count(track.id))
+        if ((!trackIds.empty() && !trackIds.count(track.id)) || track.locked)
             continue;
         for (Clip& c : track.clips)
             if (c.start >= from && !exclude.count(c.id))
@@ -606,7 +606,7 @@ void rippleInsert(Timeline& tl, TimeUs at, TimeUs length, const std::set<int>& t
         return;
     std::set<int> crossing;
     for (const auto& track : tl.tracks) {
-        if (!trackIds.empty() && !trackIds.count(track.id))
+        if ((!trackIds.empty() && !trackIds.count(track.id)) || track.locked)
             continue;
         for (const Clip& c : track.clips)
             if (c.start < at && c.end() > at && !exclude.count(c.id))
