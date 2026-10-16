@@ -22,6 +22,14 @@ What changed in each version of Mutant Video Producer. The newest is first.
   histograms of every frame, compared with the shot's own motion) and splits the selected video
   events and their grouped sound there, with a sensitivity setting.
 
+### Remove silences, edit by transcript
+
+- **Tools > Remove Silences...** cuts the quiet stretches (threshold, minimum length and padding
+  are adjustable) out of every unlocked track at once and closes the gaps.
+- **Tools > Edit by Transcript...** transcribes the edit word by word with Whisper; strike words in
+  the text and they are cut from the timeline, with the pause after them.
+- Both work on the time selection or the whole timeline, keep markers in step, and undo in one step.
+
 ## 0.5.0 (2026-10-16)
 
 ### Timeline wheel works like Ableton Live

@@ -1,0 +1,96 @@
+#include "core/Cuts.h"
+
+#include "core/TimelineOps.h"
+
+#include <algorithm>
+#include <cmath>
+#include <set>
+
+namespace cuts {
+
+std::vector<Range> silences(const std::vector<float>& mono, int rate, TimeUs start, double thresholdDb, TimeUs minLength, TimeUs keep)
+{
+    std::vector<Range> out;
+    if (rate <= 0 || mono.empty())
+        return out;
+    const size_t window = std::max<size_t>(1, size_t(rate) / 50); // 20 ms
+    const double threshold = std::pow(10.0, thresholdDb / 20.0);
+    auto at = [&](size_t sample) { return start + TimeUs(double(sample) * kUsPerSecond / rate); };
+    size_t quietFrom = 0;
+    bool quiet = false;
+    auto close = [&](size_t end) {
+        const TimeUs a = at(quietFrom) + keep, b = at(end) - keep;
+        if (at(end) - at(quietFrom) >= minLength && b > a)
+            out.push_back({a, b});
+    };
+    for (size_t i = 0; i < mono.size(); i += window) {
+        const size_t n = std::min(window, mono.size() - i);
+        double sum = 0;
+        for (size_t k = 0; k < n; ++k)
+            sum += double(mono[i + k]) * mono[i + k];
+        const bool below = std::sqrt(sum / double(n)) < threshold;
+        if (below && !quiet)
+            quietFrom = i;
+        else if (!below && quiet)
+            close(i);
+        quiet = below;
+    }
+    if (quiet)
+        close(mono.size());
+    return out;
+}
+
+std::vector<Range> wordCuts(const std::vector<Caption>& words, const std::vector<bool>& removed)
+{
+    std::vector<Range> out;
+    for (size_t i = 0; i < words.size() && i < removed.size(); ++i) {
+        if (!removed[i])
+            continue;
+        size_t j = i;
+        while (j + 1 < words.size() && j + 1 < removed.size() && removed[j + 1])
+            ++j;
+        const TimeUs to = j + 1 < words.size() ? words[j + 1].start : words[j].end;
+        if (to > words[i].start)
+            out.push_back({words[i].start, to});
+        i = j;
+    }
+    return out;
+}
+
+TimeUs removeRanges(Timeline& tl, std::vector<Range> ranges, const FrameRate& fps)
+{
+    for (Range& r : ranges) {
+        r.from = std::max<TimeUs>(0, fps.snap(r.from));
+        r.to = fps.snap(r.to);
+    }
+    std::erase_if(ranges, [](const Range& r) { return r.to <= r.from; });
+    std::sort(ranges.begin(), ranges.end(), [](const Range& a, const Range& b) { return a.from < b.from; });
+    std::vector<Range> merged;
+    for (const Range& r : ranges) {
+        if (!merged.empty() && r.from <= merged.back().to)
+            merged.back().to = std::max(merged.back().to, r.to);
+        else
+            merged.push_back(r);
+    }
+    TimeUs removed = 0;
+    // Latest first, so the earlier ranges still find their events where they were.
+    for (auto it = merged.rbegin(); it != merged.rend(); ++it) {
+        ops::splitClips(tl, {}, it->from); // (every unlocked track)
+        ops::splitClips(tl, {}, it->to);
+        std::set<int> inside;
+        for (const Track& t : tl.tracks)
+            if (!t.locked)
+                for (const Clip& c : t.clips)
+                    if (c.start >= it->from && c.end() <= it->to)
+                        inside.insert(c.id);
+        ops::removeClips(tl, inside);
+        for (Marker& m : tl.markers)
+            if (m.time >= it->from && m.time < it->to)
+                m.time = it->from;
+        ops::rippleShift(tl, it->to, it->from - it->to, {}, {}, true);
+        removed += it->to - it->from;
+    }
+    return removed;
+}
+
+} // namespace cuts

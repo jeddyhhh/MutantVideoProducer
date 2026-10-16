@@ -164,6 +164,11 @@ private:
     static bool downloadFile(QWidget* parent, const QUrl& url, const QString& dest, const QString& what, QString* error, qint64 maximumBytes = 0);
     // A Whisper model's file: bundled with the program (the offline release), else in the downloads folder.
     static QString whisperModelPath(const QString& file);
+    // Whisper on the timeline's mix from `from` to `to` (caption times from `from`), on a worker thread.
+    bool transcribeTimeline(const QString& modelFile, const struct TranscribeOptions& options, TimeUs from, TimeUs to,
+                            class QProgressDialog* progress, std::vector<struct Caption>& captions, QString* error);
+    void removeSilences();      // Tools: cut the quiet stretches out of the edit
+    void editByTranscript();    // Tools: strike words in a transcript to cut them out
     // Right-click a video event > Stabilize: how much, analysing it first if needed.
     void stabilizeClip(int clipId);
     // Proxies: queue the files (only the heavy ones if `heavyOnly`), delete theirs.

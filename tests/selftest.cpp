@@ -73,6 +73,7 @@
 #include "core/Project.h"
 #include "core/TimelineOps.h"
 #include "core/SceneDetect.h"
+#include "core/Cuts.h"
 #include "core/VideoDecoder.h"
 
 #include <QDir>
@@ -2973,6 +2974,47 @@ int cmdEditing(const QString& mediaDir, const QString& outDir)
             out << QString::number(double(c.start) / kUsPerSecond, 'f', 1);
         return out.join(QLatin1Char(' '));
     };
+    // ---- Cutting time out: silences, struck words, ranges ----------------------------------------
+    {
+        // 1 s tone, 1.2 s silence, 1 s tone, 0.3 s pause, 1 s tone (16 kHz), starting at 10 s.
+        std::vector<float> mono;
+        auto tone = [&](double s) { for (int i = 0; i < int(s * 16000); ++i) mono.push_back(float(0.3 * std::sin(i * 0.2))); };
+        auto quiet = [&](double s) { mono.insert(mono.end(), size_t(s * 16000), 0.0005f); };
+        tone(1); quiet(1.2); tone(1); quiet(0.3); tone(1);
+        const auto gaps = cuts::silences(mono, 16000, 10 * S, -40, S / 2, S / 10);
+        check(gaps.size() == 1 && std::llabs(gaps[0].from - (11 * S + S / 10)) <= 20000 && std::llabs(gaps[0].to - (12 * S + S / 5 - S / 10)) <= 20000,
+              QStringLiteral("silences: the 1.2 s gap (less 0.1 s each side) and not the 0.3 s pause"));
+        const std::vector<Caption> words{{0, S / 2, QStringLiteral("so"), 0}, {S / 2, S, QStringLiteral("um"), 0},
+                                         {S + S / 5, 2 * S, QStringLiteral("like"), 0}, {2 * S, 3 * S, QStringLiteral("hello"), 0}};
+        check(cuts::wordCuts(words, {false, true, true, false}) == std::vector<cuts::Range>{{S / 2, 2 * S}}
+                  && cuts::wordCuts(words, {false, false, false, true}) == std::vector<cuts::Range>{{2 * S, 3 * S}},
+              QStringLiteral("struck words cut from the first one to the next kept word, or to the last one's end"));
+        Timeline tl = defaultTimeline();
+        tl.nextId = 100;
+        auto event = [&](int track, TimeUs start, TimeUs length) {
+            Clip c;
+            c.id = tl.allocId();
+            c.start = start;
+            c.length = length;
+            c.generator = makeGenerator(*findGeneratorPreset(QStringLiteral("solid_black")));
+            tl.tracks[size_t(track)].clips.push_back(c);
+        };
+        event(0, 0, 10 * S);
+        for (bool locked : {false, true}) { // a second video track, and a locked one
+            tl.tracks.push_back(tl.tracks[0]);
+            tl.tracks.back().id = tl.allocId();
+            tl.tracks.back().clips.front().id = tl.allocId();
+            tl.tracks.back().locked = locked;
+        }
+        tl.markers.push_back(Marker{tl.allocId(), 3 * S, 0, QStringLiteral("inside"), 0});
+        tl.markers.push_back(Marker{tl.allocId(), 8 * S, 0, QStringLiteral("after"), 0});
+        const TimeUs removed = cuts::removeRanges(tl, {{6 * S, 7 * S}, {2 * S, 4 * S}, {3 * S, 5 * S}}, fps);
+        check(removed == 4 * S && starts(tl.tracks[0]) == QStringLiteral("0.0 2.0 3.0") && tl.tracks[0].clips.back().end() == 6 * S
+                  && starts(tl.tracks[2]) == QStringLiteral("0.0 2.0 3.0") && tl.tracks.back().clips.size() == 1 && tl.duration() == 10 * S
+                  && tl.markers[0].time == 2 * S
+                  && tl.markers[1].time == 4 * S && timelineProblem(tl).isEmpty(),
+              QStringLiteral("removing ranges merges overlaps, closes the gaps on unlocked tracks and moves markers (%1)").arg(starts(tl.tracks[0])));
+    }
     // Three 2 s events on a video track at 0, 3 and 6 s, and on an audio track at 1 s.
     auto layout = [&] {
         Timeline tl = defaultTimeline();

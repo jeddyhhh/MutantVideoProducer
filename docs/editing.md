@@ -129,6 +129,22 @@ pull what comes after them:
 - Markers are saved with the project and are undoable.
 - [Detect Beats](audio.md#detect-beats) puts a marker on every beat or bar.
 
+## Remove silences and edit by transcript
+
+Both cut time out of the whole edit: every unlocked track is cut at the same points and closes up,
+so picture and sound stay in sync, and markers after a cut move back with it. They work on the
+time selection, or on the whole timeline when there is none. **Ctrl+Z** undoes either in one step.
+
+- **Tools > Remove Silences...** listens to the mix and removes the pauses that are quieter than
+  **Silent below** (-40 dB) for at least **At least** (0.7 s). **Keep either side** (0.15 s) is
+  left before and after each cut so words don't start or stop abruptly. Raise the level for a
+  noisy room; lengthen the minimum to keep natural pauses.
+- **Tools > Edit by Transcript...** writes down what is said (with the speech model from
+  [Auto Captions](captions.md#auto-captions)) and shows it as text. Select words and press
+  **Delete** (or **Cut Words**) to strike them, or **Backspace** (or **Keep Words**) to keep struck
+  ones; the window shows how much time will go. **Cut from the Edit** removes each struck run up to
+  the next kept word, so the gap after it goes too.
+
 ## Snapping and the grid
 
 - **F8** (**Options > Enable Snapping**) turns snapping on and off. Hold **Shift** while dragging to

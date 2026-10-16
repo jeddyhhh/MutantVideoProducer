@@ -197,12 +197,24 @@ void MainWindow::autoCaptions()
 bool MainWindow::captionTimeline(const QString& modelFile, TranscribeOptions options, TimeUs from, TimeUs to, bool kinetic,
                                  QProgressDialog* progress, int* added, QString* error)
 {
-    // Listened to on a worker thread while the window goes on; `progress` shows it and can cancel.
     options.speakerTurns = modelFile.contains(QLatin1String("tdrz")); // (that model marks them)
+    std::vector<Caption> captions;
+    if (!transcribeTimeline(modelFile, options, from, to, progress, captions, error))
+        return false;
+    addCaptions(captions, from, kinetic);
+    if (added)
+        *added = int(captions.size());
+    return true;
+}
+
+bool MainWindow::transcribeTimeline(const QString& modelFile, const TranscribeOptions& options, TimeUs from, TimeUs to,
+                                    QProgressDialog* progress, std::vector<Caption>& captions, QString* error)
+{
+    // Listened to on a worker thread while the window goes on; `progress` shows it and can cancel.
     const std::vector<float> audio = timelineSpeechAudio(*m_project->snapshot(), from, to);
     std::atomic<int> permille{0};
     std::atomic<bool> cancel{false};
-    std::vector<Caption> captions;
+    captions.clear();
     bool ok = false;
     QThread* worker = QThread::create([&] {
         ok = transcribe(modelFile, audio, options, [&](double p) {
@@ -227,9 +239,6 @@ bool MainWindow::captionTimeline(const QString& modelFile, TranscribeOptions opt
             *error = tr("No speech was heard.");
         return false;
     }
-    addCaptions(captions, from, kinetic);
-    if (added)
-        *added = int(captions.size());
     return true;
 }
 

@@ -139,6 +139,7 @@ add_library(mvp_core STATIC
     src/core/AudioFinishing.h     src/core/AudioFinishing.cpp
     src/core/YouTubeUpload.h      src/core/YouTubeUpload.cpp
     src/core/SceneDetect.h        src/core/SceneDetect.cpp
+    src/core/Cuts.h               src/core/Cuts.cpp
     src/core/GraphicsWorkflow.h  src/core/GraphicsWorkflow.cpp
     src/core/AudioTempo.h        src/core/AudioTempo.cpp
     src/core/AudioStretch.h      src/core/AudioStretch.cpp
@@ -238,7 +239,7 @@ add_executable(mvp WIN32
     src/ui/MainWindowStory.cpp
     src/ui/VoiceJob.h            src/ui/VoiceJob.cpp
     src/ui/MainWindowYouTube.cpp
-    src/ui/MainWindowSetup.cpp src/ui/MainWindowTools.cpp
+    src/ui/MainWindowSetup.cpp src/ui/MainWindowTools.cpp src/ui/MainWindowCuts.cpp
     src/ui/MainWindowHelp.cpp
     src/ui/CrashReport.h         src/ui/CrashReport.cpp
     src/ui/MonkeyTest.h          src/ui/MonkeyTest.cpp

@@ -577,6 +577,14 @@ void MainWindow::createActions()
         if (editorActive())
             splitAtSceneChanges();
     }));
+    tools->addAction(act(tr("&Remove Silences..."), QKeySequence(), [this] {
+        if (editorActive())
+            removeSilences();
+    }));
+    tools->addAction(act(tr("Edit by &Transcript..."), QKeySequence(), [this] {
+        if (editorActive())
+            editByTranscript();
+    }));
     tools->addAction(act(tr("Make Beat &Montage..."), QKeySequence(), [this] {
         if (editorActive())
             beatMontage();
