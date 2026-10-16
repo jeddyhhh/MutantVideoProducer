@@ -228,6 +228,16 @@ Each drag is one undo step, and a keyframed setting gets a keyframe at the curso
 - Keyframe the zoom and centre for Ken Burns moves.
 - On the preview: drag the picture to pan, scroll to zoom.
 
+### Auto Reframe for vertical
+
+**Tools > Auto Reframe for Vertical...** turns wide video into a tall frame for Shorts, Reels and
+TikTok. It offers to switch a landscape project to 1080x1920 first. For each selected video event
+it finds the subject every quarter of a second (a person, with the Remove Background model when it
+is installed, or else whatever moves) and writes a Pan/Crop that fills the frame and follows it.
+The crop holds still while the subject stays near its middle, glides after it when it moves away,
+and never shows past the picture's edge. The result is ordinary Pan/Crop keyframes: open the
+event's Pan/Crop to adjust them. Reversed and speed-ramped events are skipped.
+
 ## Stabilize
 
 Right-click a video event > **Stabilize...**:

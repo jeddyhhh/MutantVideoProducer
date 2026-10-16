@@ -74,6 +74,7 @@
 #include "core/TimelineOps.h"
 #include "core/SceneDetect.h"
 #include "core/Cuts.h"
+#include "core/Reframe.h"
 #include "core/VideoDecoder.h"
 
 #include <QDir>
@@ -3014,6 +3015,43 @@ int cmdEditing(const QString& mediaDir, const QString& outDir)
                   && tl.markers[0].time == 2 * S
                   && tl.markers[1].time == 4 * S && timelineProblem(tl).isEmpty(),
               QStringLiteral("removing ranges merges overlaps, closes the gaps on unlocked tracks and moves markers (%1)").arg(starts(tl.tracks[0])));
+    }
+    // ---- Auto Reframe: finding the subject, and the crop's path ----------------------------------
+    {
+        auto square = [](double x) {
+            QImage img(256, 144, QImage::Format_RGB32);
+            img.fill(Qt::black);
+            QPainter p(&img);
+            p.fillRect(QRectF(x * 256 - 12, 60, 24, 24), Qt::white);
+            return img;
+        };
+        const reframe::Sample moving = reframe::locate(square(0.8), square(0.7), {});
+        QImage mask(256, 144, QImage::Format_Grayscale8);
+        mask.fill(0);
+        QPainter(&mask).fillRect(QRect(60, 20, 30, 120), Qt::white);
+        const reframe::Sample person = reframe::locate(square(0.8), square(0.7), mask);
+        const reframe::Sample still = reframe::locate(square(0.5), square(0.5), {});
+        check(moving.weight > 0 && moving.x > 0.68 && moving.x < 0.82 && std::abs(person.x - 75.0 / 256) < 0.01 && still.weight == 0,
+              QStringLiteral("reframe finds the person, else what moves (%1, %2)").arg(moving.x, 0, 'f', 3).arg(person.x, 0, 'f', 3));
+        const double visible = reframe::visibleWidth(16.0 / 9, 9.0 / 16);
+        std::vector<reframe::Sample> walk, stand;
+        for (int i = 0; i <= 32; ++i) {
+            walk.push_back({i * S / 8, 0.15 + 0.7 * i / 32.0, 1});
+            stand.push_back({i * S / 8, 0.5 + (i % 2 ? 0.02 : -0.02), 1});
+        }
+        const auto walking = reframe::path(walk, visible), standing = reframe::path(stand, visible);
+        bool inside = true, onward = true;
+        for (size_t i = 0; i < walking.size(); ++i) {
+            inside = inside && walking[i].value >= visible / 2 - 1e-9 && walking[i].value <= 1 - visible / 2 + 1e-9;
+            onward = onward && (i == 0 || walking[i].value >= walking[i - 1].value - 1e-9);
+        }
+        check(std::abs(visible - 0.31640625) < 1e-6 && inside && onward && walking.back().value > 0.6 && standing.size() <= 2
+                  && std::abs(standing.front().value - 0.5) < 0.01,
+              QStringLiteral("the crop follows a walk across the picture inside its edges, and holds still for a subject standing still (%1 keys)")
+                  .arg(walking.size()));
+        const auto followed = reframe::follow(*video, video->info.video.front().index, 0, 2 * S, S / 4);
+        check(followed.size() == 8 && std::all_of(followed.begin(), followed.end(), [](const reframe::Sample& f) { return f.x >= 0 && f.x <= 1; }),
+              QStringLiteral("reframe samples a real video every quarter second (%1 samples)").arg(followed.size()));
     }
     // Three 2 s events on a video track at 0, 3 and 6 s, and on an audio track at 1 s.
     auto layout = [&] {

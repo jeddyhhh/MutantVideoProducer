@@ -36,6 +36,13 @@ What changed in each version of Mutant Video Producer. The newest is first.
   as it was when added. **Render As > Add to Render Queue** queues the open project (in any
   template, again and again); **Add Project File...** queues other projects without opening them.
 
+### Auto reframe for vertical
+
+- **Tools > Auto Reframe for Vertical...** crops wide video for 9:16 (offering to switch the
+  project to 1080x1920): the subject is found four times a second (a person through the Remove
+  Background model, else the movement) and becomes a smooth Pan/Crop path that holds still,
+  follows calmly and stays inside the picture.
+
 ## 0.5.0 (2026-10-16)
 
 ### Timeline wheel works like Ableton Live

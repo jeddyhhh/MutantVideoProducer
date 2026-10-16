@@ -141,6 +141,7 @@ private:
     void detectBeats();
     void splitAtMarkers();
     void splitAtSceneChanges(); // the selected video events, where the picture cuts to a new shot
+    void autoReframe();         // Pan/Crop that follows the subject, for a tall (9:16) frame
     void beatMontage();
     // Tools > Captions (MainWindowCaptions.cpp): speech to captions with Whisper,
     // SRT / WebVTT in and out; captions go on a new Captions track.

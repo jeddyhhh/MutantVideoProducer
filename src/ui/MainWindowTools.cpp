@@ -14,6 +14,8 @@
 #include "core/FormatRegistry.h"
 #include "core/Project.h"
 #include "core/SceneDetect.h"
+#include "core/Reframe.h"
+#include "core/PanCrop.h"
 #include "engine/MediaCache.h"
 #include "engine/PlaybackEngine.h"
 #include "ui/AudioMeter.h"
@@ -295,6 +297,81 @@ void MainWindow::splitAtSceneChanges()
     }
     m_project->applyEdit(tl, tr("Split at Scene Changes"));
     statusBar()->showMessage(tr("Split at %n scene change(s)", nullptr, pieces), 5000);
+}
+
+void MainWindow::autoReframe()
+{
+    Timeline tl = m_project->timeline();
+    std::vector<int> events;
+    for (int id : m_timeline->selection()) {
+        const Clip* c = tl.findClip(id);
+        const auto media = c ? m_project->mediaItem(c->mediaId) : nullptr;
+        if (c && media && media->info.videoStream(c->streamIndex) && !media->info.isStill && !c->reverse && !c->hasRamp())
+            events.push_back(id);
+    }
+    if (events.empty()) {
+        statusBar()->showMessage(tr("Select video events to reframe first (not reversed or speed-ramped)"), 5000);
+        return;
+    }
+    ProjectSettings ps = m_project->settings();
+    if (ps.width >= ps.height) {
+        QMessageBox ask(QMessageBox::Question, tr("Auto Reframe"),
+                        tr("The project is %1x%2. Auto Reframe crops wide video for a tall frame: switch the project to 1080x1920 (9:16) "
+                           "for Shorts, Reels and TikTok?").arg(ps.width).arg(ps.height),
+                        QMessageBox::Cancel, this);
+        QPushButton* portrait = ask.addButton(tr("Switch to 1080x1920"), QMessageBox::AcceptRole);
+        ask.exec();
+        if (ask.clickedButton() != portrait)
+            return;
+        ps.width = 1080;
+        ps.height = 1920;
+        m_project->setSettings(ps);
+    }
+    stopPlayback(false);
+    QProgressDialog progress(tr("Following the subject..."), tr("Cancel"), 0, 1000, this);
+    progress.setWindowModality(Qt::WindowModal);
+    progress.setMinimumDuration(300);
+    int framed = 0;
+    for (size_t i = 0; i < events.size(); ++i) {
+        Clip* c = tl.findClip(events[i]);
+        const auto media = m_project->mediaItem(c->mediaId);
+        const VideoStreamInfo* vs = media->info.videoStream(c->streamIndex);
+        const QSize display = vs->displaySize();
+        const double visible = reframe::visibleWidth(double(display.width()) / std::max(1, display.height()), double(ps.width) / ps.height);
+        if (visible >= 0.999)
+            continue; // the frame is as wide as the picture
+        const TimeUs from = c->sourceIn, to = c->sourceIn + TimeUs(double(c->length) * c->speed);
+        QString error;
+        const auto samples = reframe::follow(*media, c->streamIndex, from, to, kUsPerSecond / 4, [&](double f) {
+            progress.setValue(int(1000 * (double(i) + f) / double(events.size())));
+            QCoreApplication::processEvents();
+            return !progress.wasCanceled();
+        }, &error);
+        if (progress.wasCanceled())
+            return;
+        std::vector<Keyframe> keys = reframe::path(samples, visible);
+        if (keys.empty())
+            continue;
+        for (Keyframe& k : keys) // source times to the event's own
+            k.time = std::clamp<TimeUs>(TimeUs(double(k.time - c->sourceIn) / c->speed), 0, c->length);
+        if (c->panCrop.empty())
+            c->panCrop = defaultParams(panCropParams());
+        c->panCrop[QStringLiteral("mode")].value = 1; // Fill
+        c->panCrop[QStringLiteral("centerY")] = ParamValue{0.5};
+        ParamValue x;
+        x.value = keys.front().value;
+        if (keys.size() > 1)
+            x.keys = keys;
+        c->panCrop[QStringLiteral("centerX")] = x;
+        ++framed;
+    }
+    progress.setValue(1000);
+    if (!framed) {
+        statusBar()->showMessage(tr("Nothing to reframe: the frame already shows the whole picture"), 5000);
+        return;
+    }
+    m_project->applyEdit(tl, tr("Auto Reframe"));
+    statusBar()->showMessage(tr("Reframed %n event(s): see their Pan/Crop to adjust", nullptr, framed), 5000);
 }
 
 void MainWindow::beatMontage()

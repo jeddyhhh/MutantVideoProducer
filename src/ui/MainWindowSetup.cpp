@@ -582,6 +582,10 @@ void MainWindow::createActions()
         if (editorActive())
             splitAtSceneChanges();
     }));
+    tools->addAction(act(tr("Auto Re&frame for Vertical..."), QKeySequence(), [this] {
+        if (editorActive())
+            autoReframe();
+    }));
     tools->addAction(act(tr("&Remove Silences..."), QKeySequence(), [this] {
         if (editorActive())
             removeSilences();

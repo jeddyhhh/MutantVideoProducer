@@ -140,6 +140,7 @@ add_library(mvp_core STATIC
     src/core/YouTubeUpload.h      src/core/YouTubeUpload.cpp
     src/core/SceneDetect.h        src/core/SceneDetect.cpp
     src/core/Cuts.h               src/core/Cuts.cpp
+    src/core/Reframe.h            src/core/Reframe.cpp
     src/core/GraphicsWorkflow.h  src/core/GraphicsWorkflow.cpp
     src/core/AudioTempo.h        src/core/AudioTempo.cpp
     src/core/AudioStretch.h      src/core/AudioStretch.cpp
