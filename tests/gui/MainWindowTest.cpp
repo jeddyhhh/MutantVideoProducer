@@ -6,6 +6,7 @@
 #include "core/LiveRecorder.h"
 #include <QUuid>
 #include "ui/MainWindow.h"
+#include "ui/RenderQueue.h"
 #include "core/Compositor.h"
 #include "core/Exporter.h"
 #include "core/FFmpeg.h"
@@ -352,6 +353,39 @@ int MainWindow::runEditorTest(QStringList& log)
         check(close && close->isEnabled(), "completed render keeps report available and enables Close");
         dialog.reject();
         check(!dialog.isVisible(), "completed status window closes normally");
+    }
+    {
+        // Render Queue: two short renders one after another, a duplicate file refused, one stopped.
+        RenderQueue* queue = renderQueue();
+        ExportSettings s = settingsFromPreset(exportPresets().front(), m_project->settings());
+        s.width = 320;
+        s.height = 180;
+        s.rangeStart = 0;
+        s.rangeEnd = kUsPerSecond / 2;
+        const QString first = work.filePath("queue-1.mp4"), second = work.filePath("queue-2.mp4"), third = work.filePath("queue-3.mp4");
+        for (const QString& f : {first, second, third})
+            QFile::remove(f);
+        s.path = first;
+        const bool added = queue->add("one", m_project->snapshot(), s);
+        const bool refused = !queue->add("again", m_project->snapshot(), s);
+        s.path = second;
+        queue->add("two", m_project->snapshot(), s);
+        queue->start();
+        for (int i = 0; i < 600 && (queue->busy() || queue->waiting()); ++i)
+            wait(50);
+        auto rendered = [](const QString& f) { return probeMedia(f).ok(); };
+        check(added && refused && !queue->busy() && !queue->waiting() && rendered(first) && rendered(second),
+              "render queue renders its jobs one after another and refuses a second job to the same file");
+        s.path = third;
+        s.rangeEnd = 30 * kUsPerSecond;
+        queue->add("three", m_project->snapshot(), s);
+        queue->start();
+        wait(300);
+        queue->stop();
+        for (int i = 0; i < 200 && queue->busy(); ++i)
+            wait(50);
+        check(!queue->busy() && queue->waiting() == 0 && !QFileInfo::exists(third), "stopping the queue cancels the running render and leaves no file");
+        queue->close();
     }
 
     failures += m_timeline->runEditTest(log);

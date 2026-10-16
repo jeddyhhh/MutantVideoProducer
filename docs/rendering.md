@@ -33,6 +33,19 @@ The template fills in the format and codecs. You can change any of them:
 Each template shows notes such as the platform's length and size limits. The dialog warns when the
 render is longer than the platform accepts.
 
+## Render Queue
+
+**File > Render Queue...** renders one job after another in the background while you go on
+working. Each job is the project as it was when it was added, so later edits don't change it.
+
+- In **Render As**, **Add to Render Queue** queues the render instead of starting it, for example
+  a 16:9 upload and a Shorts version of the same edit.
+- **Add Project File...** queues another project without opening it (its own settings and length).
+- **Start** works through the waiting jobs; **Stop** cancels the running one (its half-written file
+  is removed) and leaves the rest waiting. **Remove** takes a waiting job out; **Clear Finished**
+  tidies the list.
+- Two waiting jobs can't write the same file. Quitting asks first while jobs are left.
+
 ## Render Status
 
 Every export opens a Render Status window, including exports started through MCP. The window shows the current stage, elapsed time, a production ETA, average frames per second, timeline speed and output size.

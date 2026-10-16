@@ -5,6 +5,7 @@
 #include "core/LiveRecorder.h"
 #include <QUuid>
 #include "ui/MainWindow.h"
+#include "ui/RenderQueue.h"
 
 #include "core/Compositor.h"
 #include "core/Exporter.h"
@@ -441,6 +442,14 @@ void MainWindow::renderAs()
         return;
     const ExportSettings s = dlg.settings();
     settings.setValue(Profiles::instance().settingsKey(QStringLiteral("dirs/render")), QFileInfo(s.path).absolutePath());
+    if (dlg.queued()) {
+        QString error;
+        if (!renderQueue()->add(base, m_project->snapshot(), s, &error))
+            QMessageBox::information(this, tr("Render Queue"), error);
+        renderQueue()->show();
+        renderQueue()->raise();
+        return;
+    }
 
     auto snap = m_project->snapshot();
     // The GPU surface must be created here on the GUI thread; the worker owns the GL context.
@@ -460,6 +469,54 @@ void MainWindow::renderAs()
     worker.join();
     if (ok)
         Profiles::instance().remember({QJsonObject{{"path", s.path}, {"folder", "Exports"}, {"origin", "render"}}});
+}
+
+RenderQueue* MainWindow::renderQueue()
+{
+    if (!m_renderQueue) {
+        m_renderQueue = new RenderQueue(this);
+        connect(m_renderQueue, &RenderQueue::addProjectRequested, this, &MainWindow::queueProjectFile);
+        connect(m_renderQueue, &RenderQueue::rendered, this, [](const QString& path) {
+            Profiles::instance().remember({QJsonObject{{"path", path}, {"folder", "Exports"}, {"origin", "render"}}});
+        });
+    }
+    return m_renderQueue;
+}
+
+void MainWindow::queueProjectFile()
+{
+    QSettings settings;
+    const QString file = QFileDialog::getOpenFileName(renderQueue(), tr("Add Project to the Render Queue"),
+                                                      Profiles::instance().folder(QStringLiteral("Projects")), kProjectFilter);
+    if (file.isEmpty())
+        return;
+    Project other; // loaded on its own: the open project stays as it is
+    QString error;
+    QStringList missing;
+    if (!other.load(file, &error, &missing)) {
+        QMessageBox::warning(renderQueue(), tr("Render Queue"), error);
+        return;
+    }
+    if (!missing.isEmpty()
+        && QMessageBox::question(renderQueue(), tr("Render Queue"),
+                                 tr("%n file(s) of this project can't be found and will render as blank. Queue it anyway?", nullptr, int(missing.size())))
+               != QMessageBox::Yes)
+        return;
+    const TimeUs duration = other.timeline().duration();
+    if (duration <= 0) {
+        QMessageBox::information(renderQueue(), tr("Render Queue"), tr("That project's timeline is empty."));
+        return;
+    }
+    QString dir = settings.value(Profiles::instance().settingsKey(QStringLiteral("dirs/render"))).toString();
+    if (dir.isEmpty())
+        dir = Profiles::instance().folder(QStringLiteral("Exports"));
+    const QString base = QFileInfo(file).completeBaseName();
+    ExportDialog dlg(other.settings(), duration, false, 0, 0, QDir(dir).filePath(base + QStringLiteral(".mp4")), renderQueue());
+    dlg.setCaptions(timelineCaptions(other.timeline()));
+    if (dlg.exec() != QDialog::Accepted)
+        return; // (Render and Add to Render Queue both queue it here)
+    if (!renderQueue()->add(base, other.snapshot(), dlg.settings(), &error))
+        QMessageBox::information(renderQueue(), tr("Render Queue"), error);
 }
 
 void MainWindow::showFormats()
@@ -502,6 +559,12 @@ void MainWindow::about()
 
 void MainWindow::closeEvent(QCloseEvent* e)
 {
+    if (m_renderQueue && (m_renderQueue->busy() || m_renderQueue->waiting())
+        && QMessageBox::question(this, tr("Render Queue"), tr("Renders are still running or waiting. Quit and cancel them?"))
+               != QMessageBox::Yes) {
+        e->ignore();
+        return;
+    }
     if (!maybeSave()) {
         e->ignore();
         return;

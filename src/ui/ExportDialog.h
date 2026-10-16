@@ -24,6 +24,7 @@ public:
     ~ExportDialog() override;
 
     ExportSettings settings() const;
+    bool queued() const { return m_queued; } // closed with Add to Render Queue instead of Render
     // The project's captions: offered as a subtitle track (MP4, MOV, MKV, WebM).
     void setCaptions(const std::vector<Caption>& captions);
 
@@ -71,6 +72,7 @@ private:
     QSpinBox* m_audioBitrate;
     QRadioButton* m_rangeAll;
     QRadioButton* m_rangeRegion;
+    bool m_queued = false;
 };
 
 // Parses "29.97", "30000/1001", "25" etc.

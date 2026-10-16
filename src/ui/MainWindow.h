@@ -197,6 +197,9 @@ private:
     PreviewWidget* m_preview;
     MediaBin* m_bin;
     MediaBin* m_youtubeBin = nullptr;
+    class RenderQueue* m_renderQueue = nullptr; // made when first used
+    class RenderQueue* renderQueue();
+    void queueProjectFile(); // Render Queue > Add Project File
     EffectEditor* m_fxEditor;       // transitions, titles, pan/crop
     DeviceChainView* m_devices;     // effect chains
     class KeyframeEditor* m_keyframes; // every keyframe of the event, track or output shown in Effects

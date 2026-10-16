@@ -249,6 +249,14 @@ ExportDialog::ExportDialog(const ProjectSettings& project, TimeUs projectDuratio
 
     auto* buttons = new QDialogButtonBox(QDialogButtonBox::Cancel);
     help::addButton(buttons, QStringLiteral("rendering.md"));
+    auto* queueBtn = buttons->addButton(tr("Add to Render Queue"), QDialogButtonBox::ActionRole);
+    queueBtn->setToolTip(tr("Render later, after the renders already waiting (File > Render Queue)"));
+    connect(queueBtn, &QPushButton::clicked, this, [this] {
+        m_queued = true;
+        validateAndAccept();
+        if (result() != QDialog::Accepted)
+            m_queued = false;
+    });
     auto* renderBtn = buttons->addButton(tr("Render"), QDialogButtonBox::AcceptRole);
     renderBtn->setDefault(true);
     layout->addWidget(buttons);

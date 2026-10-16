@@ -30,6 +30,12 @@ What changed in each version of Mutant Video Producer. The newest is first.
   the text and they are cut from the timeline, with the pause after them.
 - Both work on the time selection or the whole timeline, keep markers in step, and undo in one step.
 
+### Render queue
+
+- **File > Render Queue...**: renders run one after another in the background, each of the project
+  as it was when added. **Render As > Add to Render Queue** queues the open project (in any
+  template, again and again); **Add Project File...** queues other projects without opening them.
+
 ## 0.5.0 (2026-10-16)
 
 ### Timeline wheel works like Ableton Live

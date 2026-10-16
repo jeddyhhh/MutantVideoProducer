@@ -6,6 +6,7 @@
 #include "core/LiveRecorder.h"
 #include <QUuid>
 #include "ui/MainWindow.h"
+#include "ui/RenderQueue.h"
 #include "core/Compositor.h"
 #include "core/Exporter.h"
 #include "core/FFmpeg.h"
@@ -404,6 +405,10 @@ void MainWindow::createActions()
     file->addAction(act(tr("Export &Frame as Image..."), QKeySequence(QStringLiteral("Ctrl+Shift+F")), [this] { exportFrame(false); }));
     file->addAction(act(tr("Copy Frame to Clipboard"), QKeySequence(QStringLiteral("Ctrl+Shift+C")), [this] { exportFrame(true); }));
     file->addAction(act(tr("&Render As..."), QKeySequence(QStringLiteral("Ctrl+R")), [this] { renderAs(); }));
+    file->addAction(act(tr("Render &Queue..."), QKeySequence(), [this] {
+        renderQueue()->show();
+        renderQueue()->raise();
+    }));
     file->addSeparator();
     file->addAction(act(tr("&Properties..."), QKeySequence(QStringLiteral("Alt+Return")), [this] { projectProperties(); }));
     auto* profilesAction = act(tr("Profiles & Home Folders..."), QKeySequence(), [this] { profilesDialog(); });
