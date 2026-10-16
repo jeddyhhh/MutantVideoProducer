@@ -14,6 +14,23 @@ For only the collection UI/MCP checks, set `MVP_COLLECTION_ONLY=1` and run `Muta
 
 ## Commands
 
+The suites are registered with CTest. After `tests/make_test_media.sh deps/ffmpeg/bin/ffmpeg.exe testmedia`:
+
+```sh
+ctest --test-dir build/Release -LE gui --output-on-failure   # everything but the Editor suites
+ctest --test-dir build/Release -L ci                          # what the Linux workflow runs
+ctest --test-dir build/Release -L smoke                       # the quick part (Windows workflow)
+ctest --test-dir build/Release -R harden                      # one suite by name
+```
+
+Labels: `ci` runs on the Linux runner, `smoke` is its quick part, `local` needs a real GPU or takes
+minutes, `gui` drives the Editor and plays sound. Results go to `build/Release/test-output`. A new
+suite is one `mvp_test(...)` line in `CMakeLists.txt`. Suites needing your own files (captions,
+VST3, YouTube, voice, the Live tab, the monkey test) are run by hand as below.
+
+The Editor and Live tab tests (`--editor-test`, `--live-test`) are member functions of the
+windows they drive, so they are built into the program, but their code is in `tests/gui/`.
+
 Branch build downloads are attached to a draft under [GitHub Releases](https://github.com/jeddyhhh/MutantVideoProducer/releases), with a link in the Actions job summary. This keeps build delivery independent of Actions artifact-storage quotas. Each download has a SHA-256 file. The standard Windows installer is one EXE below 1 GiB and is never split. Large portable/offline archives reaching GitHub's 2 GiB asset limit are split into bounded parts; download all parts, the checksum and `join-build-parts.py`, then run `python join-build-parts.py <filename.part001>`. Joining verifies completeness and refuses to overwrite an existing file. `test_ci_builds.py` checks splitting, reconstruction, missing/corrupt parts and preservation of existing files.
 
 `mvp_finishing_test` checks gated loudness against known stereo signals, intersample peaks, high crest-factor headroom, silence, invalid samples, cancellation, post-master mixing/undo and graphics layout through transformed parents. It also checks animated positions, locks, snapping and brand-kit validation. The graphics and motion suites exercise the composer UI and GPU/CPU parity.

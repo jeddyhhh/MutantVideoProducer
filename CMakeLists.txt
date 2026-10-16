@@ -231,6 +231,8 @@ add_executable(mvp WIN32
     src/ui/MainWindowNarration.cpp
     tests/transport.cpp tests/transport.h
     tests/collection-ui.cpp tests/collection-ui.h
+    # The scripted GUI tests (--editor-test, --live-test): members, so they reach the widgets' internals.
+    tests/gui/MainWindowTest.cpp tests/gui/TimelineWidgetTest.cpp tests/gui/LiveViewTest.cpp
     src/ui/MainWindowStory.cpp
     src/ui/VoiceJob.h            src/ui/VoiceJob.cpp
     src/ui/MainWindowYouTube.cpp
@@ -241,7 +243,7 @@ add_executable(mvp WIN32
     src/ui/Help.h
     src/ui/Vst3Window.h          src/ui/Vst3Window.cpp
     src/ui/ShortcutsDialog.h     src/ui/ShortcutsDialog.cpp
-    src/ui/TimelineWidget.h      src/ui/TimelineWidget.cpp
+    src/ui/TimelineWidget.h      src/ui/TimelineWidget.cpp src/ui/TimelineLayout.h
     src/ui/PreviewWidget.h       src/ui/PreviewWidget.cpp
     src/ui/LiveView.h            src/ui/LiveView.cpp
     src/ui/LiveClipsBrowser.h    src/ui/LiveClipsBrowser.cpp
@@ -392,6 +394,64 @@ if(WIN32 AND TARGET Qt6::QOffscreenIntegrationPlugin)
         COMMAND ${CMAKE_COMMAND} -E copy_if_different "$<TARGET_FILE:Qt6::QOffscreenIntegrationPlugin>"
                 "$<TARGET_FILE_DIR:mvp_selftest>/platforms/"
         COMMENT "Copying Qt offscreen platform plugin")
+endif()
+
+# ---------------------------------------------------------------------------
+# Tests, run with ctest (media suites read testmedia/: tests/make_test_media.sh).
+# Labels: ci = what the Linux workflow runs; smoke = the quick part the Windows
+# workflow runs too; local = needs a real GPU or takes minutes; gui = drives the
+# Editor (plays sound). Everything but the GUI suites:
+#   ctest --test-dir build/Release -LE gui --output-on-failure
+# ---------------------------------------------------------------------------
+enable_testing()
+set(MVP_TEST_MEDIA "${CMAKE_SOURCE_DIR}/testmedia")
+set(MVP_TEST_OUT "${CMAKE_BINARY_DIR}/test-output")
+function(mvp_test name labels)
+    add_test(NAME ${name} COMMAND ${ARGN} WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
+    set_tests_properties(${name} PROPERTIES LABELS "${labels}" TIMEOUT 1800)
+endfunction()
+set(_self $<TARGET_FILE:mvp_selftest>)
+set(_clip "${MVP_TEST_MEDIA}/h264_aac.mp4")
+mvp_test(probe "ci;smoke" ${_self} probe ${_clip})
+mvp_test(probe-webm ci ${_self} probe "${MVP_TEST_MEDIA}/vp8_vorbis.webm")
+mvp_test(generators "ci;smoke" ${_self} generators "${MVP_TEST_OUT}/gen")
+mvp_test(youtube-options "ci;smoke" ${_self} youtube-options)
+mvp_test(effects ci ${_self} effects ${_clip} "${MVP_TEST_OUT}/fx")
+mvp_test(speed ci ${_self} speed ${_clip} "${MVP_TEST_OUT}/speed")
+foreach(_suite editing audiofx envelopes ramps presets)
+    mvp_test(${_suite} ci ${_self} ${_suite} "${MVP_TEST_MEDIA}" "${MVP_TEST_OUT}/${_suite}")
+endforeach()
+mvp_test(random ci ${_self} random)
+mvp_test(beats ci ${_self} beats)
+mvp_test(docs ci ${_self} docs docs data/examples src)
+mvp_test(harden ci ${_self} harden "${MVP_TEST_MEDIA}" data/examples "${MVP_TEST_OUT}/harden" 500)
+mvp_test(export local ${_self} export ${_clip} "${MVP_TEST_OUT}/export")
+foreach(_suite gpu racks tools consoles)
+    mvp_test(${_suite} local ${_self} ${_suite} "${MVP_TEST_MEDIA}" "${MVP_TEST_OUT}/${_suite}")
+endforeach()
+mvp_test(story local $<TARGET_FILE:mvp_story_test> ${_clip})
+mvp_test(adversarial local $<TARGET_FILE:mvp_adversarial_test>)
+foreach(_suite collection brand finishing keyframes)
+    mvp_test(${_suite} "ci;smoke" $<TARGET_FILE:mvp_${_suite}_test>)
+endforeach()
+if(WIN32)
+    mvp_test(runtime "ci;smoke" $<TARGET_FILE:mvp_runtime_test>)
+endif()
+if(MVP_BUILD_GUI)
+    mvp_test(graphics ci $<TARGET_FILE:mvp_graphics_test>)
+    mvp_test(motion ci $<TARGET_FILE:mvp_motion_test>)
+    mvp_test(editor gui $<TARGET_FILE:mvp> --editor-test "${MVP_TEST_OUT}/editor.txt" ${_clip})
+    mvp_test(devices gui $<TARGET_FILE:mvp> --devices-test "${MVP_TEST_OUT}/devices.txt" ${_clip})
+endif()
+find_package(Python3 COMPONENTS Interpreter QUIET)
+if(Python3_Interpreter_FOUND)
+    set(_python_tests ci_builds)
+    if(WIN32)
+        list(APPEND _python_tests ai_packaging voice_worker)
+    endif()
+    foreach(_suite ${_python_tests})
+        mvp_test(python-${_suite} "ci;smoke" ${Python3_EXECUTABLE} -m unittest discover -s tests -p test_${_suite}.py)
+    endforeach()
 endif()
 
 # The user guide and the tutorials' example projects (Help menu), next to the

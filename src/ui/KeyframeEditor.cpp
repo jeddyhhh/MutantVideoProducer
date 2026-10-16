@@ -1640,7 +1640,7 @@ void KeyframeEditor::contextMenu(const QPoint& pos, const QPoint& global)
     menu.addSeparator();
     menu.addAction(tr("Pick All"), this, [this] { selectAll(); })->setShortcut(QKeySequence::SelectAll);
     menu.addAction(tr("Fit"), this, [this] { fit(); })->setShortcut(QKeySequence(Qt::Key_F));
-    menu.addAction(m_graph ? tr("Dope Sheet") : tr("Graph"), this, [this] { (m_graph ? m_dopeButton : m_graphButton)->click(); }, QKeySequence(Qt::Key_G));
+    menu.addAction(m_graph ? tr("Dope Sheet") : tr("Graph"), this, [this] { (m_graph ? m_dopeButton : m_graphButton)->click(); })->setShortcut(QKeySequence(Qt::Key_G));
     menu.exec(global);
 }
 

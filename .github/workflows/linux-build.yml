@@ -48,31 +48,7 @@ jobs:
           QT_QPA_PLATFORM: offscreen
         run: |
           tests/make_test_media.sh ffmpeg testmedia > /dev/null
-          bin=build/Release/bin/mvp_selftest
-          out=build/ci
-          failed=0
-          run() { echo "::group::$1"; "$bin" "$@" || failed=1; echo "::endgroup::"; }
-          run probe testmedia/h264_aac.mp4 testmedia/vp8_vorbis.webm
-          run generators $out/gen
-          run effects testmedia/h264_aac.mp4 $out/fx
-          run speed testmedia/h264_aac.mp4 $out/speed
-          run editing testmedia $out/edit
-          run audiofx testmedia $out/afx
-          run envelopes testmedia $out/env
-          run ramps testmedia $out/ramps
-          run presets testmedia $out/presets
-          run random
-          run beats
-          run docs docs data/examples src
-          run harden testmedia data/examples $out/harden 500
-          build/Release/bin/mvp_collection_test || failed=1
-          build/Release/bin/mvp_brand_test || failed=1
-          build/Release/bin/mvp_finishing_test || failed=1
-          build/Release/bin/mvp_keyframes_test || failed=1
-          build/Release/bin/mvp_graphics_test || failed=1
-          build/Release/bin/mvp_motion_test || failed=1
-          python3 -m unittest discover -s tests -p test_ci_builds.py || failed=1
-          exit $failed
+          ctest --test-dir build/Release -L ci --output-on-failure
 
       - name: Package Linux build
         run: |
