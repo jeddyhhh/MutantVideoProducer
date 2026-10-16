@@ -8,6 +8,14 @@ What changed in each version of Mutant Video Producer. The newest is first.
   trimmed or dropped onto, Split leaves them whole, and ripples leave them in place. The header
   shows a padlock, the events are hatched, and the lock is saved with the project.
 
+### YouTube chapters and thumbnails
+
+- **Tools > YouTube > Chapters for the Description...**: `00:00 Name` lines from the story
+  chapters or the markers, with an *Intro* at 00:00 when needed, and a note when YouTube wouldn't
+  show them (fewer than 3, or any under 10 s).
+- **Tools > YouTube > Thumbnail from the Cursor Frame...**: a 1280x720 JPEG of the frame at the
+  cursor with an optional outlined title, kept under 2 MB.
+
 ## 0.5.0 (2026-10-16)
 
 ### Timeline wheel works like Ableton Live

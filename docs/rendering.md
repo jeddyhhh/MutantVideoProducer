@@ -83,6 +83,18 @@ Choose **Custom** to start from any FFmpeg format and encoder: about 150 output 
   project size, as PNG, JPEG or WebP.
 - **File > Copy Frame to Clipboard** (**Ctrl+Shift+C**).
 
+## Publishing to YouTube
+
+- **Tools > YouTube > Chapters for the Description...** lists chapters as `00:00 Name`, from the
+  [story chapters](story.md) or else the markers and regions (unnamed ones become *Chapter 2* and
+  so on). An *Intro* at `00:00` is added when the first one starts later. YouTube shows chapters
+  only when there are at least three, each 10 seconds or longer; the window says when the list
+  breaks that. Edit the names, then **OK** copies the list.
+- **Tools > YouTube > Thumbnail from the Cursor Frame...** makes a 1280x720 JPEG (under YouTube's
+  2 MB) from the frame at the cursor, cropped to fill, with an optional title in large outlined
+  letters along the bottom.
+- An audio track's [track listing](audio.md#track-listing-for-youtube) gives an album's track times.
+
 ## What a render uses
 
 - Renders always use the original files, never [proxies](media.md#proxies).

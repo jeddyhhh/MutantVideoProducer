@@ -578,6 +578,9 @@ void MainWindow::createActions()
             beatMontage();
     }));
     tools->addAction(act(tr("Narration Studio..."),QKeySequence(),[this]{if(editorActive())narrationStudio();}));
+    QMenu* youtube = tools->addMenu(tr("&YouTube"));
+    youtube->addAction(act(tr("&Chapters for the Description..."), QKeySequence(), [this] { if (editorActive()) youtubeChapters(); }));
+    youtube->addAction(act(tr("&Thumbnail from the Cursor Frame..."), QKeySequence(), [this] { if (editorActive()) youtubeThumbnail(); }));
     tools->addAction(act(tr("Director's Dice..."),QKeySequence(),[this]{if(editorActive())directorsDice();}));
     tools->addAction(act(tr("Create Compound Sequence..."),QKeySequence("Ctrl+Shift+G"),[this]{if(editorActive())createCompound();}));
     tools->addAction(act(tr("Edit Compound Sequence..."),QKeySequence(),[this]{if(editorActive())editCompound();}));

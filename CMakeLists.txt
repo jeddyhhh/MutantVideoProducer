@@ -137,6 +137,7 @@ add_library(mvp_core STATIC
     src/core/GpuCompositor.h     src/core/GpuCompositor.cpp
     src/core/AudioMixer.h        src/core/AudioMixer.cpp
     src/core/AudioFinishing.h     src/core/AudioFinishing.cpp
+    src/core/YouTubeUpload.h      src/core/YouTubeUpload.cpp
     src/core/GraphicsWorkflow.h  src/core/GraphicsWorkflow.cpp
     src/core/AudioTempo.h        src/core/AudioTempo.cpp
     src/core/AudioStretch.h      src/core/AudioStretch.cpp

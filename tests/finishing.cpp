@@ -4,8 +4,9 @@
 #include "core/MotionGraphics.h"
 #include "core/AudioMixer.h"
 #include "core/TimelineOps.h"
+#include "core/YouTubeUpload.h"
 #include "core/FFmpeg.h"
-#include <QCoreApplication>
+#include <QGuiApplication>
 #include <QDataStream>
 #include <QFile>
 #include <QDir>
@@ -16,7 +17,7 @@
 
 int main(int argc, char** argv)
 {
-    QCoreApplication app(argc, argv);
+    QGuiApplication app(argc, argv); // (the thumbnail draws text)
     ff::initialize();
     int failures = 0;
     auto check = [&](bool ok, QString message) {
@@ -268,7 +269,7 @@ int main(int argc, char** argv)
             tl.tracks[size_t(track)].clips.push_back(c);
         }
         p.applyEdit(tl, "album");
-        check(finishing::trackListing(p, track)
+        check(upload::trackListing(p, track)
                   == QString::fromUtf8("01. Beta Boyz - 00:00\n02. Not A Chance - 04:19\n03. 2Pac Übergang - 12:22"),
               "track listing numbers events by start, names them from files without track numbers (2Pac keeps its 2)");
         Clip renamed = tl.tracks[size_t(track)].clips[0];
@@ -277,9 +278,37 @@ int main(int argc, char** argv)
         renamed.name = "The Romper Stomp";
         tl.tracks[size_t(track)].clips.push_back(renamed);
         p.applyEdit(tl, "long album");
-        check(finishing::trackListing(p, track).endsWith("\n03. " + QString::fromUtf8("2Pac Übergang")
+        check(upload::trackListing(p, track).endsWith("\n03. " + QString::fromUtf8("2Pac Übergang")
                                                          + " - 0:12:22\n04. The Romper Stomp - 1:02:05"),
-              "track listing keeps renamed events and shows hours past an hour: " + finishing::trackListing(p, track));
+              "track listing keeps renamed events and shows hours past an hour: " + upload::trackListing(p, track));
+    }
+    {
+        Timeline tl = defaultTimeline();
+        Clip long_;
+        long_.id = tl.allocId();
+        long_.length = 125 * kUsPerSecond;
+        tl.tracks[0].clips.push_back(long_);
+        tl.markers.push_back({tl.allocId(), 15 * kUsPerSecond, 0, "Lore", 0});
+        tl.markers.push_back({tl.allocId(), 61 * kUsPerSecond, 20 * kUsPerSecond, "", 0});
+        tl.markers.push_back({tl.allocId(), 65 * kUsPerSecond, 0, "Raids", 0});
+        QStringList warnings;
+        const QString chapters = upload::youtubeChapters(tl, &warnings);
+        check(chapters == "00:00 Intro\n00:15 Lore\n01:01 Chapter 2\n01:05 Raids" && warnings.size() == 1 && warnings[0].contains("Chapter 2"),
+              "YouTube chapters from markers start with Intro at 00:00 and flag ones under 10 s: " + chapters + " / " + warnings.join(' '));
+        tl.chapters.append(QJsonObject{{"name", "Origins"}, {"start", "0"}});
+        tl.chapters.append(QJsonObject{{"name", "Wrath"}, {"start", QString::number(40 * kUsPerSecond)}});
+        check(upload::youtubeChapters(tl, &warnings) == "00:00 Origins\n00:40 Wrath" && warnings.size() == 1 && warnings[0].contains("at least 3"),
+              "story chapters come first, and fewer than 3 is flagged");
+        QImage frame(640, 480, QImage::Format_RGB32);
+        frame.fill(QColor(30, 90, 200));
+        const QImage plain = upload::thumbnail(frame, {}), titled = upload::thumbnail(frame, "Twenty Years of Azeroth");
+        int white = 0;
+        for (int y = 400; y < 720; y += 4)
+            for (int x = 0; x < 1280; x += 4)
+                white += titled.pixelColor(x, y).lightness() > 240;
+        check(plain.size() == QSize(1280, 720) && plain.pixelColor(640, 360) == QColor(30, 90, 200) && plain.pixelColor(5, 5) == QColor(30, 90, 200)
+                  && white > 400 && titled.pixelColor(640, 100) == QColor(30, 90, 200),
+              QString("thumbnail is 1280x720, filled by the frame, with the title in white along the bottom (%1 white samples)").arg(white));
     }
     return failures;
 }

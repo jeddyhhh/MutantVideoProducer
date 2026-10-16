@@ -2,6 +2,7 @@
 #include "ui/TimelineWidget.h"
 #include "ui/TimelineLayout.h"
 #include "core/AudioFinishing.h"
+#include "core/YouTubeUpload.h"
 #include "core/AudioMixer.h"
 #include "core/PanCrop.h"
 #include "core/Presets.h"
@@ -103,7 +104,7 @@ void TimelineWidget::contextMenuEvent(QContextMenuEvent* e)
                 envAction(tr("Volume Envelope\tV"), EnvelopeKind::Volume);
                 envAction(tr("Pan Envelope\tP"), EnvelopeKind::Pan);
                 menu.addAction(tr("Track Listing for YouTube..."), this, [this, ti] {
-                    const QString listing = finishing::trackListing(*m_project, ti);
+                    const QString listing = upload::trackListing(*m_project, ti);
                     if (listing.isEmpty()) {
                         emit message(tr("This track has no events to list."));
                         return;

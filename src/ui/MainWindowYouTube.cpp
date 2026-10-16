@@ -40,6 +40,10 @@
 #include <QThread>
 #include <QTimer>
 #include <QTabWidget>
+#include <QInputDialog>
+#include <QStatusBar>
+#include "core/Compositor.h"
+#include "core/YouTubeUpload.h"
 #include <atomic>
 
 bool MainWindow::downloadFile(QWidget* parent, const QUrl& url, const QString& dest, const QString& what, QString* error, qint64 maximumBytes)
@@ -258,4 +262,60 @@ int MainWindow::placeDownloadedClip(const QString& path, TimeUs from, TimeUs to)
             return id;
         }
     return 0;
+}
+
+void MainWindow::youtubeChapters()
+{
+    QStringList warnings;
+    const QString chapters = upload::youtubeChapters(m_project->timeline(), &warnings);
+    if (chapters.isEmpty()) {
+        QMessageBox::information(this, tr("YouTube Chapters"),
+                                 tr("Add markers (M) where each chapter starts, or story chapters, then try again."));
+        return;
+    }
+    QString label = tr("From the story chapters, or else the markers. Edit the names, then OK copies the list.");
+    if (!warnings.isEmpty())
+        label += QStringLiteral("\n\n") + warnings.join(QLatin1Char('\n'));
+    bool ok = false;
+    const QString text = QInputDialog::getMultiLineText(this, tr("YouTube Chapters"), label, chapters, &ok);
+    if (ok) {
+        QApplication::clipboard()->setText(text);
+        statusBar()->showMessage(tr("Chapters copied for the video description."), 4000);
+    }
+}
+
+void MainWindow::youtubeThumbnail()
+{
+    stopPlayback(false);
+    bool ok = false;
+    const QString title = QInputDialog::getText(this, tr("YouTube Thumbnail"),
+                                                tr("Title on the picture (leave empty for the frame alone):"), QLineEdit::Normal, QString(), &ok);
+    if (!ok)
+        return;
+    const TimeUs t = m_timeline->cursorTime();
+    const ProjectSettings& ps = m_project->settings();
+    QApplication::setOverrideCursor(Qt::WaitCursor);
+    Compositor renderer(true);
+    const QImage image = upload::thumbnail(renderer.render(*m_project->snapshot(), t, QSize(ps.width, ps.height)), title);
+    QApplication::restoreOverrideCursor();
+    QSettings settings;
+    QString dir = settings.value(Profiles::instance().settingsKey(QStringLiteral("dirs/stills"))).toString();
+    if (dir.isEmpty())
+        dir = Profiles::instance().folder(QStringLiteral("Media"));
+    const QString base = (m_project->filePath().isEmpty() ? tr("Untitled") : QFileInfo(m_project->filePath()).completeBaseName()) + tr(" thumbnail");
+    const QString path = QFileDialog::getSaveFileName(this, tr("YouTube Thumbnail"), QDir(dir).filePath(base + QStringLiteral(".jpg")),
+                                                      tr("JPEG image (*.jpg);;PNG image (*.png)"));
+    if (path.isEmpty())
+        return;
+    settings.setValue(Profiles::instance().settingsKey(QStringLiteral("dirs/stills")), QFileInfo(path).absolutePath());
+    // YouTube takes thumbnails up to 2 MB.
+    bool saved = false;
+    for (int quality = 92; quality >= 50 && !saved; quality -= 10)
+        saved = image.save(path, nullptr, quality) && QFileInfo(path).size() <= 2 * 1024 * 1024;
+    if (!saved) {
+        QMessageBox::critical(this, tr("YouTube Thumbnail"), tr("Could not write %1 under 2 MB.").arg(QDir::toNativeSeparators(path)));
+        return;
+    }
+    Profiles::instance().remember({QJsonObject{{"path", path}, {"folder", "Media"}, {"origin", "image"}}});
+    statusBar()->showMessage(tr("Saved %1 (1280x720)").arg(QDir::toNativeSeparators(path)), 4000);
 }

@@ -154,6 +154,8 @@ private:
     // File > Create Clip from YouTube (MainWindowYouTube.cpp): a link (or a part of it) downloaded with
     // yt-dlp next to the project and placed at the cursor.
     void createClipFromYouTube();
+    void youtubeChapters();   // chapters for the video description, from story chapters or markers
+    void youtubeThumbnail();  // a 1280x720 thumbnail from the frame at the cursor, with a title
     // The downloaded file into Project Media's YouTube folder, `from`..`to` marked (-1: its start / end),
     // and on the timeline at the cursor; its media id (0: it could not be imported).
     int placeDownloadedClip(const QString& path, TimeUs from, TimeUs to);

@@ -2,7 +2,6 @@
 #include "core/AudioMixer.h"
 #include "core/FFmpeg.h"
 #include <QFileInfo>
-#include <QRegularExpression>
 #include <QSet>
 #include <algorithm>
 #include <cmath>
@@ -186,31 +185,5 @@ QJsonObject Report::json(const Target& t) const {
             {"rms_left_dbfs",rmsLeft},{"rms_right_dbfs",rmsRight},{"longest_silence_seconds",silenceSeconds},
             {"clipped_samples",double(clippedSamples)},{"invalid_samples",double(invalidSamples)},
             {"target_lufs",t.lufs},{"ceiling_dbtp",t.truePeak},{"safe_gain_db",std::isfinite(gain)?QJsonValue(gain):QJsonValue()}, {"warnings",notes}};
-}
-QString trackListing(const Project& project, int track)
-{
-    const Timeline& tl = project.timeline();
-    if (track < 0 || track >= int(tl.tracks.size()))
-        return {};
-    std::vector<const Clip*> clips;
-    for (const Clip& c : tl.tracks[size_t(track)].clips)
-        clips.push_back(&c);
-    std::sort(clips.begin(), clips.end(), [](const Clip* a, const Clip* b) { return a->start < b->start; });
-    const bool hours = !clips.empty() && clips.back()->start >= 3600 * kUsPerSecond;
-    const int digits = clips.size() > 99 ? 3 : 2;
-    static const QRegularExpression number(QStringLiteral(R"(^\s*\d{1,3}(\s*[-._)]+\s*|\s+)(?=\S))"));
-    QStringList lines;
-    for (size_t i = 0; i < clips.size(); ++i) {
-        const Clip& c = *clips[i];
-        QString name = c.name;
-        if (const auto media = project.mediaItem(c.mediaId); media && (name.isEmpty() || name == media->displayName()))
-            name = QFileInfo(media->path).completeBaseName().remove(number);
-        const qint64 s = std::max<TimeUs>(0, c.start) / kUsPerSecond;
-        const QLatin1Char zero('0');
-        const QString time = hours ? QStringLiteral("%1:%2:%3").arg(s / 3600).arg(s / 60 % 60, 2, 10, zero).arg(s % 60, 2, 10, zero)
-                                   : QStringLiteral("%1:%2").arg(s / 60, 2, 10, zero).arg(s % 60, 2, 10, zero);
-        lines << QStringLiteral("%1. %2 - %3").arg(int(i + 1), digits, 10, zero).arg(name.trimmed(), time);
-    }
-    return lines.join(QLatin1Char('\n'));
 }
 }
