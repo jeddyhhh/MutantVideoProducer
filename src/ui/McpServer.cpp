@@ -33,6 +33,7 @@
 #include "ui/LiveView.h"
 #include "ui/MainWindow.h"
 #include "core/Story.h"
+#include "core/PanCrop.h"
 #include "core/Cuts.h"
 #include "core/Reframe.h"
 #include "core/SceneDetect.h"
@@ -869,6 +870,18 @@ QJsonArray McpServer::toolList()
                    {QStringLiteral("length"), prop("number", "Seconds")},
                    {QStringLiteral("source_in"), prop("number", "Where in the media it starts, seconds")},
                    {QStringLiteral("track"), prop("integer", "Move to this track index (same kind: video / audio / image)")},
+                   {QStringLiteral("transition_in"),
+                    prop("object", "Video: the transition at its start (its fade in, or the crossfade with the event it overlaps): "
+                                   "{type: a transition id from list_effects kind=transition, params: {setting: value}}")},
+                   {QStringLiteral("transition_out"), prop("object", "Video: the transition at its end, as transition_in")},
+                   {QStringLiteral("reverse"), prop("boolean", "Play the source span backwards")},
+                   {QStringLiteral("pan_crop"),
+                    prop("object", "Event Pan/Crop settings (mode Fit/Fill/Stretch, centerX, centerY, zoom, rotation, flipH, flipV), "
+                                   "values or {keyframes: [[seconds from the event's start, value, curve?], ...]}")},
+                   {QStringLiteral("ramp"),
+                    enumProp({QStringLiteral("speed_up"), QStringLiteral("slow_down"), QStringLiteral("slow_middle"), QStringLiteral("fast_middle"),
+                              QStringLiteral("freeze_middle"), QStringLiteral("none")},
+                             "A speed ramp preset (its grouped sound follows); none removes the ramp")},
                    {QStringLiteral("name"), prop("string", "Label")},
                    {QStringLiteral("muted"), prop("boolean", "Mute")},
                    {QStringLiteral("gain"), prop("number", "Opacity (video) or volume (audio), 0..1 (audio up to 4)")},
@@ -1079,8 +1092,14 @@ QJsonArray McpServer::toolList()
                    {QStringLiteral("muted"), prop("boolean", "Mute")},
                    {QStringLiteral("solo"), prop("boolean", "Solo")},
                    {QStringLiteral("name"), prop("string", "New name")},
-                   {QStringLiteral("level"), prop("number", "Video: opacity 0..1; audio: volume 0..2 (1 = 0 dB)")}},
+                   {QStringLiteral("level"), prop("number", "Video: opacity 0..1; audio: volume 0..2 (1 = 0 dB)")},
+                   {QStringLiteral("duck_under"), prop("integer", "Audio: turn this track down while that track (index) has sound; -1 stops")},
+                   {QStringLiteral("duck_amount"), prop("number", "Audio: how far, dB (-60..0, default -12)")}},
                   {QStringLiteral("track")}));
+    t.append(tool("freeze_frame", "Holds a video event's picture: at the time, the event is split and its frame there is held for the length (later events on that track move along).",
+                  {{QStringLiteral("time"), prop("number", "Seconds, over a video event")},
+                   {QStringLiteral("length"), prop("number", "Seconds held (default 2)")}},
+                  {QStringLiteral("time")}));
     t.append(tool("scene_changes",
                   "Finds the cuts between shots inside video events (Tools > Split Selected Events at Scene Changes) and, unless "
                   "split is false, splits them (with their grouped sound) there. Returns the timeline times.",
@@ -1244,6 +1263,7 @@ struct McpServer::ToolCall {
     QJsonObject tool_save_project();
     QJsonObject tool_captions();
     QJsonObject tool_edit_track();
+    QJsonObject tool_freeze_frame();
     QJsonObject tool_scene_changes();
     QJsonObject tool_cut_time();
     QJsonObject tool_auto_reframe();
@@ -1868,6 +1888,54 @@ QJsonObject McpServer::ToolCall::tool_edit_event()
         c->fadeIn = std::clamp<TimeUs>(us(num("fade_in")), 0, c->length);
     if (has("fade_out"))
         c->fadeOut = std::clamp<TimeUs>(us(num("fade_out")), 0, c->length);
+    if (has("reverse"))
+        c->reverse = a.value(QStringLiteral("reverse")).toBool();
+    if (has("pan_crop")) {
+        if (!isVisualTrack(tl.tracks[size_t(trackIndex)].type))
+            return errorResult(QStringLiteral("Pan/Crop is for video and image events"));
+        if (c->panCrop.empty())
+            c->panCrop = defaultParams(panCropParams());
+        const QJsonObject pc = a.value(QStringLiteral("pan_crop")).toObject();
+        for (auto it = pc.begin(); it != pc.end(); ++it)
+            if (const QString err = setParam(c->panCrop, panCropParams(), it.key(), it.value()); !err.isEmpty())
+                return errorResult(err);
+    }
+    if (has("ramp")) {
+        static const std::map<QString, ops::RampPreset> ramps = {
+            {QStringLiteral("speed_up"), ops::RampPreset::SpeedUp}, {QStringLiteral("slow_down"), ops::RampPreset::SlowDown},
+            {QStringLiteral("slow_middle"), ops::RampPreset::SlowMiddle}, {QStringLiteral("fast_middle"), ops::RampPreset::FastMiddle},
+            {QStringLiteral("freeze_middle"), ops::RampPreset::FreezeMiddle}};
+        if (str("ramp") == QLatin1String("none"))
+            c->velocity = Envelope{false, 1.0, {}};
+        else if (const auto r = ramps.find(str("ramp")); r != ramps.end())
+            ops::applyRampPreset(*c, media.get(), r->second, ps.fps);
+        else
+            return errorResult(QStringLiteral("ramp: speed_up, slow_down, slow_middle, fast_middle, freeze_middle or none"));
+        ops::syncGroupRamps(tl, c->id);
+        c = tl.findClip(integer("event_id"), &trackIndex);
+    }
+    for (const bool atStart : {true, false}) {
+        const QString key = atStart ? QStringLiteral("transition_in") : QStringLiteral("transition_out");
+        if (!has(atStart ? "transition_in" : "transition_out"))
+            continue;
+        const QJsonObject spec = a.value(key).toObject();
+        const QString type = spec.value(QStringLiteral("type")).toString(QStringLiteral("dissolve"));
+        const TransitionDef* def = findTransition(type);
+        if (!def)
+            return errorResult(QStringLiteral("no transition \"%1\" (see list_effects kind=transition)").arg(type));
+        if (!isVisualTrack(tl.tracks[size_t(trackIndex)].type))
+            return errorResult(QStringLiteral("transitions are for video and image events"));
+        const auto [holder, holderIn] = w->m_timeline->setTransition(tl, c->id, atStart, type);
+        Clip* h = tl.findClip(holder);
+        if (!h)
+            return errorResult(QStringLiteral("no transition there"));
+        TransitionSpec& t = holderIn ? h->transitionIn : h->transitionOut;
+        const QJsonObject params = spec.value(QStringLiteral("params")).toObject();
+        for (auto it = params.begin(); it != params.end(); ++it)
+            if (const QString err = setParam(t.params, def->params, it.key(), it.value()); !err.isEmpty())
+                return errorResult(err);
+        c = tl.findClip(integer("event_id"), &trackIndex);
+    }
     const int id = c->id;
     if (has("start")) { // its group moves along
         const TimeUs delta = std::max<TimeUs>(0, us(num("start"))) - c->start;
@@ -2695,9 +2763,31 @@ QJsonObject McpServer::ToolCall::tool_edit_track()
         t.name = str("name").left(80);
     if (has("level"))
         t.level = float(std::clamp(num("level", 1), 0.0, isVisualTrack(t.type) ? 1.0 : 2.0));
+    if (has("duck_under") || has("duck_amount")) {
+        if (t.type != TrackType::Audio)
+            return errorResult(QStringLiteral("ducking is for audio tracks"));
+        if (has("duck_under")) {
+            const int under = integer("duck_under", -1);
+            if (under >= int(tl.tracks.size()) || under == index)
+                return errorResult(QStringLiteral("no other track %1").arg(under));
+            t.duckUnder = under < 0 ? 0 : tl.tracks[size_t(under)].id;
+        }
+        if (has("duck_amount"))
+            t.duckAmount = float(std::clamp(num("duck_amount", -12), -60.0, 0.0));
+    }
     apply(tl, QStringLiteral("Edit track"));
     return jsonResult({{QStringLiteral("track"), index}, {QStringLiteral("locked"), t.locked}, {QStringLiteral("muted"), t.muted},
                        {QStringLiteral("solo"), t.solo}, {QStringLiteral("name"), t.name}});
+}
+
+QJsonObject McpServer::ToolCall::tool_freeze_frame()
+{
+    const TimeUs length = us(std::clamp(num("length", 2), 0.1, 60.0));
+    w->m_timeline->setCursorTime(us(std::max(0.0, num("time"))), false);
+    const int id = w->m_timeline->insertFreezeFrame(length);
+    if (!id)
+        return errorResult(QStringLiteral("no video event at %1 s").arg(num("time")));
+    return jsonResult({{QStringLiteral("event_id"), id}, {QStringLiteral("length"), sec(length)}});
 }
 
 QJsonObject McpServer::ToolCall::tool_scene_changes()
@@ -2907,6 +2997,7 @@ QJsonObject McpServer::callTool(const QString& name, const QJsonObject& a)
     static const QHash<QString, Entry> tools = {
         {QStringLiteral("story_chapters"), {&ToolCall::tool_story_chapters, false}},
         {QStringLiteral("edit_track"), {&ToolCall::tool_edit_track, false}},
+        {QStringLiteral("freeze_frame"), {&ToolCall::tool_freeze_frame, false}},
         {QStringLiteral("scene_changes"), {&ToolCall::tool_scene_changes, false}},
         {QStringLiteral("cut_time"), {&ToolCall::tool_cut_time, false}},
         {QStringLiteral("auto_reframe"), {&ToolCall::tool_auto_reframe, false}},

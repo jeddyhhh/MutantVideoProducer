@@ -305,6 +305,7 @@ private:
     void setSelection(std::set<int> sel);
 
     friend class MainWindow; // editor regression checks exercise transient timeline state
+    friend class McpServer;  // AI control sets transitions like the event menu
     std::shared_ptr<const int> m_session;
     Project* m_project;
     MediaCache* m_cache;
