@@ -72,6 +72,12 @@ ExportSettings withGpuEncoder(const ExportSettings& in, QString* used)
             const QString name = QString::fromLatin1(hwName);
             if (!hw::encoderUsable(name))
                 continue;
+            // 10-bit: the GPU encoders take it as P010 (H.264 ones not at all, so those stay in software).
+            const bool tenBit = in.pixelFormat.contains(QLatin1String("10"));
+            if (tenBit && name.startsWith(QLatin1String("h264")))
+                continue;
+            if (tenBit)
+                s.pixelFormat = QStringLiteral("p010le");
             s.videoEncoder = name;
             // Keep the generic options (profile, bitrate limits); drop the
             // software encoder's own ones.

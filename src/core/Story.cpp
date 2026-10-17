@@ -382,7 +382,12 @@ std::vector<int> compound(Timeline& tl, const std::set<int>& selected, const QSt
     for (int ti = firstVisual; ti <= lastVisual; ++ti)
         for (const auto& c : tl.tracks[size_t(ti)].clips)
             if (!selection.count(c.id) && c.start < end && c.end() > start) {
-                fail(error, "Include the overlapping visual layers between the selected tracks to preserve their compositing order.");
+                // (on a selected track itself, typically a neighbour crossfading into the first or last clip)
+                const QString what = c.name.isEmpty() ? QStringLiteral("An event") : QStringLiteral("\"%1\"").arg(c.name);
+                if (error)
+                    *error = QStringLiteral("%1 at %2 s on track %3 overlaps the selection: include it (or remove the crossfade) to keep "
+                                            "the compositing order.")
+                                 .arg(what).arg(double(c.start) / kUsPerSecond, 0, 'f', 2).arg(ti + 1);
                 return {};
             }
     std::set<int> tracks;

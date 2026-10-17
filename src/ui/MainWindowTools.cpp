@@ -280,11 +280,11 @@ void MainWindow::autoReframe()
     for (int id : m_timeline->selection()) {
         const Clip* c = tl.findClip(id);
         const auto m = c ? media.find(c->mediaId) : media.end();
-        if (c && m != media.end() && m->second->info.videoStream(c->streamIndex) && !m->second->info.isStill && !c->reverse && !c->hasRamp())
+        if (c && m != media.end() && m->second->info.videoStream(c->streamIndex) && !m->second->info.isStill)
             events.push_back(id);
     }
     if (events.empty()) {
-        statusBar()->showMessage(tr("Select video events to reframe first (not reversed or speed-ramped)"), 5000);
+        statusBar()->showMessage(tr("Select video events to reframe first"), 5000);
         return;
     }
     ProjectSettings ps = m_project->settings();

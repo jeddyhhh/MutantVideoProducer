@@ -546,7 +546,7 @@ void renderKineticText(QImage& layer, const Params& p, const GeneratorContext& c
     const double w = layer.width(), h = layer.height();
     const double T = seconds(ctx), wps = std::max(0.1, p.num(QStringLiteral("rate")));
     QFont f(p.text(QStringLiteral("font")));
-    f.setPixelSize(std::max(1, int(std::lround(p.num(QStringLiteral("size")) / 100.0 * h))));
+    f.setPixelSize(std::max(1, int(std::lround(p.num(QStringLiteral("size")) / 100.0 * std::min(h, w * 9.0 / 16.0))))); // (as titles: 16:9 sizes)
     f.setBold(p.flag(QStringLiteral("bold")));
     f.setHintingPreference(QFont::PreferNoHinting);
     const QFontMetricsF fm(f);

@@ -163,13 +163,16 @@ int apply(Timeline& tl, const MediaMap& media, const std::vector<int>& events, Q
         Clip* c = tl.findClip(events[i]);
         const auto m = c ? media.find(c->mediaId) : media.end();
         const VideoStreamInfo* vs = m != media.end() ? m->second->info.videoStream(c->streamIndex) : nullptr;
-        if (!vs || m->second->info.isStill || c->reverse || c->hasRamp())
+        if (!vs || m->second->info.isStill)
             continue;
+        // A reversed or speed-ramped event plays its source out of step with its own time: it gets a still crop
+        // where the subject spends most of the time instead of a path.
+        const bool still = c->reverse || c->hasRamp();
         const QSize display = vs->displaySize();
         const double visible = visibleWidth(double(display.width()) / std::max(1, display.height()), double(frame.width()) / std::max(1, frame.height()));
         if (visible >= 0.999)
             continue; // the frame is as wide as the picture
-        const TimeUs from = c->sourceIn, to = c->sourceIn + TimeUs(double(c->length) * c->speed);
+        const TimeUs from = c->sourceIn, to = c->sourceIn + (still ? c->sourceSpan() : TimeUs(double(c->length) * c->speed));
         bool cancelled = false;
         const auto samples = follow(*m->second, c->streamIndex, from, to, kUsPerSecond / 4, [&](double f) {
             cancelled = progress && !progress((double(i) + f) / double(events.size()));
@@ -180,6 +183,13 @@ int apply(Timeline& tl, const MediaMap& media, const std::vector<int>& events, Q
         std::vector<Keyframe> keys = path(samples, visible);
         if (keys.empty())
             continue;
+        if (still) {
+            std::vector<double> xs;
+            for (const Keyframe& k : keys)
+                xs.push_back(k.value);
+            std::nth_element(xs.begin(), xs.begin() + xs.size() / 2, xs.end());
+            keys = {Keyframe{0, xs[xs.size() / 2], Keyframe::Interp::Linear}};
+        }
         for (Keyframe& k : keys) // source times to the event's own
             k.time = std::clamp<TimeUs>(TimeUs(double(k.time - c->sourceIn) / c->speed), 0, c->length);
         if (c->panCrop.empty())

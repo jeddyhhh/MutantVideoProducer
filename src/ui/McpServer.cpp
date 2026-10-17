@@ -42,6 +42,7 @@
 #include "ui/PreviewWidget.h"
 #include "ui/TimelineWidget.h"
 
+#include <QRegularExpression>
 #include <QTimer>
 #include <QBuffer>
 #include <QComboBox>
@@ -231,6 +232,13 @@ QJsonObject effectJson(const EffectInstance& e)
         if (it != e.params.end())
             params[d.id] = paramValueJson(d, it->second);
     }
+    for (const auto& [id, value] : e.params) // a freehand mask's points (not listed settings)
+        if (id.startsWith(QLatin1String("mask.p")) && id != QLatin1String("mask.points")) {
+            ParamDef point;
+            point.id = id;
+            point.type = ParamType::Number;
+            params[id] = paramValueJson(point, value);
+        }
     o[QStringLiteral("params")] = params;
     return o;
 }
@@ -247,6 +255,19 @@ QJsonArray chainJson(const EffectChain& chain)
 // "#rrggbb", text, or {"keyframes": [[seconds, value], ...]}.
 QString setParam(ParamMap& params, const std::vector<ParamDef>& defs, const QString& id, const QJsonValue& v)
 {
+    // A freehand mask's points (mask.p0x, mask.p0y ... mask.p15y) aren't listed settings: the preview's handles write them.
+    static const QRegularExpression pointId(QStringLiteral("^mask\\.p(1[0-5]|[0-9])[xy]$"));
+    const auto listed = [&](const QString& name) { return std::any_of(defs.begin(), defs.end(), [&](const ParamDef& d) { return d.id == name; }); };
+    if (!listed(id) && listed(QStringLiteral("mask.points")) && pointId.match(id).hasMatch()) {
+        ParamDef point;
+        point.id = id;
+        point.type = ParamType::Number;
+        point.min = -1;
+        point.max = 1;
+        std::vector<ParamDef> withPoint = defs;
+        withPoint.push_back(point);
+        return setParam(params, withPoint, id, v);
+    }
     const auto def = std::find_if(defs.begin(), defs.end(), [&](const ParamDef& d) { return d.id == id; });
     if (def == defs.end()) {
         QStringList ids;
@@ -263,8 +284,9 @@ QString setParam(ParamMap& params, const std::vector<ParamDef>& defs, const QStr
                 int found = i;
                 if (found < 0)
                     for (int c = 0; c < def->choices.size(); ++c)
-                        if (def->choices[c].compare(x.toString(), Qt::CaseInsensitive) == 0)
-                            found = c;
+                        if (def->choices[c].compare(x.toString(), Qt::CaseInsensitive) == 0
+                            || def->choices[c].section(QStringLiteral(" ("), 0, 0).compare(x.toString(), Qt::CaseInsensitive) == 0)
+                            found = c; // (also the name without its explanation: "Off" for "Off (everywhere)")
                 if (found < 0)
                     return QStringLiteral("\"%1\" isn't one of %2's choices: %3")
                         .arg(x.toString(), id, def->choices.join(QStringLiteral(", ")));
@@ -1590,13 +1612,17 @@ QJsonObject McpServer::ToolCall::tool_add_text()
         return errorResult(QStringLiteral("couldn't add it"));
     if (has("length"))
         c->length = std::max<TimeUs>(us(0.1), us(num("length")));
-    if (has("text")) {
+    QJsonObject result{{QStringLiteral("event_id"), id}};
+    if (has("text") && !str("text").isEmpty()) {
         const GeneratorDef* def = findGenerator(c->generator.type);
         if (def && std::any_of(def->params.begin(), def->params.end(), [](const ParamDef& d) { return d.id == QLatin1String("text"); }))
             c->generator.params[QStringLiteral("text")].text = str("text");
+        else
+            result[QStringLiteral("note")] = QStringLiteral("this preset has no text setting, so the text wasn't used (graphics_* presets: change "
+                                                            "their words with graphics_overlay update)");
     }
     apply(tl, QStringLiteral("Add Text"));
-    return jsonResult({{QStringLiteral("event_id"), id}});
+    return jsonResult(result);
 }
 
 QJsonObject McpServer::ToolCall::tool_audio_finishing()
@@ -2229,6 +2255,8 @@ QJsonObject McpServer::ToolCall::tool_render()
     const ExportPreset* chosen = matchPreset(want);
     if (!chosen)
         return errorResult(QStringLiteral("no Render As template matches \"%1\"").arg(want));
+    if (!chosen->extension.isEmpty() && QFileInfo(path).suffix().compare(chosen->extension, Qt::CaseInsensitive) != 0)
+        return errorResult(QStringLiteral("\"%1\" writes .%2 files: give a path ending in .%2").arg(chosen->name, chosen->extension));
     ExportSettings s = settingsFromPreset(*chosen, ps);
     if (a.value(QStringLiteral("hardware_encoding")).toBool(true))
         s = withGpuEncoder(s);
@@ -2804,7 +2832,11 @@ QJsonObject McpServer::ToolCall::tool_new_project()
     settings.width = std::clamp(integer("width", 1920), 16, 8192) & ~1;
     settings.height = std::clamp(integer("height", 1080), 16, 8192) & ~1;
     const double fps = std::clamp(num("fps", 30), 1.0, 240.0);
-    settings.fps = std::abs(fps - std::round(fps)) < 1e-6 ? FrameRate{int(std::round(fps)), 1} : FrameRate{int(std::round(fps * 1000)), 1001};
+    // Whole rates exactly; NTSC rates (23.976, 29.97, 59.94) as n*1000/1001; anything else to a thousandth.
+    const double ntsc = fps * 1.001;
+    settings.fps = std::abs(fps - std::round(fps)) < 1e-6        ? FrameRate{int(std::round(fps)), 1}
+                   : std::abs(ntsc - std::round(ntsc)) < 0.005 ? FrameRate{int(std::round(ntsc)) * 1000, 1001}
+                                                                 : FrameRate{int(std::round(fps * 1000)), 1000};
     w->newProject(settings);
     return jsonResult({{QStringLiteral("width"), settings.width}, {QStringLiteral("height"), settings.height}, {QStringLiteral("fps"), settings.fps.toDouble()}});
 }
@@ -3050,6 +3082,8 @@ QJsonObject McpServer::ToolCall::tool_render_queue()
     const ExportPreset* chosen = matchPreset(has("preset") ? str("preset") : QStringLiteral("MP4 H.264"));
     if (!chosen)
         return errorResult(QStringLiteral("no Render As template matches \"%1\"").arg(str("preset")));
+    if (!chosen->extension.isEmpty() && QFileInfo(str("path")).suffix().compare(chosen->extension, Qt::CaseInsensitive) != 0)
+        return errorResult(QStringLiteral("\"%1\" writes .%2 files: give a path ending in .%2").arg(chosen->name, chosen->extension));
     ExportSettings s = settingsFromPreset(*chosen, snap->settings);
     if (a.value(QStringLiteral("hardware_encoding")).toBool(true))
         s = withGpuEncoder(s);

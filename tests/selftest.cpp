@@ -393,6 +393,17 @@ int cmdExport(const QString& mediaPath, const QString& outDir)
             check(!path.isEmpty() && checkMedia(path, false).isEmpty(), QStringLiteral("template re-targeted to the GPU encoder (%1)").arg(used));
         }
     }
+    // A 10-bit template on the GPU: P010 for HEVC / AV1 encoders; H.264 ones can't, so it stays in software.
+    for (const ExportPreset& preset : exportPresets())
+        if (preset.pixelFormat.contains(QLatin1String("10")) && (preset.videoEncoder == QLatin1String("libx265") || preset.videoEncoder == QLatin1String("libx264"))) {
+            QString used;
+            const ExportSettings st = withGpuEncoder(settingsFromPreset(preset, snap.settings), &used);
+            if (used.isEmpty())
+                continue;
+            const QString path = exportWith(QStringLiteral("gpu10_%1.%2").arg(preset.videoEncoder, preset.extension), st);
+            check(!path.isEmpty() && checkMedia(path, false).isEmpty() && st.pixelFormat == QLatin1String("p010le"),
+                  QStringLiteral("10-bit template \"%1\" on the GPU encoder (%2, %3)").arg(preset.name, used, st.pixelFormat));
+        }
     // HEVC is tagged hvc1 (Apple devices refuse hev1).
     if (hevc) {
         const QString path = exportWith(QStringLiteral("hevc_tag.mp4"), settingsFromPreset(*hevc, snap.settings));
@@ -3058,6 +3069,18 @@ int cmdEditing(const QString& mediaDir, const QString& outDir)
                   && std::abs(standing.front().value - 0.5) < 0.01,
               QStringLiteral("the crop follows a walk across the picture inside its edges, and holds still for a subject standing still (%1 keys)")
                   .arg(walking.size()));
+        {
+            Timeline tl = defaultTimeline();
+            const auto placed = ops::insertMedia(tl, *video, 0, 0, fps);
+            Clip* c = tl.findClip(placed.front());
+            c->length = 2 * S;
+            c->reverse = true;
+            MediaMap media{{video->id, video}};
+            const int framed = reframe::apply(tl, media, {c->id}, QSize(1080, 1920));
+            const ParamValue& x = tl.findClip(placed.front())->panCrop[QStringLiteral("centerX")];
+            check(framed == 1 && x.keys.empty() && x.value > 0.15 && x.value < 0.85,
+                  QStringLiteral("a reversed event gets a still crop instead of being skipped (centre %1)").arg(x.value, 0, 'f', 3));
+        }
         const auto followed = reframe::follow(*video, video->info.video.front().index, 0, 2 * S, S / 4);
         check(followed.size() == 8 && std::all_of(followed.begin(), followed.end(), [](const reframe::Sample& f) { return f.x >= 0 && f.x <= 1; }),
               QStringLiteral("reframe samples a real video every quarter second (%1 samples)").arg(followed.size()));

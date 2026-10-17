@@ -236,7 +236,7 @@ it finds the subject every quarter of a second (a person, with the Remove Backgr
 is installed, or else whatever moves) and writes a Pan/Crop that fills the frame and follows it.
 The crop holds still while the subject stays near its middle, glides after it when it moves away,
 and never shows past the picture's edge. The result is ordinary Pan/Crop keyframes: open the
-event's Pan/Crop to adjust them. Reversed and speed-ramped events are skipped.
+event's Pan/Crop to adjust them. Reversed and speed-ramped events get a still crop centred where the subject mostly is.
 
 ## Stabilize
 

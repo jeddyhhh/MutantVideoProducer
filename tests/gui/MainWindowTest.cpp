@@ -658,6 +658,19 @@ int MainWindow::runEditorTest(QStringList& log)
                       {{QStringLiteral("effect_id"), effectId},
                        {QStringLiteral("params"), QJsonObject{{QStringLiteral("mask.shape"), QStringLiteral("Ellipse")}}}}));
         const bool maskSet = masked[QStringLiteral("params")].toObject()[QStringLiteral("mask.shape")] == QStringLiteral("Ellipse");
+        // A choice by its short name ("Off" for "Off (everywhere)") and a freehand point, as add_effect's description has them.
+        const QJsonObject freehand = content(call(QStringLiteral("set_effect"),
+                                                  {{QStringLiteral("effect_id"), effectId},
+                                                   {QStringLiteral("params"), QJsonObject{{QStringLiteral("mask.shape"), QStringLiteral("Freehand")},
+                                                                                          {QStringLiteral("mask.p0x"), 0.25}}}}));
+        const QJsonObject off = content(call(QStringLiteral("set_effect"),
+                                             {{QStringLiteral("effect_id"), effectId},
+                                              {QStringLiteral("params"), QJsonObject{{QStringLiteral("mask.shape"), QStringLiteral("Off")}}}}));
+        check(freehand[QStringLiteral("params")].toObject()[QStringLiteral("mask.p0x")].toDouble() == 0.25
+                  && off[QStringLiteral("params")].toObject()[QStringLiteral("mask.shape")].toString().startsWith(QLatin1String("Off")),
+              QStringLiteral("AI control sets freehand mask points and takes a choice by its short name"));
+        call(QStringLiteral("set_effect"),
+             {{QStringLiteral("effect_id"), effectId}, {QStringLiteral("params"), QJsonObject{{QStringLiteral("mask.shape"), QStringLiteral("Ellipse")}}}});
         const bool audioRefused = failed(call(QStringLiteral("add_effect"),
                                               {{QStringLiteral("target"), QStringLiteral("event")},
                                                {QStringLiteral("id"), eventId},

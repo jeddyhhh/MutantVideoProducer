@@ -135,7 +135,10 @@ TextStyle styleFrom(const Params& p, QSize canvas, double scale, double sizeOver
     TextStyle s;
     s.font = QFont(p.text(QStringLiteral("font")));
     const double sizePct = sizeOverride > 0 ? sizeOverride : p.num(QStringLiteral("size"));
-    s.font.setPixelSize(std::max(1, int(std::lround(sizePct * canvas.height() / 100.0))));
+    // Sizes are a percentage of a 16:9 picture's height: in a taller frame (4:3, 9:16) that is the height of the
+    // widest 16:9 area that fits, so a title that fits across a 16:9 frame fits across any other.
+    const double reference = std::min<double>(canvas.height(), canvas.width() * 9.0 / 16.0);
+    s.font.setPixelSize(std::max(1, int(std::lround(sizePct * reference / 100.0))));
     s.font.setBold(p.flag(QStringLiteral("bold")));
     s.font.setItalic(p.flag(QStringLiteral("italic")));
     s.font.setLetterSpacing(QFont::PercentageSpacing, 100.0 + p.num(QStringLiteral("tracking")));

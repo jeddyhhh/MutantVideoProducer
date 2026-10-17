@@ -43,6 +43,19 @@ What changed in each version of Mutant Video Producer. The newest is first.
   Background model, else the movement) and becomes a smooth Pan/Crop path that holds still,
   follows calmly and stays inside the picture.
 
+### Fixed (found by test projects)
+
+- Titles, credits and kinetic text are sized for the widest 16:9 area of the frame, so they no longer run off
+  the sides of 4:3 and vertical (9:16) projects.
+- 10-bit templates on a GPU encoder (NVENC, Quick Sync, AMF) use P010; HEVC 10-bit with hardware encoding
+  failed with "cannot encode pixel format yuv420p10le". H.264 10-bit stays in software.
+- Auto Reframe gives reversed and speed-ramped events a still crop centred on the subject instead of
+  leaving them letterboxed in a vertical edit.
+- The compound-sequence refusal names the event that overlaps the selection (often a crossfade at its edge).
+- AI control: freehand mask points (`mask.p0x`...) can be set, a choice can be named without its explanation
+  ("Off" for "Off (everywhere)"), `render` / `render_queue` refuse a path whose extension the template doesn't
+  write, `add_text` says when a preset has no text, and `new_project` keeps NTSC rates (23.976 was 23.952).
+
 ## 0.5.0 (2026-10-16)
 
 ### Timeline wheel works like Ableton Live
