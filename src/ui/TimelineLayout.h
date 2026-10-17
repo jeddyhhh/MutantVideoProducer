@@ -67,6 +67,36 @@ inline QColor trackColor(TrackType type)
          : type == TrackType::Audio ? theme::c().audioClip : theme::c().videoClip;
 }
 
+// Captions / text and graphics have their own colours, so their events and tracks stand out.
+enum class ClipKind { Plain, Text, Graphics };
+inline ClipKind clipKind(const Clip& c)
+{
+    if (!c.isGenerated())
+        return ClipKind::Plain;
+    const QString& g = c.generator.type;
+    if (g == QLatin1String("text") || g == QLatin1String("kinetic_text"))
+        return ClipKind::Text;
+    if (g == QLatin1String("graphics_overlay") || g == QLatin1String("audio_waveform"))
+        return ClipKind::Graphics;
+    return ClipKind::Plain;
+}
+inline QColor kindColor(ClipKind k, TrackType type)
+{
+    return k == ClipKind::Text ? theme::c().captionClip : k == ClipKind::Graphics ? theme::c().graphicsClip : trackColor(type);
+}
+inline QColor clipColor(TrackType type, const Clip& c) { return kindColor(clipKind(c), type); }
+// A track holding only text (a captions track) or only graphics takes that colour in its header.
+inline QColor trackColor(const Track& t)
+{
+    if (t.clips.empty())
+        return trackColor(t.type);
+    const ClipKind k = clipKind(t.clips.front());
+    for (const Clip& c : t.clips)
+        if (clipKind(c) != k)
+            return trackColor(t.type);
+    return kindColor(k, t.type);
+}
+
 using levels::panText;
 using levels::posFromVolume;
 using levels::volumeFromPos;

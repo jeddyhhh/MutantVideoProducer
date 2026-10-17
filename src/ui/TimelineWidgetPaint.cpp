@@ -300,10 +300,9 @@ void TimelineWidget::paintTrackClips(QPainter& p, const Track& track, int top, i
     const TimeUs t0 = xToTime(kHeaderWidth);
     const TimeUs t1 = xToTime(W);
     const double pxPerUs = m_pxPerSec / kUsPerSecond;
-    const QColor base = trackColor(track.type);
-
     for (size_t ci = 0; ci < track.clips.size(); ++ci) {
         const Clip& c = track.clips[ci];
+        const QColor base = clipColor(track.type, c);
         if (c.end() < t0 || c.start > t1)
             continue;
         // Clamp to the visible area so huge zoom levels don't overflow.
@@ -644,7 +643,7 @@ void TimelineWidget::paintHeaders(QPainter& p)
         if (hr.bottom() < kTopH || hr.top() > H)
             continue;
         const bool isVideo = isVisualTrack(t.type);
-        const QColor color = trackColor(t.type);
+        const QColor color = trackColor(t);
         p.fillRect(hr, ti == m_selectedTrack ? theme::c().headerSelected : theme::c().headerBg);
         p.fillRect(QRect(hr.left(), hr.top(), 4, hr.height()), color.lighter(130));
         p.setPen(theme::c().deep);

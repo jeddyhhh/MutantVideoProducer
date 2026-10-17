@@ -2,6 +2,11 @@
 
 What changed in each version of Mutant Video Producer. The newest is first.
 
+### Caption and graphics colours
+
+- On the timeline, captions and text events are gold and graphics overlays and waveforms are violet, in every
+  theme. A track holding only captions or only graphics shows that colour in its header too.
+
 ### Track lock
 
 - Right-click a track header > **Lock Track** protects its events. They can't be selected, moved,

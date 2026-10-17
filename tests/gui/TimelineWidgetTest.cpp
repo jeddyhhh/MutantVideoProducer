@@ -330,6 +330,20 @@ int TimelineWidget::runEditTest(QStringList& log)
         reset();
     }
 
+    // ---- Track colours: captions / text and graphics stand out ----
+    {
+        Track captions, graphics, mixed; // video tracks
+        Clip text, overlay;
+        text.generator.type = QStringLiteral("text");
+        overlay.generator.type = QStringLiteral("graphics_overlay");
+        captions.clips = {text, text};
+        graphics.clips = {overlay};
+        mixed.clips = {text, overlay};
+        check(text.isGenerated() && trackColor(captions) == theme::c().captionClip && trackColor(graphics) == theme::c().graphicsClip
+                  && trackColor(mixed) == theme::c().videoClip && clipColor(TrackType::Video, overlay) == theme::c().graphicsClip,
+              QStringLiteral("captions and graphics tracks (and their events) have their own colours; a mixed track keeps the video colour"));
+    }
+
     // ---- Markers and regions ----
     addMarker(1 * kUsPerSecond);
     addMarker(3 * kUsPerSecond, QStringLiteral("drop"));

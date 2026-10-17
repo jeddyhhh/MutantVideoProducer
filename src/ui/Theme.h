@@ -32,6 +32,8 @@ struct Colors {
     QColor good, warn, bad, info, cue, key;
     QColor ink; // fine lines and washes over the theme's surfaces: white on dark themes, black on light
     QColor imageClip = QColor(0xb96c25); // image tracks remain orange in every theme
+    QColor captionClip = QColor(0xb39b1e);  // captions and text events: gold in every theme
+    QColor graphicsClip = QColor(0x7a4fd8); // graphics overlays and waveforms: violet in every theme
 };
 
 // Classic, Neon Grid, Night City, Synthwave Sunset, Terminal, Arctic, Studio Light.
