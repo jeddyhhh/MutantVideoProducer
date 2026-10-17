@@ -534,3 +534,9 @@ ExportSettings ExportDialog::settings() const
         s.captions = m_captions;
     return s;
 }
+
+QString ExportDialog::templateName() const
+{
+    const auto& presets = exportPresets();
+    return m_presetIndex >= 0 && m_presetIndex < int(presets.size()) ? presets[size_t(m_presetIndex)].name : QString();
+}

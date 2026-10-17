@@ -242,6 +242,7 @@ add_executable(mvp WIN32
     src/ui/MainWindowYouTube.cpp
     src/ui/MainWindowSetup.cpp src/ui/MainWindowTools.cpp src/ui/MainWindowCuts.cpp
     src/ui/RenderQueue.h src/ui/RenderQueue.cpp
+    src/ui/DeliverView.h src/ui/DeliverView.cpp
     src/ui/MainWindowHelp.cpp
     src/ui/CrashReport.h         src/ui/CrashReport.cpp
     src/ui/MonkeyTest.h          src/ui/MonkeyTest.cpp

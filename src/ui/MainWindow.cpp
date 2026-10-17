@@ -6,6 +6,7 @@
 #include <QUuid>
 #include "ui/MainWindow.h"
 #include "ui/RenderQueue.h"
+#include "ui/DeliverView.h"
 
 #include "core/Compositor.h"
 #include "core/Exporter.h"
@@ -467,8 +468,10 @@ void MainWindow::renderAs()
     status.exec();
     monitor->cancel = true;
     worker.join();
-    if (ok)
+    if (ok) {
+        DeliverView::remember(m_project->filePath(), s.path, dlg.templateName());
         Profiles::instance().remember({QJsonObject{{"path", s.path}, {"folder", "Exports"}, {"origin", "render"}}});
+    }
 }
 
 RenderQueue* MainWindow::renderQueue()
@@ -476,7 +479,8 @@ RenderQueue* MainWindow::renderQueue()
     if (!m_renderQueue) {
         m_renderQueue = new RenderQueue(this);
         connect(m_renderQueue, &RenderQueue::addProjectRequested, this, &MainWindow::queueProjectFile);
-        connect(m_renderQueue, &RenderQueue::rendered, this, [](const QString& path) {
+        connect(m_renderQueue, &RenderQueue::rendered, this, [this](const QString& path) {
+            DeliverView::remember(m_project->filePath(), path);
             Profiles::instance().remember({QJsonObject{{"path", path}, {"folder", "Exports"}, {"origin", "render"}}});
         });
     }

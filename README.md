@@ -6,9 +6,10 @@
 
 **Edit videos, compose animated graphics, finish your audio, and perform live visuals.**
 
-Mutant Video Producer is a video editor for Windows and Linux with two workspaces:
-**Editor** for building and exporting projects, and **Live** for working with cameras,
-screens, windows and video files in real time. It combines a multitrack timeline,
+Mutant Video Producer is a video editor for Windows and Linux with three workspaces:
+**Editor** for building projects, **Live** for working with cameras, screens, windows and
+video files in real time, and **Deliver** for checking a finished edit, rendering every
+output at once and packing it for publishing. It combines a multitrack timeline,
 native 2D graphics, local AI tools and MCP control in one application.
 
 ## Download

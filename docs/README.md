@@ -1,8 +1,9 @@
 # Mutant Video Producer User Guide
 
-Mutant Video Producer is a video editor with two workspaces: the **Editor**, where you cut, add effects, mix
-sound and render, and **Live**, where you play effects on a camera, a screen or video files in
-real time and record or stream the result. In Mutant Video Producer, choose **Help > User Guide** to open this
+Mutant Video Producer is a video editor with three workspaces: the **Editor**, where you cut, add effects, mix
+sound and render, **Live**, where you play effects on a camera, a screen or video files in
+real time and record or stream the result, and **Deliver**, where a finished edit is checked, rendered
+to every output at once and packed for publishing. In Mutant Video Producer, choose **Help > User Guide** to open this
 guide, and **Help > Tutorials** to open the step-by-step tutorials and their example projects.
 
 ![The editor](screenshots/editor.png)
@@ -39,6 +40,7 @@ guide, and **Help > Tutorials** to open the step-by-step tutorials and their exa
   WebVTT, subtitle tracks in renders, local AI voice generation and RVC conversion.
 - [Optional AI Components](ai-components.md): install speech and RVC engines after installing the small Windows editor.
 - [Rendering](rendering.md): Render As, the templates, size limits, framing, GPU encoders, frames as images.
+- [Deliver](deliver.md): the Deliver tab's checks, several outputs at once, the publish pack and render history.
 
 ## Live
 

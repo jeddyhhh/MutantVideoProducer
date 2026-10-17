@@ -7,6 +7,10 @@
 #include <QUuid>
 #include "ui/MainWindow.h"
 #include "ui/RenderQueue.h"
+#include "ui/DeliverView.h"
+#include <QLineEdit>
+#include <QPlainTextEdit>
+#include <QTreeWidget>
 #include "core/Compositor.h"
 #include "core/Exporter.h"
 #include "core/FFmpeg.h"
@@ -386,6 +390,46 @@ int MainWindow::runEditorTest(QStringList& log)
             wait(50);
         check(!queue->busy() && queue->waiting() == 0 && !QFileInfo::exists(third), "stopping the queue cancels the running render and leaves no file");
         queue->close();
+    }
+    {
+        // Deliver tab: checks, two outputs rendered through the queue into History, the publish pack saved.
+        m_modes->setCurrentWidget(m_deliver);
+        wait(200);
+        auto* folder = m_deliver->findChild<QLineEdit*>("deliverFolder");
+        folder->setText(work.filePath("deliver"));
+        emit folder->editingFinished();
+        m_deliver->setOutputs({"MP3 - 192 kb/s", "WAV - 16-bit PCM"});
+        const int checks = m_deliver->findChild<QTreeWidget*>("deliverChecks")->topLevelItemCount();
+        const auto* mp3 = [] {
+            for (const auto& p : exportPresets())
+                if (p.name == "MP3 - 192 kb/s")
+                    return &p;
+            return static_cast<const ExportPreset*>(nullptr);
+        }();
+        const QString mp3Path = mp3 ? m_deliver->outputPath(*mp3) : QString();
+        QDir(work.filePath("deliver")).removeRecursively();
+        QString why;
+        const int queued = m_deliver->renderOutputs(&why);
+        for (int i = 0; i < 1200 && (renderQueue()->busy() || renderQueue()->waiting()); ++i)
+            wait(50);
+        wait(200);
+        const auto* history = m_deliver->findChild<QTreeWidget*>("deliverHistory");
+        bool listed = false;
+        for (int i = 0; i < history->topLevelItemCount(); ++i)
+            listed = listed || (history->topLevelItem(i)->text(2) == "MP3 - 192 kb/s" && history->topLevelItem(i)->text(1) == QFileInfo(mp3Path).fileName());
+        m_deliver->findChild<QPlainTextEdit*>("deliverDescription")->setPlainText("Chapters below.");
+        QString packError;
+        const bool pack = m_deliver->savePack(&packError);
+        m_modes->grab().save(work.filePath("deliver-tab.png"));
+        const QString description = QDir(work.filePath("deliver")).filePath(QFileInfo(mp3Path).completeBaseName().section(" - ", 0, -2) + " - description.txt");
+        check(checks >= 5 && mp3Path.endsWith(" - MP3.mp3") && queued == 2 && probeMedia(mp3Path).ok() && listed && pack
+                  && QFileInfo::exists(description),
+              QStringLiteral("Deliver tab: %1 checks, 2 outputs rendered (%2) and listed in History, publish pack saved %3")
+                  .arg(checks)
+                  .arg(why.isEmpty() ? QFileInfo(mp3Path).fileName() : why)
+                  .arg(packError));
+        renderQueue()->close();
+        m_modes->setCurrentIndex(0);
     }
 
     failures += m_timeline->runEditTest(log);

@@ -7,6 +7,7 @@
 #include <QUuid>
 #include "ui/MainWindow.h"
 #include "ui/RenderQueue.h"
+#include "ui/DeliverView.h"
 #include "core/Compositor.h"
 #include "core/Exporter.h"
 #include "core/FFmpeg.h"
@@ -316,6 +317,11 @@ void MainWindow::createLayout()
     m_modes->addTab(m_mainSplit, tr("Editor"));
     m_modes->addTab(m_live, tr("Live"));
     m_modes->setTabToolTip(1, tr("Capture a camera, capture card, screen or window and play with effects in real time"));
+    m_deliver = new DeliverView(m_project, {[this] { return renderQueue(); }, [this] { return m_timeline->cursorTime(); },
+                                            [this](TimeUs t) { m_modes->setCurrentIndex(0); seekTo(t); }, [this] { return save(); },
+                                            [this] { showAudioFinishing(this, m_project); }});
+    m_modes->addTab(m_deliver, tr("Deliver"));
+    m_modes->setTabToolTip(2, tr("Check the edit, render every output at once, and make the title, description, thumbnail and captions"));
     connect(m_modes, &QTabWidget::currentChanged, this, [this](int index) {
         const bool live = index == 1;
         if (live && m_engine->isPlaying())
@@ -952,6 +958,7 @@ void MainWindow::connectSignals()
              {m_liveClips, "media.md#from-live"},
              {m_youtubeBin, "media.md#create-clip-from-youtube"},
              {m_live, "live.md"},
+             {m_deliver, "deliver.md"},
              {findChild<QWidget*>(QStringLiteral("fxBrowser")), "video-effects.md"},
              {findChild<QWidget*>(QStringLiteral("audioFxBrowser")), "audio.md"},
              {findChild<QWidget*>(QStringLiteral("transitionBrowser")), "transitions.md"},

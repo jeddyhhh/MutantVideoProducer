@@ -39,6 +39,7 @@
 #include "core/SceneDetect.h"
 #include "core/YouTubeUpload.h"
 #include "ui/RenderQueue.h"
+#include "ui/DeliverView.h"
 #include "ui/PreviewWidget.h"
 #include "ui/TimelineWidget.h"
 
@@ -2322,12 +2323,14 @@ QJsonObject McpServer::ToolCall::tool_render()
     status->setAttribute(Qt::WA_DeleteOnClose);
     status->show();
     auto* completion = new QTimer(status);
-    QObject::connect(completion, &QTimer::timeout, status, [r, completion] {
+    QObject::connect(completion, &QTimer::timeout, status, [r, completion, projectPath = project->filePath(), templateName = chosen->name] {
         if (!r->done)
             return;
         completion->stop();
-        if (r->ok)
+        if (r->ok) {
+            DeliverView::remember(projectPath, r->path, templateName);
             Profiles::instance().remember({QJsonObject{{"path", r->path}, {"folder", "Exports"}, {"origin", "render"}}});
+        }
     });
     completion->start(200);
     QJsonObject result{{QStringLiteral("rendering"), path},

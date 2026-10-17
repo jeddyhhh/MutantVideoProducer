@@ -25,6 +25,7 @@ public:
 
     ExportSettings settings() const;
     bool queued() const { return m_queued; } // closed with Add to Render Queue instead of Render
+    QString templateName() const; // the Render As template chosen, if any
     // The project's captions: offered as a subtitle track (MP4, MOV, MKV, WebM).
     void setCaptions(const std::vector<Caption>& captions);
 

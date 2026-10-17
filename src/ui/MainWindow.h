@@ -209,6 +209,7 @@ private:
     bool m_holdProperties = false;  // the Properties tab just opened: the selection that came with it doesn't switch away
     class QTabWidget* m_modes = nullptr; // Editor / Live
     class LiveView* m_live = nullptr;
+    class DeliverView* m_deliver = nullptr;
     class LiveClipsBrowser* m_liveClips = nullptr; // "From Live" tab
     QLabel* m_previewInfo;
     QComboBox* m_quality;

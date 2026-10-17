@@ -2,6 +2,16 @@
 
 What changed in each version of Mutant Video Producer. The newest is first.
 
+### Deliver tab
+
+- A third tab beside Editor and Live gets a finished edit out. **Checks**: offline media, gaps with
+  nothing on screen, loudness (Measure Loudness), YouTube chapters, platform length limits (with
+  Trim) and captions, with a button to go there or fix it. **Outputs**: several templates rendered
+  through the queue at once, each named after the project and template. **Publish pack**: title,
+  thumbnail from the cursor frame, description with chapters or a track listing, saved with the
+  captions in one go. **History**: every render of the project, from anywhere. See
+  [Deliver](docs/deliver.md).
+
 ### Caption and graphics colours
 
 - On the timeline, captions and text events are gold and graphics overlays and waveforms are violet, in every
