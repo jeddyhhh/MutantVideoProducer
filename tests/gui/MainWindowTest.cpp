@@ -766,7 +766,7 @@ int MainWindow::runEditorTest(QStringList& log)
                     .toObject()[QStringLiteral("tools")]
                     .toArray();
             const QRegularExpression skip(
-                QStringLiteral("render|export|save|open|import|caption|youtube|stream|record|live|switcher|pad|tempo"));
+                QStringLiteral("render|export|save|open|new_project|import|caption|youtube|stream|record|live|switcher|pad|tempo"));
             std::mt19937 rng(5);
             auto garbage = [&]() -> QJsonValue {
                 switch (rng() % 14) {

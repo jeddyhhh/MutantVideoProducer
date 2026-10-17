@@ -1096,6 +1096,17 @@ QJsonArray McpServer::toolList()
                    {QStringLiteral("duck_under"), prop("integer", "Audio: turn this track down while that track (index) has sound; -1 stops")},
                    {QStringLiteral("duck_amount"), prop("number", "Audio: how far, dB (-60..0, default -12)")}},
                   {QStringLiteral("track")}));
+    t.append(tool("new_project", "Starts a new, empty project (File > New). Refuses while there are unsaved changes unless discard is true.",
+                  {{QStringLiteral("width"), prop("integer", "Picture width (default 1920)")},
+                   {QStringLiteral("height"), prop("integer", "Picture height (default 1080)")},
+                   {QStringLiteral("fps"), prop("number", "Frame rate (default 30)")},
+                   {QStringLiteral("discard"), prop("boolean", "Drop unsaved changes")}}));
+    t.append(tool("open_project", "Opens a .mvp project (File > Open). Refuses while there are unsaved changes unless discard is true. Lists files it can't find.",
+                  {{QStringLiteral("path"), prop("string", "The .mvp file")}, {QStringLiteral("discard"), prop("boolean", "Drop unsaved changes")}},
+                  {QStringLiteral("path")}));
+    t.append(tool("delete_track", "Removes a track and its events, or (empty: true) every track that has no events.",
+                  {{QStringLiteral("track"), prop("integer", "Track index (see get_project)")},
+                   {QStringLiteral("empty"), prop("boolean", "Remove every empty track instead")}}));
     t.append(tool("freeze_frame", "Holds a video event's picture: at the time, the event is split and its frame there is held for the length (later events on that track move along).",
                   {{QStringLiteral("time"), prop("number", "Seconds, over a video event")},
                    {QStringLiteral("length"), prop("number", "Seconds held (default 2)")}},
@@ -1264,6 +1275,9 @@ struct McpServer::ToolCall {
     QJsonObject tool_captions();
     QJsonObject tool_edit_track();
     QJsonObject tool_freeze_frame();
+    QJsonObject tool_new_project();
+    QJsonObject tool_open_project();
+    QJsonObject tool_delete_track();
     QJsonObject tool_scene_changes();
     QJsonObject tool_cut_time();
     QJsonObject tool_auto_reframe();
@@ -2780,6 +2794,69 @@ QJsonObject McpServer::ToolCall::tool_edit_track()
                        {QStringLiteral("solo"), t.solo}, {QStringLiteral("name"), t.name}});
 }
 
+QJsonObject McpServer::ToolCall::tool_new_project()
+{
+    if (project->isModified() && !a.value(QStringLiteral("discard")).toBool())
+        return errorResult(QStringLiteral("the project has unsaved changes: save_project first, or pass discard: true"));
+    if (w->voiceJob()->busy())
+        return errorResult(QStringLiteral("Wait for voice generation to finish."));
+    ProjectSettings settings;
+    settings.width = std::clamp(integer("width", 1920), 16, 8192) & ~1;
+    settings.height = std::clamp(integer("height", 1080), 16, 8192) & ~1;
+    const double fps = std::clamp(num("fps", 30), 1.0, 240.0);
+    settings.fps = std::abs(fps - std::round(fps)) < 1e-6 ? FrameRate{int(std::round(fps)), 1} : FrameRate{int(std::round(fps * 1000)), 1001};
+    w->newProject(settings);
+    return jsonResult({{QStringLiteral("width"), settings.width}, {QStringLiteral("height"), settings.height}, {QStringLiteral("fps"), settings.fps.toDouble()}});
+}
+
+QJsonObject McpServer::ToolCall::tool_open_project()
+{
+    if (project->isModified() && !a.value(QStringLiteral("discard")).toBool())
+        return errorResult(QStringLiteral("the project has unsaved changes: save_project first, or pass discard: true"));
+    if (w->voiceJob()->busy())
+        return errorResult(QStringLiteral("Wait for voice generation to finish."));
+    const QString path = QFileInfo(str("path")).absoluteFilePath();
+    w->stopPlayback(false);
+    QString error;
+    QStringList missing;
+    if (str("path").isEmpty() || !project->load(path, &error, &missing))
+        return errorResult(error.isEmpty() ? QStringLiteral("give a path") : error);
+    w->removeAutosave();
+    w->addRecent(path);
+    w->m_settingsMatched = true;
+    w->m_timeline->setRegion(0, 0);
+    w->m_timeline->setCursorTime(0);
+    w->m_timeline->zoomToFit();
+    w->refreshPreview();
+    w->updateTitle();
+    return jsonResult({{QStringLiteral("opened"), path}, {QStringLiteral("missing"), QJsonArray::fromStringList(missing)},
+                       {QStringLiteral("seconds"), sec(project->timeline().duration())}});
+}
+
+QJsonObject McpServer::ToolCall::tool_delete_track()
+{
+    Timeline tl = project->timeline();
+    int removed = 0;
+    if (a.value(QStringLiteral("empty")).toBool()) {
+        for (int i = int(tl.tracks.size()) - 1; i >= 0 && tl.tracks.size() > 1; --i)
+            if (tl.tracks[size_t(i)].clips.empty()) {
+                ops::removeTrack(tl, i);
+                ++removed;
+            }
+    } else {
+        const int index = integer("track", -1);
+        if (index < 0 || index >= int(tl.tracks.size()))
+            return errorResult(QStringLiteral("no track %1").arg(index));
+        if (tl.tracks.size() == 1)
+            return errorResult(QStringLiteral("a project keeps at least one track"));
+        ops::removeTrack(tl, index);
+        removed = 1;
+    }
+    if (removed)
+        apply(tl, QStringLiteral("Delete track"));
+    return jsonResult({{QStringLiteral("removed"), removed}, {QStringLiteral("tracks"), int(tl.tracks.size())}});
+}
+
 QJsonObject McpServer::ToolCall::tool_freeze_frame()
 {
     const TimeUs length = us(std::clamp(num("length", 2), 0.1, 60.0));
@@ -2998,6 +3075,9 @@ QJsonObject McpServer::callTool(const QString& name, const QJsonObject& a)
         {QStringLiteral("story_chapters"), {&ToolCall::tool_story_chapters, false}},
         {QStringLiteral("edit_track"), {&ToolCall::tool_edit_track, false}},
         {QStringLiteral("freeze_frame"), {&ToolCall::tool_freeze_frame, false}},
+        {QStringLiteral("new_project"), {&ToolCall::tool_new_project, false}},
+        {QStringLiteral("open_project"), {&ToolCall::tool_open_project, false}},
+        {QStringLiteral("delete_track"), {&ToolCall::tool_delete_track, false}},
         {QStringLiteral("scene_changes"), {&ToolCall::tool_scene_changes, false}},
         {QStringLiteral("cut_time"), {&ToolCall::tool_cut_time, false}},
         {QStringLiteral("auto_reframe"), {&ToolCall::tool_auto_reframe, false}},
