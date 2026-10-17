@@ -1177,6 +1177,33 @@ QJsonArray McpServer::toolList()
                   {{QStringLiteral("event_ids"), arrayProp("integer", "Video events")},
                    {QStringLiteral("portrait"), prop("boolean", "Switch a landscape project to 1080x1920 first (default false)")}},
                   {QStringLiteral("event_ids")}));
+    t.append(tool("deliver",
+                  "The Deliver tab: getting a finished edit out. check (readiness, the checks with what is worth a look, the "
+                  "outputs with files and size estimates, the publish pack; measure_loudness scans the mix first), outputs (change "
+                  "the outputs: add / remove templates or a pack, tick, trim to a platform limit, folder; files are named after the "
+                  "project and template, with the right extension), render (every ticked output through the render queue; "
+                  "render_queue status follows it), pack (set the title, description with {chapters} {tracklist} {title} {length} "
+                  "{date} placeholders, tags, the thumbnail frame; save writes description, thumbnail and captions to the folder) "
+                  "or history (past renders of the project, with their lengths checked).",
+                  {{QStringLiteral("action"),
+                    enumProp({QStringLiteral("check"), QStringLiteral("outputs"), QStringLiteral("render"), QStringLiteral("pack"), QStringLiteral("history")},
+                             "What")},
+                   {QStringLiteral("measure_loudness"), prop("boolean", "check: scan the final mix's loudness first (takes a while)")},
+                   {QStringLiteral("loudness_target"), prop("integer", "check: 0 online video / speech -16, 1 louder online -14, 2 EBU -23, 3 US -24")},
+                   {QStringLiteral("add"), arrayProp("string", "outputs: Render As templates to add (words from their names)")},
+                   {QStringLiteral("remove"), arrayProp("string", "outputs: templates to take out (words from their names)")},
+                   {QStringLiteral("pack"), enumProp({QStringLiteral("youtube"), QStringLiteral("social"), QStringLiteral("audio"), QStringLiteral("masters"),
+                                                      QStringLiteral("share")},
+                                                     "outputs: add a pack of templates")},
+                   {QStringLiteral("ticked"), arrayProp("string", "outputs: tick only these (words from their names); the rest are unticked")},
+                   {QStringLiteral("trim"), prop("object", "outputs: {template words: seconds} renders only the start (0: the whole edit)")},
+                   {QStringLiteral("folder"), prop("string", "outputs: the folder the files go in")},
+                   {QStringLiteral("title"), prop("string", "pack: the video title (drawn on the thumbnail)")},
+                   {QStringLiteral("description"), prop("string", "pack: the description; placeholders are filled in when saved")},
+                   {QStringLiteral("tags"), prop("string", "pack: comma-separated tags (YouTube takes 500 characters)")},
+                   {QStringLiteral("thumbnail_time"), prop("number", "pack: seconds; that frame becomes the thumbnail")},
+                   {QStringLiteral("save"), prop("boolean", "pack: write the description, thumbnail and captions into the folder")}},
+                  {QStringLiteral("action")}));
     t.append(tool("youtube_publish",
                   "For the upload: chapters (\"00:00 Name\" lines from story chapters or markers, with warnings when YouTube "
                   "wouldn't show them), track_listing (an audio track's events as \"01. Name - 04:19\") or thumbnail (a 1280x720 "
@@ -1327,6 +1354,7 @@ struct McpServer::ToolCall {
     QJsonObject tool_cut_time();
     QJsonObject tool_auto_reframe();
     QJsonObject tool_youtube_publish();
+    QJsonObject tool_deliver();
     QJsonObject tool_render_queue();
     QJsonObject tool_list_voices();
     QJsonObject tool_ai_components();
@@ -3060,6 +3088,147 @@ QJsonObject McpServer::ToolCall::tool_auto_reframe()
                        {QStringLiteral("frame"), QStringLiteral("%1x%2").arg(settings.width).arg(settings.height)}});
 }
 
+QJsonObject McpServer::ToolCall::tool_deliver()
+{
+    DeliverView* deliver = w->m_deliver;
+    if (!deliver)
+        return errorResult(QStringLiteral("the Deliver tab isn't there"));
+    const QString action = str("action");
+    auto strings = [&](const char* key) {
+        QStringList out;
+        for (const auto& v : a.value(QLatin1String(key)).toArray())
+            if (v.isString() && !v.toString().trimmed().isEmpty())
+                out << v.toString();
+        return out;
+    };
+    // A listed output by words from its name (or the template they match).
+    auto listed = [&](const QString& words, QString* error) -> QString {
+        const QStringList current = deliver->outputs();
+        if (current.contains(words))
+            return words;
+        if (const ExportPreset* p = matchPreset(words); p && current.contains(p->name))
+            return p->name;
+        for (const QString& name : current) {
+            bool all = true;
+            for (const QString& word : words.split(QLatin1Char(' '), Qt::SkipEmptyParts))
+                all = all && name.contains(word, Qt::CaseInsensitive);
+            if (all)
+                return name;
+        }
+        *error = QStringLiteral("no output matches \"%1\" (outputs: %2)").arg(words, current.join(QStringLiteral(", ")));
+        return {};
+    };
+    if (action == QLatin1String("check")) {
+        deliver->refresh();
+        if (has("loudness_target")) {
+            auto* target = deliver->findChild<QComboBox*>(QStringLiteral("deliverTarget"));
+            const int i = integer("loudness_target");
+            if (!target || i < 0 || i >= target->count())
+                return errorResult(QStringLiteral("loudness_target: 0 to %1").arg(target ? target->count() - 1 : 0));
+            target->setCurrentIndex(i);
+        }
+        if (a.value(QStringLiteral("measure_loudness")).toBool())
+            deliver->measureLoudness();
+        return jsonResult(deliver->report());
+    }
+    if (action == QLatin1String("outputs")) {
+        deliver->refresh();
+        QStringList list = deliver->outputs();
+        for (const QString& words : strings("add")) {
+            const ExportPreset* p = matchPreset(words);
+            if (!p)
+                return errorResult(QStringLiteral("no Render As template matches \"%1\"").arg(words));
+            if (!list.contains(p->name))
+                list << p->name;
+        }
+        if (has("pack")) {
+            bool known = false;
+            for (const auto& pk : DeliverView::packs())
+                if (pk.id == str("pack")) {
+                    known = true;
+                    for (const QString& n : pk.templates)
+                        if (!list.contains(n))
+                            list << n;
+                }
+            if (!known)
+                return errorResult(QStringLiteral("pack: youtube, social, audio, masters or share"));
+        }
+        if (list != deliver->outputs())
+            deliver->setOutputs(list);
+        QString error;
+        for (const QString& words : strings("remove")) {
+            const QString name = listed(words, &error);
+            if (name.isEmpty())
+                return errorResult(error);
+            list.removeAll(name);
+            deliver->setOutputs(list);
+        }
+        if (has("ticked")) {
+            QStringList on;
+            for (const QString& words : strings("ticked")) {
+                const QString name = listed(words, &error);
+                if (name.isEmpty())
+                    return errorResult(error);
+                on << name;
+            }
+            for (const QString& name : deliver->outputs())
+                deliver->setTicked(name, on.contains(name));
+        }
+        if (has("trim")) {
+            const QJsonObject trim = a.value(QStringLiteral("trim")).toObject();
+            for (auto it = trim.begin(); it != trim.end(); ++it) {
+                const QString name = listed(it.key(), &error);
+                if (name.isEmpty())
+                    return errorResult(error);
+                const double seconds = it.value().toDouble();
+                if (!std::isfinite(seconds) || seconds < 0 || seconds > 86400)
+                    return errorResult(QStringLiteral("trim: seconds from 0 (the whole edit) to 86400"));
+                deliver->setTrim(name, us(seconds));
+            }
+        }
+        if (has("folder")) {
+            if (str("folder").trimmed().isEmpty())
+                return errorResult(QStringLiteral("folder: give a folder"));
+            deliver->setFolder(QFileInfo(str("folder")).absoluteFilePath());
+        }
+        return jsonResult(deliver->report());
+    }
+    if (action == QLatin1String("render")) {
+        QString error;
+        const int queued = deliver->renderOutputs(&error);
+        if (queued == 0)
+            return errorResult(error.isEmpty() ? QStringLiteral("no output is ticked (deliver outputs)") : error);
+        QJsonObject result{{QStringLiteral("queued"), queued}, {QStringLiteral("queue"), w->renderQueue()->status()}};
+        if (!error.isEmpty())
+            result[QStringLiteral("refused")] = error;
+        return jsonResult(result);
+    }
+    if (action == QLatin1String("pack")) {
+        deliver->refresh();
+        auto text = [&](const char* key) { return has(key) ? std::optional<QString>(str(key)) : std::nullopt; };
+        deliver->setPackText(text("title"), text("description"), text("tags"));
+        if (has("thumbnail_time")) {
+            const double t = num("thumbnail_time");
+            if (!std::isfinite(t) || t < 0 || us(t) > project->timeline().duration())
+                return errorResult(QStringLiteral("thumbnail_time: seconds inside the edit"));
+            deliver->pickThumbnail(us(t));
+        }
+        QJsonObject result = deliver->report();
+        if (a.value(QStringLiteral("save")).toBool()) {
+            QString error;
+            if (!deliver->savePack(&error))
+                return errorResult(error);
+            result[QStringLiteral("saved_in")] = result[QStringLiteral("folder")];
+        }
+        return jsonResult(result);
+    }
+    if (action == QLatin1String("history")) {
+        deliver->refresh();
+        return jsonResult({{QStringLiteral("renders"), deliver->historyJson()}});
+    }
+    return errorResult(QStringLiteral("action: check, outputs, render, pack or history"));
+}
+
 QJsonObject McpServer::ToolCall::tool_youtube_publish()
 {
     const QString action = str("action");
@@ -3156,6 +3325,7 @@ QJsonObject McpServer::callTool(const QString& name, const QJsonObject& a)
         {QStringLiteral("cut_time"), {&ToolCall::tool_cut_time, false}},
         {QStringLiteral("auto_reframe"), {&ToolCall::tool_auto_reframe, false}},
         {QStringLiteral("youtube_publish"), {&ToolCall::tool_youtube_publish, false}},
+        {QStringLiteral("deliver"), {&ToolCall::tool_deliver, false}},
         {QStringLiteral("render_queue"), {&ToolCall::tool_render_queue, false}},
         {QStringLiteral("compound_sequence"), {&ToolCall::tool_compound_sequence, false}},
         {QStringLiteral("directors_dice"), {&ToolCall::tool_directors_dice, false}},

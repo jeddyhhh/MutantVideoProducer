@@ -830,6 +830,43 @@ int MainWindow::runEditorTest(QStringList& log)
                 wait(200);
             check(chosen.startsWith(QStringLiteral("MP3")), QStringLiteral("AI render: \"MP3\" to a .mp3 uses an MP3 template (%1)").arg(chosen));
         }
+        {
+        // The Deliver tab through AI control.
+        const auto setup = content(call("deliver", {{"action", "outputs"}, {"pack", "audio"}, {"ticked", QJsonArray{"MP3 320"}},
+                                                    {"trim", QJsonObject{{"MP3 320", 1}}}, {"folder", work.filePath("deliver-ai")}}));
+        bool trimmed = false, onlyMp3 = true;
+        for (const auto& v : setup["outputs"].toArray()) {
+            const QJsonObject o = v.toObject();
+            trimmed = trimmed || (o["template"].toString() == "MP3 - 320 kb/s" && o["trimmed_to"].toDouble() == 1 && o["ticked"].toBool());
+            onlyMp3 = onlyMp3 && (o["ticked"].toBool() == (o["template"].toString() == "MP3 - 320 kb/s"));
+        }
+        const auto packed = content(call("deliver", {{"action", "pack"}, {"title", "AI title"}, {"description", "{title} - {length}"},
+                                                     {"tags", "a, b"}, {"thumbnail_time", 1}, {"save", true}}));
+        const auto report = content(call("deliver", {{"action", "check"}}));
+        const bool refused = failed(call("deliver", {{"action", "outputs"}, {"add", QJsonArray{"no such template anywhere"}}}))
+            && failed(call("deliver", {{"action", "pack"}, {"thumbnail_time", 1e9}}));
+        const bool rendered = !failed(call("deliver", {{"action", "render"}}));
+        for (int i = 0; i < 1200 && (renderQueue()->busy() || renderQueue()->waiting()); ++i)
+            wait(50);
+        QString aiMp3;
+        QStringList files;
+        for (const auto& v : setup["outputs"].toArray()) {
+            files << v.toObject()["file"].toString();
+            if (v.toObject()["template"].toString() == "MP3 - 320 kb/s")
+                aiMp3 = v.toObject()["file"].toString();
+        }
+        const bool distinct = QSet<QString>(files.begin(), files.end()).size() == files.size();
+        const MediaInfo aiFile = probeMedia(aiMp3);
+        const auto past = content(call("deliver", {{"action", "history"}}));
+        check(trimmed && onlyMp3 && distinct && packed["description_filled_in"].toString().startsWith("AI title - ") && packed.contains("thumbnail_time")
+                  && QFileInfo::exists(QDir(work.filePath("deliver-ai")).filePath(QFileInfo(aiMp3).completeBaseName().section(" - ", 0, -2) + " - thumbnail.jpg"))
+                  && report.contains("ready") && report["checks"].toArray().size() >= 5 && refused && rendered && aiFile.ok()
+                  && std::abs(double(aiFile.duration) / kUsPerSecond - 1.0) < 0.3 && !past["renders"].toArray().isEmpty(),
+              QStringLiteral("AI deliver tool: a pack, ticks and a 1 s trim, the publish pack written, checks read, one output rendered (%1 s) "
+                             "into History")
+                  .arg(double(aiFile.duration) / kUsPerSecond, 0, 'f', 2));
+            renderQueue()->close();
+        }
         // The Live tab.
         call(QStringLiteral("set_pad"),
              {{QStringLiteral("pad"), 3},
@@ -858,7 +895,7 @@ int MainWindow::runEditorTest(QStringList& log)
                     .toObject()[QStringLiteral("tools")]
                     .toArray();
             const QRegularExpression skip(
-                QStringLiteral("render|export|save|open|new_project|import|caption|youtube|stream|record|live|switcher|pad|tempo"));
+                QStringLiteral("render|export|save|open|new_project|import|caption|youtube|stream|record|live|switcher|pad|tempo|deliver"));
             std::mt19937 rng(5);
             auto garbage = [&]() -> QJsonValue {
                 switch (rng() % 14) {

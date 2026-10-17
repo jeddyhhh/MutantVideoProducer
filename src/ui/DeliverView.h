@@ -9,12 +9,16 @@
 #include "core/Time.h"
 
 #include <QImage>
+#include <QJsonArray>
+#include <QJsonObject>
+#include <QStringList>
 #include <QWidget>
 
 #include <functional>
 #include <map>
 #include <memory>
 #include <optional>
+#include <vector>
 
 class Project;
 class RenderQueue;
@@ -58,6 +62,22 @@ public:
     // A file size estimate for a template over `length`, in bytes; `exact` false when it depends on the picture.
     static double estimateBytes(const ExportPreset& p, int width, int height, double fps, TimeUs length, bool* exact = nullptr);
 
+    // For AI control (and the Add a Pack menu).
+    struct Pack {
+        QString id, label;
+        QStringList templates;
+    };
+    static const std::vector<Pack>& packs();
+    bool addPack(const QString& id);
+    void setTicked(const QString& templateName, bool ticked);
+    void setTrim(const QString& templateName, TimeUs limit); // 0: the whole edit
+    void setFolder(const QString& folder);
+    void setPackText(const std::optional<QString>& title, const std::optional<QString>& description, const std::optional<QString>& tags);
+    void pickThumbnail(TimeUs t);
+    void measureLoudness();
+    QJsonObject report() const;     // readiness, checks, outputs, the pack, loudness
+    QJsonArray historyJson() const; // the History list
+
 protected:
     void showEvent(class QShowEvent* e) override;
 
@@ -68,7 +88,6 @@ private:
     void fillHistory();
     void updateHeader();
     void updateTotals();
-    void pickThumbnail(TimeUs t);
     void pollQueue();
     void rebuildStrip();
     QString baseName() const;
@@ -81,6 +100,9 @@ private:
     std::map<QString, TimeUs> m_trim; // template name -> render only the first part
     std::vector<std::unique_ptr<OutputRow>> m_rows;
     int m_problems = 0;
+    QJsonArray m_checkData; // the checks, as AI control reads them
+    double m_totalBytes = 0, m_freeBytes = -1;
+    bool m_totalExact = true;
 
     // Header
     QLabel *m_projectName, *m_projectInfo, *m_readiness, *m_renderStatus;

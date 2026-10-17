@@ -51,6 +51,12 @@ The status bar shows each tool it uses.
 | undo, redo, save_project, set_project_settings | Undo, save, frame size and rate. |
 | collect_project | Creates a portable project/media folder, opens copying progress, and returns the project, report, missing files and dependency warnings. |
 
+**The Deliver tab**
+
+| Tool | What it does |
+|---|---|
+| deliver | `check`: whether the edit is ready, the checks worth a look, the outputs with their files and size estimates, and the publish pack (`measure_loudness` scans the mix first). `outputs`: add or remove templates or a pack (youtube, social, audio, masters, share), tick, trim to a platform limit, set the folder. `render`: every ticked output through the render queue. `pack`: title, description (with `{chapters}`, `{tracklist}`, `{title}`, `{length}`, `{date}`), tags and the thumbnail frame; `save` writes them with the captions. `history`: past renders, lengths checked. |
+
 **The Live tab**
 
 | Tool | What it does |

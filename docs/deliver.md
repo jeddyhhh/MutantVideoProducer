@@ -63,6 +63,12 @@ The folder starts as the project's own folder.
   description and tags (`Name - description.txt`), the thumbnail (`Name - thumbnail.jpg`, under
   2 MB) and the captions (`Name.srt`) into the output folder.
 
+## AI control
+
+An AI assistant connected through [AI control](ai-control.md) can do all of this with the `deliver`
+tool: read the checks, set up the outputs, render them, and write the title, description and tags
+from the story chapters and the script, then save the pack. What it writes appears here to review.
+
 ## History
 
 Every render of the project is listed, newest first: from this tab, **Render As**, the Render Queue

@@ -505,22 +505,8 @@ DeliverView::DeliverView(Project* project, Hooks hooks, QWidget* parent) : QWidg
     packs->setPopupMode(QToolButton::InstantPopup);
     packs->setAutoRaise(true);
     auto* packMenu = new QMenu(packs);
-    const std::vector<std::pair<QString, QStringList>> packList = {
-        {tr("YouTube: 1080p and Shorts"), {QStringLiteral("YouTube 1080p"), QStringLiteral("YouTube Shorts (1080x1920)")}},
-        {tr("Social: Reels, TikTok, square"),
-         {QStringLiteral("Instagram Reels (1080x1920)"), QStringLiteral("TikTok (1080x1920)"), QStringLiteral("Instagram Feed - square (1080x1080)")}},
-        {tr("Audio: MP3 and WAV"), {QStringLiteral("MP3 - 320 kb/s"), QStringLiteral("WAV - 24-bit PCM (studio)")}},
-        {tr("Masters: ProRes HQ and lossless"),
-         {QStringLiteral("MOV - ProRes 422 HQ + PCM (editing master)"), QStringLiteral("MKV - FFV1 lossless RGB + FLAC (archive master)")}},
-        {tr("Share: small and Discord"), {QStringLiteral("Small preview (480p, 1.5 Mb/s)"), QStringLiteral("Discord (free, 20 MB)")}}};
-    for (const auto& [label, names2] : packList)
-        packMenu->addAction(label, this, [this, names2] {
-            QStringList list = outputs();
-            for (const QString& n : names2)
-                if (presetNamed(n) && !list.contains(n))
-                    list << n;
-            setOutputs(list);
-        });
+    for (const Pack& pk : DeliverView::packs())
+        packMenu->addAction(pk.label, this, [this, id = pk.id] { addPack(id); });
     packs->setMenu(packMenu);
     QVBoxLayout* outputs = nullptr;
     left->addWidget(card(tr("Outputs"), &outputs, packs), 1);
@@ -867,9 +853,20 @@ void DeliverView::setOutputs(const QStringList& templateNames)
 
 QString DeliverView::outputPath(const ExportPreset& p) const
 {
-    // "05 Y2K - YouTube 1080p.mp4", "05 Y2K - MP3.mp3": the template's name up to its first " - " or "(".
-    QString label = p.name.section(QStringLiteral(" - "), 0, 0).section(QStringLiteral(" ("), 0, 0).trimmed();
-    label.replace(QRegularExpression(QStringLiteral("[\\\\/:*?\"<>|]")), QStringLiteral(" "));
+    // "05 Y2K - YouTube 1080p.mp4", "05 Y2K - MP3.mp3": the template's name up to its first " - " or "(",
+    // or all of it ("05 Y2K - MP3 320 kbs.mp3") when another output's would be the same.
+    static const QRegularExpression illegal(QStringLiteral("[\\\\/:*?\"<>|]"));
+    auto shortLabel = [](const QString& name) { return name.section(QStringLiteral(" - "), 0, 0).section(QStringLiteral(" ("), 0, 0).trimmed(); };
+    QString label = shortLabel(p.name);
+    const QStringList listed = QSettings().value(settingsKey(QStringLiteral("outputs")), QStringList{QStringLiteral("YouTube 1080p")}).toStringList();
+    for (const QString& other : listed)
+        if (other != p.name && shortLabel(other).compare(label, Qt::CaseInsensitive) == 0) {
+            label = QString(p.name).replace(QStringLiteral(" - "), QStringLiteral(" "));
+            label.remove(illegal);
+            label.remove(QLatin1Char('(')).remove(QLatin1Char(')'));
+            break;
+        }
+    label.replace(illegal, QStringLiteral(" "));
     const QString ext = p.extension.isEmpty() ? QStringLiteral("mp4") : p.extension;
     return QDir(QDir::fromNativeSeparators(m_folder->text())).filePath(baseName() + QStringLiteral(" - ") + label.simplified() + QLatin1Char('.') + ext);
 }
@@ -1026,6 +1023,9 @@ void DeliverView::updateTotals()
     if (!disk.isValid())
         disk = QStorageInfo(QFileInfo(QDir::fromNativeSeparators(m_folder->text())).absolutePath());
     const double free = disk.isValid() ? double(disk.bytesAvailable()) : -1;
+    m_totalBytes = total;
+    m_totalExact = exact;
+    m_freeBytes = free;
     QString text = tr("%n output(s)", nullptr, ticked);
     if (ticked && duration > 0)
         text += tr("  ·  about %1").arg((exact ? QString() : QStringLiteral("~")) + sizeText(total));
@@ -1075,7 +1075,13 @@ void DeliverView::runChecks()
         m_checkList->addWidget(w);
         if (kind == Bad)
             ++m_problems;
+        QJsonObject data{{QStringLiteral("status"), kind == Bad ? QStringLiteral("look") : kind == Good ? QStringLiteral("ok") : QStringLiteral("note")},
+                         {QStringLiteral("text"), text}};
+        if (!action.isEmpty())
+            data[QStringLiteral("fix")] = action;
+        m_checkData.append(data);
     };
+    m_checkData = QJsonArray();
     m_meter->target = finishing::targets()[size_t(std::max(0, m_target->currentIndex()))].lufs;
     m_meter->ceiling = finishing::targets()[size_t(std::max(0, m_target->currentIndex()))].truePeak;
     m_meter->lufs.reset();
@@ -1464,4 +1470,143 @@ void DeliverView::fillHistory()
             for (int c = 0; c < 5; ++c)
                 item->setForeground(c, theme::c().faint);
     }
+}
+
+const std::vector<DeliverView::Pack>& DeliverView::packs()
+{
+    static const std::vector<Pack> list = {
+        {QStringLiteral("youtube"), tr("YouTube: 1080p and Shorts"), {QStringLiteral("YouTube 1080p"), QStringLiteral("YouTube Shorts (1080x1920)")}},
+        {QStringLiteral("social"), tr("Social: Reels, TikTok, square"),
+         {QStringLiteral("Instagram Reels (1080x1920)"), QStringLiteral("TikTok (1080x1920)"), QStringLiteral("Instagram Feed - square (1080x1080)")}},
+        {QStringLiteral("audio"), tr("Audio: MP3 and WAV"), {QStringLiteral("MP3 - 320 kb/s"), QStringLiteral("WAV - 24-bit PCM (studio)")}},
+        {QStringLiteral("masters"), tr("Masters: ProRes HQ and lossless"),
+         {QStringLiteral("MOV - ProRes 422 HQ + PCM (editing master)"), QStringLiteral("MKV - FFV1 lossless RGB + FLAC (archive master)")}},
+        {QStringLiteral("share"), tr("Share: small and Discord"),
+         {QStringLiteral("Small preview (480p, 1.5 Mb/s)"), QStringLiteral("Discord (free, 20 MB)")}}};
+    return list;
+}
+
+bool DeliverView::addPack(const QString& id)
+{
+    for (const Pack& pk : DeliverView::packs())
+        if (pk.id == id) {
+            QStringList list = outputs();
+            for (const QString& n : pk.templates)
+                if (presetNamed(n) && !list.contains(n))
+                    list << n;
+            setOutputs(list);
+            return true;
+        }
+    return false;
+}
+
+void DeliverView::setTicked(const QString& templateName, bool ticked)
+{
+    for (const auto& row : m_rows)
+        if (row->templateName == templateName)
+            row->tick->setChecked(ticked); // saves, checks again
+}
+
+void DeliverView::setTrim(const QString& templateName, TimeUs limit)
+{
+    if (limit > 0)
+        m_trim[templateName] = limit;
+    else
+        m_trim.erase(templateName);
+    fillOutputs();
+    runChecks();
+}
+
+void DeliverView::setFolder(const QString& folder)
+{
+    m_folder->setText(QDir::toNativeSeparators(folder));
+    emit m_folder->editingFinished();
+}
+
+void DeliverView::setPackText(const std::optional<QString>& title, const std::optional<QString>& description, const std::optional<QString>& tags)
+{
+    if (title) {
+        m_title->setText(*title);
+        emit m_title->textEdited(*title);
+    }
+    if (description)
+        m_description->setPlainText(*description); // saved by textChanged
+    if (tags) {
+        m_tags->setText(*tags);
+        emit m_tags->textEdited(*tags);
+    }
+    updateHeader();
+}
+
+void DeliverView::measureLoudness()
+{
+    const auto snap = m_project->snapshot();
+    if (snap->timeline.duration() <= 0)
+        return;
+    m_loudness = analyzeAudioMix(this, *snap);
+    runChecks();
+}
+
+QJsonObject DeliverView::report() const
+{
+    const TimeUs duration = m_project->timeline().duration();
+    const ProjectSettings& ps = m_project->settings();
+    QJsonArray outs;
+    for (const auto& row : m_rows) {
+        const ExportPreset* p = presetNamed(row->templateName);
+        if (!p)
+            continue;
+        const TimeUs length = limitFor(*p) > 0 ? std::min(duration, limitFor(*p)) : duration;
+        bool exact = true;
+        QJsonObject o{{QStringLiteral("template"), row->templateName},
+                      {QStringLiteral("ticked"), row->tick->isChecked()},
+                      {QStringLiteral("file"), row->path},
+                      {QStringLiteral("estimated_bytes"), std::round(estimateBytes(*p, ps.width, ps.height, ps.fps.toDouble(), length, &exact))},
+                      {QStringLiteral("estimate_exact"), exact}};
+        if (limitFor(*p) > 0)
+            o[QStringLiteral("trimmed_to")] = double(limitFor(*p)) / kUsPerSecond;
+        if (p->maxSeconds > 0)
+            o[QStringLiteral("platform_limit")] = p->maxSeconds;
+        if (!row->state->text().isEmpty())
+            o[QStringLiteral("state")] = row->state->text();
+        outs.append(o);
+    }
+    QJsonObject r{{QStringLiteral("ready"), m_problems == 0 && duration > 0},
+                  {QStringLiteral("problems"), m_problems},
+                  {QStringLiteral("checks"), m_checkData},
+                  {QStringLiteral("seconds"), double(duration) / kUsPerSecond},
+                  {QStringLiteral("folder"), QDir::fromNativeSeparators(m_folder->text())},
+                  {QStringLiteral("outputs"), outs},
+                  {QStringLiteral("total_estimated_bytes"), std::round(m_totalBytes)},
+                  {QStringLiteral("title"), m_title->text()},
+                  {QStringLiteral("description"), m_description->toPlainText()},
+                  {QStringLiteral("description_filled_in"), expandedDescription()},
+                  {QStringLiteral("tags"), m_tags->text()},
+                  {QStringLiteral("loudness_target"), finishing::targets()[size_t(std::max(0, m_target->currentIndex()))].name}};
+    if (m_freeBytes >= 0)
+        r[QStringLiteral("free_bytes")] = m_freeBytes;
+    if (m_loudness && !m_loudness->cancelled && m_loudness->error.isEmpty())
+        r[QStringLiteral("loudness")] = QJsonObject{{QStringLiteral("integrated_lufs"), m_loudness->integrated},
+                                                     {QStringLiteral("true_peak_dbtp"), m_loudness->truePeak},
+                                                     {QStringLiteral("range_lu"), m_loudness->range}};
+    if (m_thumbTime >= 0)
+        r[QStringLiteral("thumbnail_time")] = double(m_thumbTime) / kUsPerSecond;
+    return r;
+}
+
+QJsonArray DeliverView::historyJson() const
+{
+    QJsonArray out;
+    for (int i = 0; i < m_history->topLevelItemCount(); ++i) {
+        const auto* item = m_history->topLevelItem(i);
+        QJsonObject o{{QStringLiteral("when"), item->text(0)},
+                      {QStringLiteral("file"), item->data(1, Qt::UserRole).toString()},
+                      {QStringLiteral("template"), item->text(2)},
+                      {QStringLiteral("length"), item->text(3)},
+                      {QStringLiteral("size"), item->text(4)}};
+        if (!item->toolTip(3).isEmpty())
+            o[QStringLiteral("warning")] = item->toolTip(3);
+        out.append(o);
+    }
+    return out;
 }

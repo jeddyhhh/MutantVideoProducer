@@ -14,6 +14,8 @@ What changed in each version of Mutant Video Producer. The newest is first.
   description with `{chapters}` / `{tracklist}` placeholders and YouTube's character counts, saved
   with the captions in one go. **History**: every render of the project, from anywhere, with its
   length checked and Render Again. See [Deliver](docs/deliver.md).
+- AI control: the `deliver` tool reads the checks and readiness, sets up the outputs (templates,
+  packs, ticks, trims, folder), renders them, writes the publish pack and reads the history.
 
 ### Caption and graphics colours
 
