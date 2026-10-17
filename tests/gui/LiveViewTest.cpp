@@ -795,20 +795,10 @@ int LiveView::runSelfTest(QStringList& log)
             m_audio->setCurrentIndex(beatSource);
             wait(1500, [] { return false; });
             plain = last.copy();
-            // Bars that stand out from whatever is on the screen there (a light window: black bars).
-            double behind = 0;
-            {
-                const QRect bottom(plain.width() / 10, plain.height() * 6 / 10, plain.width() * 8 / 10, plain.height() * 35 / 100);
-                int64_t sum = 0, n = 0;
-                for (int y = bottom.top(); y < bottom.bottom(); y += 6)
-                    for (int x = bottom.left(); x < bottom.right(); x += 6, ++n)
-                        sum += qGray(plain.pixel(x, y));
-                behind = n ? double(sum) / double(n) : 0;
-            }
             {
                 Timeline tl = m_project->timeline();
                 LiveOverlay o;
-                o.color = behind > 128 ? 0x000000 : 0xffffff;
+                o.color = 0xff00ff; // magenta stands out on light and dark screens alike (white bars vanished on a white page)
                 o.kind = LiveOverlay::Kind::Spectrum;
                 o.anchor = 7;
                 o.size = 30;

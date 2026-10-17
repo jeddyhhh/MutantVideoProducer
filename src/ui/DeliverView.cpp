@@ -384,7 +384,18 @@ DeliverView::DeliverView(Project* project, Hooks hooks, QWidget* parent) : QWidg
 {
     setObjectName(QStringLiteral("deliverView"));
     m_renderClock = new QElapsedTimer;
-    auto* outer = new QVBoxLayout(this);
+    // In a scroll area: the tab's minimum size is the window's (a tab widget takes its largest page's),
+    // so on a short screen it scrolls instead of making the window taller than the screen.
+    auto* page = new QVBoxLayout(this);
+    page->setContentsMargins(0, 0, 0, 0);
+    auto* pageScroll = new QScrollArea;
+    pageScroll->setObjectName(QStringLiteral("deliverScroll"));
+    pageScroll->setWidgetResizable(true);
+    pageScroll->setFrameShape(QFrame::NoFrame);
+    auto* content = new QWidget;
+    pageScroll->setWidget(content);
+    page->addWidget(pageScroll);
+    auto* outer = new QVBoxLayout(content);
     outer->setContentsMargins(10, 10, 10, 10);
     outer->setSpacing(10);
 
