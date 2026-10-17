@@ -60,6 +60,8 @@ What changed in each version of Mutant Video Producer. The newest is first.
   track they used, with a note when a new track was added for them, and `add_text` checks for room with its
   real length; a template is matched to the output's extension first ("MP3" for a .mp3 was the DivX AVI);
   `render` warns when the render is longer than the template's platform allows (as the Render dialog does).
+- The Graphics Overlay Composer's canvas takes the project's shape. It was always 16:9, so in 4:3 and vertical
+  projects pictures and text previewed at the wrong size.
 
 ## 0.5.0 (2026-10-16)
 

@@ -176,6 +176,7 @@ public:
     mutable QSizeF boundsSize;
     mutable QHash<QString, QRectF> cachedBounds;
     double time = 0;
+    QSize frame{1280, 720}; // the preview picture, in the project's shape (4:3 and vertical too)
     bool editPath = false;
     int handle = -1;
     std::function<void(int, int, QPointF)> pathDrag;
@@ -187,10 +188,9 @@ public:
     }
     QRectF picture() const
     {
-        QSizeF s = size();
+        QSizeF s(frame);
         s.scale(QSizeF(width(), height()), Qt::KeepAspectRatio);
-        double h = std::min(double(height()), width() * 9. / 16.);
-        return {(width() - h * 16. / 9.) / 2, (height() - h) / 2, h * 16. / 9., h};
+        return {(width() - s.width()) / 2, (height() - s.height()) / 2, s.width(), s.height()};
     }
     QRectF bounds(const QJsonObject& l) const
     {
@@ -217,7 +217,7 @@ public:
         for (int y = int(r.top()); y < r.bottom(); y += 18)
             for (int x = int(r.left()); x < r.right(); x += 18)
                 p.fillRect(QRect(x, y, 18, 18), ((x / 18 + y / 18) % 2) ? QColor("#303744") : QColor("#222936"));
-        QImage img(1280, 720, QImage::Format_ARGB32_Premultiplied);
+        QImage img(frame, QImage::Format_ARGB32_Premultiplied);
         img.fill(Qt::transparent);
         graphics::drawScene(img, scene, time);
         p.drawImage(r, img);
@@ -327,7 +327,7 @@ public:
             delta *= 10;
         bypassSnap = true;
         if (drag)
-            drag({delta.x() / 1280., delta.y() / 720.}, false);
+            drag({delta.x() / frame.width(), delta.y() / frame.height()}, false);
         bypassSnap = false;
         e->accept();
     }
@@ -515,6 +515,8 @@ public:
         }
         row->addLayout(left, 0);
         canvas = new Canvas;
+        if (project && project->settings().width > 0 && project->settings().height > 0)
+            canvas->frame = QSize(project->settings().width, project->settings().height).scaled(1280, 1280, Qt::KeepAspectRatio);
         row->addWidget(canvas, 1);
         auto* scroll = new QScrollArea;
         scroll->setWidgetResizable(true);

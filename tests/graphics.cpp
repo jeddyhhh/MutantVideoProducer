@@ -260,6 +260,37 @@ int main(int argc, char **argv) {
   composeGraphics(&hiddenParent, &project, id);
   check(project.timeline() == applied,
         "visual composer Cancel discards changes");
+  // In a 4:3 project the canvas is 4:3: a drag of 4% of its picture moves the layer by 0.04.
+  {
+    const auto before = project.settings();
+    auto square = before;
+    square.width = 1440;
+    square.height = 1080;
+    project.setSettings(square);
+    const double x0 = project.timeline().findClip(id)->generator.data["layers"].toArray()[2].toObject()["x"].toDouble();
+    QTimer::singleShot(0, [&] {
+      for (auto *widget : QApplication::topLevelWidgets())
+        if (widget->objectName() == "graphicsComposer") {
+          widget->findChild<QListWidget *>("graphicsLayers")->setCurrentRow(2);
+          auto *canvas = widget->findChild<QWidget *>("graphicsCanvas");
+          double height = std::min(double(canvas->height()), canvas->width() * 3. / 4.), width = height * 4. / 3.;
+          QPointF center((canvas->width() - width) / 2 + width * (x0 + .85 / 2), (canvas->height() - height) / 2 + height * (.76 + .075 / 2));
+          QPointF to = center + QPointF(width * .04, 0);
+          QMouseEvent press(QEvent::MouseButtonPress, center, canvas->mapToGlobal(center), Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+          QApplication::sendEvent(canvas, &press);
+          QMouseEvent move(QEvent::MouseMove, to, canvas->mapToGlobal(to), Qt::NoButton, Qt::LeftButton, Qt::AltModifier);
+          QApplication::sendEvent(canvas, &move);
+          QMouseEvent release(QEvent::MouseButtonRelease, to, canvas->mapToGlobal(to), Qt::LeftButton, Qt::NoButton, Qt::NoModifier);
+          QApplication::sendEvent(canvas, &release);
+          qobject_cast<QDialog *>(widget)->accept();
+        }
+    });
+    composeGraphics(&hiddenParent, &project, id);
+    const double x1 = project.timeline().findClip(id)->generator.data["layers"].toArray()[2].toObject()["x"].toDouble();
+    check(std::abs(x1 - x0 - .04) < .0001, QString("the composer canvas takes the project's shape (4:3 drag moved %1)").arg(x1 - x0));
+    project.undoStack()->undo();
+    project.setSettings(before);
+  }
   project.undoStack()->undo();
   check(project.timeline() == original, "composer edits are one undo step");
   project.addMedia(probeMedia(audio));
