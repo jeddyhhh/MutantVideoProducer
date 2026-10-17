@@ -2,6 +2,8 @@
 
 What changed in each version of Mutant Video Producer. The newest is first.
 
+## 0.6.0 (2026-10-18)
+
 ### Deliver tab
 
 - A third tab beside Editor and Live gets a finished edit out. A **header** shows how ready the edit
