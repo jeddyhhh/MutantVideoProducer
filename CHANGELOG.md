@@ -4,13 +4,16 @@ What changed in each version of Mutant Video Producer. The newest is first.
 
 ### Deliver tab
 
-- A third tab beside Editor and Live gets a finished edit out. **Checks**: offline media, gaps with
-  nothing on screen, loudness (Measure Loudness), YouTube chapters, platform length limits (with
-  Trim) and captions, with a button to go there or fix it. **Outputs**: several templates rendered
-  through the queue at once, each named after the project and template. **Publish pack**: title,
-  thumbnail from the cursor frame, description with chapters or a track listing, saved with the
-  captions in one go. **History**: every render of the project, from anywhere. See
-  [Deliver](docs/deliver.md).
+- A third tab beside Editor and Live gets a finished edit out. A **header** shows how ready the edit
+  is and renders every output with one button, with overall progress and time left. A **strip** shows
+  the whole edit: frames, chapters, markers and stretches with nothing on screen; click a frame for
+  the thumbnail. **Checks**: offline media, gaps, loudness against a chosen target on a meter,
+  YouTube chapters, platform length limits (Trim) and captions, each with a button to go there or fix
+  it. **Outputs**: templates or one-click packs, each with its size, codecs, estimated file size and
+  progress; the total size against the free space. **Publish pack**: title, thumbnail, tags and a
+  description with `{chapters}` / `{tracklist}` placeholders and YouTube's character counts, saved
+  with the captions in one go. **History**: every render of the project, from anywhere, with its
+  length checked and Render Again. See [Deliver](docs/deliver.md).
 
 ### Caption and graphics colours
 

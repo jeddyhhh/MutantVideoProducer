@@ -399,7 +399,7 @@ int MainWindow::runEditorTest(QStringList& log)
         folder->setText(work.filePath("deliver"));
         emit folder->editingFinished();
         m_deliver->setOutputs({"MP3 - 192 kb/s", "WAV - 16-bit PCM"});
-        const int checks = m_deliver->findChild<QTreeWidget*>("deliverChecks")->topLevelItemCount();
+        const int checks = int(m_deliver->findChildren<QWidget*>("deliverCheck").size());
         const auto* mp3 = [] {
             for (const auto& p : exportPresets())
                 if (p.name == "MP3 - 192 kb/s")
@@ -422,8 +422,12 @@ int MainWindow::runEditorTest(QStringList& log)
         const bool pack = m_deliver->savePack(&packError);
         m_modes->grab().save(work.filePath("deliver-tab.png"));
         const QString description = QDir(work.filePath("deliver")).filePath(QFileInfo(mp3Path).completeBaseName().section(" - ", 0, -2) + " - description.txt");
+        bool exact = false;
+        const double mp3Bytes = DeliverView::estimateBytes(*mp3, 1920, 1080, 30, 60 * kUsPerSecond, &exact);
+        m_deliver->findChild<QPlainTextEdit*>("deliverDescription")->setPlainText("{title}: {length}");
+        const bool expanded = !m_deliver->expandedDescription().contains('{');
         check(checks >= 5 && mp3Path.endsWith(" - MP3.mp3") && queued == 2 && probeMedia(mp3Path).ok() && listed && pack
-                  && QFileInfo::exists(description),
+                  && QFileInfo::exists(description) && exact && std::abs(mp3Bytes - 192000.0 * 60 / 8) < 1 && expanded,
               QStringLiteral("Deliver tab: %1 checks, 2 outputs rendered (%2) and listed in History, publish pack saved %3")
                   .arg(checks)
                   .arg(why.isEmpty() ? QFileInfo(mp3Path).fileName() : why)
