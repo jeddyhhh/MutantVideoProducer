@@ -1069,12 +1069,19 @@ int LiveView::runSelfTest(QStringList& log)
         const QSize blur = shapeAfter(sizeItem(QSize(1080, 1350)), 2);
         const QSize square = shapeAfter(sizeItem(QSize(1080, 1080)), 0);
         const bool framingShown = m_framing->isVisibleTo(this);
+        // 720p stays 1280x720 whatever the source's shape; only Source size follows the source.
+        const QSize hd = shapeAfter(sizeItem(QSize(1280, 720)), 1);
+        const bool framingAt720 = m_framing->isVisibleTo(this);
+        m_size->setCurrentIndex(0);
+        settle(4);
+        const bool noFramingAtSource = !m_framing->isVisibleTo(this);
         m_size->setCurrentIndex(before);
         settle(4);
         check(crop == QSize(1080, 1920) && fit == QSize(720, 1280) && bars && blur == QSize(1080, 1350) && square == QSize(1080, 1080)
-                  && framingShown && !m_framing->isVisibleTo(this) && last.width() > last.height(),
+                  && framingShown && hd == QSize(1280, 720) && framingAt720 && noFramingAtSource && last.width() > last.height(),
               QStringLiteral("portrait sizes: the output becomes 1080x1920 (cropped), 720x1280 (fitted, black bars), 1080x1350 "
-                             "(blurred background) and 1080x1080; back to %1x%2 after").arg(last.width()).arg(last.height()));
+                             "(blurred background) and 1080x1080; 720p is a fixed 1280x720 (%3x%4) with Framing, Source size has none; "
+                             "back to %1x%2 after").arg(last.width()).arg(last.height()).arg(hd.width()).arg(hd.height()));
     }
     // ---- Cue: a pad previewed beside the output, not live; Take puts it live ----
     {

@@ -50,8 +50,10 @@ unless something is recording, sending or popped out. Editor playback stops when
 
 ### Size, frame rate and framing
 
-- **Size** is the resolution the effects work at (smaller is faster). **fps** is the rate they are
-  rendered at. Effects keep animating even when the source is still.
+- **Size** is the output's resolution, which the effects work at (smaller is faster). 1080p, 720p,
+  540p and 360p stay 16:9 whatever the source is (a window of any shape, a 4:3 camera); **Framing**
+  fits the picture in. **Source size** follows the source's own size and shape instead. **fps** is
+  the rate they are rendered at. Effects keep animating even when the source is still.
 - **Mirror** flips the picture, for cameras pointing at you.
 - **Portrait and square sizes**: 1080x1920, 720x1280 and 540x960 at 9:16 (TikTok, Reels, Shorts,
   Stories), 1080x1350 at 4:5 (feed posts) and 1080x1080. The output becomes exactly that shape, so

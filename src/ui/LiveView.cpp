@@ -456,12 +456,14 @@ LiveView::LiveView(Project* project, QWidget* parent) : QWidget(parent), m_proje
     m_audioMeter->setFixedSize(64, 22);
     m_audioMeter->setToolTip(tr("Input level"));
     m_size = new QComboBox;
-    m_size->addItem(tr("Source size"), QSize());
-    m_size->addItem(QStringLiteral("1080p"), QSize(1920, 1080));
-    m_size->addItem(QStringLiteral("720p"), QSize(1280, 720));
-    m_size->addItem(QStringLiteral("540p"), QSize(960, 540));
-    m_size->addItem(QStringLiteral("360p"), QSize(640, 360));
-    // Phones: a fixed portrait (or square) output, whatever the source's shape.
+    m_size->addItem(tr("Source size"), QSize()); // the only size that follows the source's shape
+    // Every other size is a fixed output, whatever the source's shape (a window, a 4:3 camera): Framing fits it in.
+    for (const auto& [label, size] : std::initializer_list<std::pair<const char*, QSize>>{
+             {"1080p", {1920, 1080}}, {"720p", {1280, 720}}, {"540p", {960, 540}}, {"360p", {640, 360}}}) {
+        m_size->addItem(QString::fromLatin1(label), size);
+        m_size->setItemData(m_size->count() - 1, true, Qt::UserRole + 1); // a fixed output shape
+    }
+    // Phones: a fixed portrait (or square) output.
     m_size->insertSeparator(m_size->count());
     struct Canvas {
         const char* label;
@@ -473,16 +475,20 @@ LiveView::LiveView(Project* project, QWidget* parent) : QWidget(parent), m_proje
         m_size->addItem(QString::fromLatin1(c.label), c.size);
         m_size->setItemData(m_size->count() - 1, true, Qt::UserRole + 1); // a fixed output shape
     }
-    m_size->setToolTip(tr("Size the effects work at (smaller is faster).\n"
-                          "Portrait and square sizes make the output that shape for phones (TikTok, Reels, Shorts, Stories);\n"
-                          "Framing says how a picture of another shape goes in."));
-    m_size->setSizeAdjustPolicy(QComboBox::AdjustToContents); // narrow unless a long (portrait) size is chosen
+    m_size->setToolTip(tr("The output's size, which the effects work at (smaller is faster). It stays that size and shape\n"
+                          "whatever the source is; Framing says how a picture of another shape goes in.\n"
+                          "Source size follows the source instead. Portrait and square sizes are for phones (TikTok, Reels,\n"
+                          "Shorts, Stories)."));
+    m_size->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon); // shares its row with Framing
+    m_size->setMinimumContentsLength(6);
     m_framing = new QComboBox;
     m_framing->setObjectName(QStringLiteral("liveFraming"));
+    m_framing->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
+    m_framing->setMinimumContentsLength(6);
     m_framing->addItem(tr("Crop to fill"), int(LiveFraming::CropFill));
     m_framing->addItem(tr("Fit (black bars)"), int(LiveFraming::Fit));
     m_framing->addItem(tr("Fit on blurred background"), int(LiveFraming::FitBlur));
-    m_framing->setToolTip(tr("How a picture of another shape goes into the portrait or square output:\n"
+    m_framing->setToolTip(tr("How a picture of another shape goes into the output:\n"
                              "cropped to fill it (the middle), fitted with black bars, or fitted over a blurred copy of itself"));
     m_fps = new QComboBox;
     for (int f : {24, 25, 30, 50, 60})
@@ -875,10 +881,12 @@ LiveView::LiveView(Project* project, QWidget* parent) : QWidget(parent), m_proje
         static_cast<QHBoxLayout*>(m_formatRow->layout())->setStretch(1, 1);
         f->addRow(m_formatRow);
         f->addRow(tr("Audio"), row({m_audio, m_audioMeter}));
-        f->addRow(tr("Size"), m_size);
-        m_framingRow = row({new QLabel(tr("Framing")), m_framing}, 0);
-        static_cast<QHBoxLayout*>(m_framingRow->layout())->setStretch(1, 1);
-        f->addRow(m_framingRow);
+        // Framing beside the size (every size but Source size has one), so the panel doesn't grow a row.
+        m_framingRow = m_framing;
+        auto* sizeRow = row({m_size, m_framing}, 0);
+        static_cast<QHBoxLayout*>(sizeRow->layout())->setStretch(0, 1);
+        static_cast<QHBoxLayout*>(sizeRow->layout())->setStretch(1, 1);
+        f->addRow(tr("Size"), sizeRow);
         f->addRow(tr("Rate"), row({m_fps, m_mirror}));
         m_panZoomLabel = new QLabel;
         m_panZoomLabel->setObjectName(QStringLiteral("livePanZoom"));

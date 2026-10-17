@@ -17,6 +17,12 @@ What changed in each version of Mutant Video Producer. The newest is first.
 - AI control: the `deliver` tool reads the checks and readiness, sets up the outputs (templates,
   packs, ticks, trims, folder), renders them, writes the publish pack and reads the history.
 
+### Live: the size stays the size
+
+- On the Live tab, 1080p, 720p, 540p and 360p are fixed 16:9 outputs: a window source of another
+  shape no longer changes the frame to its proportions. **Framing** (crop to fill, fit with bars,
+  fit on a blurred background) fits it in. **Source size** still follows the source.
+
 ### Caption and graphics colours
 
 - On the timeline, captions and text events are gold and graphics overlays and waveforms are violet, in every
