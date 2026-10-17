@@ -581,6 +581,24 @@ int MainWindow::runEditorTest(QStringList& log)
                   .arg(foreignStatus)
                   .arg(listStatus));
 
+        // A generated event that can't use the track asked for says where it went (and that indices moved).
+        {
+            const int undoIndex = m_project->undoStack()->index();
+            const auto first = content(call("add_text", {{"preset", "title"}, {"text", "A"}, {"at", 900}, {"length", 30}, {"track", 0}}));
+            const auto inside = content(call("add_text", {{"preset", "title"}, {"text", "B"}, {"at", 905}, {"length", 20}, {"track", first["track"].toInt()}}));
+            QJsonObject scene{{"version", 2}, {"layers", QJsonArray{}}};
+            const auto graphic = content(call("graphics_overlay", {{"action", "create"}, {"scene", scene}, {"at", 950}, {"length", 2}, {"track", 0}}));
+            int ti = -1;
+            m_project->timeline().findClip(inside["event_id"].toInt(), &ti);
+            check(first.contains("track") && inside["track"].toInt() == ti && ti != first["track"].toInt() + 1 && graphic.contains("track"),
+                  QStringLiteral("add_text / graphics_overlay report the track they used (%1, %2 at %3)")
+                      .arg(QString::fromUtf8(QJsonDocument(first).toJson(QJsonDocument::Compact)),
+                           QString::fromUtf8(QJsonDocument(inside).toJson(QJsonDocument::Compact)))
+                      .arg(ti));
+            while (m_project->undoStack()->index() > undoIndex)
+                m_project->undoStack()->undo();
+        }
+
         // Finishing and graphics workflow use the same HTTP surface as external clients.
         {
             const auto original = m_project->timeline();
@@ -751,6 +769,19 @@ int MainWindow::runEditorTest(QStringList& log)
                   .arg(QFileInfo(out).fileName())
                   .arg(double(rendered.duration) / kUsPerSecond, 0, 'f', 2)
                   .arg(rs[QStringLiteral("template")].toString()));
+        {
+            // "MP3" for a .mp3 is the MP3 template (the DivX AVI, with MP3 sound, comes first in the list).
+            const QString mp3 = work.filePath(QStringLiteral("ai_render.mp3"));
+            QFile::remove(mp3);
+            const QString chosen = content(call(QStringLiteral("render"), {{QStringLiteral("path"), mp3}, {QStringLiteral("preset"), QStringLiteral("MP3")},
+                                                                         {QStringLiteral("from"), 30}, {QStringLiteral("to"), 31}}))[QStringLiteral("template")]
+                                       .toString();
+            QElapsedTimer mt;
+            mt.start();
+            while (!content(call(QStringLiteral("render_status"), {}))[QStringLiteral("done")].toBool() && mt.elapsed() < 60000)
+                wait(200);
+            check(chosen.startsWith(QStringLiteral("MP3")), QStringLiteral("AI render: \"MP3\" to a .mp3 uses an MP3 template (%1)").arg(chosen));
+        }
         // The Live tab.
         call(QStringLiteral("set_pad"),
              {{QStringLiteral("pad"), 3},

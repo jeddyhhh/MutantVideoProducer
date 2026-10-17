@@ -55,6 +55,11 @@ What changed in each version of Mutant Video Producer. The newest is first.
 - AI control: freehand mask points (`mask.p0x`...) can be set, a choice can be named without its explanation
   ("Off" for "Off (everywhere)"), `render` / `render_queue` refuse a path whose extension the template doesn't
   write, `add_text` says when a preset has no text, and `new_project` keeps NTSC rates (23.976 was 23.952).
+- AI control, from the noughties test projects: a still picture asked onto a video track goes there (it went
+  onto a new Image track at the top, moving every track index); `add_text` and `graphics_overlay` return the
+  track they used, with a note when a new track was added for them, and `add_text` checks for room with its
+  real length; a template is matched to the output's extension first ("MP3" for a .mp3 was the DivX AVI);
+  `render` warns when the render is longer than the template's platform allows (as the Render dialog does).
 
 ## 0.5.0 (2026-10-16)
 

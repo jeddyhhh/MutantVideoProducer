@@ -149,6 +149,20 @@ QJsonObject errorResult(const QString& why)
     return r;
 }
 
+// Where an inserted generated event went: its track, and a note when it couldn't use the one asked for
+// (that track had an event covering the time) or a track was added, which moves the indices below it.
+QJsonObject placement(const Timeline& tl, int eventId, size_t tracksBefore)
+{
+    int ti = -1;
+    tl.findClip(eventId, &ti);
+    QJsonObject r{{QStringLiteral("track"), ti}};
+    if (tl.tracks.size() > tracksBefore)
+        r[QStringLiteral("note")] = QStringLiteral("a new track was added at index %1 for it (the time was taken); tracks from there down moved "
+                                                   "one index lower")
+                                        .arg(ti);
+    return r;
+}
+
 QJsonObject imageResult(const QImage& img, const QString& caption)
 {
     QByteArray bytes;
@@ -1235,18 +1249,26 @@ QJsonArray McpServer::toolList()
 // One MCP tool call: the arguments and what every tool works on. Each tool is a method, found by
 // name in callTool's table.
 // The first available Render As template whose name and category contain every word of `want`.
-static const ExportPreset* matchPreset(const QString& want)
+// The first template whose name and category hold every word; one that writes the output's extension wins
+// ("MP3" for a .mp3 is the MP3 template, not the DivX AVI with MP3 sound).
+static const ExportPreset* matchPreset(const QString& want, const QString& path = {})
 {
+    const QString suffix = QFileInfo(path).suffix();
+    const ExportPreset* first = nullptr;
     for (const ExportPreset& p : exportPresets()) {
         if (!presetAvailable(p))
             continue;
         bool all = true;
         for (const QString& word : want.split(QLatin1Char(' '), Qt::SkipEmptyParts))
             all = all && (p.name + QLatin1Char(' ') + p.category).contains(word, Qt::CaseInsensitive);
-        if (all)
+        if (!all)
+            continue;
+        if (suffix.isEmpty() || p.extension.compare(suffix, Qt::CaseInsensitive) == 0)
             return &p;
+        if (!first)
+            first = &p;
     }
-    return nullptr;
+    return first;
 }
 
 struct McpServer::ToolCall {
@@ -1606,13 +1628,18 @@ QJsonObject McpServer::ToolCall::tool_add_text()
         return errorResult(QStringLiteral("no generator preset \"%1\" (list_effects kind=generator)").arg(presetId));
     Timeline tl = project->timeline();
     const TimeUs at = has("at") ? us(std::max(0.0, num("at"))) : w->m_timeline->cursorTime();
-    const int id = ops::insertGenerated(tl, *preset, at, has("track") ? integer("track") : -1, ps.fps);
+    GeneratorPreset insertion = *preset;
+    if (has("length")) // its real length decides whether it would sit inside another event
+        insertion.length = std::max<TimeUs>(us(0.1), us(num("length")));
+    const size_t tracksBefore = tl.tracks.size();
+    const int id = ops::insertGenerated(tl, insertion, at, has("track") ? integer("track") : -1, ps.fps);
     Clip* c = tl.findClip(id);
     if (!c)
         return errorResult(QStringLiteral("couldn't add it"));
     if (has("length"))
         c->length = std::max<TimeUs>(us(0.1), us(num("length")));
-    QJsonObject result{{QStringLiteral("event_id"), id}};
+    QJsonObject result = placement(tl, id, tracksBefore);
+    result[QStringLiteral("event_id")] = id;
     if (has("text") && !str("text").isEmpty()) {
         const GeneratorDef* def = findGenerator(c->generator.type);
         if (def && std::any_of(def->params.begin(), def->params.end(), [](const ParamDef& d) { return d.id == QLatin1String("text"); }))
@@ -1686,6 +1713,7 @@ QJsonObject McpServer::ToolCall::tool_graphics_overlay()
     Timeline tl = project->timeline();
     Clip* c = nullptr;
     int eventId = integer("event_id");
+    size_t tracksBefore = 0; // set when a new event is inserted
     if (action != "create" && action != "import_template") {
         c = tl.findClip(eventId);
         if (!c || c->generator.type != type)
@@ -1877,6 +1905,7 @@ QJsonObject McpServer::ToolCall::tool_graphics_overlay()
         const auto* preset = findGeneratorPreset(wave ? "audio_waveform" : "graphics_blank");
         auto insertion = *preset;
         insertion.length = us(length);
+        tracksBefore = tl.tracks.size();
         eventId = ops::insertGenerated(tl, insertion, us(at), has("track") ? integer("track") : -1, ps.fps);
         c = tl.findClip(eventId);
         if (!c)
@@ -1897,7 +1926,10 @@ QJsonObject McpServer::ToolCall::tool_graphics_overlay()
                 return errorResult(error);
     }
     apply(tl, wave ? "Edit Audio Waveform Graphic" : "Compose Graphics Overlay");
-    return jsonResult({{"event_id", eventId}, {"data", data}});
+    QJsonObject result = tracksBefore ? placement(project->timeline(), eventId, tracksBefore) : QJsonObject{};
+    result["event_id"] = eventId;
+    result["data"] = data;
+    return jsonResult(result);
 }
 
 QJsonObject McpServer::ToolCall::tool_edit_event()
@@ -2252,7 +2284,7 @@ QJsonObject McpServer::ToolCall::tool_render()
     if (QFileInfo::exists(path) && !a.value(QStringLiteral("overwrite")).toBool())
         return errorResult(QStringLiteral("%1 exists (overwrite: true to replace it)").arg(path));
     const QString want = has("preset") ? str("preset") : QStringLiteral("MP4 H.264");
-    const ExportPreset* chosen = matchPreset(want);
+    const ExportPreset* chosen = matchPreset(want, path);
     if (!chosen)
         return errorResult(QStringLiteral("no Render As template matches \"%1\"").arg(want));
     if (!chosen->extension.isEmpty() && QFileInfo(path).suffix().compare(chosen->extension, Qt::CaseInsensitive) != 0)
@@ -2298,9 +2330,14 @@ QJsonObject McpServer::ToolCall::tool_render()
             Profiles::instance().remember({QJsonObject{{"path", r->path}, {"folder", "Exports"}, {"origin", "render"}}});
     });
     completion->start(200);
-    return jsonResult({{QStringLiteral("rendering"), path},
+    QJsonObject result{{QStringLiteral("rendering"), path},
                        {QStringLiteral("template"), chosen->name},
-                       {QStringLiteral("seconds"), sec(s.rangeEnd - s.rangeStart)}});
+                       {QStringLiteral("seconds"), sec(s.rangeEnd - s.rangeStart)}};
+    if (chosen->maxSeconds > 0 && s.rangeEnd - s.rangeStart > TimeUs(chosen->maxSeconds) * kUsPerSecond) // as the dialog warns
+        result[QStringLiteral("warning")] = QStringLiteral("this render is %1 long; %2 accepts up to %3")
+                                                .arg(formatDuration(s.rangeEnd - s.rangeStart), chosen->name.section(QLatin1Char(' '), 0, 0),
+                                                     formatDuration(TimeUs(chosen->maxSeconds) * kUsPerSecond));
+    return jsonResult(result);
 }
 
 QJsonObject McpServer::ToolCall::tool_render_status()
@@ -3079,7 +3116,7 @@ QJsonObject McpServer::ToolCall::tool_render_queue()
         snap = other.snapshot();
         label = QFileInfo(str("project_file")).completeBaseName();
     }
-    const ExportPreset* chosen = matchPreset(has("preset") ? str("preset") : QStringLiteral("MP4 H.264"));
+    const ExportPreset* chosen = matchPreset(has("preset") ? str("preset") : QStringLiteral("MP4 H.264"), str("path"));
     if (!chosen)
         return errorResult(QStringLiteral("no Render As template matches \"%1\"").arg(str("preset")));
     if (!chosen->extension.isEmpty() && QFileInfo(str("path")).suffix().compare(chosen->extension, Qt::CaseInsensitive) != 0)
