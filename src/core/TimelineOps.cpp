@@ -292,7 +292,8 @@ std::vector<int> insertMedia(Timeline& tl, const MediaItem& media, TimeUs at, in
 
     int vTrack = -1, aTrack = -1;
     if (wantVideo) {
-        if (!newTracks && preferredTrack >= 0 && tl.tracks[preferredTrack].type == pictureType)
+        // A still may go on any picture track asked for (as a drop or paste can put it), not a new Image track.
+        if (!newTracks && preferredTrack >= 0 && sameTrackEffectKind(tl.tracks[preferredTrack].type, pictureType))
             vTrack = preferredTrack;
         else if (!newTracks)
             vTrack = firstOfType(pictureType, 0);

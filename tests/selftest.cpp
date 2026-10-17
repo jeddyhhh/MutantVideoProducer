@@ -3141,6 +3141,19 @@ int cmdEditing(const QString& mediaDir, const QString& outDir)
               QStringLiteral("a locked track keeps its events through ripples and Split, and stays locked when saved (%1 | %2)")
                   .arg(starts(locked.tracks[0]), starts(locked.tracks[1])));
 
+        // A still asked onto a video track goes there (not onto a new Image track at the top, which moved every index).
+        MediaItem still;
+        still.id = 99;
+        still.info.isStill = true;
+        still.info.duration = 5 * S;
+        still.info.video.push_back(VideoStreamInfo{});
+        Timeline pic = layout();
+        const size_t tracksBefore = pic.tracks.size();
+        const auto placed = ops::insertMedia(pic, still, 9 * S, 0, FrameRate{30, 1});
+        const Clip* onVideo = pic.tracks[0].clips.empty() ? nullptr : &pic.tracks[0].clips.back();
+        check(placed.size() == 1 && pic.tracks.size() == tracksBefore && onVideo && onVideo->id == placed[0],
+              QStringLiteral("a still placed on a chosen video track stays on it (%1 tracks, was %2)").arg(pic.tracks.size()).arg(tracksBefore));
+
         // Removing transitions: a fade-out, and a crossfade seen from either event.
         Timeline tr = layout();
         tr.tracks[0].clips[2].fadeOut = S / 2;
