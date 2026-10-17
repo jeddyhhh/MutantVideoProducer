@@ -2,6 +2,7 @@
 
 #include "core/TimelineOps.h"
 
+#include <QJsonArray>
 #include <QJsonObject>
 
 #include <algorithm>
@@ -77,8 +78,25 @@ TimeUs removeRanges(Timeline& tl, std::vector<Range> ranges, const FrameRate& fp
     TimeUs removed = 0;
     // Latest first, so the earlier ranges still find their events where they were.
     for (auto it = merged.rbegin(); it != merged.rend(); ++it) {
-        ops::splitClips(tl, {}, it->from); // (every unlocked track)
-        ops::splitClips(tl, {}, it->to);
+        // (every unlocked track; a piece joins the story chapter of the event it was cut from)
+        for (const TimeUs at : {it->from, it->to})
+            for (int piece : ops::splitClips(tl, {}, at)) {
+                int ti = -1;
+                const Clip* right = tl.findClip(piece, &ti);
+                const auto left = std::find_if(tl.tracks[size_t(ti)].clips.begin(), tl.tracks[size_t(ti)].clips.end(),
+                                               [&](const Clip& c) { return c.id != piece && c.end() == right->start; });
+                if (left == tl.tracks[size_t(ti)].clips.end())
+                    continue;
+                for (int i = 0; i < tl.chapters.size(); ++i) {
+                    QJsonObject chapter = tl.chapters[i].toObject();
+                    QJsonArray clips = chapter.value(QStringLiteral("clips")).toArray();
+                    if (clips.contains(left->id)) {
+                        clips.append(piece);
+                        chapter[QStringLiteral("clips")] = clips;
+                        tl.chapters[i] = chapter;
+                    }
+                }
+            }
         std::set<int> inside;
         for (const Track& t : tl.tracks)
             if (!t.locked)
@@ -86,6 +104,16 @@ TimeUs removeRanges(Timeline& tl, std::vector<Range> ranges, const FrameRate& fp
                     if (c.start >= it->from && c.end() <= it->to)
                         inside.insert(c.id);
         ops::removeClips(tl, inside);
+        for (int i = 0; i < tl.chapters.size(); ++i) { // (what was cut out leaves its chapter)
+            QJsonObject chapter = tl.chapters[i].toObject();
+            QJsonArray kept;
+            for (const QJsonValue v : chapter.value(QStringLiteral("clips")).toArray())
+                if (!inside.count(v.toInt()))
+                    kept.append(v);
+            if (chapter.contains(QStringLiteral("clips")))
+                chapter[QStringLiteral("clips")] = kept;
+            tl.chapters[i] = chapter;
+        }
         ops::rippleShift(tl, it->to, it->from - it->to, {}, {}, false);
         // Times after the cut move back; times inside it land on its start (regions and story chapters shrink).
         const auto moved = [&](TimeUs t) { return t <= it->from ? t : t < it->to ? it->from : t - (it->to - it->from); };

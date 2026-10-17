@@ -3009,13 +3009,16 @@ int cmdEditing(const QString& mediaDir, const QString& outDir)
         }
         tl.markers.push_back(Marker{tl.allocId(), 3 * S, 0, QStringLiteral("inside"), 0});
         tl.markers.push_back(Marker{tl.allocId(), 8 * S, 0, QStringLiteral("after"), 0});
-        tl.chapters.append(QJsonObject{{"id", 1}, {"start", "0"}, {"narration", QString::number(3 * S)}, {"listening", QString::number(2 * S)}});
+        tl.chapters.append(QJsonObject{{"id", 1}, {"start", "0"}, {"narration", QString::number(3 * S)}, {"listening", QString::number(2 * S)},
+                                       {"clips", QJsonArray{tl.tracks[0].clips[0].id}}});
         tl.chapters.append(QJsonObject{{"id", 2}, {"start", QString::number(5 * S)}, {"narration", QString::number(3 * S)}, {"listening", QString::number(2 * S)}});
         const TimeUs removed = cuts::removeRanges(tl, {{6 * S, 7 * S}, {2 * S, 4 * S}, {3 * S, 5 * S}}, fps);
         auto chapter = [&](int i, const char* key) { return tl.chapters[i].toObject().value(QLatin1String(key)).toString().toLongLong(); };
         check(chapter(0, "start") == 0 && chapter(0, "narration") == 2 * S && chapter(0, "listening") == 0 && chapter(1, "start") == 2 * S
                   && chapter(1, "narration") == 2 * S && chapter(1, "listening") == 2 * S,
               QStringLiteral("cut time moves story chapters back and shrinks the ones it cuts into"));
+        check(tl.chapters[0].toObject()["clips"].toArray().size() == 3,
+              QStringLiteral("the pieces cut from a chapter's event stay in that chapter (%1)").arg(tl.chapters[0].toObject()["clips"].toArray().size()));
         check(removed == 4 * S && starts(tl.tracks[0]) == QStringLiteral("0.0 2.0 3.0") && tl.tracks[0].clips.back().end() == 6 * S
                   && starts(tl.tracks[2]) == QStringLiteral("0.0 2.0 3.0") && tl.tracks.back().clips.size() == 1 && tl.duration() == 10 * S
                   && tl.markers[0].time == 2 * S
