@@ -2,6 +2,8 @@
 
 #include "core/TimelineOps.h"
 
+#include <QJsonObject>
+
 #include <algorithm>
 #include <cmath>
 #include <set>
@@ -84,10 +86,24 @@ TimeUs removeRanges(Timeline& tl, std::vector<Range> ranges, const FrameRate& fp
                     if (c.start >= it->from && c.end() <= it->to)
                         inside.insert(c.id);
         ops::removeClips(tl, inside);
-        for (Marker& m : tl.markers)
-            if (m.time >= it->from && m.time < it->to)
-                m.time = it->from;
-        ops::rippleShift(tl, it->to, it->from - it->to, {}, {}, true);
+        ops::rippleShift(tl, it->to, it->from - it->to, {}, {}, false);
+        // Times after the cut move back; times inside it land on its start (regions and story chapters shrink).
+        const auto moved = [&](TimeUs t) { return t <= it->from ? t : t < it->to ? it->from : t - (it->to - it->from); };
+        for (Marker& m : tl.markers) {
+            const TimeUs end = moved(m.end());
+            m.time = moved(m.time);
+            m.length = m.isRegion() ? std::max<TimeUs>(1, end - m.time) : 0;
+        }
+        for (int i = 0; i < tl.chapters.size(); ++i) {
+            QJsonObject c = tl.chapters[i].toObject();
+            const auto get = [&](const char* key) { return c.value(QLatin1String(key)).toString().toLongLong(); };
+            const TimeUs start = get("start"), spoken = start + get("narration"), end = spoken + get("listening");
+            c[QStringLiteral("start")] = QString::number(moved(start));
+            c[QStringLiteral("narration")] = QString::number(moved(spoken) - moved(start));
+            c[QStringLiteral("listening")] = QString::number(moved(end) - moved(spoken));
+            tl.chapters[i] = c;
+        }
+        tl.sortMarkers();
         removed += it->to - it->from;
     }
     return removed;

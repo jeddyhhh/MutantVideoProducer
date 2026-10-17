@@ -1,6 +1,7 @@
 #include "core/SceneDetect.h"
 
 #include "core/FrameConverter.h"
+#include "core/TimelineOps.h"
 #include "core/VideoDecoder.h"
 
 #include <QImage>
@@ -100,6 +101,56 @@ std::vector<TimeUs> detect(const MediaItem& media, int stream, TimeUs from, Time
             return {};
     }
     return cuts;
+}
+
+std::vector<int> videoEvents(const Timeline& tl, const MediaMap& media, const std::set<int>& ids, int* skipped)
+{
+    std::vector<int> events;
+    std::set<int> seen;
+    for (int id : ids) {
+        const Clip* c = tl.findClip(id);
+        const auto m = c ? media.find(c->mediaId) : media.end();
+        if (!c || m == media.end() || !m->second->info.videoStream(c->streamIndex) || m->second->info.isStill || seen.count(id))
+            continue;
+        if (c->reverse || c->hasRamp()) {
+            if (skipped)
+                ++*skipped;
+            continue;
+        }
+        for (int g : ops::expandToGroups(tl, {id}))
+            seen.insert(g);
+        events.push_back(id);
+    }
+    return events;
+}
+
+std::optional<std::vector<TimeUs>> splitEvents(Timeline& tl, const MediaMap& media, const std::vector<int>& events, double sensitivity,
+                                               const FrameRate& fps, const std::function<bool(double)>& progress)
+{
+    std::vector<TimeUs> done;
+    for (size_t i = 0; i < events.size(); ++i) {
+        const Clip* found = tl.findClip(events[i]);
+        if (!found)
+            continue;
+        const Clip c = *found;
+        const MediaItem& m = *media.at(c.mediaId);
+        const TimeUs from = c.sourceIn, to = c.sourceIn + TimeUs(double(c.length) * c.speed);
+        bool cancelled = false;
+        const std::vector<TimeUs> cuts = detect(m, c.streamIndex, from, to, sensitivity, [&](double f) {
+            cancelled = progress && !progress((double(i) + f) / double(events.size()));
+            return !cancelled;
+        });
+        if (cancelled)
+            return std::nullopt;
+        // Latest first: the original event keeps the part before each cut.
+        for (auto it = cuts.rbegin(); it != cuts.rend(); ++it) {
+            const TimeUs at = fps.snap(c.start + TimeUs(double(*it - c.sourceIn) / c.speed));
+            if (at > c.start && at < c.end() && !ops::splitClips(tl, ops::expandToGroups(tl, {c.id}), at).empty())
+                done.push_back(at);
+        }
+    }
+    std::sort(done.begin(), done.end());
+    return done;
 }
 
 } // namespace scenes

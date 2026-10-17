@@ -237,23 +237,9 @@ void MainWindow::splitAtMarkers()
 void MainWindow::splitAtSceneChanges()
 {
     Timeline tl = m_project->timeline();
-    // Video events (each group once) whose source plays forwards at a steady speed.
-    std::vector<int> events;
-    std::set<int> seen;
-    bool skipped = false;
-    for (int id : m_timeline->selection()) {
-        const Clip* c = tl.findClip(id);
-        const auto media = c ? m_project->mediaItem(c->mediaId) : nullptr;
-        if (!c || !media || !media->info.videoStream(c->streamIndex) || media->info.isStill || seen.count(id))
-            continue;
-        if (c->reverse || c->hasRamp()) {
-            skipped = true;
-            continue;
-        }
-        for (int g : ops::expandToGroups(tl, {id}))
-            seen.insert(g);
-        events.push_back(id);
-    }
+    const MediaMap media = m_project->snapshot()->media;
+    int skipped = 0;
+    const std::vector<int> events = scenes::videoEvents(tl, media, m_timeline->selection(), &skipped);
     if (events.empty()) {
         statusBar()->showMessage(skipped ? tr("Scene changes: reversed or speed-ramped events aren't split") : tr("Select video events to split first"), 5000);
         return;
@@ -270,43 +256,31 @@ void MainWindow::splitAtSceneChanges()
     QProgressDialog progress(tr("Looking for scene changes..."), tr("Cancel"), 0, 1000, this);
     progress.setWindowModality(Qt::WindowModal);
     progress.setMinimumDuration(300);
-    int pieces = 0;
-    for (size_t i = 0; i < events.size(); ++i) {
-        const Clip c = *tl.findClip(events[i]);
-        const auto media = m_project->mediaItem(c.mediaId);
-        const TimeUs from = c.sourceIn, to = c.sourceIn + TimeUs(double(c.length) * c.speed);
-        QString error;
-        const std::vector<TimeUs> cuts = scenes::detect(*media, c.streamIndex, from, to, sensitivity / 100.0, [&](double f) {
-            progress.setValue(int(1000 * (double(i) + f) / double(events.size())));
-            QCoreApplication::processEvents();
-            return !progress.wasCanceled();
-        }, &error);
-        if (progress.wasCanceled())
-            return;
-        // Latest first: the original event keeps the part before each cut.
-        for (auto it = cuts.rbegin(); it != cuts.rend(); ++it) {
-            const TimeUs at = m_project->settings().fps.snap(c.start + TimeUs(double(*it - c.sourceIn) / c.speed));
-            if (at > c.start && at < c.end())
-                pieces += int(ops::splitClips(tl, ops::expandToGroups(tl, {c.id}), at).size() > 0);
-        }
-    }
+    const auto cuts = scenes::splitEvents(tl, media, events, sensitivity / 100.0, m_project->settings().fps, [&](double f) {
+        progress.setValue(int(1000 * f));
+        QCoreApplication::processEvents();
+        return !progress.wasCanceled();
+    });
     progress.setValue(1000);
-    if (!pieces) {
+    if (!cuts)
+        return;
+    if (cuts->empty()) {
         statusBar()->showMessage(tr("No scene changes found (try a higher sensitivity)"), 5000);
         return;
     }
     m_project->applyEdit(tl, tr("Split at Scene Changes"));
-    statusBar()->showMessage(tr("Split at %n scene change(s)", nullptr, pieces), 5000);
+    statusBar()->showMessage(tr("Split at %n scene change(s)", nullptr, int(cuts->size())), 5000);
 }
 
 void MainWindow::autoReframe()
 {
     Timeline tl = m_project->timeline();
+    const MediaMap media = m_project->snapshot()->media;
     std::vector<int> events;
     for (int id : m_timeline->selection()) {
         const Clip* c = tl.findClip(id);
-        const auto media = c ? m_project->mediaItem(c->mediaId) : nullptr;
-        if (c && media && media->info.videoStream(c->streamIndex) && !media->info.isStill && !c->reverse && !c->hasRamp())
+        const auto m = c ? media.find(c->mediaId) : media.end();
+        if (c && m != media.end() && m->second->info.videoStream(c->streamIndex) && !m->second->info.isStill && !c->reverse && !c->hasRamp())
             events.push_back(id);
     }
     if (events.empty()) {
@@ -331,41 +305,14 @@ void MainWindow::autoReframe()
     QProgressDialog progress(tr("Following the subject..."), tr("Cancel"), 0, 1000, this);
     progress.setWindowModality(Qt::WindowModal);
     progress.setMinimumDuration(300);
-    int framed = 0;
-    for (size_t i = 0; i < events.size(); ++i) {
-        Clip* c = tl.findClip(events[i]);
-        const auto media = m_project->mediaItem(c->mediaId);
-        const VideoStreamInfo* vs = media->info.videoStream(c->streamIndex);
-        const QSize display = vs->displaySize();
-        const double visible = reframe::visibleWidth(double(display.width()) / std::max(1, display.height()), double(ps.width) / ps.height);
-        if (visible >= 0.999)
-            continue; // the frame is as wide as the picture
-        const TimeUs from = c->sourceIn, to = c->sourceIn + TimeUs(double(c->length) * c->speed);
-        QString error;
-        const auto samples = reframe::follow(*media, c->streamIndex, from, to, kUsPerSecond / 4, [&](double f) {
-            progress.setValue(int(1000 * (double(i) + f) / double(events.size())));
-            QCoreApplication::processEvents();
-            return !progress.wasCanceled();
-        }, &error);
-        if (progress.wasCanceled())
-            return;
-        std::vector<Keyframe> keys = reframe::path(samples, visible);
-        if (keys.empty())
-            continue;
-        for (Keyframe& k : keys) // source times to the event's own
-            k.time = std::clamp<TimeUs>(TimeUs(double(k.time - c->sourceIn) / c->speed), 0, c->length);
-        if (c->panCrop.empty())
-            c->panCrop = defaultParams(panCropParams());
-        c->panCrop[QStringLiteral("mode")].value = 1; // Fill
-        c->panCrop[QStringLiteral("centerY")] = ParamValue{0.5};
-        ParamValue x;
-        x.value = keys.front().value;
-        if (keys.size() > 1)
-            x.keys = keys;
-        c->panCrop[QStringLiteral("centerX")] = x;
-        ++framed;
-    }
+    const int framed = reframe::apply(tl, media, events, QSize(ps.width, ps.height), [&](double f) {
+        progress.setValue(int(1000 * f));
+        QCoreApplication::processEvents();
+        return !progress.wasCanceled();
+    });
     progress.setValue(1000);
+    if (framed < 0)
+        return;
     if (!framed) {
         statusBar()->showMessage(tr("Nothing to reframe: the frame already shows the whole picture"), 5000);
         return;

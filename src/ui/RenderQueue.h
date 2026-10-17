@@ -4,6 +4,7 @@
 
 #include "core/Exporter.h"
 
+#include <QJsonObject>
 #include <QTimer>
 #include <QWidget>
 
@@ -30,6 +31,7 @@ public:
     int waiting() const;
     void start();
     void stop(); // cancels the running render; the rest wait
+    QJsonObject status() const; // the jobs: name, file, state, progress, error
 
 signals:
     void addProjectRequested(); // "Add Project File..."

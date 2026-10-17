@@ -1,6 +1,7 @@
 #include "core/Reframe.h"
 
 #include "core/FrameConverter.h"
+#include "core/PanCrop.h"
 #include "core/Segmentation.h"
 #include "core/VideoDecoder.h"
 
@@ -153,6 +154,46 @@ std::vector<Keyframe> path(const std::vector<Sample>& samples, double visible)
     if (keys.size() > 1)
         kept.push_back(keys.back());
     return kept;
+}
+
+int apply(Timeline& tl, const MediaMap& media, const std::vector<int>& events, QSize frame, const std::function<bool(double)>& progress)
+{
+    int framed = 0;
+    for (size_t i = 0; i < events.size(); ++i) {
+        Clip* c = tl.findClip(events[i]);
+        const auto m = c ? media.find(c->mediaId) : media.end();
+        const VideoStreamInfo* vs = m != media.end() ? m->second->info.videoStream(c->streamIndex) : nullptr;
+        if (!vs || m->second->info.isStill || c->reverse || c->hasRamp())
+            continue;
+        const QSize display = vs->displaySize();
+        const double visible = visibleWidth(double(display.width()) / std::max(1, display.height()), double(frame.width()) / std::max(1, frame.height()));
+        if (visible >= 0.999)
+            continue; // the frame is as wide as the picture
+        const TimeUs from = c->sourceIn, to = c->sourceIn + TimeUs(double(c->length) * c->speed);
+        bool cancelled = false;
+        const auto samples = follow(*m->second, c->streamIndex, from, to, kUsPerSecond / 4, [&](double f) {
+            cancelled = progress && !progress((double(i) + f) / double(events.size()));
+            return !cancelled;
+        });
+        if (cancelled)
+            return -1;
+        std::vector<Keyframe> keys = path(samples, visible);
+        if (keys.empty())
+            continue;
+        for (Keyframe& k : keys) // source times to the event's own
+            k.time = std::clamp<TimeUs>(TimeUs(double(k.time - c->sourceIn) / c->speed), 0, c->length);
+        if (c->panCrop.empty())
+            c->panCrop = defaultParams(panCropParams());
+        c->panCrop[QStringLiteral("mode")].value = 1; // Fill
+        c->panCrop[QStringLiteral("centerY")] = ParamValue{0.5};
+        ParamValue x;
+        x.value = keys.front().value;
+        if (keys.size() > 1)
+            x.keys = keys;
+        c->panCrop[QStringLiteral("centerX")] = x;
+        ++framed;
+    }
+    return framed;
 }
 
 } // namespace reframe

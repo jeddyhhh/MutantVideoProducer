@@ -32,4 +32,9 @@ std::vector<Keyframe> path(const std::vector<Sample>& samples, double visible);
 // The fraction of a `sourceAspect` (width / height) picture's width that a `frameAspect` frame shows
 // in Fill mode.
 double visibleWidth(double sourceAspect, double frameAspect);
+
+// Gives each of `events` (video, played forwards at a steady speed) a Fill Pan/Crop whose centre follows
+// the subject for a `frame`-shaped output. The number reframed (0: the frame shows the whole picture
+// already), or -1 when `progress` (0..1 over all of them) cancels.
+int apply(Timeline& tl, const MediaMap& media, const std::vector<int>& events, QSize frame, const std::function<bool(double)>& progress = {});
 } // namespace reframe

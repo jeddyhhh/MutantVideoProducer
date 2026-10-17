@@ -33,6 +33,11 @@
 #include "ui/LiveView.h"
 #include "ui/MainWindow.h"
 #include "core/Story.h"
+#include "core/Cuts.h"
+#include "core/Reframe.h"
+#include "core/SceneDetect.h"
+#include "core/YouTubeUpload.h"
+#include "ui/RenderQueue.h"
 #include "ui/PreviewWidget.h"
 #include "ui/TimelineWidget.h"
 
@@ -1068,6 +1073,64 @@ QJsonArray McpServer::toolList()
          {"intensity", prop("number", "0 to 1 (default .6)")}},
         {"event_ids"}));
     // Live.
+    t.append(tool("edit_track", "Changes a track: lock it (its events can't be edited, ripples pass it by), mute, solo, rename or set its level.",
+                  {{QStringLiteral("track"), prop("integer", "Track index (see get_project)")},
+                   {QStringLiteral("locked"), prop("boolean", "Lock or unlock")},
+                   {QStringLiteral("muted"), prop("boolean", "Mute")},
+                   {QStringLiteral("solo"), prop("boolean", "Solo")},
+                   {QStringLiteral("name"), prop("string", "New name")},
+                   {QStringLiteral("level"), prop("number", "Video: opacity 0..1; audio: volume 0..2 (1 = 0 dB)")}},
+                  {QStringLiteral("track")}));
+    t.append(tool("scene_changes",
+                  "Finds the cuts between shots inside video events (Tools > Split Selected Events at Scene Changes) and, unless "
+                  "split is false, splits them (with their grouped sound) there. Returns the timeline times.",
+                  {{QStringLiteral("event_ids"), arrayProp("integer", "Video events")},
+                   {QStringLiteral("sensitivity"), prop("number", "0..1 (default 0.5): higher finds subtler cuts")},
+                   {QStringLiteral("split"), prop("boolean", "Split at them (default true)")}},
+                  {QStringLiteral("event_ids")}));
+    t.append(tool("cut_time",
+                  "Takes time out of the whole edit, on every unlocked track at once, closing the gaps (markers follow): silences "
+                  "(Tools > Remove Silences), ranges (seconds), transcribe (Edit by Transcript's words with their times; changes "
+                  "nothing) or words (cut the words given by index from a transcribe result, with the pause after each run).",
+                  {{QStringLiteral("action"),
+                    enumProp({QStringLiteral("silences"), QStringLiteral("ranges"), QStringLiteral("transcribe"), QStringLiteral("words")}, "What")},
+                   {QStringLiteral("from"), prop("number", "silences / transcribe: seconds (default 0)")},
+                   {QStringLiteral("to"), prop("number", "silences / transcribe: seconds (default: the end)")},
+                   {QStringLiteral("threshold_db"), prop("number", "silences: quieter than this is silence (default -40)")},
+                   {QStringLiteral("min_length"), prop("number", "silences: seconds (default 0.7)")},
+                   {QStringLiteral("keep"), prop("number", "silences: seconds left either side (default 0.15)")},
+                   {QStringLiteral("ranges"), prop("array", "ranges: [[from, to], ...] in seconds")},
+                   {QStringLiteral("model"), enumProp({QStringLiteral("tiny"), QStringLiteral("base"), QStringLiteral("small")}, "transcribe: speech model (default base)")},
+                   {QStringLiteral("words"), prop("array", "words: the words from transcribe ([{start, end, text}, ...])")},
+                   {QStringLiteral("remove"), arrayProp("integer", "words: indexes of the words to cut")}},
+                  {QStringLiteral("action")}));
+    t.append(tool("auto_reframe",
+                  "Tools > Auto Reframe for Vertical: gives video events a Fill Pan/Crop that follows the subject (a person, else "
+                  "the movement) for the project's frame. portrait switches a landscape project to 1080x1920 first.",
+                  {{QStringLiteral("event_ids"), arrayProp("integer", "Video events")},
+                   {QStringLiteral("portrait"), prop("boolean", "Switch a landscape project to 1080x1920 first (default false)")}},
+                  {QStringLiteral("event_ids")}));
+    t.append(tool("youtube_publish",
+                  "For the upload: chapters (\"00:00 Name\" lines from story chapters or markers, with warnings when YouTube "
+                  "wouldn't show them), track_listing (an audio track's events as \"01. Name - 04:19\") or thumbnail (a 1280x720 "
+                  "JPEG of the frame at a time with an optional title, written to path).",
+                  {{QStringLiteral("action"), enumProp({QStringLiteral("chapters"), QStringLiteral("track_listing"), QStringLiteral("thumbnail")}, "What")},
+                   {QStringLiteral("track"), prop("integer", "track_listing: audio track index")},
+                   {QStringLiteral("time"), prop("number", "thumbnail: seconds (default: the cursor)")},
+                   {QStringLiteral("title"), prop("string", "thumbnail: words on the picture")},
+                   {QStringLiteral("path"), prop("string", "thumbnail: the .jpg or .png to write")}},
+                  {QStringLiteral("action")}));
+    t.append(tool("render_queue",
+                  "File > Render Queue: renders one after another in the background. add queues the open project as it is now "
+                  "(or project_file, without opening it); start, stop (cancels the running one); status lists the jobs.",
+                  {{QStringLiteral("action"), enumProp({QStringLiteral("add"), QStringLiteral("start"), QStringLiteral("stop"), QStringLiteral("status")}, "What")},
+                   {QStringLiteral("path"), prop("string", "add: output file")},
+                   {QStringLiteral("preset"), prop("string", "add: words from a Render As template name (default: MP4 H.264)")},
+                   {QStringLiteral("hardware_encoding"), prop("boolean", "add: prefer an available GPU encoder (default true)")},
+                   {QStringLiteral("from"), prop("number", "add: seconds")},
+                   {QStringLiteral("to"), prop("number", "add: seconds")},
+                   {QStringLiteral("project_file"), prop("string", "add: another .mvp to render instead of the open project")}},
+                  {QStringLiteral("action")}));
     t.append(tool("live_status",
                   "The Live tab: capturing or not, the sources to choose from, the pads (names, effects), which is on, scenes, "
                   "the setlist, the tempo, recording / streaming / Spout / virtual camera, the cue.",
@@ -1119,6 +1182,21 @@ QJsonArray McpServer::toolList()
 
 // One MCP tool call: the arguments and what every tool works on. Each tool is a method, found by
 // name in callTool's table.
+// The first available Render As template whose name and category contain every word of `want`.
+static const ExportPreset* matchPreset(const QString& want)
+{
+    for (const ExportPreset& p : exportPresets()) {
+        if (!presetAvailable(p))
+            continue;
+        bool all = true;
+        for (const QString& word : want.split(QLatin1Char(' '), Qt::SkipEmptyParts))
+            all = all && (p.name + QLatin1Char(' ') + p.category).contains(word, Qt::CaseInsensitive);
+        if (all)
+            return &p;
+    }
+    return nullptr;
+}
+
 struct McpServer::ToolCall {
     McpServer& server;
     const QString& name;
@@ -1165,6 +1243,12 @@ struct McpServer::ToolCall {
     QJsonObject tool_collect_project();
     QJsonObject tool_save_project();
     QJsonObject tool_captions();
+    QJsonObject tool_edit_track();
+    QJsonObject tool_scene_changes();
+    QJsonObject tool_cut_time();
+    QJsonObject tool_auto_reframe();
+    QJsonObject tool_youtube_publish();
+    QJsonObject tool_render_queue();
     QJsonObject tool_list_voices();
     QJsonObject tool_ai_components();
     QJsonObject tool_voice_status();
@@ -2060,18 +2144,7 @@ QJsonObject McpServer::ToolCall::tool_render()
     if (QFileInfo::exists(path) && !a.value(QStringLiteral("overwrite")).toBool())
         return errorResult(QStringLiteral("%1 exists (overwrite: true to replace it)").arg(path));
     const QString want = has("preset") ? str("preset") : QStringLiteral("MP4 H.264");
-    const ExportPreset* chosen = nullptr;
-    for (const ExportPreset& p : exportPresets()) {
-        if (!presetAvailable(p))
-            continue;
-        bool all = true;
-        for (const QString& word : want.split(QLatin1Char(' '), Qt::SkipEmptyParts))
-            all = all && (p.name + QLatin1Char(' ') + p.category).contains(word, Qt::CaseInsensitive);
-        if (all) {
-            chosen = &p;
-            break;
-        }
-    }
+    const ExportPreset* chosen = matchPreset(want);
     if (!chosen)
         return errorResult(QStringLiteral("no Render As template matches \"%1\"").arg(want));
     ExportSettings s = settingsFromPreset(*chosen, ps);
@@ -2605,6 +2678,225 @@ QJsonObject McpServer::ToolCall::tool_get_live_frame()
                        QStringLiteral("The Live output (%1x%2)").arg(img.width()).arg(img.height()));
 }
 
+QJsonObject McpServer::ToolCall::tool_edit_track()
+{
+    Timeline tl = project->timeline();
+    const int index = integer("track", -1);
+    if (index < 0 || index >= int(tl.tracks.size()))
+        return errorResult(QStringLiteral("no track %1").arg(index));
+    Track& t = tl.tracks[size_t(index)];
+    if (has("locked"))
+        t.locked = a.value(QStringLiteral("locked")).toBool();
+    if (has("muted"))
+        t.muted = a.value(QStringLiteral("muted")).toBool();
+    if (has("solo"))
+        t.solo = a.value(QStringLiteral("solo")).toBool();
+    if (has("name"))
+        t.name = str("name").left(80);
+    if (has("level"))
+        t.level = float(std::clamp(num("level", 1), 0.0, isVisualTrack(t.type) ? 1.0 : 2.0));
+    apply(tl, QStringLiteral("Edit track"));
+    return jsonResult({{QStringLiteral("track"), index}, {QStringLiteral("locked"), t.locked}, {QStringLiteral("muted"), t.muted},
+                       {QStringLiteral("solo"), t.solo}, {QStringLiteral("name"), t.name}});
+}
+
+QJsonObject McpServer::ToolCall::tool_scene_changes()
+{
+    Timeline tl = project->timeline();
+    std::set<int> ids;
+    for (const QJsonValue v : a.value(QStringLiteral("event_ids")).toArray())
+        ids.insert(v.toInt());
+    const MediaMap media = project->snapshot()->media;
+    int skipped = 0;
+    const std::vector<int> events = scenes::videoEvents(tl, media, ids, &skipped);
+    if (events.empty())
+        return errorResult(skipped ? QStringLiteral("reversed or speed-ramped events aren't split") : QStringLiteral("give video events"));
+    const double sensitivity = std::clamp(num("sensitivity", 0.5), 0.0, 1.0);
+    QJsonArray times;
+    if (!a.value(QStringLiteral("split")).toBool(true)) {
+        for (int id : events) {
+            const Clip& c = *tl.findClip(id);
+            const TimeUs to = c.sourceIn + TimeUs(double(c.length) * c.speed);
+            for (TimeUs cut : scenes::detect(*media.at(c.mediaId), c.streamIndex, c.sourceIn, to, sensitivity))
+                times.append(sec(c.start + TimeUs(double(cut - c.sourceIn) / c.speed)));
+        }
+        return jsonResult({{QStringLiteral("cuts"), times}});
+    }
+    const auto cuts = scenes::splitEvents(tl, media, events, sensitivity, ps.fps);
+    for (TimeUs t : cuts.value_or(std::vector<TimeUs>{}))
+        times.append(sec(t));
+    if (!times.isEmpty())
+        apply(tl, QStringLiteral("Split at Scene Changes"));
+    return jsonResult({{QStringLiteral("cuts"), times}, {QStringLiteral("split"), !times.isEmpty()}});
+}
+
+QJsonObject McpServer::ToolCall::tool_cut_time()
+{
+    const QString action = str("action");
+    const TimeUs from = us(std::max(0.0, num("from"))), to = has("to") ? us(num("to")) : project->timeline().duration();
+    std::vector<cuts::Range> ranges;
+    if (action == QLatin1String("silences")) {
+        if (to <= from)
+            return errorResult(QStringLiteral("nothing to listen to there"));
+        const std::vector<float> audio = timelineSpeechAudio(*project->snapshot(), from, to);
+        ranges = cuts::silences(audio, 16000, from, std::clamp(num("threshold_db", -40), -90.0, -5.0), us(std::max(0.05, num("min_length", 0.7))),
+                                us(std::clamp(num("keep", 0.15), 0.0, 2.0)));
+    } else if (action == QLatin1String("ranges")) {
+        for (const QJsonValue v : a.value(QStringLiteral("ranges")).toArray()) {
+            const QJsonArray r = v.toArray();
+            if (r.size() == 2 && r[1].toDouble() > r[0].toDouble())
+                ranges.push_back({us(std::max(0.0, r[0].toDouble())), us(r[1].toDouble())});
+        }
+    } else if (action == QLatin1String("transcribe")) {
+        static const std::map<QString, QString> files = {{QStringLiteral("tiny"), QStringLiteral("ggml-tiny.bin")},
+                                                         {QStringLiteral("base"), QStringLiteral("ggml-base.bin")},
+                                                         {QStringLiteral("small"), QStringLiteral("ggml-small.bin")}};
+        const auto file = files.find(has("model") ? str("model") : QStringLiteral("base"));
+        if (file == files.end())
+            return errorResult(QStringLiteral("model: tiny, base or small"));
+        const QString path = MainWindow::whisperModelPath(file->second);
+        if (!QFileInfo::exists(path))
+            return errorResult(QStringLiteral("the %1 model isn't on this computer: download it once with Tools > Captions > Auto Captions").arg(file->first));
+        if (to <= from)
+            return errorResult(QStringLiteral("nothing to listen to there"));
+        TranscribeOptions o;
+        o.wordTimestamps = true;
+        std::vector<Caption> found;
+        QString error;
+        if (!w->transcribeTimeline(path, o, from, to, nullptr, found, &error))
+            return errorResult(error);
+        QJsonArray words;
+        for (const Caption& c : found)
+            if (!c.text.simplified().isEmpty())
+                words.append(QJsonObject{{QStringLiteral("start"), sec(c.start + from)}, {QStringLiteral("end"), sec(c.end + from)},
+                                         {QStringLiteral("text"), c.text.simplified()}});
+        return jsonResult({{QStringLiteral("words"), words}});
+    } else if (action == QLatin1String("words")) {
+        std::vector<Caption> words;
+        for (const QJsonValue v : a.value(QStringLiteral("words")).toArray()) {
+            const QJsonObject o = v.toObject();
+            words.push_back({us(o.value(QStringLiteral("start")).toDouble()), us(o.value(QStringLiteral("end")).toDouble()),
+                             o.value(QStringLiteral("text")).toString(), 0});
+        }
+        std::vector<bool> removed(words.size(), false);
+        for (const QJsonValue v : a.value(QStringLiteral("remove")).toArray())
+            if (v.toInt() >= 0 && v.toInt() < int(words.size()))
+                removed[size_t(v.toInt())] = true;
+        ranges = cuts::wordCuts(words, removed);
+    } else {
+        return errorResult(QStringLiteral("action: silences, ranges, transcribe or words"));
+    }
+    if (ranges.empty())
+        return jsonResult({{QStringLiteral("removed_seconds"), 0}, {QStringLiteral("ranges"), QJsonArray()}});
+    QJsonArray list;
+    for (const cuts::Range& r : ranges)
+        list.append(QJsonArray{sec(r.from), sec(r.to)});
+    Timeline tl = project->timeline();
+    const TimeUs removed = cuts::removeRanges(tl, ranges, ps.fps);
+    apply(tl, action == QLatin1String("silences") ? QStringLiteral("Remove Silences")
+              : action == QLatin1String("words")  ? QStringLiteral("Edit by Transcript")
+                                                  : QStringLiteral("Cut Time"));
+    return jsonResult({{QStringLiteral("removed_seconds"), sec(removed)}, {QStringLiteral("ranges"), list}});
+}
+
+QJsonObject McpServer::ToolCall::tool_auto_reframe()
+{
+    Timeline tl = project->timeline();
+    std::vector<int> events;
+    for (const QJsonValue v : a.value(QStringLiteral("event_ids")).toArray())
+        if (tl.findClip(v.toInt()))
+            events.push_back(v.toInt());
+    if (events.empty())
+        return errorResult(QStringLiteral("give video events"));
+    ProjectSettings settings = ps;
+    if (a.value(QStringLiteral("portrait")).toBool() && settings.width >= settings.height) {
+        settings.width = 1080;
+        settings.height = 1920;
+        project->setSettings(settings);
+    }
+    const int framed = reframe::apply(tl, project->snapshot()->media, events, QSize(settings.width, settings.height));
+    if (framed > 0)
+        apply(tl, QStringLiteral("Auto Reframe"));
+    return jsonResult({{QStringLiteral("reframed"), std::max(0, framed)},
+                       {QStringLiteral("frame"), QStringLiteral("%1x%2").arg(settings.width).arg(settings.height)}});
+}
+
+QJsonObject McpServer::ToolCall::tool_youtube_publish()
+{
+    const QString action = str("action");
+    if (action == QLatin1String("chapters")) {
+        QStringList warnings;
+        const QString text = upload::youtubeChapters(project->timeline(), &warnings);
+        return jsonResult({{QStringLiteral("chapters"), text}, {QStringLiteral("warnings"), QJsonArray::fromStringList(warnings)}});
+    }
+    if (action == QLatin1String("track_listing")) {
+        const QString text = upload::trackListing(*project, integer("track", -1));
+        if (text.isEmpty())
+            return errorResult(QStringLiteral("no events on that track"));
+        return jsonResult({{QStringLiteral("listing"), text}});
+    }
+    if (action == QLatin1String("thumbnail")) {
+        const QString path = QFileInfo(str("path")).absoluteFilePath();
+        if (str("path").isEmpty())
+            return errorResult(QStringLiteral("give a path"));
+        const TimeUs t = has("time") ? us(std::max(0.0, num("time"))) : w->m_timeline->cursorTime();
+        Compositor renderer(true);
+        const QImage image = upload::thumbnail(renderer.render(*project->snapshot(), t, QSize(ps.width, ps.height)), str("title"));
+        bool saved = false;
+        for (int quality = 92; quality >= 50 && !saved; quality -= 10)
+            saved = image.save(path, nullptr, quality) && QFileInfo(path).size() <= 2 * 1024 * 1024;
+        if (!saved)
+            return errorResult(QStringLiteral("could not write %1 under 2 MB").arg(path));
+        return jsonResult({{QStringLiteral("path"), path}, {QStringLiteral("size"), QStringLiteral("1280x720")}});
+    }
+    return errorResult(QStringLiteral("action: chapters, track_listing or thumbnail"));
+}
+
+QJsonObject McpServer::ToolCall::tool_render_queue()
+{
+    const QString action = str("action");
+    RenderQueue* queue = w->renderQueue();
+    if (action == QLatin1String("start")) {
+        queue->start();
+        return jsonResult(queue->status());
+    }
+    if (action == QLatin1String("stop")) {
+        queue->stop();
+        return jsonResult(queue->status());
+    }
+    if (action == QLatin1String("status"))
+        return jsonResult(queue->status());
+    if (action != QLatin1String("add"))
+        return errorResult(QStringLiteral("action: add, start, stop or status"));
+    if (str("path").isEmpty())
+        return errorResult(QStringLiteral("give a path"));
+    std::shared_ptr<const ProjectSnapshot> snap = project->snapshot();
+    QString label = project->filePath().isEmpty() ? QStringLiteral("Untitled") : QFileInfo(project->filePath()).completeBaseName();
+    if (has("project_file")) {
+        Project other;
+        QString error;
+        if (!other.load(str("project_file"), &error))
+            return errorResult(error);
+        snap = other.snapshot();
+        label = QFileInfo(str("project_file")).completeBaseName();
+    }
+    const ExportPreset* chosen = matchPreset(has("preset") ? str("preset") : QStringLiteral("MP4 H.264"));
+    if (!chosen)
+        return errorResult(QStringLiteral("no Render As template matches \"%1\"").arg(str("preset")));
+    ExportSettings s = settingsFromPreset(*chosen, snap->settings);
+    if (a.value(QStringLiteral("hardware_encoding")).toBool(true))
+        s = withGpuEncoder(s);
+    s.path = QFileInfo(str("path")).absoluteFilePath();
+    s.rangeStart = us(std::max(0.0, num("from")));
+    s.rangeEnd = has("to") ? us(num("to")) : snap->timeline.duration();
+    if (s.rangeEnd <= s.rangeStart)
+        return errorResult(QStringLiteral("nothing to render there"));
+    QString error;
+    if (!queue->add(label, snap, s, &error))
+        return errorResult(error);
+    return jsonResult(queue->status());
+}
+
 QJsonObject McpServer::callTool(const QString& name, const QJsonObject& a)
 {
     using Tool = QJsonObject (ToolCall::*)();
@@ -2614,6 +2906,12 @@ QJsonObject McpServer::callTool(const QString& name, const QJsonObject& a)
     };
     static const QHash<QString, Entry> tools = {
         {QStringLiteral("story_chapters"), {&ToolCall::tool_story_chapters, false}},
+        {QStringLiteral("edit_track"), {&ToolCall::tool_edit_track, false}},
+        {QStringLiteral("scene_changes"), {&ToolCall::tool_scene_changes, false}},
+        {QStringLiteral("cut_time"), {&ToolCall::tool_cut_time, false}},
+        {QStringLiteral("auto_reframe"), {&ToolCall::tool_auto_reframe, false}},
+        {QStringLiteral("youtube_publish"), {&ToolCall::tool_youtube_publish, false}},
+        {QStringLiteral("render_queue"), {&ToolCall::tool_render_queue, false}},
         {QStringLiteral("compound_sequence"), {&ToolCall::tool_compound_sequence, false}},
         {QStringLiteral("directors_dice"), {&ToolCall::tool_directors_dice, false}},
         {QStringLiteral("get_project"), {&ToolCall::tool_get_project, false}},

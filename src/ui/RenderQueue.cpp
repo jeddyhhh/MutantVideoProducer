@@ -7,6 +7,7 @@
 #include "ui/RenderStatusDialog.h"
 
 #include <QDialogButtonBox>
+#include <QJsonArray>
 #include <QDir>
 #include <QFileInfo>
 #include <QHBoxLayout>
@@ -204,6 +205,23 @@ void RenderQueue::refresh(Job& job)
     job.item->setText(2, QDir::toNativeSeparators(job.settings.path));
     job.item->setText(3, status);
     job.item->setToolTip(3, status);
+}
+
+QJsonObject RenderQueue::status() const
+{
+    static const char* states[] = {"waiting", "rendering", "done", "failed", "cancelled"};
+    QJsonArray jobs;
+    for (const auto& j : m_jobs) {
+        QJsonObject o{{QStringLiteral("name"), j->name},
+                      {QStringLiteral("path"), j->settings.path},
+                      {QStringLiteral("state"), QString::fromLatin1(states[int(j->state)])}};
+        if (j->state == Job::State::Rendering)
+            o[QStringLiteral("progress")] = j->monitor->snapshot().progress;
+        if (!j->error.isEmpty())
+            o[QStringLiteral("error")] = j->error;
+        jobs.append(o);
+    }
+    return {{QStringLiteral("running"), m_running}, {QStringLiteral("jobs"), jobs}};
 }
 
 RenderQueue::Job* RenderQueue::selectedJob() const
