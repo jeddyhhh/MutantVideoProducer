@@ -142,12 +142,12 @@ Report analyze(const ProjectSnapshot& snap, const std::function<bool(double)>& p
     }
     return r;
 }
-double safeGain(const Report& r, const Target& t) {
+double safeGain(const Report& r, const Target& t, bool limited) {
     if (!r.error.isEmpty() || r.cancelled || !r.audible || r.invalidSamples ||
         !std::isfinite(r.integrated) || !std::isfinite(r.truePeak) ||
         !std::isfinite(t.lufs) || !std::isfinite(t.truePeak) || t.lufs < -36 || t.lufs > -5 || t.truePeak < -12 || t.truePeak > 0)
         return std::numeric_limits<double>::quiet_NaN();
-    double gain=std::min(t.lufs - r.integrated, t.truePeak - r.truePeak - .05);
+    double gain = limited ? std::min(t.lufs - r.integrated, 12.) : std::min(t.lufs - r.integrated, t.truePeak - r.truePeak - .05);
     // The gain effect's supported range must never override the requested peak ceiling.
     return gain < -60 ? std::numeric_limits<double>::quiet_NaN() : std::min(gain,24.);
 }
@@ -165,15 +165,24 @@ QStringList warnings(const Report& r, const Target& t) {
     if (r.silenceSeconds >= 3) out << QString("Longest near-silent section: %1 s. Check whether the pause is intentional.").arg(r.silenceSeconds, 0, 'f', 1);
     if (r.seconds < 3) out << "Short mix: short-term loudness and loudness range are not representative.";
     auto gain = safeGain(r, t);
-    if (std::isfinite(gain) && gain < t.lufs-r.integrated-.1) out << "True-peak headroom limits the gain: reaching the loudness target needs dynamics control.";
+    if (std::isfinite(gain) && gain < t.lufs-r.integrated-.1)
+        out << "True-peak headroom limits the gain: reaching the loudness target needs dynamics control (a Limiter in Master FX: the gain then goes in front of it).";
     return out;
 }
+int masterLimiter(const Timeline& timeline) {
+    for (int i = 0; i < int(timeline.audioMasterEffects.size()); ++i)
+        if (timeline.audioMasterEffects[size_t(i)].enabled && timeline.audioMasterEffects[size_t(i)].type == "a_limiter")
+            return i;
+    return -1;
+}
 bool applyGain(Timeline& timeline, const Report& r, const Target& t, QString* error) {
-    double gain = safeGain(r, t);
+    // (appended after a master limiter, the gain pushed its peaks past the ceiling, so the limiter could never help)
+    const int limiter = masterLimiter(timeline);
+    double gain = safeGain(r, t, limiter >= 0);
     if (!std::isfinite(gain)) { if(error)*error="Analyze a valid, audible mix and select a valid target first."; return false; }
     if (std::abs(gain) < .01) return true;
     EffectInstance fx; fx.id = timeline.nextId++; fx.type = "a_gain"; fx.params["gain"].value = gain;
-    timeline.audioMasterEffects.push_back(fx);
+    timeline.audioMasterEffects.insert(limiter >= 0 ? timeline.audioMasterEffects.begin() + limiter : timeline.audioMasterEffects.end(), fx);
     return true;
 }
 QJsonObject Report::json(const Target& t) const {

@@ -50,6 +50,22 @@ int main(int argc, char** argv)
     });
     auto gain = finishing::safeGain(crest, {"Test", -16, -2});
     check(gain + crest.truePeak <= -2 && gain < -16 - crest.integrated, "gain is limited by true-peak ceiling without crushing dynamics");
+    {
+        // With a master limiter the gain goes in front of it and reaches the loudness target; without one, at the end.
+        Timeline tl;
+        EffectInstance limiter;
+        limiter.id = tl.nextId++;
+        limiter.type = "a_limiter";
+        tl.audioMasterEffects.push_back(limiter);
+        QString error;
+        const bool applied = finishing::applyGain(tl, crest, {"Test", -16, -2}, &error);
+        Timeline plain;
+        const bool plainApplied = finishing::applyGain(plain, crest, {"Test", -16, -2}, &error);
+        check(applied && tl.audioMasterEffects.size() == 2 && tl.audioMasterEffects[0].type == "a_gain" && tl.audioMasterEffects[1].type == "a_limiter"
+                  && std::abs(tl.audioMasterEffects[0].params["gain"].value - std::min(12., -16 - crest.integrated)) < 1e-6 && plainApplied
+                  && plain.audioMasterEffects.back().type == "a_gain" && std::abs(plain.audioMasterEffects.back().params["gain"].value - gain) < 1e-6,
+              "a master limiter gets the gain in front of it, up to the loudness target");
+    }
     auto silence = finishing::analyze(rate, frames, [](int64_t, int n, float* out) { std::fill(out, out + 2 * n, 0.f); });
     check(silence.error.isEmpty() && !silence.audible && !std::isfinite(finishing::safeGain(silence, {})),
           "silence never receives an extreme normalization gain");

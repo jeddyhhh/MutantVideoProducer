@@ -48,6 +48,9 @@ What changed in each version of Mutant Video Producer. The newest is first.
 - AI control: `add_track` with no index put every new track at the bottom, under the sound; a video or image track now
   goes on top, as its description says. The graphics tool and docs now say that 8-digit colours are #AARRGGBB (alpha
   first), so `#00000088` is clear rather than half-dark.
+- Audio finishing: Apply safe gain put its gain after a Limiter in Master FX, so the limiter could never catch the peaks
+  and a quiet mix with loud peaks could not be brought up to the target (it even turned it down). The gain now goes in
+  front of the limiter and reaches the loudness target (up to +12 dB); the warning says to add a limiter.
 - A crash could leave no crash report: a library loaded later could replace the crash handler. It is put back every
   few seconds, and the report names the library that replaced it.
 

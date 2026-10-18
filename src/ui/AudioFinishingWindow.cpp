@@ -60,7 +60,8 @@ void showAudioFinishing(QWidget* parent, Project* project) {
     auto* row = new QHBoxLayout;
     auto* scan = new QPushButton("Analyze mix"); scan->setObjectName("audioFinishingAnalyze");
     auto* apply = new QPushButton("Apply safe gain"); apply->setObjectName("audioFinishingApply"); apply->setEnabled(false);
-    apply->setToolTip("Adds an undoable gain effect at the end of Master FX. Preserves dynamics and respects measured true-peak headroom. Reanalyze afterward.");
+    apply->setToolTip("Adds an undoable gain effect to Master FX: in front of its Limiter if it has one (the limiter holds the peaks, so the gain reaches the loudness target), "
+                     "else at the end, where it preserves dynamics and respects the measured true-peak headroom. Reanalyze afterward.");
     auto* save = new QPushButton("Save report…"); save->setEnabled(false);
     auto* close = new QPushButton("Close");
     for (auto* b : {scan,apply,save,close}) row->addWidget(b); layout->addLayout(row);
@@ -69,7 +70,7 @@ void showAudioFinishing(QWidget* parent, Project* project) {
     auto target = [&] { return finishing::Target{preset->currentText(),lufs->value(),ceiling->value()}; };
     auto refresh = [&] {
         bool valid = measured && measured == project->snapshot() && report.error.isEmpty() && !report.cancelled;
-        double gain = finishing::safeGain(report,target());
+        double gain = finishing::safeGain(report,target(),finishing::masterLimiter(project->timeline()) >= 0);
         apply->setEnabled(valid && std::isfinite(gain)); save->setEnabled(bool(measured));
         if (!measured) return;
         QStringList warnings = finishing::warnings(report,target());

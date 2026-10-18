@@ -837,7 +837,8 @@ QJsonArray McpServer::toolList()
     t.append(tool(
         "audio_finishing",
         "Measure the entire final stereo mix after all audio effects using EBU R128 and oversampled true peaks. analyze returns LUFS, LRA, "
-        "dBTP, sample peaks, stereo checks, silence and warnings. apply_gain reanalyzes and adds an undoable master gain limited by "
+        "dBTP, sample peaks, stereo checks, silence and warnings. apply_gain reanalyzes and adds an undoable master gain (in front of a "
+        "Master FX Limiter if there is one, up to the loudness target; else at the end,) limited by "
         "true-peak headroom; reanalyze afterward. A cancellable progress window appears. Targets are editable, not platform guarantees.",
         {{"action", prop("string", "analyze or apply_gain")},
          {"lufs", prop("number", "Target -36 to -5 LUFS (default -16)")},
@@ -1758,10 +1759,11 @@ QJsonObject McpServer::ToolCall::tool_audio_finishing()
             return errorResult("The project changed during analysis. Reanalyze before applying gain.");
         auto tl = project->timeline();
         QString error;
+        result["before_limiter"] = finishing::masterLimiter(tl) >= 0;
         if (!finishing::applyGain(tl, report, target, &error))
             return errorResult(error);
         apply(tl, "Finish Audio / Safe Master Gain");
-        result["applied_gain_db"] = finishing::safeGain(report, target);
+        result["applied_gain_db"] = finishing::safeGain(report, target, finishing::masterLimiter(project->timeline()) >= 0);
         result["reanalyze_required"] = true;
     }
     return jsonResult(result);

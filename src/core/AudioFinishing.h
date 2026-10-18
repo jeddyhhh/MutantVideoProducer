@@ -25,7 +25,10 @@ Report analyze(int rate, int64_t frames, const Source& source,
                const std::function<bool(double)>& progress = {});
 Report analyze(const ProjectSnapshot& snapshot, const std::function<bool(double)>& progress = {});
 QStringList warnings(const Report& report, const Target& target);
-// Linear adjustment preserves dynamics and is limited by measured true-peak headroom.
-double safeGain(const Report& report, const Target& target);
+// Linear adjustment preserves dynamics and is limited by measured true-peak headroom. With a limiter on the master
+// (`limited`), the gain goes in front of it, which holds the peaks: then it reaches the loudness target (up to +12 dB).
+double safeGain(const Report& report, const Target& target, bool limited = false);
+// The first enabled Limiter in Master FX, or -1.
+int masterLimiter(const Timeline& timeline);
 bool applyGain(Timeline& timeline, const Report& report, const Target& target, QString* error);
 }
