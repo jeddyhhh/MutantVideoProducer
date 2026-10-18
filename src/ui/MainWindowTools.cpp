@@ -106,7 +106,9 @@
 #include "core/Stabilizer.h"
 #include <atomic>
 #include <thread>
+#ifdef Q_OS_WIN
 #include <windows.h>
+#endif
 #include <QProgressDialog>
 #include <QSettings>
 #include <QSplitter>
