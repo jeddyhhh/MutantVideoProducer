@@ -161,6 +161,14 @@ streams differently, events use its first video or audio stream.
 - If Mutant Video Producer crashes or the computer turns off, the next start offers to recover the copy. It opens
   under the project's own name, unsaved, ready for **File > Save**.
 
+### Crash reports
+
+When Mutant Video Producer crashes it writes a report: a `crash-<date>-<time>.txt` with what failed, where, and the last
+lines it logged, and on Windows a `.dmp` minidump for a debugger. They go in the app's data folder under `crashes`
+(on Windows `%LOCALAPPDATA%\Mutant Video Producer\Mutant Video Producer\crashes`). The next start offers to show a new
+report; attach it when you report a problem. A library loaded later (a graphics driver, a runtime) can't take the
+crash handler's place: it is put back every few seconds, and the log names the library that replaced it.
+
 ## Collect Project and Media
 
 **File > Collect Project and Media...** creates a portable folder containing a `.mvp` copy of the current edit and its assets. Unsaved changes are included; the open project's filename, undo history and saved state stay unchanged.

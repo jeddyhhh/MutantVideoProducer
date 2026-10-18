@@ -2,7 +2,7 @@
 
 What changed in each version of Mutant Video Producer. The newest is first.
 
-## Unreleased
+## 0.7.0 (2026-10-19)
 
 ### Added
 
@@ -10,6 +10,12 @@ What changed in each version of Mutant Video Producer. The newest is first.
   character's voice track, under the character's name), so a mouth moves through all of that character's lines. In
   Compose Graphics, Bind audio for animation lists the audio tracks and takes a binding name; for AI control,
   `graphics_overlay` `bind_audio` takes `source_track`.
+
+- Two new tutorials: **An Animated Short with Lip Sync** (voice tracks per character, building characters, lip sync,
+  blinking, camera cuts) and **Delivering a Finished Edit** (the Deliver tab end to end).
+- The guides now cover crash reports, Director's Dice and the Deliver tab in the README, the timecode format, freeze
+  frames on generated pictures, speaker captions, limiter-aware safe gain and the newer AI control settings; the user
+  guide's index links Animation Scenes, Graphics through AI Control and GPU Acceleration.
 
 ### Fixed (found by the edge-hunt projects)
 

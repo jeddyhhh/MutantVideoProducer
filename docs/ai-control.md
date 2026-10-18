@@ -32,11 +32,11 @@ The status bar shows each tool it uses.
 | Tool | What it does |
 |---|---|
 | get_project | Reads the media, tracks, events, effects and their settings, markers. |
-| graphics_overlay | Compose native layered text, shapes and images; create/read/update broadcast presets or custom scenes. |
+| graphics_overlay | Compose native layered text, shapes and images; create/read/update broadcast presets or custom scenes. `bind_audio` with `source_track` (a track index) and `binding` (a name) binds every sound on that track during the scene, for lip sync from each character's voice track. Colours are `#RRGGBB`, or `#AARRGGBB` with the alpha first. |
 | waveform_graphic | Build and style native graphics from real source audio, with embedded peaks, stereo and playback progress. |
 | import_media, add_media_to_timeline | Imports files and places them. |
-| add_text | Adds a title or text. |
-| edit_event, split, delete_events, add_track | Moves, trims, splits and deletes events; adds tracks. |
+| add_text | Adds a title, text or any generator preset; `params` sets the generator's own settings (a title's font, size and colour, a starfield's speed). |
+| edit_event, split, delete_events, add_track | Moves (also to another track), trims, splits and deletes events, with their grouped sound; `edit_event` `params` changes a generator's settings. `add_track` with no index puts a video or image track on top and an audio track at the bottom. Edits that would change a locked track are refused. |
 | list_effects | Lists every effect with its settings. |
 | add_effect, set_effect, remove_effect | Effects (with keyframes and masks) on events, tracks, the output, the audio master, the Live FX, pads and the layer. Remove Background, freehand masks and VST3 plugins work through these. |
 | list_vst3_plugins | The VST3 plugins installed. |
@@ -81,7 +81,7 @@ The [Letting an AI Assistant Edit](tutorials/16-ai-assistant.md) tutorial walks 
 
 ## Documentary tools
 
-`audio_finishing` measures final-mix LUFS, loudness range and true peaks, reports mix warnings and can apply safe master gain. See [Audio finishing](audio-finishing.md).
+`audio_finishing` measures final-mix LUFS, loudness range and true peaks, reports mix warnings and can apply safe master gain (in front of a Master FX Limiter when there is one). See [Audio finishing](audio-finishing.md).
 `graphics_overlay` also exposes alignment, distribution, saved locks and reusable brand kits. See [Animation scenes](animation-scenes.md#layout-and-brand-workflow).
 
 `story_chapters` lists, adds, adopts, updates, reorders, assigns or deletes chapters. Durations are seconds; `get_project.chapters` contains saved microsecond strings. A chapter has a narration window followed by listening-only time. `adopt` turns an existing `from`/`to` range into a chapter, splitting boundary clips and retaining their sync.

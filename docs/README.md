@@ -12,7 +12,7 @@ guide, and **Help > Tutorials** to open the step-by-step tutorials and their exa
 
 - [Getting Started](getting-started.md): the window, a first edit from import to render.
 - [Project Format and Settings](rename.md): `.mvp` projects, profiles, settings and MCP clients.
-- [Tutorials](tutorials/README.md): sixteen step-by-step lessons, most with an example project to open.
+- [Tutorials](tutorials/README.md): eighteen step-by-step lessons, most with an example project to open.
 - [Keyboard Shortcuts](shortcuts.md): every key, and how to change them.
 
 ## The Editor
@@ -33,6 +33,9 @@ guide, and **Help > Tutorials** to open the step-by-step tutorials and their exa
 - [Transitions](transitions.md): crossfades, fades and the 27 transitions.
 - [Titles and Generators](titles-and-generators.md): text, titles, kinetic text, credits, animated
   backgrounds, overlays, shapes and test patterns.
+- [Animation Scenes](animation-scenes.md): the graphics composer's 2D animation: layers, groups, paths, keyframes,
+  cameras, particles, charts, reusable objects, and audio bindings for lip sync from a voice track.
+- [Graphics through AI Control](graphics-mcp.md): building and changing graphics scenes with an assistant.
 - [Audio](audio.md): audio effects and presets, VST3 plugins, the Audio Mixer, auto ducking, meters,
   scrubbing and beat detection.
 - [Audio finishing](audio-finishing.md): integrated loudness, true peaks, mix checks and safe master gain.
@@ -50,6 +53,7 @@ guide, and **Help > Tutorials** to open the step-by-step tutorials and their exa
 ## Everything else
 
 - [Options](options.md): every setting in the Options menu.
+- [GPU Acceleration](gpu-acceleration.md): which parts of preview, effects and rendering use the graphics card.
 - [AI Control (MCP)](ai-control.md): letting an AI assistant on your computer edit with you.
 
 ## For developers

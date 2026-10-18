@@ -6,7 +6,7 @@ Open **Tools > Audio Finishing…**, or **Finish mix…** on the Audio Mixer's m
 2. Press **Analyze mix**. A cancellable scan measures the entire project, including track/event effects, Master FX, fades, automation and ducking.
 3. Review integrated loudness, loudness range, maximum momentary/short-term loudness, sample peaks, true peaks and stereo correlation.
 4. Check the warnings: full-scale samples, peaks above the chosen ceiling, left/right imbalance, negative stereo correlation, long near-silent sections, mute/solo states and missing sources.
-5. **Apply safe gain** adds one undoable Gain effect at the end of Master FX. It preserves dynamics and limits gain to available true-peak headroom, including a small safety margin. If this cannot reach the loudness target, use compression/limiting deliberately, then analyze again.
+5. **Apply safe gain** adds one undoable Gain effect to Master FX. Without a limiter it goes at the end, preserves dynamics and limits gain to the available true-peak headroom, including a small safety margin. If that cannot reach the loudness target, add a **Limiter** to Master FX and apply again: the gain then goes *in front of* the limiter, which holds the peaks, and it reaches the target (up to +12 dB). Analyze again afterwards.
 
 Analysis uses the same stereo mixer as playback/export and FFmpeg's
 [EBU R128 scanner](https://ffmpeg.org/ffmpeg-filters.html#ebur128), including oversampled true-peak measurement.
@@ -22,4 +22,4 @@ Changing the project or its media makes measurements stale and disables gain app
 {"action":"analyze","lufs":-16,"true_peak":-1.5}
 ```
 
-Call `audio_finishing` with this object. `apply_gain` performs a fresh analysis and applies the safe gain in one undo step. It refuses to modify the project if the project changed during the scan. The response includes `integrated_lufs`, `true_peak_dbtp`, `range_lu`, `safe_gain_db` and `warnings`; after applying, `reanalyze_required` is true.
+Call `audio_finishing` with this object. `apply_gain` performs a fresh analysis and applies the safe gain in one undo step. It refuses to modify the project if the project changed during the scan. The response includes `integrated_lufs`, `true_peak_dbtp`, `range_lu`, `safe_gain_db` and `warnings`; after applying, `reanalyze_required` is true and `before_limiter` says whether the gain went in front of a Master FX Limiter.

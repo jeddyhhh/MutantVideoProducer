@@ -1,6 +1,6 @@
 # Tutorials
 
-Sixteen short lessons that together cover the whole of Mutant Video Producer. Each takes 10 to 20 minutes. Most
+Eighteen short lessons that together cover the whole of Mutant Video Producer. Each takes 10 to 20 minutes. Most
 come with an **example project**: click its link (or use **Help > Tutorials** in Mutant Video Producer) and
 Mutant Video Producer opens a copy of it from `Documents\Mutant Video Producer Examples`. Change it as much as you like; the
 original stays as it is. Open the example again and Mutant Video Producer asks whether to open your copy or start
@@ -26,6 +26,8 @@ your own.
 | 11 | [Media, Proxies and YouTube](11-media-proxies-youtube.md) | Importing, Project Media, in / out marks, proxies, Create Clip from YouTube, relinking, recovery | any |
 | 12 | [Masks, Stabilising and Removing Backgrounds](12-masks-stabilize-background.md) | Freehand masks, rotoscoping, Track Motion, Stabilize, Remove Background (AI), Pan/Crop | effects-and-keyframes |
 | 13 | [Rendering and Sharing](13-rendering.md) | Render As, templates, other shapes, size limits, GPU encoding, frames | first-edit |
+| 17 | [An Animated Short with Lip Sync](17-animated-short.md) | Voice tracks per character, building characters, lip sync from a track, blinking, camera cuts, finishing | any |
+| 18 | [Delivering a Finished Edit](18-delivering.md) | The Deliver tab: checks, loudness, packs of outputs, rendering them all, the publish pack | first-edit |
 
 ## Live
 

@@ -15,7 +15,8 @@ Nothing is sent anywhere.
      - *Tiny* (78 MB, fastest),
      - *Base* (148 MB, good),
      - *Small* (488 MB, best, slower),
-     - *Small English, marks who is speaking* (488 MB): English only; the second speaker's captions are yellow.
+     - *Small English, marks who is speaking* (488 MB): English only; the second speaker's captions are yellow. A long
+       turn is cut on words into captions no longer than the chosen caption length, each timed by its share of the words.
 
      A model is downloaded from huggingface.co the first time you use it, after asking. The offline
      release already has them all.

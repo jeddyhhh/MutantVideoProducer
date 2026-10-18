@@ -87,7 +87,9 @@ Lines starting with `# ` are headings.
 
 ### Timecode
 
-Burns the timecode, or the frame number, into the picture, with an optional prefix.
+Burns the timecode, or the frame number, into the picture, with an optional prefix. Timecode is hours, minutes,
+seconds and frames: `00:01:02:12` at whole frame rates (24, 25, 30, 50, 60), and `00:01:02;12` with a semicolon at
+NTSC rates (23.976, 29.97, 59.94), where it follows the clock as drop-frame timecode does.
 
 ### Countdown Leader
 

@@ -53,7 +53,8 @@ Details:
 - holds the picture at the cursor for 2 seconds,
 - pushes the rest of the event, and its sound, later.
 
-Trim the held frame to change how long it lasts.
+Trim the held frame to change how long it lasts. Freeze frames hold a picture from a file: generated events (titles,
+graphics, backgrounds) can't be frozen; for those, hold the animation instead (a key with the same value).
 
 ## Looping a file
 

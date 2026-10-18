@@ -20,7 +20,8 @@ The checks run each time you open the tab, and again a moment after each edit wh
 **Check Again** runs them now. A green tick is fine, an amber mark is worth a look, and a grey *i* is
 a note.
 
-- **Unsaved project.** File names and History follow the project's name; **Save** saves it.
+- **Unsaved project.** File names and History follow the project's name; **Save** saves it. Outputs, folder and
+  details chosen before the first save carry over to the saved project, and the files take its name.
 - **Offline media.** Events whose file is missing. **Go There** moves the cursor to the first.
 - **Nothing on screen.** A second or more with no picture on any track. **Go There** shows it.
 - **Loudness.** Choose a target and press **Measure** to scan the final mix (as in
@@ -43,7 +44,8 @@ and the template's short name, such as `Trip - YouTube 1080p.mp4` or `Trip - MP3
   Social (Reels, TikTok, square), Audio (MP3 and WAV), Masters (ProRes HQ and lossless FFV1) or
   Share (a small preview and Discord). **✕** takes an output out.
 - The ticked outputs are rendered one after another through the [Render Queue](rendering.md), with
-  the GPU encoder when there is one. Each shows its progress.
+  the GPU encoder when there is one. Each shows its progress. Stopping the Render Queue part-way leaves the
+  rest waiting, and the tab says so (*Stopped: 3 of 5 rendered*); outputs rendered before don't count again.
 - Under the list: how many outputs, about how big they'll be together, and the free space where they
   go (in red when they might not fit).
 

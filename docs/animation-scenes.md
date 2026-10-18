@@ -4,7 +4,7 @@ Mutant Video Producer's graphics composer now has a general 2D animation engine.
 
 ## Using the composer
 
-Drag an **Animation** preset from the Generators / Graphics category onto the timeline. Select it and choose **Compose Graphics…** in Properties.
+Drag an **Animation** preset, or **Blank Graphics Canvas**, from the Generators / Graphics category onto the timeline. Select it and choose **Compose Graphics…** in Properties. The [animated short tutorial](tutorials/17-animated-short.md) builds a talking character from scratch.
 
 - **Layout** edits text, colour and geometry. Select several layers to group them. Parent groups move, rotate and scale their children; their anchors can serve as pivots for articulated objects. **Make reusable object** turns a layer/group into a definition with editable instances.
 - **Motion** edits parent groups, path following, scale/anchors, path reveal, typography, masks, gradients, shadows, glow, trails, motion blur, particles/repeaters, charts and the scene camera. Add a Path, enable **Edit curve points on canvas**, then drag endpoints/control handles. The path buttons append, curve and close segments.

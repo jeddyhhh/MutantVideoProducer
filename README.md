@@ -56,7 +56,9 @@ Project Media provides folders, ratings, search and in/out marks. Proxies help w
 heavy footage, and recordings and YouTube downloads have their own media bins.
 Profiles provide selectable home folders and shared media libraries across projects.
 **Collect Project and Media** gathers a project and its dependencies for moving or
-sharing. Autosave, crash recovery and undo history support everyday editing.
+sharing. Autosave, crash recovery, crash reports and undo history support everyday editing.
+Story chapters lay out a documentary, compound sequences nest one edit inside another, and
+**Director's Dice** rolls a fresh cut of the events you choose.
 
 ![The Editor with captions, graphics and a multitrack timeline](docs/screenshots/editor.png)
 
@@ -66,6 +68,10 @@ Build titles, lower thirds, broadcast layouts, charts and animated scenes direct
 inside the editor. The general 2D graphics engine supports parented layers, reusable
 objects, curved paths, keyframes, easing, morphing, masks, cameras, particles and
 repeaters. Audio and beat bindings connect animation to your soundtrack.
+
+Make cut-out cartoons too: bind a scene to each character's voice track and their mouth, arms and body
+move with their own lines, through every line in the shot. The [animated short tutorial](docs/tutorials/17-animated-short.md)
+builds characters, lip sync and camera cuts step by step.
 
 Snapping, alignment, distribution, layer locks and reusable brand kits help keep
 layouts consistent. Scenes remain editable and use the same renderer in preview
@@ -119,6 +125,13 @@ OBS virtual camera are available on Windows. See the [Live guide](docs/live.md).
 
 ![The Live workspace with source controls and effect pads](docs/screenshots/live.png)
 
+## Deliver
+
+The **Deliver** tab checks a finished edit (offline media, gaps, loudness, YouTube chapters, length limits,
+captions), renders it to several outputs at once from ready-made packs (YouTube, social, audio, masters, share),
+and writes the publish pack: title, description with chapters and tracklist, tags, thumbnail and captions.
+Every render goes into its History. See [Deliver](docs/deliver.md).
+
 ## Render and automate
 
 Export using templates for social video, editing formats, GIFs, image sequences and
@@ -141,7 +154,7 @@ Studio Light under **View > Theme**.
 ## Learn and build
 
 - [User Guide](docs/README.md): features, settings and workflows; also available in **Help > User Guide**.
-- [Tutorials](docs/tutorials/README.md): sixteen guided lessons with example projects; open **Help > Tutorials**.
+- [Tutorials](docs/tutorials/README.md): eighteen guided lessons with example projects; open **Help > Tutorials**.
 - [Keyboard Shortcuts](docs/shortcuts.md): commands and custom key bindings.
 - [Building](docs/developer/building.md): dependencies and platform-specific instructions.
 - [Architecture](docs/developer/architecture.md): how the application is organised.
