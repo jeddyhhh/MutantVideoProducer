@@ -853,7 +853,8 @@ QJsonArray McpServer::toolList()
         "repeaters, charts, camera, masks, gradients, shadows/glow, trails/motion_blur and character/word/line text_animation. Animate "
         "properties with {keyframes:[[event-local seconds,value,easing?],...],easing,loop,ping_pong}; numeric, colour, discrete and "
         "compatible path morph values work. follow:{path:layer_id,progress,orient,loop} follows curved paths. Scene variables substitute "
-        "{{name}} in text; datasets drive charts. bind_audio embeds real source envelopes and native detected beats (source_track: "
+        "{{name}} in text; datasets drive charts. Colours are #RRGGBB, or #AARRGGBB with the alpha FIRST (#00000088 is clear: use "
+        "opacity for see-through). bind_audio embeds real source envelopes and native detected beats (source_track: "
         "every audio event on a track during the scene, e.g. one binding per character's voice track for lip sync); property "
         "{audio:binding,base,amount,channel:peak|left|right|beat} reacts without adding sound. Read capabilities and "
         "docs/animation-scenes.md for limits and examples. All edits are saved and undoable.",
@@ -2190,7 +2191,8 @@ QJsonObject McpServer::ToolCall::tool_add_track()
     const TrackType trackType = type == QLatin1String("image") ? TrackType::Image
         : type == QLatin1String("audio")                       ? TrackType::Audio
                                                                : TrackType::Video;
-    const int index = ops::addTrack(tl, trackType, has("index") ? integer("index") : -1);
+    // As documented: a picture track goes on top, a sound track at the bottom (every kind went to the bottom).
+    const int index = ops::addTrack(tl, trackType, has("index") ? integer("index") : trackType == TrackType::Audio ? -1 : 0);
     apply(tl, QStringLiteral("Add Track"));
     return jsonResult({{QStringLiteral("index"), index}});
 }

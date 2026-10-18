@@ -846,6 +846,17 @@ int MainWindow::runEditorTest(QStringList& log)
                   QStringLiteral("AI render: \"MP3\" to a .mp3 in a new folder uses an MP3 template (%1)").arg(chosen));
         }
         {
+            // add_track with no index: pictures on top, sound at the bottom (all went to the bottom).
+            const int undoIndex = m_project->undoStack()->index();
+            const int video = content(call(QStringLiteral("add_track"), {{QStringLiteral("type"), QStringLiteral("video")}}))[QStringLiteral("index")].toInt(-1);
+            const int audio = content(call(QStringLiteral("add_track"), {{QStringLiteral("type"), QStringLiteral("audio")}}))[QStringLiteral("index")].toInt(-1);
+            const auto& tracks = m_project->timeline().tracks;
+            check(video == 0 && tracks.front().type == TrackType::Video && audio == int(tracks.size()) - 1 && tracks.back().type == TrackType::Audio,
+                  QStringLiteral("AI add_track: a video track on top (%1), an audio track at the bottom (%2 of %3)").arg(video).arg(audio).arg(tracks.size()));
+            while (m_project->undoStack()->index() > undoIndex)
+                m_project->undoStack()->undo();
+        }
+        {
             // Lip sync: a scene bound to a whole voice track, under a binding name; a missing track refused.
             const Timeline tl = m_project->timeline();
             int index = -1;

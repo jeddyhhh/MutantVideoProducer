@@ -45,6 +45,9 @@ What changed in each version of Mutant Video Producer. The newest is first.
   for ever; it now says "Stopped: 9 of 12 rendered", and outputs rendered before don't count again.
 - Timecode (burn-in, the timeline, file names) wrote ";" before the frames at every frame rate, which reads as
   drop-frame; whole rates such as 25 and 50 fps now use ":", and ";" stays for 29.97 and 59.94.
+- AI control: `add_track` with no index put every new track at the bottom, under the sound; a video or image track now
+  goes on top, as its description says. The graphics tool and docs now say that 8-digit colours are #AARRGGBB (alpha
+  first), so `#00000088` is clear rather than half-dark.
 - A crash could leave no crash report: a library loaded later could replace the crash handler. It is put back every
   few seconds, and the report names the library that replaced it.
 
