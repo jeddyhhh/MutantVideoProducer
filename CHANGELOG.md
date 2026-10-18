@@ -4,6 +4,13 @@ What changed in each version of Mutant Video Producer. The newest is first.
 
 ## Unreleased
 
+### Added
+
+- Lip sync from a voice track: a graphics scene can bind its animation to every sound on a track during the scene (each
+  character's voice track, under the character's name), so a mouth moves through all of that character's lines. In
+  Compose Graphics, Bind audio for animation lists the audio tracks and takes a binding name; for AI control,
+  `graphics_overlay` `bind_audio` takes `source_track`.
+
 ### Fixed (found by the edge-hunt projects)
 
 - Renders that a short range made impossible: a fit-to-size template (Discord, WhatsApp...) over a few seconds asked

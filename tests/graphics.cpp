@@ -103,6 +103,40 @@ int main(int argc, char **argv) {
         "waveform analysis can be cancelled");
   check(graphics::buildWaveform(audio, 0, 0, 3601, 128, &error).isEmpty(),
         "oversized audio range rejected");
+  {
+    // A voice track for lip sync: its tone event from 10 to 11 s and a silent
+    // one from 12 to 13 s, seen by a scene from 9.5 s, 4 s long (10 ms bins).
+    auto item = std::make_shared<MediaItem>();
+    item->id = 1;
+    item->path = audio;
+    item->info = probeMedia(audio);
+    std::map<int, std::shared_ptr<const MediaItem>> media{{1, item}};
+    Track voice;
+    voice.type = TrackType::Audio;
+    Clip line;
+    line.mediaId = 1;
+    line.start = 10 * kUsPerSecond;
+    line.length = kUsPerSecond;
+    line.sourceIn = kUsPerSecond;
+    voice.clips.push_back(line);
+    line.start = 12 * kUsPerSecond;
+    line.sourceIn = 0;
+    voice.clips.push_back(line);
+    const auto env = graphics::trackEnvelope(voice, media, 9.5, 4, 400, &error);
+    const auto left = env["left"].toArray(), right = env["right"].toArray();
+    double before = 0, during = 0, loud = 0, after = 0;
+    for (int i = 0; i < left.size(); ++i) {
+      double &slot = i < 49 ? before : i > 151 ? after : during;
+      slot = std::max(slot, left[i].toDouble());
+    }
+    for (int i = 55; i < 145 && i < right.size(); ++i)
+      loud = std::max(loud, right[i].toDouble());
+    check(graphics::validateWaveform(env).isEmpty() && left.size() == 400 && before == 0 && after == 0 &&
+              std::abs(during - .25) < .01 && std::abs(loud - .5) < .01,
+          "a track's envelope: each event's sound at its timeline place");
+    check(graphics::trackEnvelope(voice, media, 20, 2, 400, &error).isEmpty() && !error.isEmpty(),
+          "a track with nothing during the scene is refused");
+  }
   auto wave = makeGenerator(*findGeneratorPreset("audio_waveform"));
   wave.data = tone;
   auto filled=wave;filled.params["style"].value=1;

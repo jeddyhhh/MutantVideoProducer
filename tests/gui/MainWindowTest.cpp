@@ -846,6 +846,36 @@ int MainWindow::runEditorTest(QStringList& log)
                   QStringLiteral("AI render: \"MP3\" to a .mp3 in a new folder uses an MP3 template (%1)").arg(chosen));
         }
         {
+            // Lip sync: a scene bound to a whole voice track, under a binding name; a missing track refused.
+            const Timeline tl = m_project->timeline();
+            int index = -1;
+            const Clip* line = nullptr;
+            for (int i = 0; i < int(tl.tracks.size()) && !line; ++i)
+                for (const Clip& c : tl.tracks[size_t(i)].clips)
+                    if (tl.tracks[size_t(i)].type == TrackType::Audio && !c.isGenerated() && !c.isSequence() && !line) {
+                        line = &c;
+                        index = i;
+                    }
+            const int undoIndex = m_project->undoStack()->index();
+            const int scene = line ? content(call(QStringLiteral("graphics_overlay"), {{QStringLiteral("action"), QStringLiteral("create")},
+                                                                                       {QStringLiteral("preset"), QStringLiteral("motion_audio")},
+                                                                                       {QStringLiteral("at"), double(line->start) / kUsPerSecond},
+                                                                                       {QStringLiteral("length"), 4}}))[QStringLiteral("event_id")].toInt()
+                                   : 0;
+            const auto bound = call(QStringLiteral("graphics_overlay"), {{QStringLiteral("action"), QStringLiteral("bind_audio")}, {QStringLiteral("event_id"), scene},
+                                                                         {QStringLiteral("source_track"), index}, {QStringLiteral("binding"), QStringLiteral("mouth")}});
+            const Clip* g = m_project->timeline().findClip(scene);
+            double loudest = 0;
+            for (const auto v : g ? g->generator.data[QStringLiteral("audio")][QStringLiteral("mouth")][QStringLiteral("left")].toArray() : QJsonArray())
+                loudest = std::max(loudest, v.toDouble());
+            const bool missing = failed(call(QStringLiteral("graphics_overlay"), {{QStringLiteral("action"), QStringLiteral("bind_audio")}, {QStringLiteral("event_id"), scene},
+                                                                                  {QStringLiteral("source_track"), 99}}));
+            check(scene && !failed(bound) && loudest > 0 && missing,
+                  QStringLiteral("AI lip sync: a scene bound to voice track %1 (loudest %2), a missing track refused").arg(index).arg(loudest));
+            while (m_project->undoStack()->index() > undoIndex)
+                m_project->undoStack()->undo();
+        }
+        {
             // A generator's settings through AI control: on adding and on editing; an unknown one refused.
             const int undoIndex = m_project->undoStack()->index();
             const auto added = content(call(QStringLiteral("add_text"), {{QStringLiteral("preset"), QStringLiteral("title")}, {QStringLiteral("text"), QStringLiteral("Hi")},

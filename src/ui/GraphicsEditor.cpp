@@ -94,7 +94,7 @@ QJsonValue shifted(QJsonValue value, double amount)
     }
     return value.toDouble() + amount;
 }
-QJsonObject pickAnimationAudio(QWidget* parent, Project* project, double duration);
+QJsonObject pickAnimationAudio(QWidget* parent, Project* project, double duration, double eventStart, QString* name);
 class KeyStrip : public QWidget {
 public:
     QJsonArray keys;
@@ -346,7 +346,7 @@ public:
     std::map<QString, QDoubleSpinBox*> spins;
     bool loading = false;
     Project* project = nullptr;
-    double duration = 10, currentTime = 0;
+    double duration = 10, currentTime = 0, eventStart = -1; // (eventStart: where the event is on the timeline)
     QCheckBox *record = nullptr, *pathEditing = nullptr;
     QComboBox *propertyBox = nullptr, *easeBox = nullptr, *targetBox = nullptr, *parentBox = nullptr, *followBox = nullptr;
     QLineEdit *keyValue = nullptr, *bezier = nullptr;
@@ -362,8 +362,8 @@ public:
     QComboBox* layoutReference = nullptr;
     QComboBox* brandRole = nullptr;
     QWidget* propertyTabs = nullptr;
-    Designer(QWidget* parent, QJsonObject scene, Project* project = nullptr, double duration = 10)
-        : QDialog(parent), data(std::move(scene)), project(project), duration(std::clamp(duration, .1, 3600.))
+    Designer(QWidget* parent, QJsonObject scene, Project* project = nullptr, double duration = 10, double eventStart = -1)
+        : QDialog(parent), data(std::move(scene)), project(project), duration(std::clamp(duration, .1, 3600.)), eventStart(eventStart)
     {
         if (parent && parent->testAttribute(Qt::WA_DontShowOnScreen))
             setAttribute(Qt::WA_DontShowOnScreen);
@@ -1750,11 +1750,12 @@ public:
         audio->setObjectName("graphicsBindAudio");
         layout->addWidget(audio);
         connect(audio, &QPushButton::clicked, this, [this] {
-            auto binding = pickAnimationAudio(this, project, duration);
+            QString name;
+            auto binding = pickAnimationAudio(this, project, duration, eventStart, &name);
             if (binding.isEmpty())
                 return;
             auto audio = data["audio"].toObject();
-            audio["source"] = binding;
+            audio[name] = binding;
             data["version"] = 2;
             data["audio"] = audio;
             load();
@@ -1929,7 +1930,7 @@ public:
         loading = false;
     }
 };
-QJsonObject pickAnimationAudio(QWidget* parent, Project* project, double duration)
+QJsonObject pickAnimationAudio(QWidget* parent, Project* project, double duration, double eventStart, QString* name)
 {
     if (!project)
         return {};
@@ -1946,6 +1947,11 @@ QJsonObject pickAnimationAudio(QWidget* parent, Project* project, double duratio
     for (auto& [id, m] : project->media())
         if (m->info.hasAudio())
             media->addItem(m->displayName(), id);
+    const Timeline tl = project->timeline();
+    if (eventStart >= 0) // a whole track (a character's voice, for lip sync): every event on it during this one
+        for (int i = 0; i < int(tl.tracks.size()); ++i)
+            if (tl.tracks[size_t(i)].type == TrackType::Audio)
+                media->addItem(QStringLiteral("Track: %1 (its events during this scene)").arg(tl.tracks[size_t(i)].name), -(i + 1));
     if (!media->count()) {
         QMessageBox::information(parent, "Audio animation", "Import an audio or video source first.");
         return {};
@@ -1962,7 +1968,14 @@ QJsonObject pickAnimationAudio(QWidget* parent, Project* project, double duratio
     span->setValue(duration);
     span->setObjectName("animationAudioSpan");
     form->addRow("Source span (seconds)", span);
-    auto* label = new QLabel("Bind the real audio envelope and detected beats as ‘source’.\nUse "
+    auto* bindingName = new QLineEdit(QStringLiteral("source"));
+    bindingName->setObjectName("animationAudioName");
+    form->addRow("Binding name", bindingName);
+    const auto fromTrack = [media] { return media->currentData().toInt() < 0; };
+    const auto showRange = [=] { start->setEnabled(!fromTrack()); span->setEnabled(!fromTrack()); };
+    QObject::connect(media, &QComboBox::currentIndexChanged, &dialog, showRange);
+    showRange();
+    auto* label = new QLabel("Bind the real audio envelope and detected beats under the binding name.\nUse "
                              "audio-driven properties in a layer's data or start with Audio "
                              "Reactive.\nThis embeds analysis; it does not insert sound.");
     label->setWordWrap(true);
@@ -1973,6 +1986,15 @@ QJsonObject pickAnimationAudio(QWidget* parent, Project* project, double duratio
     QObject::connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
     if (dialog.exec() != QDialog::Accepted)
         return {};
+    *name = bindingName->text().trimmed().isEmpty() ? QStringLiteral("source") : bindingName->text().trimmed();
+    if (fromTrack()) {
+        QString error;
+        QJsonObject result = graphics::trackEnvelope(tl.tracks[size_t(-media->currentData().toInt() - 1)], project->snapshot()->media,
+                                                     eventStart, duration, 4096, &error);
+        if (result.isEmpty())
+            QMessageBox::warning(parent, "Audio animation", error);
+        return result;
+    }
     auto item = project->mediaItem(media->currentData().toInt());
     if (!item || !item->info.hasAudio())
         return {};
@@ -2028,7 +2050,7 @@ void composeGraphics(QWidget* parent, Project* project, int eventId)
     if (!clip || clip->generator.type != "graphics_overlay")
         return;
     Designer dialog(parent, clip->generator.data.isEmpty() ? graphics::scene("broadcast") : clip->generator.data, project,
-                    double(clip->length) / kUsPerSecond);
+                    double(clip->length) / kUsPerSecond, double(clip->start) / kUsPerSecond);
     if (dialog.exec() != QDialog::Accepted)
         return;
     auto error = graphics::validateScene(dialog.data);

@@ -2,6 +2,7 @@
 #include "core/AudioDecoder.h"
 #include "core/BeatTracker.h"
 #include "core/MotionGraphics.h"
+#include "core/Project.h"
 #include <QFileInfo>
 #include <QImageReader>
 #include <QJsonDocument>
@@ -478,6 +479,57 @@ QJsonObject buildWaveform(const QString &path, int stream, double start,
     result["beat_confidence"] = tracker->confidence();
   }
   return result;
+}
+QJsonObject trackEnvelope(const Track &track, const MediaMap &media, double from, double length, int bins,
+                          QString *error) {
+  auto fail = [&](QString e) {
+    if (error)
+      *error = e;
+    return QJsonObject{};
+  };
+  if (!std::isfinite(from) || !std::isfinite(length) || length <= 0 || length > 3600)
+    return fail("Choose an audio range up to one hour.");
+  bins = std::clamp(bins, 64, 8192);
+  std::vector<double> left(size_t(bins), 0), right(size_t(bins), 0);
+  int used = 0;
+  for (const Clip &c : track.clips) {
+    if (c.muted || c.isGenerated() || c.isSequence() || c.reverse || c.hasRamp() || c.loopLength > 0)
+      continue;
+    const auto m = media.find(c.mediaId);
+    if (m == media.end() || !m->second->info.hasAudio())
+      continue;
+    const double start = double(c.start) / kUsPerSecond, a = std::max(from, start),
+                 b = std::min(from + length, double(c.end()) / kUsPerSecond);
+    const int ia = std::clamp(int(std::floor((a - from) / length * bins)), 0, bins - 1),
+              n = std::min(bins, std::max(ia + 1, int(std::ceil((b - from) / length * bins)))) - ia;
+    if (b <= a || n <= 0)
+      continue;
+    int stream = c.streamIndex;
+    if (!m->second->info.audioStream(stream))
+      stream = m->second->info.audio.front().index;
+    QString e;
+    const QJsonObject w = buildWaveform(m->second->path, stream, double(c.sourceIn) / kUsPerSecond + (a - start) * c.speed,
+                                        (b - a) * c.speed, n, &e);
+    if (w.isEmpty())
+      return fail(e);
+    const QJsonArray l = w["left"].toArray(), r = w["right"].toArray(); // (at least 64 peaks: folded into n)
+    for (int k = 0; k < n; ++k) {
+      const qsizetype s0 = qsizetype(k) * l.size() / n, s1 = std::max(s0 + 1, qsizetype(k + 1) * l.size() / n);
+      for (qsizetype s = s0; s < std::min(s1, l.size()); ++s) {
+        left[size_t(ia + k)] = std::max(left[size_t(ia + k)], l[s].toDouble());
+        right[size_t(ia + k)] = std::max(right[size_t(ia + k)], r[s].toDouble());
+      }
+    }
+    ++used;
+  }
+  if (!used)
+    return fail("No audio events from files on that track during this scene.");
+  QJsonArray la, ra;
+  for (int i = 0; i < bins; ++i) {
+    la.append(left[size_t(i)]);
+    ra.append(right[size_t(i)]);
+  }
+  return {{"version", 1}, {"source_in", 0}, {"duration", length}, {"left", la}, {"right", ra}, {"rate", 1}, {"offset", 0}};
 }
 void addGenerators(std::vector<GeneratorDef> &list) {
   GeneratorDef d;

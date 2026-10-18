@@ -853,7 +853,8 @@ QJsonArray McpServer::toolList()
         "repeaters, charts, camera, masks, gradients, shadows/glow, trails/motion_blur and character/word/line text_animation. Animate "
         "properties with {keyframes:[[event-local seconds,value,easing?],...],easing,loop,ping_pong}; numeric, colour, discrete and "
         "compatible path morph values work. follow:{path:layer_id,progress,orient,loop} follows curved paths. Scene variables substitute "
-        "{{name}} in text; datasets drive charts. bind_audio embeds real source envelopes and native detected beats; property "
+        "{{name}} in text; datasets drive charts. bind_audio embeds real source envelopes and native detected beats (source_track: "
+        "every audio event on a track during the scene, e.g. one binding per character's voice track for lip sync); property "
         "{audio:binding,base,amount,channel:peak|left|right|beat} reacts without adding sound. Read capabilities and "
         "docs/animation-scenes.md for limits and examples. All edits are saved and undoable.",
         {{"action",
@@ -875,6 +876,7 @@ QJsonArray McpServer::toolList()
          {"easing", prop("any", "Curve name or [x1,y1,x2,y2]")},
          {"binding", prop("string", "Audio binding name (default source)")},
          {"source_event_id", prop("integer", "Straight audio/video source event")},
+         {"source_track", prop("integer", "Track index: every audio event on it during this scene (no beats)")},
          {"media_id", prop("integer", "Imported source media")},
          {"waveform_event_id", prop("integer", "Reuse an existing waveform envelope")},
          {"source_in", prop("number", "Audio source offset, seconds")},
@@ -1879,6 +1881,15 @@ QJsonObject McpServer::ToolCall::tool_graphics_overlay()
             envelope = source->generator.data;
             speed = source->generator.params["rate"].value;
             offset = source->generator.params["offset"].value + (sec(c->start) - sec(source->start)) * speed;
+        } else if (has("source_track")) {
+            const int index = integer("source_track");
+            if (!c || index < 0 || index >= int(tl.tracks.size()))
+                return errorResult(QStringLiteral("No track %1.").arg(index));
+            QString error;
+            envelope = graphics::trackEnvelope(tl.tracks[size_t(index)], project->snapshot()->media, sec(c->start), sec(c->length),
+                                               integer("bins", 4096), &error);
+            if (envelope.isEmpty())
+                return errorResult(error);
         } else {
             int mediaId = integer("media_id"), stream = -1;
             double sourceIn = num("source_in"), duration = num("duration", c ? sec(c->length) : 10);

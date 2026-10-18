@@ -121,6 +121,10 @@ Channels are `peak`, `left`, `right`, `beat`; numeric base and amount control re
 - `validate` checks a supplied scene without changing the timeline.
 - `keyframe` takes event ID, layer ID (or `$camera`/`$variables`), property path, event-local time, value and easing. It retains the original static value at time zero when adding a later first key.
 - `bind_audio` takes event ID, optional binding name (default `source`), media/source-event ID, source range and bins. Alternatively reuse `waveform_event_id`; existing waveforms may not contain detected beats.
+- Lip sync: `source_track` (a track index) binds every file-backed audio event on that track during the scene, each at its
+  place on the timeline, so one binding per character's voice track drives that character's mouth across all their lines
+  (e.g. bind `bolt` to Bolt's voice track and give the mouth `scale_y: {audio: "bolt", base: 0.1, amount: 1.2}`). Track
+  envelopes have no beats. In Compose Graphics, Bind audio for animation lists the audio tracks too.
 - `export_template` takes event ID, path and explicit `overwrite` when replacing a file.
 - `import_template` validates a JSON file and inserts a new editable event, with optional at/length/track.
 
