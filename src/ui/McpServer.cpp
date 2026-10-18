@@ -831,7 +831,9 @@ QJsonArray McpServer::toolList()
               {QStringLiteral("at"), prop("number", "Start, seconds (default: the cursor)")},
               {QStringLiteral("length"), prop("number", "Seconds (default 5)")},
               {QStringLiteral("preset"), prop("string", "Generator preset id (default \"title\"; e.g. lower_third, credits, solid_black)")},
-              {QStringLiteral("track"), prop("integer", "Video track index (default: the first)")}}));
+              {QStringLiteral("track"), prop("integer", "Video track index (default: the first)")},
+              {QStringLiteral("params"), prop("object", "The generator's settings (list_effects kind=generator details=true): font, size, color, "
+                                                         "speed, palette... as add_effect params, keyframes included")}}));
     t.append(tool(
         "audio_finishing",
         "Measure the entire final stereo mix after all audio effects using EBU R128 and oversampled true peaks. analyze returns LUFS, LRA, "
@@ -917,6 +919,7 @@ QJsonArray McpServer::toolList()
                                    "{type: a transition id from list_effects kind=transition, params: {setting: value}}")},
                    {QStringLiteral("transition_out"), prop("object", "Video: the transition at its end, as transition_in")},
                    {QStringLiteral("reverse"), prop("boolean", "Play the source span backwards")},
+                   {QStringLiteral("params"), prop("object", "A generated event's settings (as add_text params)")},
                    {QStringLiteral("pan_crop"),
                     prop("object", "Event Pan/Crop settings (mode Fit/Fill/Stretch, centerX, centerY, zoom, rotation, flipH, flipV), "
                                    "values or {keyframes: [[seconds from the event's start, value, curve?], ...]}")},
@@ -1344,6 +1347,20 @@ struct McpServer::ToolCall {
         w->refreshPreview();
     }
     bool has(const char* key) const { return a.contains(QLatin1String(key)); }
+    // The "params" argument into a generated event's settings (as add_effect sets an effect's).
+    QString setGeneratorParams(Clip& c) const
+    {
+        const GeneratorDef* def = findGenerator(c.generator.type);
+        if (!def)
+            return QStringLiteral("this event isn't generated: params are for text, backgrounds and other generated events");
+        if (!a.value(QStringLiteral("params")).isObject())
+            return QStringLiteral("params must be an object");
+        const QJsonObject settings = a.value(QStringLiteral("params")).toObject();
+        for (auto it = settings.begin(); it != settings.end(); ++it)
+            if (const QString error = setParam(c.generator.params, def->params, it.key(), it.value()); !error.isEmpty())
+                return error;
+        return {};
+    }
     double num(const char* key, double def = 0) const { return a.value(QLatin1String(key)).toDouble(def); }
     int integer(const char* key, int def = 0) const { return a.value(QLatin1String(key)).toInt(def); }
     QString str(const char* key) const { return a.value(QLatin1String(key)).toString(); }
@@ -1710,6 +1727,9 @@ QJsonObject McpServer::ToolCall::tool_add_text()
             result[QStringLiteral("note")] = QStringLiteral("this preset has no text setting, so the text wasn't used (graphics_* presets: change "
                                                             "their words with graphics_overlay update)");
     }
+    if (has("params"))
+        if (const QString error = setGeneratorParams(*c); !error.isEmpty())
+            return errorResult(error);
     apply(tl, QStringLiteral("Add Text"));
     return jsonResult(result);
 }
@@ -2037,6 +2057,9 @@ QJsonObject McpServer::ToolCall::tool_edit_event()
         c->fadeIn = std::clamp<TimeUs>(us(num("fade_in")), 0, c->length);
     if (has("fade_out"))
         c->fadeOut = std::clamp<TimeUs>(us(num("fade_out")), 0, c->length);
+    if (has("params"))
+        if (const QString error = setGeneratorParams(*c); !error.isEmpty())
+            return errorResult(error);
     if (has("pan_crop")) {
         if (!isVisualTrack(tl.tracks[size_t(trackIndex)].type))
             return errorResult(QStringLiteral("Pan/Crop is for video and image events"));

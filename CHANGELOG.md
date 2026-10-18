@@ -21,6 +21,8 @@ What changed in each version of Mutant Video Producer. The newest is first.
     unknown Director's Dice style or track type, a frame rate outside 1-240 (0 fps was accepted);
     `cut_time` ranges stop at the end of the edit (removed time was counted past it).
 - The FFmpeg Audio Filter's chain box turns red with an explanation when FFmpeg can't use the chain.
+- AI control: `add_text` and `edit_event` take `params`, the generator's own settings (a title's font, size and colour, a
+  starfield's speed, a plasma's palette), which only the window could change before.
 
 ## 0.6.0 (2026-10-18)
 

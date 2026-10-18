@@ -835,6 +835,22 @@ int MainWindow::runEditorTest(QStringList& log)
                   QStringLiteral("AI render: \"MP3\" to a .mp3 in a new folder uses an MP3 template (%1)").arg(chosen));
         }
         {
+            // A generator's settings through AI control: on adding and on editing; an unknown one refused.
+            const int undoIndex = m_project->undoStack()->index();
+            const auto added = content(call(QStringLiteral("add_text"), {{QStringLiteral("preset"), QStringLiteral("title")}, {QStringLiteral("text"), QStringLiteral("Hi")},
+                                                                        {QStringLiteral("at"), 700}, {QStringLiteral("length"), 2},
+                                                                        {QStringLiteral("params"), QJsonObject{{QStringLiteral("size"), 3.5}, {QStringLiteral("color"), QStringLiteral("#ff0000")}}}}));
+            const int gid = added[QStringLiteral("event_id")].toInt();
+            const bool edited = !failed(call(QStringLiteral("edit_event"), {{QStringLiteral("event_id"), gid}, {QStringLiteral("params"), QJsonObject{{QStringLiteral("bold"), true}}}}));
+            const bool unknown = failed(call(QStringLiteral("edit_event"), {{QStringLiteral("event_id"), gid}, {QStringLiteral("params"), QJsonObject{{QStringLiteral("nope"), 1}}}}));
+            const Clip* g = m_project->timeline().findClip(gid);
+            const bool stored = g && std::abs(g->generator.params.at(QStringLiteral("size")).value - 3.5) < 1e-6
+                && g->generator.params.at(QStringLiteral("color")).value == double(0xff0000) && g->generator.params.at(QStringLiteral("bold")).value == 1.0;
+            check(gid && edited && unknown && stored, QStringLiteral("AI generator settings: add_text and edit_event params (size, colour, bold), an unknown one refused"));
+            while (m_project->undoStack()->index() > undoIndex)
+                m_project->undoStack()->undo();
+        }
+        {
             // AI edits keep a picture and its sound together, on whole frames and inside the source; a locked track
             // refuses them; an unknown dice style and a filter chain FFmpeg can't use are refused.
             const int undoIndex = m_project->undoStack()->index();
