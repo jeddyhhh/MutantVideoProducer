@@ -9,6 +9,7 @@
 #include "ui/RenderQueue.h"
 #include "ui/DeliverView.h"
 #include <QLineEdit>
+#include <QCryptographicHash>
 #include <QPlainTextEdit>
 #include <QTreeWidget>
 #include "core/Compositor.h"
@@ -1276,7 +1277,22 @@ int MainWindow::runEditorTest(QStringList& log)
 
     // ---- Autosave ----
     const QString projectPath = work.filePath(QStringLiteral("project.mvp"));
+    QSettings().remove(QStringLiteral("deliver/") // (an earlier run's Deliver settings for this file)
+                       + QString::fromLatin1(QCryptographicHash::hash(QDir::cleanPath(projectPath).toLower().toUtf8(), QCryptographicHash::Md5).toHex()));
+    const QStringList untitledOutputs = m_deliver->outputs();
     m_project->save(projectPath, nullptr);
+    {
+        // Saved for the first time: the Deliver outputs chosen while untitled go with it, named after it.
+        m_deliver->refresh();
+        const ExportPreset* first = nullptr;
+        for (const auto& p : exportPresets())
+            if (!m_deliver->outputs().isEmpty() && p.name == m_deliver->outputs().front())
+                first = &p;
+        check(!untitledOutputs.isEmpty() && m_deliver->outputs() == untitledOutputs && first
+                  && QFileInfo(m_deliver->outputPath(*first)).fileName().startsWith(QStringLiteral("project - ")),
+              QStringLiteral("Deliver outputs chosen while untitled carry over on the first save (%1)")
+                  .arg(first ? QFileInfo(m_deliver->outputPath(*first)).fileName() : QStringLiteral("none")));
+    }
     m_timeline->addMarker(kUsPerSecond, QStringLiteral("autosaved"));
     autosave();
     QString autosaveOf;

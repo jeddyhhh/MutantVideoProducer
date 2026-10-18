@@ -797,6 +797,13 @@ void DeliverView::showEvent(QShowEvent* e)
 void DeliverView::refresh()
 {
     QSettings settings;
+    // What was chosen before the project had a file (kept as "untitled") goes with it when it's first saved.
+    if (!m_project->filePath().isEmpty() && !settings.contains(settingsKey(QStringLiteral("outputs")))
+        && settings.contains(QStringLiteral("deliver/untitled/outputs")))
+        for (const char* key : {"outputs", "off", "folder", "title", "description", "tags", "target"})
+            if (settings.contains(QStringLiteral("deliver/untitled/") + QLatin1String(key)))
+                settings.setValue(settingsKey(QLatin1String(key)), settings.value(QStringLiteral("deliver/untitled/") + QLatin1String(key)));
+    m_shownPath = m_project->filePath();
     QString folder = settings.value(settingsKey(QStringLiteral("folder"))).toString();
     if (folder.isEmpty())
         folder = m_project->filePath().isEmpty() ? Profiles::instance().folder(QStringLiteral("Exports")) : QFileInfo(m_project->filePath()).absolutePath();
@@ -1234,6 +1241,8 @@ void DeliverView::rebuildStrip()
 
 int DeliverView::renderOutputs(QString* error)
 {
+    if (m_project->filePath() != m_shownPath) // saved (or renamed) since: the file names follow the project's
+        refresh();
     RenderQueue* queue = m_hooks.queue ? m_hooks.queue() : nullptr;
     const auto snap = m_project->snapshot();
     const TimeUs duration = snap->timeline.duration();

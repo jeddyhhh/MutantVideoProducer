@@ -103,6 +103,7 @@ private:
     QJsonArray m_checkData; // the checks, as AI control reads them
     double m_totalBytes = 0, m_freeBytes = -1;
     bool m_totalExact = true;
+    QString m_shownPath; // the project file the outputs were named for
 
     // Header
     QLabel *m_projectName, *m_projectInfo, *m_readiness, *m_renderStatus;

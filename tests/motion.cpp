@@ -86,6 +86,20 @@ int main(int argc, char **argv) {
       file.write(QJsonDocument(s).toJson());
     }
   }
+  {
+    // A chart of a dataset that isn't there, or of more than 128 rows, is refused (it drew nothing / was cut short).
+    auto chart = [](QJsonObject layer, QJsonObject datasets = {}) {
+      layer["type"] = "chart";
+      layer["id"] = "c";
+      return motion::validate(QJsonObject{{"version", 2}, {"datasets", datasets}, {"layers", QJsonArray{layer}}});
+    };
+    QJsonArray many;
+    for (int i = 0; i < 129; ++i)
+      many.append(QJsonObject{{"label", QString::number(i)}, {"value", i}});
+    check(!chart({{"dataset", "missing"}}).isEmpty() && !chart({{"data", many}}).isEmpty() &&
+              chart({{"dataset", "d"}}, {{"d", QJsonArray{QJsonObject{{"label", "a"}, {"value", 1}}}}}).isEmpty(),
+          "charts: an unknown dataset and 129 rows refused, a known dataset fine");
+  }
   check(std::abs(motion::evaluate(keys(0, 1, "ease_in"), .5).toDouble() -
                  .125) < 1e-6,
         "cubic ease-in");

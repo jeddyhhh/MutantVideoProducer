@@ -408,6 +408,15 @@ QString validate(const QJsonObject &s) {
       if (type == "path")
         if (auto e = checkCommands(o["commands"]); !e.isEmpty())
           return e;
+      if (type == "chart") { // (the renderer drew an unknown dataset as nothing and cut rows after 128 silently)
+        if (!o["data"].isArray() && o.contains("dataset") &&
+            !s["datasets"].toObject().contains(o["dataset"].toString()))
+          return "Chart dataset \"" + o["dataset"].toString() + "\" isn't in the scene's datasets.";
+        const auto rows = o["data"].isArray() ? o["data"].toArray()
+                                              : s["datasets"].toObject()[o["dataset"].toString()].toArray();
+        if (rows.size() > 128)
+          return "Charts: up to 128 rows.";
+      }
       if (o.contains("children") && !o["children"].isArray())
         return "children must be a layer array.";
       if (o.contains("children")) {

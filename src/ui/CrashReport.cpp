@@ -9,6 +9,7 @@
 #include <QSettings>
 #include <QStandardPaths>
 #include <QSysInfo>
+#include <QTimer>
 #include <algorithm>
 #include <atomic>
 #include <csignal>
@@ -242,6 +243,20 @@ void install()
     const std::wstring base = QDir::toNativeSeparators(QDir(folder()).filePath(QStringLiteral("crash-"))).toStdWString();
     wcsncpy_s(g_base, base.c_str(), _TRUNCATE);
     SetUnhandledExceptionFilter(onException);
+    // A library loaded later (a GPU driver, a runtime) can put its own filter in ours' place, and a crash then left no
+    // report: take it back every few seconds, naming the module that took it.
+    auto* rearm = new QTimer(QCoreApplication::instance());
+    QObject::connect(rearm, &QTimer::timeout, [] {
+        const LPTOP_LEVEL_EXCEPTION_FILTER other = SetUnhandledExceptionFilter(onException);
+        if (other == onException)
+            return;
+        HMODULE module = nullptr;
+        char path[MAX_PATH] = "?";
+        if (GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT, reinterpret_cast<LPCSTR>(other), &module))
+            GetModuleFileNameA(module, path, MAX_PATH);
+        qWarning("crash handler: %s had replaced it; put back", path);
+    });
+    rearm->start(5000);
     _set_abort_behavior(0, _WRITE_ABORT_MSG | _CALL_REPORTFAULT); // no "abort() was called" box: the report says it
     std::signal(SIGABRT, [](int) {
         writeReport("abort (a fatal error)", nullptr);

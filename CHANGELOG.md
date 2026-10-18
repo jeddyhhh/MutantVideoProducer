@@ -24,6 +24,15 @@ What changed in each version of Mutant Video Producer. The newest is first.
 - AI control: `add_text` and `edit_event` take `params`, the generator's own settings (a title's font, size and colour, a
   starfield's speed, a plasma's palette), which only the window could change before.
 
+### Fixed (found by the generated-only projects)
+
+- Deliver: outputs, folder and details chosen before a project's first save were lost when it was saved, and its
+  files kept the name "Untitled"; they now move to the saved project and take its name.
+- Motion graphics: a chart naming a dataset the scene doesn't have, or with more than 128 rows, is refused with a
+  reason (it drew nothing, or dropped the rows past 128, silently).
+- A crash could leave no crash report: a library loaded later could replace the crash handler. It is put back every
+  few seconds, and the report names the library that replaced it.
+
 ## 0.6.0 (2026-10-18)
 
 ### Deliver tab
