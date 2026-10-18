@@ -72,6 +72,12 @@ ExportSettings withGpuEncoder(const ExportSettings& in, QString* used)
             const QString name = QString::fromLatin1(hwName);
             if (!hw::encoderUsable(name))
                 continue;
+            // 4:2:2, 4:4:4 and RGB (all-intra, editing templates) stay in software: NVENC's H.264 can't take
+            // yuv422p and the others vary by card.
+            const QString pf = in.pixelFormat;
+            if (pf.contains(QLatin1String("422")) || pf.contains(QLatin1String("444")) || pf.contains(QLatin1String("rgb"))
+                || pf.contains(QLatin1String("gbr")))
+                break;
             // 10-bit: the GPU encoders take it as P010 (H.264 ones not at all, so those stay in software).
             const bool tenBit = in.pixelFormat.contains(QLatin1String("10"));
             if (tenBit && name.startsWith(QLatin1String("h264")))
@@ -361,7 +367,10 @@ bool Exporter::run(const ProjectSnapshot& snap, const ExportSettings& s, const P
             // otherwise the bitrate itself is chosen to fill the size. A ceiling has to leave room for
             // the rate-control buffer (one second of the max rate), which the encoder may spend on top
             // of the max rate: on short clips that alone would overshoot the size.
-            const double perSecond = videoBits / (quality >= 0 ? secs + 1.0 : secs);
+            // ...and no more than about a bit per pixel per frame: a big size over a short render asked for
+            // gigabits a second, which encoders (NVENC) refuse and nothing needs.
+            const double perSecond = std::min(videoBits / (quality >= 0 ? secs + 1.0 : secs),
+                                              std::max(2e6, double(venc->width) * venc->height * std::max(1.0, s.fps.toDouble())));
             const int64_t cap = std::max<int64_t>(50000, int64_t(perSecond));
             videoBitrate = quality >= 0 ? 0 : cap;
             venc->rc_max_rate = cap;
@@ -514,6 +523,7 @@ bool Exporter::run(const ProjectSnapshot& snap, const ExportSettings& s, const P
 
     stage(QStringLiteral("Opening output"), QStringLiteral("Creating output file and writing container header"));
     // ---- Open file, write header -------------------------------------------
+    QDir().mkpath(QFileInfo(s.path).absolutePath()); // a folder given that isn't there yet (image sequences too)
     if (!(oc->oformat->flags & AVFMT_NOFILE)) {
         if ((ret = avio_open(&oc->pb, pathUtf8.constData(), AVIO_FLAG_WRITE)) < 0)
             return fail(QStringLiteral("Cannot write to %1").arg(s.path), ret);

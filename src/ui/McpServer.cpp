@@ -381,6 +381,11 @@ QString setParams(EffectInstance& e, const QJsonObject& params)
     for (auto it = params.begin(); it != params.end(); ++it)
         if (const QString err = setParam(e.params, defs, it.key(), it.value()); !err.isEmpty())
             return err;
+    // A chain FFmpeg can't parse would pass the sound through unchanged, silently.
+    if (e.type == QLatin1String("a_ffmpeg") && params.contains(QStringLiteral("filter"))
+        && !audioFilterSpecValid(e.params[QStringLiteral("filter")].text))
+        return QStringLiteral("FFmpeg can't use the filter chain \"%1\" (e.g. \"highpass=f=80,lowpass=f=14000\")")
+            .arg(e.params[QStringLiteral("filter")].text);
     return {};
 }
 
@@ -901,7 +906,7 @@ QJsonArray McpServer::toolList()
                   {"action"}));
     t.append(tool("edit_event",
                   "Changes an event: where it starts, how long it is, where in its file it starts, its track, name, mute, opacity / "
-                  "volume (gain), speed, fades. Grouped events move with it.",
+                  "volume (gain), speed, fades. Its group moves with it and takes the same speed, trim and reverse.",
                   {{QStringLiteral("event_id"), prop("integer", "Event (clip) id")},
                    {QStringLiteral("start"), prop("number", "Timeline position, seconds")},
                    {QStringLiteral("length"), prop("number", "Seconds")},
@@ -926,7 +931,7 @@ QJsonArray McpServer::toolList()
                    {QStringLiteral("fade_in"), prop("number", "Fade in, seconds")},
                    {QStringLiteral("fade_out"), prop("number", "Fade out, seconds")}},
                   {QStringLiteral("event_id")}));
-    t.append(tool("split", "Cuts events at a time: the ones given, or every event under that time.",
+    t.append(tool("split", "Cuts events at a time: the ones given (with their group), or every event under that time.",
                   {{QStringLiteral("time"), prop("number", "Seconds")},
                    {QStringLiteral("event_ids"), arrayProp("integer", "Events to cut (default: all under the time)")}},
                   {QStringLiteral("time")}));
@@ -1299,6 +1304,26 @@ static const ExportPreset* matchPreset(const QString& want, const QString& path 
     return first;
 }
 
+// Why an AI edit can't go ahead: it changes the events of a track that is locked before and after it (the
+// timeline won't let those be selected or edited; unlocking with edit_track is still allowed).
+static QString lockedChange(const Timeline& before, const Timeline& after)
+{
+    for (size_t i = 0; i < before.tracks.size(); ++i) {
+        const Track& t = before.tracks[i];
+        if (!t.locked)
+            continue;
+        const Track* now = nullptr;
+        for (size_t j = 0; j < after.tracks.size() && !now; ++j)
+            if (t.id != 0 ? after.tracks[j].id == t.id : j == i)
+                now = &after.tracks[j];
+        if (now && now->locked && now->clips != t.clips)
+            return QStringLiteral("track %1%2 is locked: unlock it first (edit_track locked false)")
+                .arg(i)
+                .arg(t.name.isEmpty() ? QString() : QStringLiteral(" (%1)").arg(t.name));
+    }
+    return {};
+}
+
 struct McpServer::ToolCall {
     McpServer& server;
     const QString& name;
@@ -1308,8 +1333,13 @@ struct McpServer::ToolCall {
     const ProjectSettings& ps;
     LiveView* live;
     LivePadPanel* pads;
+    QString refusal; // set when apply() wouldn't make an edit; the tool then answers with it
     void apply(const Timeline& tl, const QString& what)
     {
+        if (QString why = lockedChange(project->timeline(), tl); !why.isEmpty()) {
+            refusal = why;
+            return;
+        }
         project->applyEdit(tl, QStringLiteral("AI: ") + what);
         w->refreshPreview();
     }
@@ -1481,7 +1511,10 @@ QJsonObject McpServer::ToolCall::tool_directors_dice()
     for (auto v : a["event_ids"].toArray())
         ids.insert(v.toInt());
     Timeline tl = project->timeline();
-    int style = str("style") == "riot" ? 2 : str("style") == "restless" ? 1 : 0;
+    const QString styleName = has("style") ? str("style") : QStringLiteral("measured");
+    if (styleName != "measured" && styleName != "restless" && styleName != "riot")
+        return errorResult(QStringLiteral("style: measured, restless or riot"));
+    int style = styleName == "riot" ? 2 : styleName == "restless" ? 1 : 0;
     int count = story::directorsDice(tl, ids, unsigned(integer("seed")), style, num("intensity", .6));
     if (!count)
         return errorResult("Choose footage or image events.");
@@ -1666,7 +1699,7 @@ QJsonObject McpServer::ToolCall::tool_add_text()
     if (!c)
         return errorResult(QStringLiteral("couldn't add it"));
     if (has("length"))
-        c->length = std::max<TimeUs>(us(0.1), us(num("length")));
+        c->length = std::max(ps.fps.frameDuration(), ps.fps.snap(std::max<TimeUs>(us(0.1), us(num("length")))));
     QJsonObject result = placement(tl, id, tracksBefore);
     result[QStringLiteral("event_id")] = id;
     if (has("text") && !str("text").isEmpty()) {
@@ -1969,15 +2002,30 @@ QJsonObject McpServer::ToolCall::tool_edit_event()
     if (!c)
         return errorResult(QStringLiteral("no event %1").arg(integer("event_id")));
     const auto media = project->mediaItem(c->mediaId);
-    if (has("speed"))
-        ops::setClipSpeed(*c, media.get(), std::clamp(num("speed"), 0.05, 20.0), false, ps.fps);
-    if (has("source_in"))
-        c->sourceIn = std::max<TimeUs>(0, us(num("source_in")));
-    if (has("length")) {
-        TimeUs len = std::max<TimeUs>(us(0.04), us(num("length")));
-        if (media && !c->isGenerated() && !media->info.isStill)
-            len = std::min(len, ops::maxClipLength(media.get(), *c));
-        c->length = len;
+    // Timing goes to the whole group, as in the timeline (where clicking an event selects its group): a speed,
+    // trim or reverse on the picture alone left its sound out of step.
+    for (const int gid : ops::expandToGroups(tl, {c->id})) {
+        Clip* g = tl.findClip(gid);
+        const auto gm = g ? project->mediaItem(g->mediaId) : nullptr;
+        if (!g)
+            continue;
+        if (has("speed") && !g->isGenerated())
+            ops::setClipSpeed(*g, gm.get(), std::clamp(num("speed"), 0.05, 20.0), false, ps.fps);
+        // Within the source: at least a frame of it left after source_in, and the length no longer than what is
+        // left (source_in past the end made a zero-length event).
+        const bool fromSource = gm && !g->isGenerated() && !gm->info.isStill && gm->info.duration > 0;
+        if (has("source_in")) {
+            TimeUs in = std::max<TimeUs>(0, us(num("source_in")));
+            if (fromSource)
+                in = std::min(in, std::max<TimeUs>(0, gm->info.duration - ps.fps.frameDuration()));
+            g->sourceIn = in;
+        }
+        if (has("length"))
+            g->length = std::max(ps.fps.frameDuration(), ps.fps.snap(us(num("length")))); // whole frames, as placed events start on one
+        if (fromSource && (has("length") || has("source_in")))
+            g->length = std::clamp(g->length, ps.fps.frameDuration(), std::max(ps.fps.frameDuration(), ops::maxClipLength(gm.get(), *g)));
+        if (has("reverse"))
+            g->reverse = a.value(QStringLiteral("reverse")).toBool();
     }
     if (has("name"))
         c->name = str("name");
@@ -1989,8 +2037,6 @@ QJsonObject McpServer::ToolCall::tool_edit_event()
         c->fadeIn = std::clamp<TimeUs>(us(num("fade_in")), 0, c->length);
     if (has("fade_out"))
         c->fadeOut = std::clamp<TimeUs>(us(num("fade_out")), 0, c->length);
-    if (has("reverse"))
-        c->reverse = a.value(QStringLiteral("reverse")).toBool();
     if (has("pan_crop")) {
         if (!isVisualTrack(tl.tracks[size_t(trackIndex)].type))
             return errorResult(QStringLiteral("Pan/Crop is for video and image events"));
@@ -2039,7 +2085,7 @@ QJsonObject McpServer::ToolCall::tool_edit_event()
     }
     const int id = c->id;
     if (has("start")) { // its group moves along
-        const TimeUs delta = std::max<TimeUs>(0, us(num("start"))) - c->start;
+        const TimeUs delta = std::max<TimeUs>(0, ps.fps.snap(us(num("start")))) - c->start;
         for (int gid : ops::expandToGroups(tl, {id}))
             if (Clip* g = tl.findClip(gid))
                 g->start = std::max<TimeUs>(0, g->start + delta);
@@ -2071,6 +2117,8 @@ QJsonObject McpServer::ToolCall::tool_split()
     std::set<int> ids;
     for (const QJsonValue& v : a.value(QStringLiteral("event_ids")).toArray())
         ids.insert(v.toInt());
+    if (!ids.empty()) // the sound with its picture, as Split does on the timeline's selection
+        ids = ops::expandToGroups(tl, ids);
     const std::vector<int> made = ops::splitClips(tl, ids, us(num("time")));
     if (made.empty())
         return errorResult(QStringLiteral("nothing to cut at %1 s").arg(num("time")));
@@ -2102,7 +2150,9 @@ QJsonObject McpServer::ToolCall::tool_delete_events()
 QJsonObject McpServer::ToolCall::tool_add_track()
 {
     Timeline tl = project->timeline();
-    const QString type = str("type");
+    const QString type = has("type") ? str("type") : QStringLiteral("video");
+    if (type != QLatin1String("video") && type != QLatin1String("audio") && type != QLatin1String("image"))
+        return errorResult(QStringLiteral("type: video, audio or image"));
     const TrackType trackType = type == QLatin1String("image") ? TrackType::Image
         : type == QLatin1String("audio")                       ? TrackType::Audio
                                                                : TrackType::Video;
@@ -2435,6 +2485,7 @@ QJsonObject McpServer::ToolCall::tool_save_project()
         return errorResult(QStringLiteral("the project has no file yet: give a path (.mvp)"));
     if (!path.endsWith(QLatin1String(".mvp"), Qt::CaseInsensitive))
         return errorResult(QStringLiteral("project files end in .mvp"));
+    QDir().mkpath(QFileInfo(path).absolutePath()); // a new folder is fine, as for renders
     QString error;
     if (!project->save(path, &error))
         return errorResult(error);
@@ -2602,6 +2653,8 @@ QJsonObject McpServer::ToolCall::tool_set_project_settings()
         s.height = std::clamp(integer("height"), 16, 8192) & ~1;
     if (has("fps")) {
         const double f = num("fps");
+        if (!(f >= 1 && f <= 240)) // 0 fps made a frame rate every time calculation divides by
+            return errorResult(QStringLiteral("fps: 1 to 240"));
         static const std::pair<double, FrameRate> ntsc[] = {{23.976, {24000, 1001}}, {29.97, {30000, 1001}}, {59.94, {60000, 1001}}};
         s.fps = FrameRate{int(std::lround(f * 1000)), 1000};
         for (const auto& [v, r] : ntsc)
@@ -3011,8 +3064,11 @@ QJsonObject McpServer::ToolCall::tool_cut_time()
     } else if (action == QLatin1String("ranges")) {
         for (const QJsonValue v : a.value(QStringLiteral("ranges")).toArray()) {
             const QJsonArray r = v.toArray();
-            if (r.size() == 2 && r[1].toDouble() > r[0].toDouble())
-                ranges.push_back({us(std::max(0.0, r[0].toDouble())), us(r[1].toDouble())});
+            // Only what is on the timeline: a range past the end was counted as removed time.
+            const TimeUs end = project->timeline().duration(), from = std::max<TimeUs>(0, us(r.size() == 2 ? r[0].toDouble() : 0)),
+                         to = std::min(end, us(r.size() == 2 ? r[1].toDouble() : 0));
+            if (r.size() == 2 && to > from)
+                ranges.push_back({from, to});
         }
     } else if (action == QLatin1String("transcribe")) {
         static const std::map<QString, QString> files = {{QStringLiteral("tiny"), QStringLiteral("ggml-tiny.bin")},
@@ -3381,7 +3437,8 @@ QJsonObject McpServer::callTool(const QString& name, const QJsonObject& a)
     if (it->live && !live)
         return errorResult(QStringLiteral("no Live tab"));
     ToolCall call{*this, name, a, w, w->m_project, w->m_project->settings(), live, live ? live->m_pads : nullptr};
-    return (call.*(it->tool))();
+    const QJsonObject result = (call.*(it->tool))();
+    return call.refusal.isEmpty() ? result : errorResult(call.refusal);
 }
 
 // ---------------------------------------------------------------------------

@@ -766,7 +766,7 @@ int MainWindow::runEditorTest(QStringList& log)
             content(call(QStringLiteral("undo"), {{QStringLiteral("steps"), 2}}))[QStringLiteral("undone")].toArray().first().toString();
         const bool undone = !std::any_of(m_project->timeline().markers.begin(), m_project->timeline().markers.end(),
                                          [](const Marker& m) { return m.name == QLatin1String("from AI"); });
-        check(pieces.size() == 1 && marker && listed && undone && undoneText.startsWith(QStringLiteral("AI: ")),
+        check(pieces.size() == 2 /* the event and its grouped sound */ && marker && listed && undone && undoneText.startsWith(QStringLiteral("AI: ")),
               QStringLiteral("AI tools: split an event, add a marker, search the effects; undo takes back \"%1\"").arg(undoneText));
         // Captions in and out, the plugin list.
         {
@@ -821,8 +821,9 @@ int MainWindow::runEditorTest(QStringList& log)
                   .arg(rs[QStringLiteral("template")].toString()));
         {
             // "MP3" for a .mp3 is the MP3 template (the DivX AVI, with MP3 sound, comes first in the list).
-            const QString mp3 = work.filePath(QStringLiteral("ai_render.mp3"));
-            QFile::remove(mp3);
+            // (into a folder that isn't there yet: the render makes it)
+            QDir(work.filePath(QStringLiteral("new render folder"))).removeRecursively();
+            const QString mp3 = work.filePath(QStringLiteral("new render folder/ai_render.mp3"));
             const QString chosen = content(call(QStringLiteral("render"), {{QStringLiteral("path"), mp3}, {QStringLiteral("preset"), QStringLiteral("MP3")},
                                                                          {QStringLiteral("from"), 30}, {QStringLiteral("to"), 31}}))[QStringLiteral("template")]
                                        .toString();
@@ -830,7 +831,57 @@ int MainWindow::runEditorTest(QStringList& log)
             mt.start();
             while (!content(call(QStringLiteral("render_status"), {}))[QStringLiteral("done")].toBool() && mt.elapsed() < 60000)
                 wait(200);
-            check(chosen.startsWith(QStringLiteral("MP3")), QStringLiteral("AI render: \"MP3\" to a .mp3 uses an MP3 template (%1)").arg(chosen));
+            check(chosen.startsWith(QStringLiteral("MP3")) && probeMedia(mp3).ok(),
+                  QStringLiteral("AI render: \"MP3\" to a .mp3 in a new folder uses an MP3 template (%1)").arg(chosen));
+        }
+        {
+            // AI edits keep a picture and its sound together, on whole frames and inside the source; a locked track
+            // refuses them; an unknown dice style and a filter chain FFmpeg can't use are refused.
+            const int undoIndex = m_project->undoStack()->index();
+            int vid = 0, aud = 0;
+            for (const Track& t : m_project->timeline().tracks)
+                for (const Clip& c : t.clips)
+                    if (!vid && c.groupId && t.type == TrackType::Video)
+                        for (const Track& u : m_project->timeline().tracks)
+                            for (const Clip& d : u.clips)
+                                if (u.type == TrackType::Audio && d.groupId == c.groupId)
+                                    vid = c.id, aud = d.id;
+            bool together = false, framed = false, split = false, inside = false, lockRefused = false, diceRefused = false, filterChecked = false;
+            if (vid && aud) {
+                call(QStringLiteral("edit_event"), {{QStringLiteral("event_id"), vid}, {QStringLiteral("speed"), 2}});
+                call(QStringLiteral("edit_event"), {{QStringLiteral("event_id"), vid}, {QStringLiteral("length"), 1.2345}});
+                const Clip* v = m_project->timeline().findClip(vid);
+                const Clip* s = m_project->timeline().findClip(aud);
+                together = v && s && v->length == s->length && v->speed == s->speed && v->start == s->start;
+                framed = v && v->length == m_project->settings().fps.snap(v->length);
+                const double middle = v ? double(v->start + v->length / 2) / kUsPerSecond : 0;
+                split = content(call(QStringLiteral("split"), {{QStringLiteral("time"), middle}, {QStringLiteral("event_ids"), QJsonArray{vid}}}))
+                            [QStringLiteral("new_event_ids")].toArray().size() == 2; // the sound too
+                call(QStringLiteral("edit_event"), {{QStringLiteral("event_id"), vid}, {QStringLiteral("source_in"), 1e6}});
+                v = m_project->timeline().findClip(vid);
+                const auto media = v ? m_project->mediaItem(v->mediaId) : nullptr;
+                inside = v && media && v->sourceIn < media->info.duration && v->length > 0;
+                int ti = -1;
+                m_project->timeline().findClip(vid, &ti);
+                call(QStringLiteral("edit_track"), {{QStringLiteral("track"), ti}, {QStringLiteral("locked"), true}});
+                lockRefused = failed(call(QStringLiteral("edit_event"), {{QStringLiteral("event_id"), vid}, {QStringLiteral("start"), 0.5}}))
+                    && failed(call(QStringLiteral("add_effect"), {{QStringLiteral("target"), QStringLiteral("event")}, {QStringLiteral("id"), vid},
+                                                                 {QStringLiteral("effect"), QStringLiteral("invert")}}));
+                call(QStringLiteral("edit_track"), {{QStringLiteral("track"), ti}, {QStringLiteral("locked"), false}});
+                diceRefused = failed(call(QStringLiteral("directors_dice"), {{QStringLiteral("event_ids"), QJsonArray{vid}}, {QStringLiteral("style"), QStringLiteral("chaos")}}));
+                auto filter = [&](const QString& chain) {
+                    return !failed(call(QStringLiteral("add_effect"), {{QStringLiteral("target"), QStringLiteral("event")}, {QStringLiteral("id"), aud},
+                                                                      {QStringLiteral("effect"), QStringLiteral("a_ffmpeg")},
+                                                                      {QStringLiteral("params"), QJsonObject{{QStringLiteral("filter"), chain}}}}));
+                };
+                filterChecked = !filter(QStringLiteral("not a filter")) && filter(QStringLiteral("highpass=f=80"));
+            }
+            check(vid && aud && together && framed && split && inside && lockRefused && diceRefused && filterChecked,
+                  QStringLiteral("AI edits: speed and length reach the grouped sound (%1), on whole frames (%2), Split cuts both (%3), source_in stays "
+                                 "inside the file (%4), a locked track refuses edits (%5), unknown dice style (%6) and a bad FFmpeg filter (%7) refused")
+                      .arg(together).arg(framed).arg(split).arg(inside).arg(lockRefused).arg(diceRefused).arg(filterChecked));
+            while (m_project->undoStack()->index() > undoIndex)
+                m_project->undoStack()->undo();
         }
         {
         // The Deliver tab through AI control.

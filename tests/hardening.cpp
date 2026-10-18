@@ -1006,11 +1006,20 @@ void exportEdges(const QString& mediaDir, const QString& outDir)
                   .arg(r.ok ? QStringLiteral("exports") : QStringLiteral("refused: \"%1\"").arg(r.error)));
     }
     {
+        // A folder that isn't there yet is made; one that can't be (a file stands in the way) is an error.
         ExportSettings s = settings(QStringLiteral("no/such/folder/out.mp4"));
+        QDir(QFileInfo(s.path).absolutePath()).removeRecursively();
         const Result r = run(base, s);
-        check(!r.ok && !r.error.isEmpty(),
-              QStringLiteral("into a folder that doesn't exist: %1")
-                  .arg(r.ok ? QStringLiteral("said it worked") : QStringLiteral("\"%1\"").arg(r.error)));
+        check(r.ok && fileOk(s.path), QStringLiteral("into a folder that doesn't exist yet: %1")
+                                          .arg(r.ok ? QStringLiteral("made it") : QStringLiteral("\"%1\"").arg(r.error)));
+        ExportSettings blocked = settings(QStringLiteral("blocker/out.mp4"));
+        const QString blocker = QFileInfo(QFileInfo(blocked.path).absolutePath()).absoluteFilePath();
+        QDir(blocker).removeRecursively();
+        QFile(blocker).open(QIODevice::WriteOnly);
+        const Result rb = run(base, blocked);
+        check(!rb.ok && !rb.error.isEmpty(),
+              QStringLiteral("into a \"folder\" that is a file: %1")
+                  .arg(rb.ok ? QStringLiteral("said it worked") : QStringLiteral("\"%1\"").arg(rb.error)));
     }
     {
         ExportSettings s = settings(QString());

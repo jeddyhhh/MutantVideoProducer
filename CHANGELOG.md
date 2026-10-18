@@ -2,6 +2,26 @@
 
 What changed in each version of Mutant Video Producer. The newest is first.
 
+## Unreleased
+
+### Fixed (found by the edge-hunt projects)
+
+- Renders that a short range made impossible: a fit-to-size template (Discord, WhatsApp...) over a few seconds asked
+  the encoder for gigabits a second, and NVENC refused it; the bitrate now stays under about a bit per pixel.
+- 4:2:2, 4:4:4 and RGB templates (H.264 all-intra, editing masters) stay on the software encoder: NVENC's H.264
+  failed with "cannot encode pixel format yuv422p".
+- A render or a saved project into a folder that doesn't exist yet makes the folder.
+- AI control:
+  - `edit_event` gives an event's speed, trim and reverse to its grouped sound too, and `split` cuts the sound
+    with its picture (they went out of step); starts and lengths are on whole frames (at 29.97 fps the gaps of a
+    fraction of a frame between placed events rendered as black flashes); `source_in` stays inside the file
+    (past the end it left a zero-length event).
+  - Edits that would change a locked track are refused, as the timeline refuses them.
+  - Refused: an FFmpeg audio filter chain FFmpeg can't use (it passed the sound through unchanged, silently), an
+    unknown Director's Dice style or track type, a frame rate outside 1-240 (0 fps was accepted);
+    `cut_time` ranges stop at the end of the edit (removed time was counted past it).
+- The FFmpeg Audio Filter's chain box turns red with an explanation when FFmpeg can't use the chain.
+
 ## 0.6.0 (2026-10-18)
 
 ### Deliver tab

@@ -404,6 +404,22 @@ int cmdExport(const QString& mediaPath, const QString& outDir)
             check(!path.isEmpty() && checkMedia(path, false).isEmpty() && st.pixelFormat == QLatin1String("p010le"),
                   QStringLiteral("10-bit template \"%1\" on the GPU encoder (%2, %3)").arg(preset.name, used, st.pixelFormat));
         }
+    // 4:2:2 (H.264 all-intra) stays in software: NVENC's H.264 refused yuv422p.
+    for (const ExportPreset& preset : exportPresets())
+        if (preset.pixelFormat.contains(QLatin1String("422")) && preset.videoEncoder == QLatin1String("libx264")) {
+            QString used;
+            const ExportSettings st = withGpuEncoder(settingsFromPreset(preset, snap.settings), &used);
+            check(used.isEmpty() && st.videoEncoder == QLatin1String("libx264"),
+                  QStringLiteral("4:2:2 template \"%1\" stays on the software encoder (%2)").arg(preset.name, st.videoEncoder));
+        }
+    // A fit-to-size template over a short render: the bitrate stays sane (500 MB over seconds asked NVENC for gigabits).
+    for (const ExportPreset& preset : exportPresets())
+        if (preset.name == QLatin1String("Discord Nitro (500 MB)")) {
+            QString used;
+            const QString path = exportWith(QStringLiteral("fit_short.mp4"), withGpuEncoder(settingsFromPreset(preset, snap.settings), &used));
+            check(!path.isEmpty() && checkMedia(path, false).isEmpty(),
+                  QStringLiteral("a 500 MB fit-to-size template over a %1 s render (%2)").arg(double(length) / kUsPerSecond).arg(used.isEmpty() ? QStringLiteral("software") : used));
+        }
     // HEVC is tagged hvc1 (Apple devices refuse hev1).
     if (hevc) {
         const QString path = exportWith(QStringLiteral("hevc_tag.mp4"), settingsFromPreset(*hevc, snap.settings));

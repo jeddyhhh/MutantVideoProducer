@@ -199,6 +199,15 @@ public:
             m_text->setMinimumWidth(150);
             m_text->setToolTip(def.tooltip);
             QObject::connect(m_text, &QLineEdit::textEdited, this, [this, id](const QString& t) { m_view->setParamText(m_ref, id, t); });
+            if (const EffectInstance* fx = m_view->effectAt(m_ref.path, m_ref.index); fx && fx->type == QLatin1String("a_ffmpeg")) {
+                // A chain FFmpeg can't parse passes the sound through unchanged: say so.
+                QObject::connect(m_text, &QLineEdit::textChanged, this, [this](const QString& t) {
+                    const bool ok = audioFilterSpecValid(t);
+                    theme::style(m_text, ok ? QString() : QStringLiteral("border: 1px solid @bad;"));
+                    m_text->setToolTip(ok ? m_def.tooltip
+                                          : QObject::tr("FFmpeg can't use this filter chain, so the sound passes through unchanged.\n\n") + m_def.tooltip);
+                });
+            }
             if (!def.fileFilter.isEmpty()) {
                 // A file path: typed, or picked with Browse.
                 auto* row = new QHBoxLayout;
