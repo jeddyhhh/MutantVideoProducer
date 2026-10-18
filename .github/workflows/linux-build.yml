@@ -20,7 +20,24 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # A push to main whose commit also carries a version tag is built by the tag's run, so it is skipped here
+  # (pushing main and the tag together started both builds twice).
+  tagged:
+    runs-on: ubuntu-latest
+    outputs:
+      release: ${{ steps.look.outputs.release }}
+    steps:
+      - id: look
+        if: github.event_name == 'push' && github.ref_type == 'branch'
+        run: |
+          sleep 60  # the tag is usually pushed just after the branch
+          if git ls-remote --tags "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}" 'v*' | grep -q "^${{ github.sha }}"; then
+            echo "release=true" >> "$GITHUB_OUTPUT"
+          fi
+
   build:
+    needs: tagged
+    if: needs.tagged.outputs.release != 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
