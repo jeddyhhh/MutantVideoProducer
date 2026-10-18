@@ -34,6 +34,8 @@ What changed in each version of Mutant Video Producer. The newest is first.
   of the picture); turns are now cut on words into captions of the chosen length, each timed by its share.
 - Freeze frame on a generated picture said there was no video event there; it now says generated pictures can't be
   frozen.
+- Deliver: after the render queue was stopped, the tab kept saying "Rendering 10 of 12" with a time left that grew
+  for ever; it now says "Stopped: 9 of 12 rendered", and outputs rendered before don't count again.
 - A crash could leave no crash report: a library loaded later could replace the crash handler. It is put back every
   few seconds, and the report names the library that replaced it.
 

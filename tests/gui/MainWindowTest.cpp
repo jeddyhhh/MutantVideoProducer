@@ -435,6 +435,16 @@ int MainWindow::runEditorTest(QStringList& log)
                   .arg(checks)
                   .arg(why.isEmpty() ? QFileInfo(mp3Path).fileName() : why)
                   .arg(packError));
+        {
+            // Stopped (here, or by the AI): the waiting outputs no longer read "Rendering", with a time left that grows.
+            m_deliver->renderOutputs(&why);
+            renderQueue()->stop();
+            for (int i = 0; i < 100 && renderQueue()->busy(); ++i)
+                wait(50);
+            wait(1000);
+            const QString status = m_deliver->findChild<QLabel*>("deliverRenderStatus")->text();
+            check(status.startsWith("Stopped") && !status.contains("2 of 2"), QStringLiteral("Deliver: a stopped queue reads \"%1\"").arg(status));
+        }
         renderQueue()->close();
         m_modes->setCurrentIndex(0);
     }

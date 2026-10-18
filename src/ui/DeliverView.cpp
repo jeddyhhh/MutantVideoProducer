@@ -418,6 +418,7 @@ DeliverView::DeliverView(Project* project, Hooks hooks, QWidget* parent) : QWidg
     m_readiness->setObjectName(QStringLiteral("deliverReadiness"));
     m_readiness->setAlignment(Qt::AlignCenter);
     m_renderStatus = dimLabel();
+    m_renderStatus->setObjectName(QStringLiteral("deliverRenderStatus"));
     m_renderStatus->setAlignment(Qt::AlignRight);
     m_overall = new QProgressBar;
     m_overall->setObjectName(QStringLiteral("deliverOverall"));
@@ -1304,14 +1305,16 @@ void DeliverView::pollQueue()
     RenderQueue* queue = m_hooks.queue ? m_hooks.queue() : nullptr;
     if (!queue)
         return;
-    const QJsonArray jobs = queue->status()[QStringLiteral("jobs")].toArray();
-    bool active = false;
+    const QJsonObject status = queue->status();
+    const QJsonArray jobs = status[QStringLiteral("jobs")].toArray();
+    const bool running = status[QStringLiteral("running")].toBool();
+    bool active = false, stopped = false; // (a stopped queue's waiting jobs kept "Rendering", its time left growing, forever)
     int done = 0, failed = 0;
     double progress = 0;
     for (const auto& row : m_rows) {
         const QString path = QDir::cleanPath(row->path);
-        for (const auto& v : jobs) {
-            const QJsonObject job = v.toObject();
+        for (auto it = jobs.end(); it != jobs.begin();) { // the latest job for the file (an earlier render's counted too)
+            const QJsonObject job = (*--it).toObject();
             if (QDir::cleanPath(job[QStringLiteral("path")].toString()) != path)
                 continue;
             const QString state = job[QStringLiteral("state")].toString();
@@ -1322,8 +1325,8 @@ void DeliverView::pollQueue()
                 progress += f;
                 active = true;
             } else if (state == QLatin1String("waiting")) {
-                row->state->setText(tr("Waiting"));
-                active = true;
+                row->state->setText(running ? tr("Waiting") : tr("Stopped"));
+                (running ? active : stopped) = true;
             } else if (state == QLatin1String("done")) {
                 row->state->setText(tr("Done ✓"));
                 row->bar->setValue(1000);
@@ -1333,6 +1336,7 @@ void DeliverView::pollQueue()
                 row->state->setToolTip(job[QStringLiteral("error")].toString());
                 ++failed;
             }
+            break;
         }
     }
     const int batch = std::max(1, m_batch);
@@ -1349,7 +1353,8 @@ void DeliverView::pollQueue()
     }
     m_poll->stop();
     m_overall->setVisible(false);
-    m_renderStatus->setText(failed ? tr("%1 rendered, %2 failed").arg(done).arg(failed)
+    m_renderStatus->setText(stopped  ? tr("Stopped: %1 of %2 rendered").arg(done).arg(batch)
+                            : failed ? tr("%1 rendered, %2 failed").arg(done).arg(failed)
                                    : tr("All %n rendered in %1", nullptr, done).arg(formatDuration(TimeUs(m_renderClock->elapsed()) * 1000)));
     m_openWhenDone->setVisible(done > 0);
     fillHistory();
