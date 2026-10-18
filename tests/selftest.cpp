@@ -7235,6 +7235,24 @@ int cmdTools(const QString& mediaDir, const QString& outDir)
                   && parseSubtitles(writeVtt(c)) == c && writeVtt(c).startsWith(QStringLiteral("WEBVTT")),
               QStringLiteral("subtitles: SRT and WebVTT read (tags dropped, hours optional) and written back the same"));
     }
+    {
+        // A speaker turn transcribed as one caption is cut on words, in order, each piece timed by its characters.
+        Caption turn;
+        turn.start = 1 * kUsPerSecond;
+        turn.end = 13 * kUsPerSecond;
+        turn.speaker = 1;
+        turn.text = QStringLiteral("And I am Bolt. I paint cars. Mostly blue. Sometimes, if I am feeling brave, slightly bluer. Let's start with a big question.");
+        std::vector<Caption> c{turn};
+        splitLongCaptions(c, 42);
+        QStringList texts;
+        bool ok = c.size() > 2 && c.front().start == turn.start && c.back().end == turn.end;
+        for (size_t i = 0; i < c.size(); ++i) {
+            texts << c[i].text;
+            ok = ok && c[i].text.size() <= 42 && c[i].speaker == 1 && c[i].end > c[i].start && (i == 0 || c[i].start >= c[i - 1].end);
+        }
+        check(ok && texts.join(QLatin1Char(' ')) == turn.text,
+              QStringLiteral("subtitles: a long speaker turn is cut into captions of 42 characters or fewer (%1)").arg(texts.join(QStringLiteral(" | "))));
+    }
     print(QStringLiteral("%1  tools: %2 failure(s)").arg(failures ? QStringLiteral("FAIL") : QStringLiteral("DONE")).arg(failures));
     return failures ? 1 : 0;
 }

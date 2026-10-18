@@ -30,6 +30,10 @@ What changed in each version of Mutant Video Producer. The newest is first.
   files kept the name "Untitled"; they now move to the saved project and take its name.
 - Motion graphics: a chart naming a dataset the scene doesn't have, or with more than 128 rows, is refused with a
   reason (it drew nothing, or dropped the rows past 128, silently).
+- Auto captions with speaker turns gave each turn as one caption (up to 140 characters on one line, off both sides
+  of the picture); turns are now cut on words into captions of the chosen length, each timed by its share.
+- Freeze frame on a generated picture said there was no video event there; it now says generated pictures can't be
+  frozen.
 - A crash could leave no crash report: a library loaded later could replace the crash handler. It is put back every
   few seconds, and the report names the library that replaced it.
 

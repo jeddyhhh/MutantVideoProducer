@@ -784,7 +784,7 @@ int TimelineWidget::insertFreezeFrame(TimeUs length)
                 }
         }
     if (!clipId) {
-        emit message(tr("Put the cursor over a video event to freeze its picture there."));
+        emit message(tr("Put the cursor over a video event from a file to freeze its picture there (generated pictures can't be frozen)."));
         return 0;
     }
     Clip freeze = *tl.findClip(clipId);

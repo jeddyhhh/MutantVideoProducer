@@ -136,6 +136,31 @@ std::vector<float> timelineSpeechAudio(const ProjectSnapshot& snap, TimeUs from,
     return mono;
 }
 
+void splitLongCaptions(std::vector<Caption>& out, int maxChars)
+{
+    std::vector<Caption> cut;
+    for (const Caption& c : out) {
+        const QStringList words = c.text.split(QLatin1Char(' '), Qt::SkipEmptyParts);
+        QStringList lines{QString()};
+        for (const QString& w : words) {
+            if (!lines.back().isEmpty() && lines.back().size() + 1 + w.size() > std::max(8, maxChars))
+                lines.append(QString());
+            lines.back() += (lines.back().isEmpty() ? QString() : QStringLiteral(" ")) + w;
+        }
+        const double total = std::max<qsizetype>(1, c.text.size());
+        qsizetype done = 0;
+        for (const QString& line : lines) { // (timed by its share of the characters)
+            Caption piece = c;
+            piece.text = line;
+            piece.start = c.start + TimeUs((c.end - c.start) * (done / total));
+            done += line.size() + 1;
+            piece.end = &line == &lines.back() ? c.end : c.start + TimeUs((c.end - c.start) * (std::min<double>(done, total) / total));
+            cut.push_back(piece);
+        }
+    }
+    out = std::move(cut);
+}
+
 #ifdef MVP_WHISPER
 
 bool whisperAvailable()
@@ -255,6 +280,8 @@ bool transcribe(const QString& modelPath, const std::vector<float>& mono16k, con
             c.end = std::min<TimeUs>(c.end, b * kWindow * 1000 / 16 + 200000);
         }
     }
+    if (options.speakerTurns) // (a whole turn came as one caption, 140 characters on one line)
+        splitLongCaptions(out, options.maxChars);
     if (cb.cancelled || rc != 0) {
         if (error)
             *error = cb.cancelled ? QStringLiteral("cancelled") : QStringLiteral("speech recognition failed (%1)").arg(rc);

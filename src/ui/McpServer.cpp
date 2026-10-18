@@ -3039,7 +3039,7 @@ QJsonObject McpServer::ToolCall::tool_freeze_frame()
     w->m_timeline->setCursorTime(us(std::max(0.0, num("time"))), false);
     const int id = w->m_timeline->insertFreezeFrame(length);
     if (!id)
-        return errorResult(QStringLiteral("no video event at %1 s").arg(num("time")));
+        return errorResult(QStringLiteral("no video event from a file at %1 s (generated pictures can't be frozen)").arg(num("time")));
     return jsonResult({{QStringLiteral("event_id"), id}, {QStringLiteral("length"), sec(length)}});
 }
 
