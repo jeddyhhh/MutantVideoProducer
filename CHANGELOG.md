@@ -36,6 +36,8 @@ What changed in each version of Mutant Video Producer. The newest is first.
   frozen.
 - Deliver: after the render queue was stopped, the tab kept saying "Rendering 10 of 12" with a time left that grew
   for ever; it now says "Stopped: 9 of 12 rendered", and outputs rendered before don't count again.
+- Timecode (burn-in, the timeline, file names) wrote ";" before the frames at every frame rate, which reads as
+  drop-frame; whole rates such as 25 and 50 fps now use ":", and ";" stays for 29.97 and 59.94.
 - A crash could leave no crash report: a library loaded later could replace the crash handler. It is put back every
   few seconds, and the report names the library that replaced it.
 

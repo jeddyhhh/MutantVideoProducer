@@ -34,11 +34,14 @@ QString formatTimecode(TimeUs t, const FrameRate& fps)
     const int64_t secs = t / kUsPerSecond;
     const int64_t frame = fps.frameAt(t) - fps.frameAt(secs * kUsPerSecond);
     const int64_t h = secs / 3600, m = (secs / 60) % 60, s = secs % 60;
-    return QStringLiteral("%1%2:%3:%4;%5")
+    // ";" before the frames marks drop-frame timecode, which only NTSC rates (29.97, 59.94...) have: these are counted
+    // from the clock, so they match it; whole rates (25, 50...) take ":".
+    return QStringLiteral("%1%2:%3:%4%5%6")
         .arg(negative ? QStringLiteral("-") : QString())
         .arg(h, 2, 10, QLatin1Char('0'))
         .arg(m, 2, 10, QLatin1Char('0'))
         .arg(s, 2, 10, QLatin1Char('0'))
+        .arg(fps.den == 1001 ? QLatin1Char(';') : QLatin1Char(':'))
         .arg(frame, 2, 10, QLatin1Char('0'));
 }
 

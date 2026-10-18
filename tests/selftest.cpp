@@ -7236,6 +7236,11 @@ int cmdTools(const QString& mediaDir, const QString& outDir)
               QStringLiteral("subtitles: SRT and WebVTT read (tags dropped, hours optional) and written back the same"));
     }
     {
+        // ";" (drop-frame) only for NTSC rates; whole rates read with ":".
+        const QString pal = formatTimecode(61 * kUsPerSecond + 500000, FrameRate{25, 1}), ntsc = formatTimecode(61 * kUsPerSecond, FrameRate{30000, 1001});
+        check(pal == QStringLiteral("00:01:01:12") && ntsc == QStringLiteral("00:01:01;00"), QStringLiteral("timecode: %1 at 25 fps, %2 at 29.97").arg(pal, ntsc));
+    }
+    {
         // A speaker turn transcribed as one caption is cut on words, in order, each piece timed by its characters.
         Caption turn;
         turn.start = 1 * kUsPerSecond;
