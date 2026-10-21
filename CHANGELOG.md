@@ -20,12 +20,15 @@ What changed in each version of Mutant Video Producer. The newest is first.
 - **Sounds** tab: a built-in library of 67 short sound effects in every installation (transitions, hits and booms,
   comedy stings, notifications, everyday sounds), searchable, to preview, drag onto the timeline or add at the
   cursor. All CC0, credited in `sfx/CREDITS.md`. AI control: `list_sound_effects`.
+- **Options > Audio Sync with Picture...**: for outputs that add their own delay (TV, HDMI or monitor speakers,
+  Bluetooth headphones), how long the picture waits for the sound.
 
 ### Fixed
 
-- Playing in the editor, the sound could come after the picture (lip sync looked early) on outputs that add their
-  own delay, such as HDMI or monitor speakers and Bluetooth headphones: **Options > Audio Sync with Picture...**
-  sets how long the picture waits for the sound. Exports were and are in sync.
+- Playing in the editor, the sound could fall behind the picture for the rest of the playback (lip sync looked
+  early) whenever the mix started late or hiccupped, as it does the first time an effect such as Pitch Shift is used
+  and its delay measured: the silence played meanwhile was counted as played time. The picture now follows the sound
+  actually handed to the speakers. Exports were always in sync.
 - The editor stopped responding while many files were added at once (a long generated dialogue, then an import) with
   a large profile media library on a slow drive: every file added looked up each library entry on disk, rewrote the
   library, and rebuilt Profile Media, and the profile home folder's watcher (any autosave or voice take) rebuilt it

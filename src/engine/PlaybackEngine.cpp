@@ -327,14 +327,26 @@ void PlaybackEngine::stop()
     }
 }
 
+TimeUs PlaybackEngine::heardPosition()
+{
+    // The sound handed to the device, less what it hasn't played yet. (Not the device's processed time: that counts the
+    // silence played while the mix catches up, such as the first use of a pitch shift measuring its delay, and the
+    // picture then ran ahead of the sound for the rest of the playback.)
+    int64_t handed;
+    {
+        std::lock_guard lock(m_ringMutex);
+        handed = m_ringReadPos;
+    }
+    const qint64 buffered = m_sink ? m_format.durationForBytes(std::max<qint64>(0, m_sink->bufferSize() - m_sink->bytesFree())) : 0;
+    return samplesToUs(handed, m_sampleRate) - buffered;
+}
+
 TimeUs PlaybackEngine::computeClock()
 {
     TimeUs wall = m_startPos + m_wallClock.nsecsElapsed() / 1000 + m_clockAdjust;
     if (m_sink && m_sink->state() != QAudio::StoppedState) {
-        const qint64 processed = m_sink->processedUSecs();
-        if (processed > 0) {
-            const qint64 buffered = m_format.durationForBytes(std::max<qint64>(0, m_sink->bufferSize() - m_sink->bytesFree()));
-            const TimeUs audioClock = m_startPos + processed - buffered;
+        if (m_sink->processedUSecs() > 0) {
+            const TimeUs audioClock = heardPosition();
             // The device reports in coarse steps; follow it smoothly.
             const TimeUs diff = audioClock - wall;
             if (std::abs(diff) > 60000)

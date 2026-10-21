@@ -4642,6 +4642,90 @@ int cmdPresets(const QString& mediaDir, const QString& outDir)
         check(ok, QStringLiteral("delay compensation keeps a click on time (%1)").arg(report.join(QStringLiteral("; "))));
     }
 
+    // ---- The preview's mixer lives as long as the project: after it has played, edits like a generated episode's
+    // (Insert Time, effects added to tracks, events moved) must leave it in time with a fresh one.
+    {
+        const int rate = 48000, voiceRate = 24000;
+        std::vector<float> clicks(size_t(voiceRate) * 10 * 2, 0.0f);
+        for (int s = 1; s < 9; ++s)
+            for (int i = 0; i < 24; ++i)
+                clicks[size_t(voiceRate * s + i) * 2] = clicks[size_t(voiceRate * s + i) * 2 + 1] = 0.5f;
+        const QString path = QDir(outDir).filePath(QStringLiteral("clicks24k.wav"));
+        writeWav(path, clicks, voiceRate);
+        auto item = loadItem(path, 7);
+        const FrameRate fps{24, 1};
+        ProjectSnapshot s;
+        s.settings.fps = fps;
+        s.media[item->id] = item;
+        s.timeline = defaultTimeline();
+        ops::insertMedia(s.timeline, *item, 0, -1, fps);
+        Track& voice = s.timeline.tracks.back();
+        EffectInstance pitch = makeEffectOfType(QStringLiteral("a_pitch"), 950);
+        pitch.params[QStringLiteral("semitones")].value = 4;
+        voice.effects.push_back(pitch);
+        // The onsets heard in [from, from + seconds), in seconds.
+        auto onsets = [&](AudioMixer& m, const ProjectSnapshot& snap, double from, double seconds) {
+            std::vector<double> out;
+            std::vector<float> chunk(1024 * 2);
+            int64_t quiet = rate;
+            for (int64_t p = int64_t(from * rate); p < int64_t((from + seconds) * rate); p += 1024) {
+                m.mix(snap, p, 1024, chunk.data());
+                for (int i = 0; i < 1024; ++i) {
+                    if (std::abs(chunk[size_t(i) * 2]) > 0.05f) {
+                        if (quiet > rate / 3)
+                            out.push_back(double(p + i) / rate);
+                        quiet = 0;
+                    } else {
+                        ++quiet;
+                    }
+                }
+            }
+            return out;
+        };
+        auto same = [](const std::vector<double>& a, const std::vector<double>& b) {
+            if (a.size() != b.size() || a.empty())
+                return false;
+            for (size_t i = 0; i < a.size(); ++i)
+                if (std::abs(a[i] - b[i]) > 0.002)
+                    return false;
+            return true;
+        };
+        auto show = [](const std::vector<double>& v) {
+            QStringList l;
+            for (double x : v)
+                l << QString::number(x, 'f', 3);
+            return l.join(QLatin1Char(' '));
+        };
+        AudioMixer live(rate);
+        onsets(live, s, 0, 4); // played once
+        QStringList report;
+        bool ok = true;
+        auto compare = [&](const QString& what, const ProjectSnapshot& edited, double from) {
+            AudioMixer fresh(rate);
+            const auto heard = onsets(live, edited, from, 6), expected = onsets(fresh, edited, from, 6);
+            if (!same(heard, expected)) {
+                ok = false;
+                report << QStringLiteral("%1: %2 / fresh %3").arg(what, show(heard), show(expected));
+            }
+        };
+        ProjectSnapshot inserted = s;
+        cuts::insertTime(inserted.timeline, 2 * kUsPerSecond, 3 * kUsPerSecond / 2, fps);
+        compare(QStringLiteral("after Insert Time, from the start"), inserted, 0);
+        compare(QStringLiteral("after Insert Time, from the middle"), inserted, 2.5);
+        ProjectSnapshot echoed = inserted;
+        EffectInstance echo = makeEffectOfType(QStringLiteral("a_ffmpeg"), 951);
+        echo.params[QStringLiteral("filter")].text = QStringLiteral("aecho=0.8:0.9:7:0.45");
+        echoed.timeline.tracks.back().effects.push_back(echo);
+        compare(QStringLiteral("after an effect is added"), echoed, 0);
+        ProjectSnapshot moved = echoed;
+        moved.timeline.tracks.back().clips.front().start += kUsPerSecond / 3;
+        compare(QStringLiteral("after the event moves"), moved, 0);
+        ProjectSnapshot repitched = moved;
+        repitched.timeline.tracks.back().effects.front().params[QStringLiteral("semitones")].value = -6;
+        compare(QStringLiteral("after the pitch changes"), repitched, 0);
+        check(ok, QStringLiteral("a mixer that has played stays in time with a fresh one after edits %1").arg(report.join(QStringLiteral("; "))));
+    }
+
     // ---- User presets: save, reload, overwrite, delete.
     {
         PresetLibrary& lib = PresetLibrary::instance();

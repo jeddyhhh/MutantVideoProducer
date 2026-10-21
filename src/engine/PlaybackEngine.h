@@ -51,6 +51,8 @@ public:
     // Bluetooth): the picture waits that long, so mouths and hits line up with what is heard. Exports don't change.
     void setOutputLatency(TimeUs latency) { m_outputLatency = std::max<TimeUs>(0, latency); }
     TimeUs outputLatency() const { return m_outputLatency; }
+    // While playing: where the sound the device is playing now comes from on the timeline.
+    TimeUs heardPosition();
 
     // Recreates the preview renderer (after GPU / hardware decoding settings change).
     void resetRenderer();

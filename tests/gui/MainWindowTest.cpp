@@ -120,6 +120,7 @@
 #include <QTabWidget>
 #include <QDoubleSpinBox>
 #include <QTextBrowser>
+#include <QRandomGenerator>
 #include <QTimer>
 #include <QTreeWidget>
 #include <QToolBar>
@@ -491,6 +492,30 @@ int MainWindow::runEditorTest(QStringList& log)
               QStringLiteral("with 400 ms picture delay, playback holds the first frame for it, then runs (%1 s at 0.25 s, %2 s at 0.75 s)")
                   .arg(double(held) / kUsPerSecond, 0, 'f', 2)
                   .arg(double(moving) / kUsPerSecond, 0, 'f', 2));
+    }
+
+    // ---- The picture follows the sound even when the mix starts late: an effect never used before is measured on
+    // first use (a loudness normaliser takes a while), and the device's silence meanwhile used to count as played ----
+    {
+        Timeline tl = m_project->timeline();
+        auto audio = std::find_if(tl.tracks.begin(), tl.tracks.end(), [](const Track& t) { return t.type == TrackType::Audio && !t.clips.empty(); });
+        if (audio != tl.tracks.end()) {
+            EffectInstance slow = makeEffectOfType(QStringLiteral("a_ffmpeg"), tl.allocId());
+            slow.params[QStringLiteral("filter")].text =
+                QStringLiteral("aecho=0.8:0.88:%1:0.3,loudnorm").arg(QRandomGenerator::global()->bounded(20, 400)); // (never measured)
+            audio->effects.push_back(slow);
+            m_project->applyEdit(tl, QStringLiteral("slow effect"));
+            seekTo(0);
+            togglePlay();
+            wait(1500);
+            const TimeUs shown = m_engine->position(), heard = m_engine->heardPosition();
+            togglePlay();
+            m_project->undoStack()->undo();
+            check(std::abs(shown - heard) < 40000,
+                  QStringLiteral("the picture stays with the sound when the mix starts late (picture %1 s, sound %2 s)")
+                      .arg(double(shown) / kUsPerSecond, 0, 'f', 3)
+                      .arg(double(heard) / kUsPerSecond, 0, 'f', 3));
+        }
     }
 
     // ---- Moving the cursor while playing carries on from there; Space stops there ----
