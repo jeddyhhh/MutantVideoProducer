@@ -450,6 +450,11 @@ if(MVP_BUILD_GUI)
     mvp_test(motion ci $<TARGET_FILE:mvp_motion_test>)
     mvp_test(editor gui $<TARGET_FILE:mvp> --editor-test "${MVP_TEST_OUT}/editor.txt" ${_clip})
     mvp_test(devices gui $<TARGET_FILE:mvp> --devices-test "${MVP_TEST_OUT}/devices.txt" ${_clip})
+    # Random use, dialogs included, on three seeds (a failing seed replays exactly; see tests/monkey.cmake).
+    foreach(_seed 1 2 3)
+        mvp_test(monkey-${_seed} "gui;local" ${CMAKE_COMMAND} -DEXE=$<TARGET_FILE:mvp> -DSRC=${CMAKE_SOURCE_DIR} -DOUT=${MVP_TEST_OUT}
+                 -DSEED=${_seed} -DSTEPS=1500 -P ${CMAKE_SOURCE_DIR}/tests/monkey.cmake)
+    endforeach()
 endif()
 find_package(Python3 COMPONENTS Interpreter QUIET)
 if(Python3_Interpreter_FOUND)

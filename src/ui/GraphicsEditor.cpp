@@ -289,7 +289,7 @@ public:
         auto r = picture();
         auto delta = e->position() - previous;
         previous = e->position();
-        if (handle >= 0 && selected >= 0) {
+        if (handle >= 0 && selected >= 0 && selected < scene["layers"].toArray().size()) {
             auto a = scene["layers"].toArray();
             auto id = a[selected].toObject()["id"].toString();
             auto hs = motion::handles(scene, id, time, r.size());
@@ -417,7 +417,7 @@ public:
             connect(button, &QPushButton::clicked, this, [this, label] {
                 if (!editableSelection())
                     return;
-                int i = list->currentRow();
+                int i = layerRow();
                 auto a = data["layers"].toArray();
                 if (i < 0)
                     return;
@@ -758,19 +758,33 @@ public:
         connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::reject);
         refresh(0);
     }
+    // The current and the selected rows of the layer list, only those the scene has: every lookup of a layer by its row
+    // goes through these (the list is rebuilt after the scene changes, and until then a row can outlive its layer, #7).
+    int layerRow() const
+    {
+        const int i = list->currentRow();
+        return i >= 0 && i < data["layers"].toArray().size() ? i : -1;
+    }
+    QList<int> selectedLayerRows() const
+    {
+        QList<int> rows;
+        const qsizetype count = data["layers"].toArray().size();
+        for (auto* item : list->selectedItems())
+            if (const int r = list->row(item); r >= 0 && r < count)
+                rows.append(r);
+        return rows;
+    }
     QJsonObject current() const
     {
-        auto a = data["layers"].toArray();
-        int i = list->currentRow();
-        return i >= 0 && i < a.size() ? a[i].toObject() : QJsonObject{};
+        const int i = layerRow();
+        return i >= 0 ? data["layers"].toArray()[i].toObject() : QJsonObject{};
     }
     QStringList selectionIds() const
     {
         QStringList ids;
-        auto layers = data["layers"].toArray();
-        for (auto* item : list->selectedItems())
-            if (const int row = list->row(item); row >= 0 && row < layers.size()) // (a row the scene no longer has)
-                ids.append(layers[row].toObject()["id"].toString());
+        const auto layers = data["layers"].toArray();
+        for (int r : selectedLayerRows())
+            ids.append(layers[r].toObject()["id"].toString());
         return ids;
     }
     bool editableSelection()
@@ -1101,10 +1115,7 @@ public:
     {
         if (!editableSelection())
             return;
-        auto items = list->selectedItems();
-        QVector<int> selected;
-        for (auto* item : items)
-            selected.append(list->row(item));
+        const QList<int> selected = selectedLayerRows();
         if (selected.isEmpty())
             return;
         ensureIds();
@@ -1132,11 +1143,11 @@ public:
     {
         if (!editableSelection())
             return;
-        if (list->currentRow() < 0)
+        if (layerRow() < 0)
             return;
         ensureIds();
         auto a = data["layers"].toArray();
-        int i = list->currentRow();
+        int i = layerRow();
         auto source = a[i].toObject();
         QString id = source["id"].toString(), symbol = "object-" + QString::number(data["symbols"].toObject().size() + 1);
         auto definitions = data["symbols"].toObject();
@@ -1244,10 +1255,10 @@ public:
         QJsonValue value = out.isEmpty() ? currentValue : QJsonValue(old);
         if (targetBox->currentIndex() == 0) {
             auto a = data["layers"].toArray();
-            if (list->currentRow() < 0)
+            const int i = layerRow();
+            if (i < 0)
                 return;
-            auto o = setLayerProperty(current(), prop.split('.'), value);
-            a[list->currentRow()] = o;
+            a[i] = setLayerProperty(current(), prop.split('.'), value);
             data["layers"] = a;
         } else {
             QString key = targetBox->currentIndex() == 1 ? "camera" : "variables";
@@ -1799,14 +1810,12 @@ public:
     {
         if (loading)
             return;
-        int i = list->currentRow();
+        int i = layerRow();
         if (i < 0)
             return;
         if (graphics_workflow::locked(data, current()["id"].toString()))
             return;
         auto a = data["layers"].toArray();
-        if (i >= a.size())
-            return;
         auto o = a[i].toObject();
         auto old = layerProperty(o, key);
         if (key.contains('.')
@@ -1893,7 +1902,7 @@ public:
         }
         fill->setStyleSheet("background:" + motion::evaluate(o["fill"], currentTime, data).toString("#ffffff"));
         stroke->setStyleSheet("background:" + motion::evaluate(o["stroke"], currentTime, data).toString("#ffffff"));
-        canvas->selected = list->currentRow();
+        canvas->selected = layerRow();
         canvas->scene = data;
         canvas->selectedIds = selectionIds();
         canvas->update();

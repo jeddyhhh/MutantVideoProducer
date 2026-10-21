@@ -1207,7 +1207,12 @@ void bigProject(const QString& mediaDir, const QString& outDir)
     }
     const double perEdit = clock.elapsed() / 200.0;
     const double perStepMB = (memoryBytes() - before) / 200.0 / 1048576.0;
+    // (the checked Debug build is several times slower; it is for index checks, not speed)
+#ifdef NDEBUG
     check(perEdit < 100,
+#else
+    check(perEdit < 800,
+#endif
           QStringLiteral("big project (%1 events, 2 effects on each video one): an edit takes %2 ms").arg(events).arg(perEdit, 0, 'f', 1));
     check(perStepMB < 2,
           QStringLiteral("big project: each undo step costs %1 MB of memory (500 edits: %2 MB)")

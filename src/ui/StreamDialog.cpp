@@ -13,6 +13,7 @@
 #include <QSpinBox>
 #include <QVBoxLayout>
 #include <algorithm>
+#include <iterator>
 
 #ifdef Q_OS_WIN
 #ifndef NOMINMAX
@@ -137,7 +138,10 @@ StreamDialog::StreamDialog(QWidget* parent) : QDialog(parent)
 
 void StreamDialog::updateServer()
 {
-    const Service& s = kServices[m_service->currentIndex()];
+    const int i = m_service->currentIndex();
+    if (i < 0 || i >= int(std::size(kServices)))
+        return;
+    const Service& s = kServices[i];
     if (*s.server)
         m_server->setText(QString::fromLatin1(s.server));
     else

@@ -7038,7 +7038,12 @@ int cmdTools(const QString& mediaDir, const QString& outDir)
         for (int k = 0; k < 4; ++k)
             scopes::render(hd, scopes::Kind(k), QSize(400, 300));
         const double ms = timer.nsecsElapsed() / 1e6 / 4;
-        check(ms < 30, QStringLiteral("a scope of a 1080p picture takes %1 ms").arg(ms, 0, 'f', 1));
+#ifdef NDEBUG
+        const double limit = 30;
+#else
+        const double limit = 300; // (the checked Debug build: index checks, not speed)
+#endif
+        check(ms < limit, QStringLiteral("a scope of a 1080p picture takes %1 ms").arg(ms, 0, 'f', 1));
         const QImage parade = scopes::render(bars, scopes::Kind::Parade, QSize(400, 260));
         const QImage hist = scopes::render(bars, scopes::Kind::Histogram, QSize(400, 260));
         QImage sheet(820, 540, QImage::Format_RGB32);

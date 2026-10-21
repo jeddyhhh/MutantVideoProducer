@@ -8,6 +8,16 @@ What changed in each version of Mutant Video Producer. The newest is first.
 
 - Compose Graphics crashed when a starting layout (or an imported template) with fewer layers replaced a scene whose
   last layers were selected: the old layer list was read in the new, shorter scene before it was rebuilt. (#7)
+- Compose Graphics looks up layers by their row in one place, which skips a row the scene no longer has (grouping,
+  making a reusable object, deleting, setting a key and the canvas did not check); the Go Live dialog's service list
+  likewise.
+
+### Testing
+
+- The monkey test uses every dialog it opens (dropdowns, list rows, numbers, text, buttons, canvases) before
+  answering it, and opens editors such as Compose Graphics on purpose; three seeds run in the test suite.
+- The test suites also run on a Debug build, whose Qt checks every index: a read past the end of a list stops with
+  the line instead of passing unnoticed.
 
 ## 0.7.0 (2026-10-19)
 

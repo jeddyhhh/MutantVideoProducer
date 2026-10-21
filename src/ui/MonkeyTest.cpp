@@ -13,10 +13,19 @@
 #include <QApplication>
 #include <QDesktopServices>
 #include <QDialog>
+#include <QHash>
+#include <QTabBar>
+#include <QPlainTextEdit>
+#include <QLineEdit>
+#include <QDoubleSpinBox>
+#include <QSpinBox>
+#include <QDialogButtonBox>
+#include <QComboBox>
 #include <QFile>
 #include <QMenu>
 #include <QMessageBox>
 #include <QMouseEvent>
+#include <QPointer>
 #include <QRegularExpression>
 #include <QTabWidget>
 #include <QTimer>
@@ -206,7 +215,12 @@ private:
         what << QStringLiteral("%1%2").arg(button == Qt::RightButton ? QStringLiteral("right") : QStringLiteral("left"),
                                             mods == Qt::ShiftModifier ? QStringLiteral("+shift") : mods == Qt::ControlModifier ? QStringLiteral("+ctrl")
                                             : mods == Qt::AltModifier ? QStringLiteral("+alt") : QString());
+        // (a press can open a dialog, and closing it can rebuild the panel the widget was on: the rest of the gesture
+        // then goes nowhere, as the real mouse's would)
+        const QPointer<QWidget> alive(w);
         auto send = [&](QEvent::Type type, QPointF at, Qt::MouseButton b, Qt::MouseButtons held) {
+            if (!alive)
+                return;
             QMouseEvent e(type, at, w->mapToGlobal(at), b, held, mods);
             QApplication::sendEvent(w, &e);
         };
@@ -221,7 +235,7 @@ private:
         send(QEvent::MouseButtonPress, p, button, button);
         what << QStringLiteral(" at %1,%2").arg(p.x()).arg(p.y());
         if (drag && button == Qt::LeftButton)
-            for (int i = 0, n = 1 + pick(5); i < n && w; ++i) {
+            for (int i = 0, n = 1 + pick(5); i < n && alive; ++i) {
                 p = point();
                 send(QEvent::MouseMove, p, Qt::NoButton, button);
                 what << QStringLiteral(" > %1,%2").arg(p.x()).arg(p.y());
@@ -278,7 +292,9 @@ private:
                 start->click();
             }
         const int what = g_liveMonkey && pick(3) ? 80 + pick(20) : pick(100); // Live: mostly its own widgets
-        if (what < 40) {
+        if (what < 6 && !g_liveMonkey) {
+            openEditor();
+        } else if (what < 40) {
             const QList<QAction*> list = actions();
             if (!list.isEmpty()) {
                 QAction* a = list[pick(int(list.size()))];
@@ -378,6 +394,23 @@ private:
             return;
         }
         if (auto* dialog = qobject_cast<QDialog*>(modal)) {
+            // Used for a while first: before, a dialog was answered at once, so nothing inside one (Compose Graphics, the
+            // effect editors, Narration Studio...) was ever clicked at random, and #7 went unseen.
+            // (Qt's own colour and font pickers start a real drag and drop on a press and a move, which waits for the real
+            // mouse: they are only answered.)
+            if (!dialog->inherits("QFileDialog") && !dialog->inherits("QProgressDialog") && !dialog->inherits("QColorDialog")
+                && !dialog->inherits("QFontDialog")) {
+                if (!m_dialogMoves.contains(dialog)) {
+                    m_dialogMoves[dialog] = 4 + pick(40);
+                    write(QStringLiteral("    dialog \"%1\" open: %2 moves").arg(dialog->windowTitle()).arg(m_dialogMoves[dialog]));
+                }
+                if (m_dialogMoves[dialog]-- > 0) {
+                    m_watch->lastStep = now();
+                    useDialog(dialog);
+                    return;
+                }
+            }
+            m_dialogMoves.remove(dialog);
             const bool accept = pick(3) == 0 && !isOffLimits(dialog->windowTitle(), dialog->objectName(), {})
                                 && !dialog->inherits("QFileDialog");
             write(QStringLiteral("    dialog \"%1\": %2").arg(dialog->windowTitle(), accept ? QStringLiteral("OK") : QStringLiteral("Cancel")));
@@ -388,6 +421,129 @@ private:
             return;
         }
         modal->close();
+    }
+
+    // One move inside a dialog: a dropdown choice (as the user's, with activated), list rows (several, with Ctrl and Shift),
+    // a number, a slider, a tick, a tab, text (empty, long, odd), a button, or a click or drag anywhere (canvases).
+    void useDialog(QDialog* dialog)
+    {
+        QList<QWidget*> widgets;
+        for (QWidget* w : dialog->findChildren<QWidget*>()) {
+            if (!w->isVisible() || !w->isEnabled() || w->width() <= 2 || w->height() <= 2 || w->window() != dialog)
+                continue;
+            bool inBox = false; // (its OK and Cancel close it: that comes after the moves)
+            for (QObject* o = w; o && o != dialog; o = o->parent())
+                inBox = inBox || qobject_cast<QDialogButtonBox*>(o);
+            if (inBox)
+                continue;
+            if (auto* b = qobject_cast<QAbstractButton*>(w); b && isOffLimits(b->text(), b->objectName(), b->toolTip()))
+                continue;
+            widgets << w;
+        }
+        if (widgets.isEmpty())
+            return;
+        QWidget* w = widgets[pick(int(widgets.size()))];
+        const QString name = QStringLiteral("%1 \"%2\"").arg(QString::fromLatin1(w->metaObject()->className()), w->objectName());
+        static const QStringList texts = {QString(), QStringLiteral("0"), QStringLiteral("-1"), QStringLiteral("1e9"), QStringLiteral("hello"),
+                                          QStringLiteral("#ff00ff"), QStringLiteral("{\"a\": [1, 2]}"), QString(300, QLatin1Char('x')),
+                                          QString::fromUtf8("\xc3\xa9\xe2\x82\xac\xf0\x9f\x98\x80"), QStringLiteral("../..\\x")};
+        if (auto* combo = qobject_cast<QComboBox*>(w); combo && combo->count() > 0) {
+            const int k = pick(combo->count());
+            write(QStringLiteral("      choose %1 in %2").arg(k).arg(name));
+            combo->setCurrentIndex(k);
+            emit combo->activated(k);
+        } else if (auto* view = qobject_cast<QAbstractItemView*>(w->parentWidget()); view && w == view->viewport() && view->model()) {
+            const int rows = view->model()->rowCount(view->rootIndex());
+            if (rows == 0)
+                return mouse(w, false);
+            const QModelIndex index = view->model()->index(pick(rows), 0, view->rootIndex());
+            const QRect r = view->visualRect(index);
+            const Qt::KeyboardModifiers mods = std::array<Qt::KeyboardModifiers, 4>{Qt::NoModifier, Qt::ControlModifier, Qt::ShiftModifier, Qt::NoModifier}[size_t(pick(4))];
+            write(QStringLiteral("      click row %1 of %2 in %3%4").arg(index.row()).arg(rows).arg(name, mods == Qt::ControlModifier ? QStringLiteral(" +ctrl")
+                                                                                                       : mods == Qt::ShiftModifier ? QStringLiteral(" +shift") : QString()));
+            if (r.isValid() && w->rect().intersects(r)) {
+                const QPointF at = r.center();
+                QMouseEvent press(QEvent::MouseButtonPress, at, w->mapToGlobal(at), Qt::LeftButton, Qt::LeftButton, mods);
+                QMouseEvent release(QEvent::MouseButtonRelease, at, w->mapToGlobal(at), Qt::LeftButton, Qt::NoButton, mods);
+                QApplication::sendEvent(w, &press);
+                QApplication::sendEvent(w, &release);
+            } else {
+                view->setCurrentIndex(index);
+            }
+        } else if (auto* spin = qobject_cast<QSpinBox*>(w)) {
+            const int v = spin->minimum() + int(pick(10001) / 10000.0 * (double(spin->maximum()) - spin->minimum()));
+            write(QStringLiteral("      set %1 to %2").arg(name).arg(v));
+            spin->setValue(v);
+        } else if (auto* dspin = qobject_cast<QDoubleSpinBox*>(w)) {
+            const double v = dspin->minimum() + pick(10001) / 10000.0 * (dspin->maximum() - dspin->minimum());
+            write(QStringLiteral("      set %1 to %2").arg(name).arg(v));
+            dspin->setValue(v);
+        } else if (auto* slider = qobject_cast<QAbstractSlider*>(w)) {
+            const int v = slider->minimum() + int(pick(10001) / 10000.0 * (double(slider->maximum()) - slider->minimum()));
+            write(QStringLiteral("      slide %1 to %2").arg(name).arg(v));
+            slider->setValue(v);
+        } else if (auto* line = qobject_cast<QLineEdit*>(w); line && !line->isReadOnly()) {
+            const QString t = texts[pick(int(texts.size()))];
+            write(QStringLiteral("      type %1 chars in %2").arg(t.size()).arg(name));
+            line->setText(t);
+            emit line->editingFinished();
+        } else if (auto* edit = qobject_cast<QPlainTextEdit*>(w); edit && !edit->isReadOnly()) {
+            const QString t = texts[pick(int(texts.size()))];
+            write(QStringLiteral("      type %1 chars in %2").arg(t.size()).arg(name));
+            edit->setPlainText(t);
+        } else if (auto* tabs = qobject_cast<QTabBar*>(w); tabs && tabs->count() > 0) {
+            const int k = pick(tabs->count());
+            write(QStringLiteral("      tab %1 of %2").arg(k).arg(name));
+            tabs->setCurrentIndex(k);
+        } else if (auto* button = qobject_cast<QAbstractButton*>(w)) {
+            write(QStringLiteral("      press %1 \"%2\"").arg(name, QString(button->text()).remove(QLatin1Char('&'))));
+            QTimer::singleShot(0, button, &QAbstractButton::click); // (a dialog it opens is answered in turn)
+        } else {
+            write(QStringLiteral("      mouse in %1").arg(name));
+            // Drags on our own canvases and editors; on Qt's widgets and ours that drag and drop, a click only.
+            const bool ours = !QString::fromLatin1(w->metaObject()->className()).startsWith(QLatin1Char('Q')) && !w->inherits("DeviceChainView")
+                              && !w->inherits("LivePadPanel") && !w->inherits("MediaBin") && !w->inherits("TimelineWidget");
+            const int how = pick(10);
+            if (how < 7)
+                mouse(w, ours || draggable(w));
+            else if (how < 9)
+                wheel(w);
+            else
+                key(w);
+        }
+    }
+
+    // An editor opened on purpose (not only by luck): an event selected, sometimes a new graphics overlay first, then one of
+    // the window's "..." buttons, such as Compose Graphics... in Properties. Its dialog is then used as above.
+    void openEditor()
+    {
+        if (!m_project || !m_timeline)
+            return;
+        if (pick(3) == 0)
+            for (QAction* a : m_window.findChildren<QAction*>())
+                if (QString(a->text()).remove(QLatin1Char('&')) == QLatin1String("Graphics Overlay") && a->isEnabled()) {
+                    write(QStringLiteral("%1 insert a graphics overlay").arg(m_index));
+                    a->trigger();
+                    break;
+                }
+        std::vector<int> ids;
+        for (const auto& t : m_project->timeline().tracks)
+            for (const auto& c : t.clips)
+                ids.push_back(c.id);
+        if (ids.empty())
+            return;
+        const int id = ids[size_t(pick(int(ids.size())))];
+        m_timeline->selectClips({id});
+        QList<QPushButton*> buttons;
+        for (QPushButton* b : m_window.findChildren<QPushButton*>())
+            if (b->isVisible() && b->isEnabled() && (b->text().endsWith(QChar(0x2026)) || b->text().endsWith(QLatin1String("...")))
+                && !isOffLimits(b->text(), b->objectName(), b->toolTip()) && insideLive(b) == g_liveMonkey)
+                buttons << b;
+        if (buttons.isEmpty())
+            return;
+        QPushButton* b = buttons[pick(int(buttons.size()))];
+        write(QStringLiteral("%1 open \"%2\" on event %3").arg(m_index).arg(b->text()).arg(id));
+        b->click();
     }
 
     // A window of ours on the user's screen is a failure (and is hidden).
@@ -438,6 +594,7 @@ private:
     int m_failures = 0;
     std::mt19937 m_rng;
     QFile m_log;
+    QHash<const QObject*, int> m_dialogMoves; // moves left in each open dialog
     struct Watch {
         std::atomic<int64_t> lastStep{0};
         std::atomic<bool> done{false};

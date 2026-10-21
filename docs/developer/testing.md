@@ -25,8 +25,24 @@ ctest --test-dir build/Release -R harden                      # one suite by nam
 
 Labels: `ci` runs on the Linux runner, `smoke` is its quick part, `local` needs a real GPU or takes
 minutes, `gui` drives the Editor and plays sound. Results go to `build/Release/test-output`. A new
-suite is one `mvp_test(...)` line in `CMakeLists.txt`. Suites needing your own files (captions,
-VST3, YouTube, voice, the Live tab, the monkey test) are run by hand as below.
+suite is one `mvp_test(...)` line in `CMakeLists.txt`. The monkey test runs as `monkey-1` to `monkey-3` (three
+seeds, 1500 steps each, labelled `gui;local`). Suites needing your own files (captions, VST3, YouTube, voice, the Live
+tab) are run by hand as below.
+
+### The checked build
+
+Run the suites on a Debug build too, before a release and after changing the UI:
+
+```sh
+build.bat Debug
+ctest --test-dir build/Debug --output-on-failure
+```
+
+It links Qt's debug libraries, which check every index into a list, a JSON array or a string. In a Release build a
+read past the end is undefined: it often reads leftover memory and goes unnoticed, and only sometimes crashes (the
+crash in #7 passed its first regression test that way). In the Debug build it stops with `ASSERT failure ... index out
+of range` and a crash report naming the line, every time. It is several times slower, so the long suites take a
+while.
 
 The Editor and Live tab tests (`--editor-test`, `--live-test`) are member functions of the
 windows they drive, so they are built into the program, but their code is in `tests/gui/`.
@@ -161,8 +177,13 @@ If a file of yours fails to import, `mvp_selftest probe <file>` prints what was 
   `MVP_FUZZ_SEED=<seed>` runs one mangled project again, `MVP_HARDEN_ONLY=<part>` one part
   (damaged, odd, projects, editing, export, parallel, memory, big, parsers).
 - **MutantVideoProducer --monkey-test** runs random menu commands, keys, clicks, drags and wheel turns on the
-  Editor (off-screen) for `--steps` steps, answering the dialogs they open at random, and checks the
-  timeline after every step. It leaves out what would leave the test or touch your things (quitting,
+  Editor (off-screen) for `--steps` steps, and checks the timeline after every step. Every dialog it opens is
+  used for a few dozen moves before it is answered: dropdown choices, list rows (several at once, with Ctrl and
+  Shift), numbers, sliders, ticks, tabs, odd text (empty, long, emoji, JSON, paths), its own buttons, and clicks and
+  drags on canvases; a dialog opened from one is used in turn. Now and then it also opens an editor on purpose:
+  it selects an event (sometimes a new graphics overlay first) and presses one of the window's `...` buttons,
+  such as **Compose Graphics...**. Before, dialogs were answered at once and nothing inside one was ever clicked
+  at random. It leaves out what would leave the test or touch your things (quitting,
   links, downloads, cameras, exports, the Live tab), and fails if any window of its own shows on the
   screen. Each step is written to the log as it happens; a hang (a minute without a step) adds a
   report with the stuck stack, and a crash leaves the usual crash report. With `--live` it works on
