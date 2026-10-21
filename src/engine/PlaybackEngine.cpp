@@ -344,7 +344,8 @@ TimeUs PlaybackEngine::computeClock()
             wall = m_startPos + m_wallClock.nsecsElapsed() / 1000 + m_clockAdjust;
         }
     }
-    return std::max(m_startPos, wall);
+    // (the device reports what it has taken, not what has been heard)
+    return std::max(m_startPos, wall - m_outputLatency);
 }
 
 void PlaybackEngine::onTick()

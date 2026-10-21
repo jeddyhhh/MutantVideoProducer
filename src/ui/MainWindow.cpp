@@ -140,6 +140,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
     m_project = new Project(this);
     m_cache = new MediaCache(this);
     m_engine = new PlaybackEngine(this);
+    m_engine->setOutputLatency(TimeUs(QSettings().value(QStringLiteral("play/outputLatencyMs"), 0).toInt()) * 1000);
     createLayout();
     createActions();
     ShortcutsDialog::applySaved(ShortcutsDialog::commands(this)); // (Options > Keyboard Shortcuts)

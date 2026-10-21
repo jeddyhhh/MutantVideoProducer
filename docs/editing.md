@@ -190,6 +190,10 @@ Envelopes change a track's volume, pan or video level over time.
   press **Space** to stop there, and Space again to play from it.
 - **Audio scrubbing**: dragging the cursor on the ruler or stepping frames plays a snippet of the
   sound there (**Options > Audio Scrubbing**).
+- **Sound behind the picture while playing** (voices after the mouths move, hits after the impact)? Some outputs
+  delay the sound after the program hands it over: TV, HDMI and monitor speakers by about 100 ms, Bluetooth
+  headphones by 200 ms or more. **Options > Audio Sync with Picture...** makes the picture wait that long; change it
+  while playing until they line up. Exported videos are always in sync and don't change.
 
 ## Undo and History
 

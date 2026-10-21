@@ -777,6 +777,36 @@ void MainWindow::createActions()
     m_clickJumpAction->setCheckable(true);
     m_clickJumpAction->setChecked(QSettings().value(QStringLiteral("play/clickJumps"), true).toBool());
     m_clickJumpAction->setToolTip(tr("Off: playback carries on and the click sets where Play / Space starts next"));
+    auto* syncAction = options->addAction(tr("Audio &Sync with Picture..."), this, [this] {
+        QDialog dlg(this);
+        dlg.setWindowTitle(tr("Audio Sync with Picture"));
+        dlg.setObjectName(QStringLiteral("audioSyncDialog"));
+        auto* form = new QFormLayout(&dlg);
+        auto* note = new QLabel(tr("If voices come after mouths move, or hits after the picture, while playing in the editor "
+                                   "(common with TV, HDMI or monitor speakers and Bluetooth headphones), the picture can wait "
+                                   "for the sound. Try 100 ms for HDMI or monitor speakers and 200 ms for Bluetooth, and adjust "
+                                   "while playing. Exported videos are always in sync and don't change."));
+        note->setWordWrap(true);
+        form->addRow(note);
+        auto* delay = new QSpinBox(&dlg);
+        delay->setObjectName(QStringLiteral("audioSyncDelay"));
+        delay->setRange(0, 1000);
+        delay->setSingleStep(10);
+        delay->setSuffix(tr(" ms"));
+        const TimeUs before = m_engine->outputLatency();
+        delay->setValue(int(before / 1000));
+        form->addRow(tr("Picture waits for the sound by"), delay);
+        connect(delay, &QSpinBox::valueChanged, &dlg, [this](int ms) { m_engine->setOutputLatency(TimeUs(ms) * 1000); });
+        auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);
+        form->addRow(buttons);
+        connect(buttons, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
+        connect(buttons, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
+        if (dlg.exec() == QDialog::Accepted)
+            QSettings().setValue(QStringLiteral("play/outputLatencyMs"), delay->value());
+        else
+            m_engine->setOutputLatency(before);
+    });
+    syncAction->setObjectName(QStringLiteral("audioSync"));
     QMenu* rippleMenu = options->addMenu(tr("Auto &Ripple"));
     {
         auto* group = new QActionGroup(this);

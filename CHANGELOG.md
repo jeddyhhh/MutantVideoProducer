@@ -23,6 +23,9 @@ What changed in each version of Mutant Video Producer. The newest is first.
 
 ### Fixed
 
+- Playing in the editor, the sound could come after the picture (lip sync looked early) on outputs that add their
+  own delay, such as HDMI or monitor speakers and Bluetooth headphones: **Options > Audio Sync with Picture...**
+  sets how long the picture waits for the sound. Exports were and are in sync.
 - The editor stopped responding while many files were added at once (a long generated dialogue, then an import) with
   a large profile media library on a slow drive: every file added looked up each library entry on disk, rewrote the
   library, and rebuilt Profile Media, and the profile home folder's watcher (any autosave or voice take) rebuilt it

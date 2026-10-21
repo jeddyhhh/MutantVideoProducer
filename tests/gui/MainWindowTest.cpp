@@ -476,6 +476,23 @@ int MainWindow::runEditorTest(QStringList& log)
               .arg(double(backward) / kUsPerSecond, 0, 'f', 2));
     stopPlayback(false);
 
+    // ---- Audio Sync with Picture: the picture waits for a slow output's sound ----
+    {
+        seekTo(0);
+        m_engine->setOutputLatency(400000);
+        togglePlay();
+        wait(250);
+        const TimeUs held = m_engine->position();
+        wait(500);
+        const TimeUs moving = m_engine->position();
+        togglePlay();
+        m_engine->setOutputLatency(0);
+        check(held == 0 && moving > 100000 && moving < 600000,
+              QStringLiteral("with 400 ms picture delay, playback holds the first frame for it, then runs (%1 s at 0.25 s, %2 s at 0.75 s)")
+                  .arg(double(held) / kUsPerSecond, 0, 'f', 2)
+                  .arg(double(moving) / kUsPerSecond, 0, 'f', 2));
+    }
+
     // ---- Moving the cursor while playing carries on from there; Space stops there ----
     {
         seekTo(0);
