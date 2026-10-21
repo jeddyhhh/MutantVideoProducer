@@ -13,7 +13,7 @@ Drag an **Animation** preset, or **Blank Graphics Canvas**, from the Generators 
 - **Play preview** and the scrubber show event-local animation. The composer previews a 16:9 canvas; export uses the project's actual canvas.
 - **Open/Save template** exchanges native JSON compositions. The default template folder is your profile's `Media/Graphics Templates`. Image references are retained, not copied; embedded shapes, definitions and audio envelopes need no external artwork.
 
-Presets: curved route with reusable scene objects, animated typography, data chart, revealed route, deterministic confetti, morphing shapes, audio-reactive shapes/bars and reusable information cards. These are editable starting points.
+Presets: curved route with reusable scene objects, animated typography, data chart, revealed route, deterministic confetti, morphing shapes, audio-reactive shapes/bars, reusable information cards, and two cut-out **characters** whose mouths, arms and bodies follow the audio bindings `voice_a` and `voice_b` (bind each character's voice track under those names; their hat, band, jacket, mitten and skin colours are the scene variables `a_hat`, `b_jacket` and so on). These are editable starting points.
 
 ## Layout and brand workflow
 

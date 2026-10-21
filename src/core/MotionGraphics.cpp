@@ -1394,9 +1394,11 @@ QJsonObject background() {
 QStringList presets() {
   return {"motion_race",  "motion_titles",    "motion_chart",
           "motion_route", "motion_particles", "motion_morph",
-          "motion_audio", "motion_reusable"};
+          "motion_audio", "motion_reusable", "motion_characters"};
 }
 QJsonObject preset(const QString &name) {
+  if (name == "motion_characters")
+    return charactersScene();
   QJsonArray layers{background()};
   QJsonObject s{{"version", 2}, {"layers", layers}};
   if (name == "motion_race") {

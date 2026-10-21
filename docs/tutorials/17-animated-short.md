@@ -32,6 +32,10 @@ Keep every character on their own track: that is what the lip sync follows.
 
 ## 4. Build a character
 
+For a head start, drag **Animation: characters** instead of the blank canvas: two ready-made characters that talk,
+gesture and blink. Bind their voice tracks as `voice_a` and `voice_b` (step 5) and change their colours in the
+scene variables (`a_jacket`, `b_hat`...). To build your own:
+
 On the **Layout** tab:
 
 1. Choose **ellipse** in the layer picker and press **Add layer**: one for the head, two white ones for eyes, two
@@ -56,6 +60,8 @@ On the **Layout** tab:
    ```
 
    The mouth is nearly shut when Gus is quiet and opens with his voice. `anchor_y` 0 keeps its top still.
+   Without JSON: on the **Keys** tab choose the mouth and the property `scale_y`, and in **Follow audio** pick `gus`,
+   0.1 when silent, 2.4 at full volume, and press **Follow**.
 4. **Apply data to preview** and play: the mouth flaps through all of Gus's lines.
 
 Bind each character in the scene the same way, each under their own name.

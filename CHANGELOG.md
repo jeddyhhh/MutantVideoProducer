@@ -12,6 +12,8 @@ What changed in each version of Mutant Video Producer. The newest is first.
 - Compose Graphics, Keys tab, **Follow audio**: any property of a layer follows a bound sound (loudness, either
   channel or the beats) with its silent value, how much is added at full volume, attack and release, and **Stop
   following**; a mouth that moves with a voice track no longer needs JSON.
+- **Animation: characters** (Generators, Graphics): two cut-out characters whose mouths, arms and bodies follow the
+  bindings `voice_a` and `voice_b`, who blink, and whose colours are scene variables.
 
 ### Fixed
 

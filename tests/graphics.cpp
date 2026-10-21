@@ -1,4 +1,5 @@
 #include "core/Graphics.h"
+#include "core/MotionGraphics.h"
 #include "core/Compositor.h"
 #include "core/FrameRenderer.h"
 #include "core/GpuCompositor.h"
@@ -7,6 +8,7 @@
 #include "ui/GraphicsEditor.h"
 #include <QApplication>
 #include <QDataStream>
+#include <QDir>
 #include <QComboBox>
 #include <QDialog>
 #include <QPushButton>
@@ -31,6 +33,30 @@ int main(int argc, char **argv) {
   for (auto id : graphics::presets()) {
     auto s = graphics::scene(id);
     check(graphics::validateScene(s).isEmpty(), "valid preset " + id);
+  }
+  // The characters preset: valid, character A's mouth follows voice_a, and a colour variable recolours a part.
+  {
+    QJsonObject chars = graphics::scene("motion_characters");
+    check(graphics::validateScene(chars).isEmpty() && chars["variables"].toObject().contains("a_jacket"),
+          "characters preset is valid with colour variables");
+    auto picture = [](const QJsonObject &scene) {
+      QImage image(640, 360, QImage::Format_ARGB32_Premultiplied);
+      image.fill(Qt::transparent);
+      motion::render(image, scene, 0.5);
+      return image;
+    };
+    const QImage silent = picture(chars);
+    QJsonObject loud = chars;
+    loud["audio"] = QJsonObject{{"voice_a", QJsonObject{{"version", 1}, {"duration", 1.0}, {"left", QJsonArray{1.0, 1.0}},
+                                                        {"right", QJsonArray{1.0, 1.0}}, {"rate", 1}, {"offset", 0}}}};
+    check(picture(loud) != silent, "characters preset: a loud voice_a moves character A");
+    QDir().mkpath("creative-test");
+    picture(loud).save("creative-test/characters.png");
+    QJsonObject recoloured = chars;
+    auto vars = recoloured["variables"].toObject();
+    vars["a_jacket"] = "#00ff00";
+    recoloured["variables"] = vars;
+    check(picture(recoloured) != silent, "characters preset: the a_jacket variable recolours character A");
   }
   auto g = makeGenerator(*findGeneratorPreset("graphics_broadcast"));
   auto img = renderGenerator(g, {640, 360}, 1. / 3, 0, 10 * kUsPerSecond, {});

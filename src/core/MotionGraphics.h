@@ -17,6 +17,8 @@ void render(QImage &image, const QJsonObject &scene, double time);
 void paint(QPainter &painter, QSizeF size, const QJsonObject &scene, double time);
 QJsonObject preset(const QString &name);
 QStringList presets();
+// Two cut-out characters whose mouths, arms and bodies follow the bindings voice_a and voice_b.
+QJsonObject charactersScene();
 QJsonObject capabilities();
 QJsonObject withKeyframe(const QJsonObject &scene, const QString &layerId,
                          const QString &property, double time,

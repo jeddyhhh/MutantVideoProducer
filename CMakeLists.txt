@@ -98,6 +98,7 @@ add_library(mvp_core STATIC
     src/core/GeneratorsAnimated.cpp
     src/core/Graphics.h          src/core/Graphics.cpp
     src/core/MotionGraphics.h    src/core/MotionGraphics.cpp
+    src/core/CharacterPreset.cpp
     src/core/Captions.h          src/core/Captions.cpp
     src/core/Voice.h             src/core/Voice.cpp
     src/core/AiRuntime.h         src/core/AiRuntime.cpp
