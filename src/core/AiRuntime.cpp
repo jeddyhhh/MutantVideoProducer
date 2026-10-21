@@ -3,6 +3,7 @@
 #include <QCoreApplication>
 #include <QCryptographicHash>
 #include <QDir>
+#include <QSettings>
 #include <QFile>
 #include <QFileInfo>
 #include <QJsonArray>
@@ -59,9 +60,27 @@ QJsonObject aiRuntimeCatalog() {
     QFile f(runtimeData()+"/catalog.json");
     return f.open(QIODevice::ReadOnly) && f.size()<1024*1024?QJsonDocument::fromJson(f.readAll()).object():QJsonObject();
 }
+QString aiRuntimeDefaultRoot() { return brand::storageLocation(QStandardPaths::AppLocalDataLocation)+"/ai-runtimes"; }
 QString aiRuntimeRoot() {
+    // MVP_AI_RUNTIME_DIR, else the folder chosen in AI Components (another drive when the default one is full), else the default
     const QString path=qEnvironmentVariable("MVP_AI_RUNTIME_DIR");
-    return path.isEmpty()?brand::storageLocation(QStandardPaths::AppLocalDataLocation)+"/ai-runtimes":QDir(path).absolutePath();
+    if(!path.isEmpty())return QDir(path).absolutePath();
+    const QString chosen=QSettings().value(QStringLiteral("ai/runtimeDir")).toString();
+    return chosen.isEmpty()?aiRuntimeDefaultRoot():QDir(chosen).absolutePath();
+}
+bool setAiRuntimeRoot(const QString& folder,QString* error) {
+    if(!folder.isEmpty()) {
+        QDir dir(folder);
+        QFile probe(dir.filePath(".mvp-write-test"));
+        if(!dir.mkpath(".") || !probe.open(QIODevice::WriteOnly)) {
+            if(error)*error=QString("Mutant Video Producer can't write to %1.").arg(QDir::toNativeSeparators(folder));
+            return false;
+        }
+        probe.close();probe.remove();
+    }
+    if(folder.isEmpty() || QDir(folder).absolutePath()==QDir(aiRuntimeDefaultRoot()).absolutePath())QSettings().remove(QStringLiteral("ai/runtimeDir"));
+    else QSettings().setValue(QStringLiteral("ai/runtimeDir"),QDir(folder).absolutePath());
+    return true;
 }
 QString aiRuntimeInstalledPath(const AiRuntime& r) {
     if((r.id!="speech" && r.id!="rvc") || !hashValid(r.lockSha256) || !hashValid(r.cudaSha256))return {};
@@ -114,8 +133,7 @@ bool installAiRuntime(const AiRuntime& r,const QString& device,const AiRuntimePr
     if(disk.isValid() && disk.bytesAvailable()>=0 && disk.bytesAvailable()<required)
         return fail(QString("This AI engine needs about %1 GB free on %2 for itself and its download cache; there is %3 GB free.\n\n"
                             "It installs to %4. It brings its own CUDA libraries, so a CUDA already on this computer doesn't reduce it.\n\n"
-                            "Free some space on %2, or set the environment variable MVP_AI_RUNTIME_DIR to a folder on another drive and start "
-                            "Mutant Video Producer again.")
+                            "Free some space on %2, or choose a folder on another drive with Folder... in Tools > AI Components.")
                         .arg(required/(1024*1024*1024)).arg(QDir::toNativeSeparators(disk.rootPath()))
                         .arg(double(disk.bytesAvailable())/(1024.0*1024*1024),0,'f',1).arg(QDir::toNativeSeparators(root)));
     const QString generation=r.id+"-"+QUuid::createUuid().toString(QUuid::WithoutBraces);

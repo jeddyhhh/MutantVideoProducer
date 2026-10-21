@@ -5,7 +5,11 @@
 #include <QComboBox>
 #include <QDialog>
 #include <QDialogButtonBox>
+#include <QFileDialog>
 #include <QFileInfo>
+#include <QHBoxLayout>
+#include <QStorageInfo>
+#include <functional>
 #include <QLabel>
 #include <QMessageBox>
 #include <QProgressDialog>
@@ -58,6 +62,58 @@ void MainWindow::aiComponents()
            "private folder; no separate Python installation is needed. Installed engines work offline and are shared by your profiles."));
     intro->setWordWrap(true);
     layout->addWidget(intro);
+    // Where they go: the default is in the user's app data (usually C:), which may be short of the 6-12 GB setup needs.
+    auto* where = new QLabel;
+    where->setObjectName(QStringLiteral("aiComponentsFolder"));
+    where->setWordWrap(true);
+    where->setTextInteractionFlags(Qt::TextSelectableByMouse);
+    auto* choose = new QPushButton(tr("Folder..."));
+    choose->setObjectName(QStringLiteral("aiComponentsChooseFolder"));
+    auto* reset = new QPushButton(tr("Default"));
+    auto* folderRow = new QHBoxLayout;
+    folderRow->addWidget(where, 1);
+    folderRow->addWidget(choose);
+    folderRow->addWidget(reset);
+    layout->addLayout(folderRow);
+    const bool fromEnvironment = !qEnvironmentVariable("MVP_AI_RUNTIME_DIR").isEmpty();
+    std::vector<std::function<void()>> refreshers;
+    auto showFolder = [=] {
+        const QString root = aiRuntimeRoot();
+        QDir().mkpath(root);
+        const QStorageInfo disk(root);
+        where->setText(tr("Engines folder: %1 (%2 GB free on %3)%4")
+                           .arg(QDir::toNativeSeparators(root))
+                           .arg(double(disk.bytesAvailable()) / (1024.0 * 1024 * 1024), 0, 'f', 1)
+                           .arg(QDir::toNativeSeparators(disk.rootPath()))
+                           .arg(fromEnvironment ? tr(", set by MVP_AI_RUNTIME_DIR") : QString()));
+        choose->setEnabled(!fromEnvironment);
+        reset->setEnabled(!fromEnvironment && QDir(root).absolutePath() != QDir(aiRuntimeDefaultRoot()).absolutePath());
+    };
+    showFolder();
+    auto moveTo = [&, showFolder](const QString& folder) {
+        const QString before = aiRuntimeRoot();
+        QString error;
+        if (!setAiRuntimeRoot(folder, &error)) {
+            QMessageBox::warning(&dialog, tr("AI Components"), error);
+            return;
+        }
+        showFolder();
+        for (const auto& refresh : refreshers)
+            refresh();
+        if (QDir(before).absolutePath() != QDir(aiRuntimeRoot()).absolutePath() && QDir(before).exists()
+            && !QDir(before).entryList(QDir::Dirs | QDir::NoDotAndDotDot).isEmpty())
+            QMessageBox::information(&dialog, tr("AI Components"),
+                                     tr("Engines are now installed to and loaded from %1. Engines installed before stay in %2 and aren't "
+                                        "used from there: install them again here. You can delete the old folder afterwards.")
+                                         .arg(QDir::toNativeSeparators(aiRuntimeRoot()), QDir::toNativeSeparators(before)));
+    };
+    connect(choose, &QPushButton::clicked, &dialog, [&, moveTo] {
+        const QString folder = QFileDialog::getExistingDirectory(&dialog, tr("Folder for AI Engines"), aiRuntimeRoot());
+        const QString sub = QStringLiteral("Mutant Video Producer AI"); // (its own folder inside the one chosen, unless that's it)
+        if (!folder.isEmpty())
+            moveTo(QFileInfo(folder).fileName() == sub ? folder : QDir(folder).filePath(sub));
+    });
+    connect(reset, &QPushButton::clicked, &dialog, [moveTo] { moveTo(QString()); });
     QString problem;
     const auto runtimes = parseAiRuntimes(aiRuntimeCatalog(), &problem);
     if (runtimes.empty()) {
@@ -76,6 +132,7 @@ void MainWindow::aiComponents()
                                                     : tr("Not installed."));
         };
         refresh();
+        refreshers.push_back(refresh);
         auto* mode = new QComboBox;
         mode->addItem(tr("CPU — smaller download, works on any supported PC"), "cpu");
         mode->addItem(tr("NVIDIA CUDA — larger download, requires a compatible GPU driver"), "cuda");
@@ -92,10 +149,12 @@ void MainWindow::aiComponents()
         connect(install, &QPushButton::clicked, &dialog, [&, runtime, refresh, mode, install] {
             install->setEnabled(false);
             mode->setEnabled(false);
+            choose->setEnabled(false);
             QString error;
             if (!installAiComponent(runtime.id, mode->currentData().toString(), &error))
                 QMessageBox::warning(&dialog, tr("AI Component"), error);
             refresh();
+            showFolder();
             install->setEnabled(true);
             mode->setEnabled(true);
         });

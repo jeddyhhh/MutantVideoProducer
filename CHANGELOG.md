@@ -14,7 +14,9 @@ What changed in each version of Mutant Video Producer. The newest is first.
 
 - Installing an AI engine on a drive without room said only "not enough disk space"; it now names the drive, how
   much it needs and has, the folder, that a CUDA already installed doesn't reduce it, and how to install elsewhere
-  (`MVP_AI_RUNTIME_DIR`, now in the AI Components guide).
+  (**Folder...**, below).
+- AI Components shows the engines folder and its free space, and **Folder...** puts the engines on another drive
+  (the default, in your app data on C:, can be too small for the 6-12 GB that setup needs); **Default** goes back.
 
 ### Testing
 

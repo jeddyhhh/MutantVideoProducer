@@ -10,7 +10,7 @@
 #include <QTemporaryDir>
 
 int main(int argc,char** argv) {
-    QCoreApplication app(argc,argv);app.setApplicationName("MvpRuntimeTest");
+    QCoreApplication app(argc,argv);app.setApplicationName("MvpRuntimeTest");app.setOrganizationName("Mutant Video Producer");
     // Explicit network integration mode is used by Windows CI and local delivery checks.
     if(app.arguments().value(1)=="--install" || app.arguments().value(1)=="--cancel-repair") {
         const QString id=app.arguments().value(2),device=app.arguments().value(3,"cpu");QString error;
@@ -38,6 +38,17 @@ int main(int argc,char** argv) {
     auto runtimes=parseAiRuntimes(catalog);check(runtimes.size()==2,"valid upstream catalog");
     if(runtimes.size()!=2)return 1;
     auto bad=catalog;bad["version"]=1;check(parseAiRuntimes(bad).empty(),"legacy pack catalog rejected");
+    {   // The engines folder chosen in AI Components is used; an unwritable one is refused; Default goes back; the variable wins.
+        const QByteArray env=qgetenv("MVP_AI_RUNTIME_DIR");qunsetenv("MVP_AI_RUNTIME_DIR");
+        const QString chosen=temp.filePath("chosen");
+        const bool set=setAiRuntimeRoot(chosen),used=QDir(aiRuntimeRoot())==QDir(chosen);
+        write(temp.filePath("a-file"),"not a folder");QString why;
+        const bool refused=!setAiRuntimeRoot(temp.filePath("a-file/inside"),&why) && !why.isEmpty() && QDir(aiRuntimeRoot())==QDir(chosen);
+        setAiRuntimeRoot({});const bool back=QDir(aiRuntimeRoot())==QDir(aiRuntimeDefaultRoot());
+        qputenv("MVP_AI_RUNTIME_DIR",env);const bool variable=QDir(aiRuntimeRoot())==QDir(QString::fromUtf8(env));
+        check(set && used && refused && back && variable,QString("engines folder: the chosen one used (%1 %2), an unwritable one refused (%3), Default (%4) and MVP_AI_RUNTIME_DIR (%5)")
+                                                             .arg(set).arg(used).arg(refused).arg(back).arg(variable));
+    }
     for(const QString& key:{QString("id"),QString("lock"),QString("cuda_lock"),QString("python"),QString("lock_sha256")}) {
         auto entry=entries[0].toObject();entry[key]="../../escape";auto changed=entries;changed[0]=entry;bad=catalog;bad["components"]=changed;
         check(parseAiRuntimes(bad).empty(),"invalid catalog field rejected: "+key);
