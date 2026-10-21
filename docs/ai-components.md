@@ -33,6 +33,12 @@ an engine does not download every model or voice. Downloads may need several GB 
 disk space for the environment and its reusable cache. Removing the editor preserves
 these user downloads, like projects and media.
 
+They install to `%LOCALAPPDATA%\Mutant Video Producer\Mutant Video Producer\ai-runtimes` (on C: for most people),
+whichever drive the editor is on. If that drive is short of space, set the environment variable
+`MVP_AI_RUNTIME_DIR` to a folder on another drive (Windows: **Settings > System > About > Advanced system settings >
+Environment Variables**, a new user variable), then start Mutant Video Producer again and install there. Setup
+checks the free space first and says how much it needs on which drive.
+
 MCP exposes `ai_components` with `action: "list"` for engine status and upstream
 sources. Use `action: "install", component: "speech", device: "cpu"` for CPU speech,
 or `component: "rvc", device: "cuda"` for CUDA RVC. Installation uses the same visible

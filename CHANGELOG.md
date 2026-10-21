@@ -12,6 +12,10 @@ What changed in each version of Mutant Video Producer. The newest is first.
   making a reusable object, deleting, setting a key and the canvas did not check); the Go Live dialog's service list
   likewise.
 
+- Installing an AI engine on a drive without room said only "not enough disk space"; it now names the drive, how
+  much it needs and has, the folder, that a CUDA already installed doesn't reduce it, and how to install elsewhere
+  (`MVP_AI_RUNTIME_DIR`, now in the AI Components guide).
+
 ### Testing
 
 - The monkey test uses every dialog it opens (dropdowns, list rows, numbers, text, buttons, canvases) before

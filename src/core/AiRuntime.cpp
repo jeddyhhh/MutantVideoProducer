@@ -110,7 +110,14 @@ bool installAiRuntime(const AiRuntime& r,const QString& device,const AiRuntimePr
     // Free space for the engine and uv's download cache. CUDA speech brings its own cuDNN, cuBLAS and
     // CUDA runtime (~2.3 GB installed); RVC CUDA brings PyTorch.
     const qint64 required=(r.id=="speech"?(device=="cuda"?6LL:2LL):(device=="cuda"?12LL:5LL))*1024*1024*1024;
-    if(disk.isValid() && disk.bytesAvailable()>=0 && disk.bytesAvailable()<required)return fail("There is not enough disk space for this AI engine and its download cache.");
+    // (it said only "not enough disk space": not which drive, how much, or that the engine brings its own CUDA libraries)
+    if(disk.isValid() && disk.bytesAvailable()>=0 && disk.bytesAvailable()<required)
+        return fail(QString("This AI engine needs about %1 GB free on %2 for itself and its download cache; there is %3 GB free.\n\n"
+                            "It installs to %4. It brings its own CUDA libraries, so a CUDA already on this computer doesn't reduce it.\n\n"
+                            "Free some space on %2, or set the environment variable MVP_AI_RUNTIME_DIR to a folder on another drive and start "
+                            "Mutant Video Producer again.")
+                        .arg(required/(1024*1024*1024)).arg(QDir::toNativeSeparators(disk.rootPath()))
+                        .arg(double(disk.bytesAvailable())/(1024.0*1024*1024),0,'f',1).arg(QDir::toNativeSeparators(root)));
     const QString generation=r.id+"-"+QUuid::createUuid().toString(QUuid::WithoutBraces);
     const QString destination=QDir(root).filePath(generation);
     auto env=QProcessEnvironment::systemEnvironment();
