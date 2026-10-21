@@ -34,6 +34,22 @@ Setting, keyframing and grouping them works as for video: see [Effects](effects.
 Effects with built-in delay (pitch shift, noise reduction, the limiter, loudness normalisers) are
 delay-compensated on events, tracks and the master bus, so the sound stays in sync with the picture.
 
+## Sound effects library
+
+The **Sounds** tab (next to Profile Media) holds a library of short sound effects that comes with every installation:
+whooshes, swooshes, risers and glitches for transitions; booms, a bass drop, punches and explosions; comedy stings
+(air horn, sad trombone, rimshot, record scratch, boing, crickets, "dun dun dunnn", drum roll, ta-da, giggling,
+applause); dings, pops, notifications, typing and a camera shutter; and everyday sounds such as footsteps, doors,
+coins and a heartbeat.
+
+- Type in the search box to find a sound by name.
+- Double-click a sound (or press **Play**) to listen.
+- Drag it onto an audio track, or press **Add at Cursor**: it's added to Project Media and placed on the timeline.
+
+Every sound is public domain (CC0): use them in any video, commercial ones too, with no credit needed. Most were made
+for Mutant Video Producer; the rest come from Kenney (kenney.nl), OpenGameArt.org and the U.S. Fish & Wildlife
+Service. **Credits** opens the list of where each one came from. AI control: `list_sound_effects`.
+
 ## Audio presets
 
 About 100 factory presets.

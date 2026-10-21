@@ -119,3 +119,5 @@ The asset sizes and generation prompt are recorded in [icon provenance](icon.md)
 - The MediaPipe selfie segmentation model in `data/models` is Apache-2.0. RobustVideoMatting
   (`data/models/rvm_mobilenetv3_fp32.onnx`) is GPL-3.0.
 - The VST3 interface headers are MIT. VST is a trademark of Steinberg Media Technologies GmbH.
+- The sound effects in `data/sfx` (copied to `sfx` next to the program) are CC0: made for Mutant Video Producer, or
+  from Kenney, OpenGameArt.org and the U.S. Fish & Wildlife Service; `data/sfx/CREDITS.md` lists each one's source.

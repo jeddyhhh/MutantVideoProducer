@@ -6117,6 +6117,36 @@ int cmdDocs(const QString& docsDir, const QString& examplesDir, const QString& s
     return failures;
 }
 
+// The built-in sound effects library (data/sfx, the Sounds tab): every sound plays, is short (0.05 to 10 s), and is in CREDITS.md.
+int cmdSfx(const QString& dir)
+{
+    int failures = 0;
+    auto check = [&](bool ok, const QString& what) {
+        print(QStringLiteral("%1  %2").arg(ok ? QStringLiteral("PASS") : QStringLiteral("FAIL"), what));
+        if (!ok)
+            ++failures;
+    };
+    QFile creditsFile(QDir(dir).filePath(QStringLiteral("CREDITS.md")));
+    check(creditsFile.open(QIODevice::ReadOnly), QStringLiteral("the sound library has its credits"));
+    const QString credits = QString::fromUtf8(creditsFile.readAll());
+    QStringList bad, uncredited;
+    int count = 0;
+    QDirIterator it(dir, {QStringLiteral("*.ogg")}, QDir::Files, QDirIterator::Subdirectories);
+    while (it.hasNext()) {
+        const QFileInfo f(it.next());
+        ++count;
+        const MediaInfo m = probeMedia(f.filePath());
+        if (!m.ok() || m.audio.empty() || !m.video.empty() || m.duration < 50000 || m.duration > 10 * kUsPerSecond)
+            bad << f.fileName();
+        if (!credits.contains(QStringLiteral("**%1**").arg(f.completeBaseName())))
+            uncredited << f.fileName();
+    }
+    check(count >= 50, QStringLiteral("the library has %1 sounds").arg(count));
+    check(bad.isEmpty(), QStringLiteral("every sound is audio from 0.05 to 10 seconds %1").arg(bad.join(QStringLiteral(", "))));
+    check(uncredited.isEmpty(), QStringLiteral("every sound is credited %1").arg(uncredited.join(QStringLiteral(", "))));
+    return failures;
+}
+
 // The example projects behind Help > Tutorials (data/examples): their media made
 // here (music, a sample clip with a moving shape and a timecode, and
 // `narration`, a recording of speech), each project built with the same model
@@ -7404,6 +7434,8 @@ int main(int argc, char** argv)
         return cmdDocs(args[1], args[2], args.value(3));
     if ((args.size() == 4 || args.size() == 5) && args[0] == QLatin1String("harden"))
         return cmdHarden(args[1], args[2], args[3], args.size() == 5 ? args[4].toInt() : 300);
+    if (args.size() == 2 && args[0] == QLatin1String("sfx"))
+        return cmdSfx(args[1]);
     if (args.size() == 3 && args[0] == QLatin1String("examples"))
         return cmdExamples(args[1], args[2]);
     print(QStringLiteral("usage: mvp_selftest probe <files...> | export <media> <outdir> | effects <media> <outdir> | generators <outdir> | speed <media> <outdir> | gpu <testmedia-dir> <outdir> | audiofx <testmedia-dir> <outdir> | envelopes <testmedia-dir> <outdir> | ramps <testmedia-dir> <outdir> | racks <testmedia-dir> <outdir> | editing <testmedia-dir> <outdir> | beats | random [<media> <outdir>] | presets <testmedia-dir> <outdir> | formats"));

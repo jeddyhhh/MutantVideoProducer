@@ -96,6 +96,9 @@ private:
     VoiceJob* voiceJob();
     VoiceJob* m_voiceJob = nullptr;
     void generateDialogue();
+    // The built-in sound effects library: sfx next to the program.
+    static QString soundLibraryDir();
+    QWidget* createSoundsTab();
     DialogueJob* dialogueJob();
     DialogueJob* m_dialogueJob = nullptr;
     // Downloads (and SHA-256 checks) whichever of these voice files are missing; false when one fails or is cancelled.

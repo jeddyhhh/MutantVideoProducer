@@ -36,7 +36,7 @@ guide, and **Help > Tutorials** to open the step-by-step tutorials and their exa
 - [Animation Scenes](animation-scenes.md): the graphics composer's 2D animation: layers, groups, paths, keyframes,
   cameras, particles, charts, reusable objects, and audio bindings for lip sync from a voice track.
 - [Graphics through AI Control](graphics-mcp.md): building and changing graphics scenes with an assistant.
-- [Audio](audio.md): audio effects and presets, VST3 plugins, the Audio Mixer, auto ducking, meters,
+- [Audio](audio.md): the built-in sound effects library, audio effects and presets, VST3 plugins, the Audio Mixer, auto ducking, meters,
   scrubbing and beat detection.
 - [Audio finishing](audio-finishing.md): integrated loudness, true peaks, mix checks and safe master gain.
 - [Captions and Subtitles](captions.md): Auto Captions with Whisper, translation, speakers, SRT and

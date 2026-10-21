@@ -100,13 +100,15 @@ use GPU acceleration, with CPU fallback where needed. The
 ## Finish sound, captions and narration
 
 Mix with EQ, dynamics, reverb, delay, pitch tools, noise reduction, audio presets and
-VST3 plugins. Use the Audio Mixer, automatic ducking and beat detection to balance
+VST3 plugins. A built-in library of royalty-free (CC0) sound effects (whooshes, booms, air horns,
+dings, rimshots and more) sits in the **Sounds** tab, ready to drag onto the timeline. Use the Audio Mixer, automatic ducking and beat detection to balance
 speech and music. [Audio Finishing](docs/audio-finishing.md) checks final-mix loudness,
 true peaks and stereo compatibility, with editable targets and undoable gain changes.
 
 Generate captions locally with Whisper, translate them, distinguish speakers, and
 import or export SRT and WebVTT subtitles. Create local speech from captions with
-downloadable voices, then use integrated RVC conversion for another voice model.
+downloadable voices, or speak a whole `Name: line` script with a voice and pitch per character, each
+on their own track; integrated RVC conversion turns speech into another voice model.
 Narration Studio keeps scripts and alternate takes with the project.
 
 See [captions and narration](docs/captions.md) and

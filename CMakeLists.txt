@@ -228,6 +228,7 @@ add_executable(mvp WIN32
     src/ui/MainWindow.h          src/ui/MainWindow.cpp
     src/ui/MainWindowCaptions.cpp
     src/ui/MainWindowVoice.cpp
+    src/ui/MainWindowSounds.cpp
     src/ui/MainWindowRuntimes.cpp
     src/ui/MainWindowProfiles.cpp
     src/ui/MainWindowCollection.cpp
@@ -433,6 +434,7 @@ endforeach()
 mvp_test(random ci ${_self} random)
 mvp_test(beats ci ${_self} beats)
 mvp_test(docs ci ${_self} docs docs data/examples src)
+mvp_test(sfx "ci;smoke" ${_self} sfx data/sfx)
 mvp_test(harden ci ${_self} harden "${MVP_TEST_MEDIA}" data/examples "${MVP_TEST_OUT}/harden" 500)
 mvp_test(export local ${_self} export ${_clip} "${MVP_TEST_OUT}/export")
 foreach(_suite gpu racks tools consoles)
@@ -474,6 +476,7 @@ add_custom_target(mvp_docs ALL
     COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_SOURCE_DIR}/data/runtime" "$<TARGET_FILE_DIR:mvp_selftest>/runtime"
     COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_SOURCE_DIR}/docs" "$<TARGET_FILE_DIR:mvp_selftest>/docs"
     COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_SOURCE_DIR}/data/examples" "$<TARGET_FILE_DIR:mvp_selftest>/examples"
+    COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_SOURCE_DIR}/data/sfx" "$<TARGET_FILE_DIR:mvp_selftest>/sfx"
     COMMENT "Copying the user guide and example projects")
 
 # ---------------------------------------------------------------------------

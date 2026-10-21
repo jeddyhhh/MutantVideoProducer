@@ -17,6 +17,9 @@ What changed in each version of Mutant Video Producer. The newest is first.
 - **Tools > Captions > Generate Dialogue from a Script...**: `Name: line` lines spoken with a voice, speed and pitch
   per character, each character on their own track named after them, lines in script order, one undo step; voices
   are remembered per name. AI control: `generate_dialogue`.
+- **Sounds** tab: a built-in library of 67 short sound effects in every installation (transitions, hits and booms,
+  comedy stings, notifications, everyday sounds), searchable, to preview, drag onto the timeline or add at the
+  cursor. All CC0, credited in `sfx/CREDITS.md`. AI control: `list_sound_effects`.
 
 ### Fixed
 

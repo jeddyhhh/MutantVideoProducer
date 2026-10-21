@@ -164,6 +164,7 @@ void MainWindow::createLayout()
         connect(shared, &MediaBin::addToTimelineRequested, this, [this](int id) { m_timeline->insertMediaAtCursor(id); });
         connect(shared, &MediaBin::sharedToTimelineRequested, this, [this](const QString& path) { importFiles({path}, m_timeline->cursorTime(), -1, true); });
     }
+    tabs->addTab(createSoundsTab(), tr("Sounds"));
     auto* fxBrowser = new EffectsBrowser(EffectsBrowser::Kind::Effects);
     fxBrowser->setObjectName(QStringLiteral("fxBrowser"));
     tabs->addTab(fxBrowser, tr("Video FX"));

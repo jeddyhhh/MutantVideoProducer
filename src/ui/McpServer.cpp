@@ -43,6 +43,7 @@
 #include "ui/PreviewWidget.h"
 #include "ui/TimelineWidget.h"
 
+#include <QDirIterator>
 #include <QRegularExpression>
 #include <QTimer>
 #include <QBuffer>
@@ -1090,6 +1091,10 @@ QJsonArray McpServer::toolList()
         def["inputSchema"] = schema;
         t[i] = def;
     }
+    t.append(tool("list_sound_effects",
+                  "The built-in sound effects library (whooshes, booms, dings, comedy stings...), all CC0: category, name and file path "
+                  "for import_media or add_media_to_timeline.",
+                  {{QStringLiteral("search"), prop("string", "Only names containing this")}}, {}, true));
     t.append(tool("generate_dialogue",
                   "Speaks a script of \"Name: line\" lines with a voice per character, each on their own new audio track named after "
                   "them (for lip sync: graphics_overlay bind_audio with source_track), lines in script order, as one undo step. Poll "
@@ -1426,6 +1431,7 @@ struct McpServer::ToolCall {
     QJsonObject tool_voice_status();
     QJsonObject tool_generate_voice();
     QJsonObject tool_generate_dialogue();
+    QJsonObject tool_list_sound_effects();
     QJsonObject tool_list_vst3_plugins();
     QJsonObject tool_set_project_settings();
     QJsonObject tool_live_status();
@@ -2655,6 +2661,19 @@ QJsonObject McpServer::ToolCall::tool_voice_status()
     return jsonResult(status);
 }
 
+QJsonObject McpServer::ToolCall::tool_list_sound_effects()
+{
+    QJsonArray sounds;
+    const QDir root(MainWindow::soundLibraryDir());
+    QDirIterator it(root.path(), {QStringLiteral("*.ogg")}, QDir::Files, QDirIterator::Subdirectories);
+    while (it.hasNext()) {
+        const QFileInfo f(it.next());
+        if (f.completeBaseName().contains(str("search"), Qt::CaseInsensitive))
+            sounds.append(QJsonObject{{"category", f.dir().dirName()}, {"name", f.completeBaseName()}, {"path", f.absoluteFilePath()}});
+    }
+    return jsonResult({{QStringLiteral("sounds"), sounds}, {QStringLiteral("credits"), root.filePath(QStringLiteral("CREDITS.md"))}});
+}
+
 QJsonObject McpServer::ToolCall::tool_generate_dialogue()
 {
     const auto voices = localVoiceCatalog();
@@ -3505,6 +3524,7 @@ QJsonObject McpServer::callTool(const QString& name, const QJsonObject& a)
         {QStringLiteral("voice_status"), {&ToolCall::tool_voice_status, false}},
         {QStringLiteral("generate_voice"), {&ToolCall::tool_generate_voice, false}},
         {QStringLiteral("generate_dialogue"), {&ToolCall::tool_generate_dialogue, false}},
+        {QStringLiteral("list_sound_effects"), {&ToolCall::tool_list_sound_effects, false}},
         {QStringLiteral("list_vst3_plugins"), {&ToolCall::tool_list_vst3_plugins, false}},
         {QStringLiteral("set_project_settings"), {&ToolCall::tool_set_project_settings, false}},
         {QStringLiteral("live_status"), {&ToolCall::tool_live_status, true}},

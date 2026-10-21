@@ -43,6 +43,7 @@ The status bar shows each tool it uses.
 | add_marker, detect_beats | Markers, and markers on the beat. |
 | captions | Auto Captions (any model on this computer, translation, speakers), and importing or exporting SRT / WebVTT. |
 | list_voices | Curated Kokoro voices, metadata, installed status, and local worker/model availability. |
+| list_sound_effects | The built-in sound effects library (CC0): category, name and file path of each sound, optionally filtered by `search`; add one with `import_media`. |
 | generate_dialogue | Speaks a `Name: line` script with a voice, rate and pitch per character (`cast`), one new audio track per character named after them, lines in script order from `start` with `gap` between them, as one undo step. Poll `voice_status` (its `dialogue` field). |
 | generate_voice, voice_status | Starts local caption-to-speech generation and polls or cancels it; optional bundled RVC conversion with an imported `.pth` model. A completed job adds one undoable Voice track. |
 | ai_components | Lists optional Windows speech/RVC engines and upstream sources; installs CPU or CUDA environments from Astral/PyPI/PyTorch. Installation shows progress, verifies locked wheels and needs no separate Python install. |

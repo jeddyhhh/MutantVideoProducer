@@ -10,7 +10,7 @@ function Capture([string[]] $CaptureArgs) {
     if ($capture.ExitCode) { throw "Screenshot failed: $CaptureArgs" }
 }
 # Quote project paths because the native argument list is passed as one command line.
-Capture @('--screenshot',"$showcase/editor-window.png","`"$showcase/Orbital Report.mvp`"",'--seek','7','--theme','neon','--tab','5','--browse','Graphics','--grab','PreviewWidget','--delay','3500')
+Capture @('--screenshot',"$showcase/editor-window.png","`"$showcase/Orbital Report.mvp`"",'--seek','7','--theme','neon','--tab','6','--browse','Graphics','--grab','PreviewWidget','--delay','3500')
 Copy-Item -LiteralPath "$showcase/editor-window.png" -Destination 'docs/screenshots/editor.png'
 Capture @('--screenshot',"$showcase/composer-window.png","`"$showcase/Night Circuit.mvp`"",'--seek','7','--theme','nightcity','--fx-editor','--trigger','composeGraphicsButton','--grab','graphicsComposer','--delay','4000')
 Copy-Item -LiteralPath "$showcase/composer-window_graphicsComposer.png" -Destination 'docs/screenshots/graphics-composer.png'
