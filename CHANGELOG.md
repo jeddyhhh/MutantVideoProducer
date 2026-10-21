@@ -2,6 +2,13 @@
 
 What changed in each version of Mutant Video Producer. The newest is first.
 
+## Unreleased
+
+### Fixed
+
+- Compose Graphics crashed when a starting layout (or an imported template) with fewer layers replaced a scene whose
+  last layers were selected: the old layer list was read in the new, shorter scene before it was rebuilt. (#7)
+
 ## 0.7.0 (2026-10-19)
 
 ### Added

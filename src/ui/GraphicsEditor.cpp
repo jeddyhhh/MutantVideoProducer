@@ -374,6 +374,7 @@ public:
         auto* root = new QVBoxLayout(this);
         auto* top = new QHBoxLayout;
         auto* presets = new QComboBox;
+        presets->setObjectName("graphicsPresets");
         presets->addItem(tr("Choose a starting layout…"), QString());
         for (auto id : graphics::presets())
             presets->addItem(id, id);
@@ -733,8 +734,8 @@ public:
             if (!id.isEmpty()) {
                 data = graphics::scene(id);
                 normalize();
+                refresh(0); // (before seek: its load() read the old layer list's rows in the new, shorter scene, and crashed)
                 seek(0);
-                refresh(0);
             }
         });
         auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
@@ -768,7 +769,8 @@ public:
         QStringList ids;
         auto layers = data["layers"].toArray();
         for (auto* item : list->selectedItems())
-            ids.append(layers[list->row(item)].toObject()["id"].toString());
+            if (const int row = list->row(item); row >= 0 && row < layers.size()) // (a row the scene no longer has)
+                ids.append(layers[row].toObject()["id"].toString());
         return ids;
     }
     bool editableSelection()
@@ -1072,10 +1074,10 @@ public:
         }
         data = doc.object();
         normalize();
-        seek(0);
         if (sceneJson)
             sceneJson->document()->setModified(false);
         refresh(0);
+        seek(0);
     }
     void saveScene()
     {
@@ -1803,6 +1805,8 @@ public:
         if (graphics_workflow::locked(data, current()["id"].toString()))
             return;
         auto a = data["layers"].toArray();
+        if (i >= a.size())
+            return;
         auto o = a[i].toObject();
         auto old = layerProperty(o, key);
         if (key.contains('.')

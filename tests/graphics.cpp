@@ -7,6 +7,7 @@
 #include "ui/GraphicsEditor.h"
 #include <QApplication>
 #include <QDataStream>
+#include <QComboBox>
 #include <QDialog>
 #include <QDoubleSpinBox>
 #include <QFile>
@@ -294,6 +295,32 @@ int main(int argc, char **argv) {
   composeGraphics(&hiddenParent, &project, id);
   check(project.timeline() == applied,
         "visual composer Cancel discards changes");
+  {
+    // The last layers selected, then a starting layout with fewer layers: the old rows outlived the scene (a crash).
+    int rows = 0, after = -1, expected = graphics::scene("blank")["layers"].toArray().size();
+    QTimer::singleShot(0, [&] {
+      for (auto *widget : QApplication::topLevelWidgets())
+        if (widget->objectName() == "graphicsComposer") {
+          auto *list = widget->findChild<QListWidget *>("graphicsLayers");
+          auto *presets = widget->findChild<QComboBox *>("graphicsPresets");
+          const int big = presets->findData("broadcast");
+          presets->setCurrentIndex(big);
+          emit presets->activated(big);
+          rows = list->count();
+          list->setCurrentRow(rows - 1);
+          for (int r = 0; r < rows; ++r)
+            list->item(r)->setSelected(true);
+          const int k = presets->findData("blank");
+          presets->setCurrentIndex(k);
+          emit presets->activated(k);
+          after = list->count();
+          qobject_cast<QDialog *>(widget)->reject();
+        }
+    });
+    composeGraphics(&hiddenParent, &project, id);
+    check(rows > expected && after == expected,
+          QString("choosing a smaller starting layout with the last layers selected (%1 layers, then %2)").arg(rows).arg(after));
+  }
   // In a 4:3 project the canvas is 4:3: a drag of 4% of its picture moves the layer by 0.04.
   {
     const auto before = project.settings();
