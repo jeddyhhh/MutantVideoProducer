@@ -22,9 +22,22 @@ What changed in each version of Mutant Video Producer. The newest is first.
   cursor. All CC0, credited in `sfx/CREDITS.md`. AI control: `list_sound_effects`.
 - **Options > Audio Sync with Picture...**: for outputs that add their own delay (TV, HDMI or monitor speakers,
   Bluetooth headphones), how long the picture waits for the sound.
+- Compose Graphics, **Add character...** and **Save as character...**: a library of cut-out characters (kids, a man, a
+  teacher, a woman, a bear) that comes with every installation, plus your own; named, recoloured with scene variables,
+  bound to a voice by their name. AI control: `graphics_overlay` `characters`, `add_character`, `save_character`.
+- **Mouth shapes**: a character's mouth takes the shape of the words (A, E, O, L, F, M, rest), from each line's text or
+  aligned word times; any layer can use `{audio, viseme}`.
+- **Lip sync follows edits**: a binding made from a voice track is analysed again whenever the track's lines (or the
+  scene) move, in the same undo step.
+- Keys tab, **Moves**: hop, jump, shake, nod, wave, spin, walk, pop, squash and blink at the playhead. AI control:
+  `graphics_overlay` `move`.
+- The look: layer **shading**, **contact shadow**, **blur** and **depth** (with the camera's **depth of field**), and
+  scene **motion blur** (Scene tab > Look).
 
 ### Fixed
 
+- A layer's motion blur drew its overlapping parts added together (too bright where they overlap); its moments are now
+  averaged.
 - Playing in the editor, the sound could fall behind the picture for the rest of the playback (lip sync looked
   early) whenever the mix started late or hiccupped, as it does the first time an effect such as Pitch Shift is used
   and its delay measured: the silence played meanwhile was counted as played time. The picture now follows the sound

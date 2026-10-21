@@ -7,6 +7,7 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QLinearGradient>
+#include <QMap>
 #include <QPainter>
 #include <QPainterPathStroker>
 #include <QRadialGradient>
@@ -75,6 +76,30 @@ double audioLevel(const QJsonObject &binding, const QJsonObject &scene,
   auto audio =
       scene["audio"].toObject()[binding["audio"].toString()].toObject();
   double at = time * audio["rate"].toDouble(1) + audio["offset"].toDouble();
+  if (const QString wanted = binding["viseme"].toString(); !wanted.isEmpty()) {
+    // The mouth shape being spoken: 1 for the layer of that shape, 0 for the
+    // others. Quiet is "rest"; with sound, the shape from the words (a track
+    // binding's "visemes", [[seconds, shape], ...]), or "A" without them.
+    QJsonObject loud = binding;
+    loud.remove("viseme");
+    loud["channel"] = "peak";
+    loud["attack"] = .02;
+    loud["release"] = .05;
+    QString now = audioLevel(loud, scene, time) < binding["quiet"].toDouble(.05)
+                      ? QStringLiteral("rest")
+                      : QStringLiteral("A");
+    const auto shapes = audio["visemes"].toArray();
+    if (now != "rest" && !shapes.isEmpty()) {
+      auto after = std::upper_bound(shapes.begin(), shapes.end(), at,
+                                    [](double x, const QJsonValue &v) {
+                                      return x < v.toArray()[0].toDouble();
+                                    });
+      now = after == shapes.begin()
+                ? QStringLiteral("rest")
+                : (after - 1)->toArray()[1].toString(QStringLiteral("rest"));
+    }
+    return now == wanted ? 1 : 0;
+  }
   const auto mode = binding["channel"].toString("peak");
   if (mode == "beat") {
     double level = 0, release = std::max(.001, binding["release"].toDouble(.2));
@@ -677,6 +702,92 @@ void decoration(QPainter &p, const QPainterPath &body, const QJsonObject &style,
   p.drawPath(body);
   p.restore();
 }
+// The exact average of several pictures (motion blur's moments), summed pixel by pixel.
+struct Average {
+  std::vector<quint32> sum;
+  QSize size;
+  int count = 0;
+  void add(const QImage &image) {
+    const QImage im = image.convertToFormat(QImage::Format_ARGB32_Premultiplied);
+    if (sum.empty()) {
+      size = im.size();
+      sum.assign(size_t(size.width()) * size.height() * 4, 0);
+    }
+    for (int y = 0; y < size.height(); ++y) {
+      const quint32 *line = reinterpret_cast<const quint32 *>(im.constScanLine(y));
+      quint32 *s = sum.data() + size_t(y) * size.width() * 4;
+      for (int x = 0; x < size.width(); ++x)
+        for (int c = 0; c < 4; ++c)
+          s[x * 4 + c] += (line[x] >> (c * 8)) & 0xff;
+    }
+    ++count;
+  }
+  QImage result() const {
+    QImage out(size, QImage::Format_ARGB32_Premultiplied);
+    for (int y = 0; y < size.height(); ++y) {
+      quint32 *line = reinterpret_cast<quint32 *>(out.scanLine(y));
+      const quint32 *s = sum.data() + size_t(y) * size.width() * 4;
+      for (int x = 0; x < size.width(); ++x) {
+        quint32 v = 0;
+        for (int c = 0; c < 4; ++c)
+          v |= quint32((s[x * 4 + c] + quint32(count / 2)) / quint32(std::max(1, count))) << (c * 8);
+        line[x] = v;
+      }
+    }
+    return out;
+  }
+};
+// One box blur pass of `r` pixels along rows (or columns) of a premultiplied image.
+void boxPass(QImage &image, int r, bool rows) {
+  const int w = image.width(), h = image.height();
+  const int lines = rows ? h : w, length = rows ? w : h;
+  std::vector<quint32> line(static_cast<size_t>(length));
+  for (int k = 0; k < lines; ++k) {
+    auto px = [&](int i) -> quint32 & {
+      return rows ? reinterpret_cast<quint32 *>(image.scanLine(k))[i]
+                  : reinterpret_cast<quint32 *>(image.scanLine(i))[k];
+    };
+    for (int i = 0; i < length; ++i)
+      line[size_t(i)] = px(i);
+    int sum[4] = {0, 0, 0, 0};
+    auto add = [&](int i, int sign) {
+      const quint32 v = line[size_t(std::clamp(i, 0, length - 1))];
+      for (int c = 0; c < 4; ++c)
+        sum[c] += sign * int((v >> (c * 8)) & 0xff);
+    };
+    for (int i = -r; i <= r; ++i)
+      add(i, 1);
+    const int span = 2 * r + 1;
+    for (int i = 0; i < length; ++i) {
+      quint32 out = 0;
+      for (int c = 0; c < 4; ++c)
+        out |= quint32(sum[c] / span) << (c * 8);
+      px(i) = out;
+      add(i + r + 1, 1);
+      add(i - r, -1);
+    }
+  }
+}
+// A soft blur of `radius` pixels: shrunk, box blurred three times each way,
+// and grown back (cheap enough for a whole frame).
+QImage blurred(const QImage &image, double radius) {
+  if (radius < .5 || image.isNull())
+    return image;
+  const double shrink = std::max(1., radius / 3);
+  QImage small =
+      image
+          .scaled(std::max(1, int(image.width() / shrink)),
+                  std::max(1, int(image.height() / shrink)),
+                  Qt::IgnoreAspectRatio, Qt::SmoothTransformation)
+          .convertToFormat(QImage::Format_ARGB32_Premultiplied);
+  const int r = std::max(1, int(std::lround(radius / shrink / 1.7)));
+  for (int pass = 0; pass < 3; ++pass) {
+    boxPass(small, r, true);
+    boxPass(small, r, false);
+  }
+  return small.scaled(image.size(), Qt::IgnoreAspectRatio,
+                      Qt::SmoothTransformation);
+}
 QString substitute(QString words, const QJsonObject &s, double t) {
   QRegularExpression re("\\{\\{([A-Za-z0-9_.-]+)\\}\\}");
   auto matches = re.globalMatch(words);
@@ -718,6 +829,7 @@ public:
   QMap<QString, int> ids;
   QVector<int> roots;
   int &budget;
+  int unblurred = -1; // the layer being drawn into its blur's own picture
   Graph(QJsonObject scene, QSizeF size, int &budget)
       : scene(std::move(scene)), size(size), budget(budget) {
     collect(this->scene["layers"].toArray(), {});
@@ -1126,19 +1238,20 @@ public:
             std::clamp(int(number(blur, "samples", 5, t, scene)), 1, 8);
         double shutter =
             std::clamp(number(blur, "shutter", .03, t, scene), 0., .2);
-        QImage accumulated(size.toSize(), QImage::Format_ARGB32_Premultiplied);
-        accumulated.fill(Qt::transparent);
-        {
-          QPainter samplesPainter(&accumulated);
-          samplesPainter.setRenderHints(p.renderHints());
-          samplesPainter.setCompositionMode(QPainter::CompositionMode_Plus);
-          for (int j = 0; j < samples; ++j)
-            draw(i, samplesPainter,
-                 std::max(0.,
-                          t + shutter *
-                                  (double(j) / std::max(1, samples - 1) - .5)),
-                 camera, 1. / samples, depth + 1, true);
+        // Each moment drawn on its own, then averaged (drawing them all with
+        // Plus also added a layer's overlapping parts together).
+        Average moments;
+        QImage moment(size.toSize(), QImage::Format_ARGB32_Premultiplied);
+        for (int j = 0; j < samples; ++j) {
+          moment.fill(Qt::transparent);
+          {
+            QPainter mp(&moment);
+            mp.setRenderHints(p.renderHints());
+            draw(i, mp, std::max(0., t + shutter * (double(j) / std::max(1, samples - 1) - .5)), camera, 1, depth + 1, true);
+          }
+          moments.add(moment);
         }
+        const QImage accumulated = moments.result();
         p.save();
         p.setWorldTransform({});
         p.setOpacity(opacity);
@@ -1149,6 +1262,37 @@ public:
       }
     }
     QString type = o["type"].toString();
+    // Softness: the layer's own blur, plus depth of field: with the camera's
+    // depth_of_field, a layer's depth (0 the subject, 1 far away) blurs it
+    // as the camera zooms in.
+    if (i != unblurred) {
+      double softness =
+          std::clamp(number(o, "blur", 0, t, scene), 0., .2) * size.height();
+      auto lens = scene["camera"].toObject();
+      if (o.contains("depth") && lens.contains("depth_of_field"))
+        softness += std::clamp(number(lens, "depth_of_field", 0, t, scene), 0., 10.) *
+                    std::clamp(number(o, "depth", 0, t, scene), 0., 1.) *
+                    std::max(0., number(lens, "zoom", 1, t, scene) - 1) *
+                    .01 * size.height();
+      if (softness >= .5) {
+        QImage layer(size.toSize(), QImage::Format_ARGB32_Premultiplied);
+        layer.fill(Qt::transparent);
+        {
+          QPainter lp(&layer);
+          lp.setRenderHints(p.renderHints());
+          const int was = unblurred;
+          unblurred = i;
+          draw(i, lp, t, camera, 1, depth + 1, true);
+          unblurred = was;
+        }
+        p.save();
+        p.setWorldTransform({});
+        p.setOpacity(opacity);
+        p.drawImage(0, 0, blurred(layer, softness));
+        p.restore();
+        return;
+      }
+    }
     double alpha = std::clamp(number(o, "opacity", 1, t, scene), 0., 1.);
     if (isolate && (alpha < 1 || !o["blend"].toString().isEmpty()) &&
         (type == "group" || type == "instance" || type == "repeater")) {
@@ -1174,6 +1318,23 @@ public:
     if (isolate)
       applyBlend(p, o["blend"].toString());
     mask(p, o, at, t);
+    if (const double shadow = std::clamp(number(o, "contact_shadow", 0, t, scene), 0., 1.); shadow > 0) {
+      // A soft shadow where the layer meets the ground (the bottom of its box).
+      const QPointF foot(at.box.center().x(), at.box.bottom());
+      const double r = at.box.width() * .55;
+      QRadialGradient soft(foot, r);
+      soft.setColorAt(0, QColor(0, 0, 0, int(170 * shadow)));
+      soft.setColorAt(.6, QColor(0, 0, 0, int(80 * shadow)));
+      soft.setColorAt(1, QColor(0, 0, 0, 0));
+      p.save();
+      p.translate(foot);
+      p.scale(1, .14);
+      p.translate(-foot);
+      p.setPen(Qt::NoPen);
+      p.setBrush(soft);
+      p.drawEllipse(foot, r, r);
+      p.restore();
+    }
     if (type == "group") {
       for (int child : nodes[i].children)
         draw(child, p, t, camera, p.opacity(), depth + 1);
@@ -1277,6 +1438,27 @@ public:
       if (trimmed)
         p.setBrush(Qt::NoBrush);
       p.drawPath(painted);
+      const double shade = std::clamp(number(o, "shading", 0, t, scene), 0., 1.);
+      if (shade > 0 && type != "line" && !trimmed &&
+          (o.contains("gradient") || colour(o["fill"], t, scene).alpha() > 0)) {
+        // Soft light: a highlight on the side the light comes from (shading_angle,
+        // degrees on the screen: 225 the top left, 270 above) fading into a
+        // shadow on the other.
+        const QRectF b = body.boundingRect();
+        const double a = number(o, "shading_angle", 225, t, scene) * pi / 180;
+        const QPointF half(std::cos(a) * b.width() / 2, std::sin(a) * b.height() / 2);
+        QLinearGradient light(b.center() + half, b.center() - half);
+        light.setColorAt(0, QColor(255, 255, 255, int(100 * shade)));
+        light.setColorAt(.45, QColor(255, 255, 255, 0));
+        light.setColorAt(.55, QColor(0, 0, 0, 0));
+        light.setColorAt(1, QColor(0, 0, 0, int(150 * shade)));
+        p.save();
+        p.setClipPath(body, Qt::IntersectClip);
+        p.setPen(Qt::NoPen);
+        p.setBrush(light);
+        p.drawRect(b);
+        p.restore();
+      }
     }
     p.restore();
   }
@@ -1298,6 +1480,29 @@ void paint(QPainter &p, QSizeF size, const QJsonObject &scene, double time) {
   p.setRenderHint(QPainter::Antialiasing);
   p.setRenderHint(QPainter::SmoothPixmapTransform);
   int budget = 32768;
+  const auto blur = scene["motion_blur"];
+  if (blur.isObject() || blur.toBool()) {
+    // The whole picture, camera included, averaged over a shutter (seconds)
+    // around the time: fast moves, crash zooms and whip pans smear.
+    const auto b = blur.toObject();
+    const int samples = std::clamp(b["samples"].toInt(5), 2, 8);
+    const double shutter = std::clamp(b["shutter"].toDouble(.02), 0., .2);
+    Average frames;
+    QImage frame(size.toSize(), QImage::Format_ARGB32_Premultiplied);
+    for (int j = 0; j < samples; ++j) {
+      frame.fill(Qt::transparent);
+      {
+        QPainter fp(&frame);
+        fp.setRenderHints(p.renderHints());
+        int each = 32768;
+        Graph graph(scene, size, each);
+        graph.drawRoots(fp, std::max(0., time + shutter * (double(j) / (samples - 1) - .5)));
+      }
+      frames.add(frame);
+    }
+    p.drawImage(0, 0, frames.result());
+    return;
+  }
   Graph graph(scene, size, budget);
   graph.drawRoots(p, time, {}, p.opacity());
 }
@@ -1614,7 +1819,10 @@ QJsonObject capabilities() {
                   "gradients", "shadows + glow", "trails + motion blur",
                   "text by character/word/line", "symbols + variables",
                   "bar/line/donut charts", "audio envelopes + beats",
-                  "seeded particles", "repeaters", "template import/export"}},
+                  "seeded particles", "repeaters", "template import/export",
+                  "mouth shapes (viseme bindings)", "layer blur + depth of field",
+                  "shading + contact shadows", "scene motion blur", "moves",
+                  "characters"}},
       {"limits", QJsonObject{{"scene_bytes", 4194304},
                              {"layers", 512},
                              {"nesting", 16},
@@ -1705,5 +1913,249 @@ QJsonObject withKeyframe(const QJsonObject &scene, const QString &layerId,
   if (auto e = validate(result); !e.isEmpty())
     return fail(e);
   return result;
+}
+namespace {
+// Every value in `v` with variable and audio references renamed.
+QJsonValue renamed(const QJsonValue &v, const std::function<QString(const QString &)> &variable,
+                   const std::function<QString(const QString &)> &audio) {
+  if (v.isArray()) {
+    QJsonArray a = v.toArray();
+    for (int i = 0; i < a.size(); ++i)
+      a[i] = renamed(a[i], variable, audio);
+    return a;
+  }
+  if (!v.isObject())
+    return v;
+  QJsonObject o = v.toObject();
+  for (auto it = o.begin(); it != o.end(); ++it)
+    it.value() = renamed(it.value(), variable, audio);
+  // (value(): a missing key read with [] would be added, as null)
+  if (o.value("variable").isString())
+    o["variable"] = variable(o.value("variable").toString());
+  if (o.value("audio").isString())
+    o["audio"] = audio(o.value("audio").toString());
+  return o;
+}
+QString characterKey(const QString &name) {
+  QString key;
+  for (QChar c : name.trimmed().toLower())
+    if (c.isLetterOrNumber())
+      key += c;
+    else if (!key.isEmpty() && !key.endsWith('_'))
+      key += '_';
+  while (key.endsWith('_'))
+    key.chop(1);
+  return key.isEmpty() ? QStringLiteral("character") : key;
+}
+} // namespace
+QJsonObject withCharacter(const QJsonObject &scene, const QJsonObject &character, const QString &name, double x, double ground,
+                          QString *error) {
+  auto fail = [&](QString e) {
+    if (error)
+      *error = e;
+    return QJsonObject{};
+  };
+  const QJsonArray parts = character["layers"].toArray();
+  if (parts.isEmpty() || parts[0].toObject()["type"] != "group")
+    return fail("A character is a group of layers.");
+  QSet<QString> taken;
+  std::function<void(const QJsonArray &)> collect = [&](const QJsonArray &a) {
+    for (auto v : a) {
+      taken.insert(v.toObject()["id"].toString());
+      collect(v.toObject()["children"].toArray());
+    }
+  };
+  collect(scene["layers"].toArray());
+  QString key = characterKey(name);
+  for (int n = 2; taken.contains(key) || std::any_of(taken.begin(), taken.end(), [&](const QString &id) { return id.startsWith(key + "_"); }); ++n)
+    key = characterKey(name) + "_" + QString::number(n);
+  const QJsonObject colours = character["variables"].toObject();
+  const QString voice = character["binding"].toString("voice");
+  auto id = [&](const QString &i) { return i == "root" ? key : key + "_" + i; };
+  QJsonObject result = scene;
+  result["version"] = 2;
+  QJsonArray layers = result["layers"].toArray();
+  for (int i = 0; i < parts.size(); ++i) {
+    QJsonObject o = renamed(parts[i], [&](const QString &v) { return colours.contains(v) ? key + "_" + v : v; },
+                            [&](const QString &a) { return a == voice ? key : a; })
+                        .toObject();
+    o["id"] = id(o.value("id").toString());
+    if (o.contains("parent"))
+      o["parent"] = id(o.value("parent").toString());
+    if (i == 0) {
+      o["name"] = name.trimmed().isEmpty() ? character["name"].toString(key) : name.trimmed();
+      o["x"] = std::isfinite(x) ? x : .5 - o.value("width").toDouble(.14) / 2;
+      o["y"] = (std::isfinite(ground) ? ground : .9) - o.value("height").toDouble(.38);
+    }
+    layers.append(o);
+  }
+  result["layers"] = layers;
+  QJsonObject variables = result["variables"].toObject();
+  for (auto it = colours.begin(); it != colours.end(); ++it)
+    variables[key + "_" + it.key()] = it.value();
+  result["variables"] = variables;
+  if (auto e = validate(result); !e.isEmpty())
+    return fail(e);
+  return result;
+}
+QJsonObject characterFrom(const QJsonObject &scene, const QString &groupId, const QString &title, QString *error) {
+  auto fail = [&](QString e) {
+    if (error)
+      *error = e;
+    return QJsonObject{};
+  };
+  const QJsonArray all = scene["layers"].toArray();
+  QJsonArray mine;
+  QSet<QString> inside{groupId};
+  for (auto v : all) // (flat layers name their parent: a parent comes before its children)
+    if (const auto o = v.toObject(); o.value("id") == groupId || inside.contains(o["parent"].toString())) {
+      inside.insert(o["id"].toString());
+      mine.append(o);
+    }
+  if (mine.isEmpty() || mine[0].toObject()["type"] != "group")
+    return fail("Choose a group: a character is a group and the layers in it.");
+  auto local = [&](const QString &i) {
+    return i == groupId ? QStringLiteral("root") : i.startsWith(groupId + "_") ? i.mid(groupId.size() + 1) : i;
+  };
+  // Its colours become settings, named after the first layer that uses each; its most used binding is its voice.
+  QJsonObject colours;
+  QMap<QString, QString> byColour;
+  QMap<QString, int> bindings;
+  const QJsonObject sceneVariables = scene["variables"].toObject();
+  QJsonArray out;
+  for (int i = 0; i < mine.size(); ++i) {
+    QJsonObject o = renamed(mine[i], [&](const QString &v) {
+      const QString name = local(v);
+      colours[name] = sceneVariables.value(v);
+      return name;
+    }, [&](const QString &a) { ++bindings[a]; return a; }).toObject();
+    o["id"] = local(o.value("id").toString());
+    if (o.contains("parent"))
+      o["parent"] = local(o.value("parent").toString());
+    if (const QString fill = o.value("fill").toString(); QColor::isValidColorName(fill) && fill.startsWith('#') && QColor(fill).alpha() > 0) {
+      if (!byColour.contains(fill)) {
+        QString name = characterKey(o["id"].toString());
+        while (colours.contains(name))
+          name += "_2";
+        byColour[fill] = name;
+        colours[name] = fill;
+      }
+      o["fill"] = QJsonObject{{"variable", byColour[fill]}};
+    }
+    if (i == 0) {
+      o["x"] = 0;
+      o["y"] = 0;
+      o.remove("parent");
+    }
+    out.append(o);
+  }
+  QString voice = "voice";
+  int most = 0;
+  for (auto it = bindings.begin(); it != bindings.end(); ++it)
+    if (it.value() > most) {
+      most = it.value();
+      voice = it.key();
+    }
+  const QJsonObject root = out[0].toObject();
+  return {{"version", 1}, {"name", title.trimmed().isEmpty() ? root["name"].toString(groupId) : title.trimmed()}, {"binding", voice},
+          {"width", root["width"]}, {"height", root["height"]}, {"variables", colours}, {"layers", out}};
+}
+QStringList moves() {
+  return {"hop", "jump", "shake", "nod", "wave", "spin", "walk", "pop", "squash", "blink"};
+}
+QJsonObject withMove(const QJsonObject &scene, const QString &layerId,
+                     const QString &move, double time, double duration,
+                     double amount, double to, QString *error) {
+  auto fail = [&](QString e) {
+    if (error)
+      *error = e;
+    return QJsonObject{};
+  };
+  if (!moves().contains(move))
+    return fail("Moves: " + moves().join(", ") + ".");
+  QJsonObject layer;
+  std::function<void(const QJsonArray &)> find = [&](const QJsonArray &a) {
+    for (auto v : a) {
+      const auto o = v.toObject();
+      if (o["id"] == layerId)
+        layer = o;
+      else if (o.contains("children"))
+        find(o["children"].toArray());
+    }
+  };
+  find(scene["layers"].toArray());
+  if (layer.isEmpty())
+    return fail("Choose an existing layer ID.");
+  static const QMap<QString, double> natural{{"hop", .5}, {"jump", .8}, {"shake", .6}, {"nod", .5}, {"wave", 1.2},
+                                             {"spin", .8}, {"walk", 2}, {"pop", .35}, {"squash", .4}, {"blink", .14}};
+  const double d = std::clamp(duration > 0 ? duration : natural[move], .05, 60.);
+  amount = std::isfinite(amount) ? std::clamp(amount, -10., 10.) : 1;
+  // The property's own value where the move starts and where it ends, so a
+  // move lands back on whatever animation was there.
+  auto value = [&](const char *property, double fallback, double at) {
+    return evaluate(layer.value(property), at, scene).toDouble(fallback);
+  };
+  QJsonObject result = scene;
+  QString e;
+  auto key = [&](const char *property, double at, double v, const char *easing = "ease_in_out") {
+    if (result.isEmpty())
+      return;
+    result = withKeyframe(result, layerId, property, std::max(0., time + at), v, easing, &e);
+  };
+  if (move == "hop" || move == "jump") {
+    const double y0 = value("y", 0, time), y1 = value("y", 0, time + d), h = (move == "hop" ? .06 : .18) * amount;
+    key("y", 0, y0, "ease_out");
+    key("y", d / 2, std::min(y0, y1) - h, "ease_in");
+    key("y", d, y1);
+  } else if (move == "shake") {
+    const double x0 = value("x", 0, time), x1 = value("x", 0, time + d);
+    key("x", 0, x0, "linear");
+    for (int i = 1; i < 8; ++i)
+      key("x", d * i / 8, x0 + (i % 2 ? 1 : -1) * .012 * amount * (1 - i / 8.), "linear");
+    key("x", d, x1);
+  } else if (move == "nod" || move == "wave" || move == "spin") {
+    const double r0 = value("rotation", 0, time), r1 = value("rotation", 0, time + d);
+    key("rotation", 0, r0);
+    if (move == "nod") {
+      key("rotation", d * .35, r0 + 9 * amount);
+      key("rotation", d * .7, r0 - 4 * amount);
+    } else if (move == "wave") {
+      for (int i = 1; i < 5; ++i)
+        key("rotation", d * i / 5, r0 + (i % 2 ? -25 : 25) * amount);
+    } else {
+      key("rotation", d, r1 + 360 * (amount < 0 ? -1 : 1));
+      return result.isEmpty() ? fail(e) : result;
+    }
+    key("rotation", d, r1);
+  } else if (move == "walk") {
+    const double x0 = value("x", 0, time), y0 = value("y", 0, time);
+    const double target = std::isfinite(to) ? to : x0 + .2 * amount;
+    key("x", 0, x0, "linear");
+    key("x", d, target, "linear");
+    for (double s = 0; s + .15 <= d; s += .3) { // a step every 0.3 s, a little bob on each
+      key("y", s, y0);
+      key("y", s + .15, y0 - .015 * std::abs(amount));
+    }
+    key("y", d, y0);
+  } else if (move == "pop") {
+    key("scale_x", 0, 0, "ease_out");
+    key("scale_y", 0, 0, "ease_out");
+    key("scale_x", d * .7, 1.15 * amount);
+    key("scale_y", d * .7, 1.15 * amount);
+    key("scale_x", d, amount);
+    key("scale_y", d, amount);
+  } else if (move == "squash") {
+    const double s0 = value("scale_y", 1, time), s1 = value("scale_y", 1, time + d);
+    key("scale_y", 0, s0, "ease_out");
+    key("scale_y", d * .3, s0 * (1 - .3 * amount));
+    key("scale_y", d * .65, s0 * (1 + .1 * amount));
+    key("scale_y", d, s1);
+  } else if (move == "blink") {
+    const double s0 = value("scale_y", 1, time), s1 = value("scale_y", 1, time + d);
+    key("scale_y", 0, s0, "linear");
+    key("scale_y", d * .4, .08, "linear");
+    key("scale_y", d, s1, "linear");
+  }
+  return result.isEmpty() ? fail(e) : result;
 }
 } // namespace motion

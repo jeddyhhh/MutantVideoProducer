@@ -852,7 +852,11 @@ QJsonArray McpServer::toolList()
         "arranges selected layer_ids by operation and reference, preserving animation offsets. lock protects layer edits and descendants. "
         "brand applies a reusable font/palette kit to tagged static brand_role fills and static text fonts; locked/animated styles are "
         "preserved. v1 scenes retain their appearance; v2 adds paths (M/L/Q/C/Z commands), parented groups, symbols/instances, particles, "
-        "repeaters, charts, camera, masks, gradients, shadows/glow, trails/motion_blur and character/word/line text_animation. Animate "
+        "repeaters, charts, camera, masks, gradients, shadows/glow, trails/motion_blur and character/word/line text_animation. Layer "
+        "shading (0-1, light from shading_angle, default 225 = top left), contact_shadow (0-1), blur (fraction of height) and depth (0-1, "
+        "blurred by camera.depth_of_field as the camera zooms in); scene motion_blur {samples, shutter seconds}. A track binding's "
+        "visemes give mouth shapes: {audio:binding, viseme:A|E|O|L|F|M|rest} is 1 while speaking that shape. Characters "
+        "(action characters / add_character) come with such mouths; source_track bindings follow later edits of the track. Animate "
         "properties with {keyframes:[[event-local seconds,value,easing?],...],easing,loop,ping_pong}; numeric, colour, discrete and "
         "compatible path morph values work. follow:{path:layer_id,progress,orient,loop} follows curved paths. Scene variables substitute "
         "{{name}} in text; datasets drive charts. Colours are #RRGGBB, or #AARRGGBB with the alpha FIRST (#00000088 is clear: use "
@@ -863,7 +867,7 @@ QJsonArray McpServer::toolList()
         {{"action",
           prop("string",
                "capabilities, presets, validate, create, get, update, keyframe, bind_audio, export_template, import_template, layout, "
-               "lock, brand")},
+               "lock, brand, move, characters, add_character, save_character")},
          {"event_id", prop("integer", "Existing graphics event")},
          {"preset",
           prop("string", "Existing broadcast layouts or motion_race/titles/chart/route/particles/morph/audio/reusable (motion_ prefix)")},
@@ -891,7 +895,15 @@ QJsonArray McpServer::toolList()
          {"operation", prop("string", "left, hcenter, right, top, vcenter, bottom, distribute_h, distribute_v")},
          {"reference", prop("string", "canvas (default), safe or selection")},
          {"locked", prop("boolean", "Protect selected layers (true), or unlock them (false)")},
-         {"brand", prop("object", "version:1, name, font and primary/secondary/accent/background/foreground colours")}},
+         {"brand", prop("object", "version:1, name, font and primary/secondary/accent/background/foreground colours")},
+         {"move", prop("string", "move: hop, jump, shake, nod, wave, spin, walk, pop, squash or blink, on layer_id at time")},
+         {"amount", prop("number", "move: how big (default 1)")},
+         {"to", prop("number", "move walk: the x to walk to")},
+         {"character", prop("string", "add_character: a name or file from action characters")},
+         {"name", prop("string", "add_character: who they are (their binding is the name in lower case); save_character: its library name")},
+         {"x", prop("number", "add_character: left edge, 0 to 1")},
+         {"ground", prop("number", "add_character: where their feet are, 0 to 1 (default 0.9)")},
+         {"colours", prop("object", "add_character: their colour settings, e.g. {jacket: '#d7263d'}")}},
         {"action"}));
     t.append(tool("waveform_graphic",
                   "Draws real source audio as a native waveform. Actions create/get/update/refresh. Supply source_event_id or media_id. "
@@ -1811,11 +1823,19 @@ QJsonObject McpServer::ToolCall::tool_graphics_overlay()
             out.append(QJsonObject{{"id", id}, {"scene", graphics::scene(id)}});
         return jsonResult({{"presets", out}});
     }
+    if (!wave && action == "characters") {
+        QJsonArray out;
+        for (const auto& c : graphics::characterLibrary())
+            out.append(QJsonObject{{"name", c.character["name"]}, {"path", c.path}, {"built_in", c.builtIn}, {"kind", c.character["kind"]},
+                                   {"colours", c.character["variables"]}});
+        return jsonResult({{"characters", out}});
+    }
     if (!QStringList{"create", "get", "update", "refresh", "keyframe", "bind_audio", "export_template", "import_template", "layout",
-                     "lock", "brand"}
+                     "lock", "brand", "move", "add_character", "save_character"}
              .contains(action)
         || (wave
-            && QStringList{"keyframe", "bind_audio", "export_template", "import_template", "layout", "lock", "brand"}.contains(action))
+            && QStringList{"keyframe", "bind_audio", "export_template", "import_template", "layout", "lock", "brand", "move", "add_character",
+                           "save_character"}.contains(action))
         || (!wave && action == "refresh"))
         return errorResult("Unsupported graphics action.");
     Timeline tl = project->timeline();
@@ -1834,6 +1854,53 @@ QJsonObject McpServer::ToolCall::tool_graphics_overlay()
     QJsonObject data = c ? c->generator.data : QJsonObject{};
     double at = has("at") ? num("at") : sec(w->m_timeline->cursorTime()), length = has("length") ? num("length") : 10;
     double rate = 1;
+    if (!wave && QStringList{"move", "add_character", "save_character"}.contains(action)) {
+        QString error;
+        QJsonObject changed;
+        if (action == "move") {
+            changed = motion::withMove(data, str("layer_id"), str("move"), num("time"), num("duration", 0), num("amount", 1),
+                                       has("to") ? num("to") : std::nan(""), &error);
+        } else if (action == "save_character") {
+            QString path;
+            const QJsonObject character = motion::characterFrom(data, str("layer_id"), str("name"), &error);
+            if (character.isEmpty() || !graphics::saveCharacter(character, &path, &error))
+                return errorResult(error);
+            return jsonResult({{"saved", path}, {"character", character["name"]}});
+        } else {
+            const auto library = graphics::characterLibrary();
+            const QString wanted = str("character");
+            auto it = std::find_if(library.begin(), library.end(), [&](const graphics::CharacterFile& f) {
+                return f.character["name"].toString().compare(wanted, Qt::CaseInsensitive) == 0 || f.path == wanted
+                       || QFileInfo(f.path).completeBaseName().compare(wanted, Qt::CaseInsensitive) == 0;
+            });
+            if (it == library.end())
+                return errorResult("Unknown character: action characters lists the library.");
+            data["version"] = 2;
+            const int before = int(data.value("layers").toArray().size());
+            changed = motion::withCharacter(data, it->character, str("name"), has("x") ? num("x") : std::nan(""), num("ground", .9), &error);
+            if (!changed.isEmpty() && a["colours"].isObject()) {
+                const QString key = changed["layers"].toArray()[before].toObject()["id"].toString();
+                QJsonObject vars = changed["variables"].toObject();
+                const QJsonObject colours = a["colours"].toObject();
+                for (auto c = colours.begin(); c != colours.end(); ++c)
+                    if (vars.contains(key + "_" + c.key()))
+                        vars[key + "_" + c.key()] = c.value();
+                changed["variables"] = vars;
+            }
+            if (!changed.isEmpty()) {
+                c->generator.data = changed;
+                apply(tl, "Graphics / add character");
+                const QString key = changed["layers"].toArray()[before].toObject()["id"].toString();
+                return jsonResult({{"event_id", eventId}, {"character", key}, {"binding", key},
+                                   {"hint", "bind_audio with source_track and binding \"" + key + "\": the mouth takes the shape of the track's words"}});
+            }
+        }
+        if (changed.isEmpty())
+            return errorResult(error);
+        c->generator.data = changed;
+        apply(tl, "Graphics / " + action);
+        return jsonResult({{"event_id", eventId}, {"data", changed}});
+    }
     if (!wave && QStringList{"layout", "lock", "brand"}.contains(action)) {
         QString error;
         QJsonObject changed;

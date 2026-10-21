@@ -36,9 +36,11 @@ Keep every character on their own track: that is what the lip sync follows.
 
 ## 4. Build a character
 
-For a head start, drag **Animation: characters** instead of the blank canvas: two ready-made characters that talk,
-gesture and blink. Bind their voice tracks as `voice_a` and `voice_b` (step 5) and change their colours in the
-scene variables (`a_jacket`, `b_hat`...). To build your own:
+For a head start, press **Add character...** (Layout tab) and pick one from the library: a kid, a teacher, a bear and
+more, each with a mouth that takes the shape of their words, arms that gesture and eyes that blink. Name them (`Gus`),
+bind their voice track under `gus` (step 5), and change their colours in the scene variables (`gus_jacket`...).
+**Animation: characters** is a two-shot of two of them already in a scene. Save your own with **Save as character...**.
+To build one from shapes:
 
 On the **Layout** tab:
 
@@ -68,7 +70,8 @@ On the **Layout** tab:
    0.1 when silent, 2.4 at full volume, and press **Follow**.
 4. **Apply data to preview** and play: the mouth flaps through all of Gus's lines.
 
-Bind each character in the scene the same way, each under their own name.
+Bind each character in the scene the same way, each under their own name. A binding from a track follows it: move or
+replace a line later and the mouth moves with it.
 
 The same binding can drive more than the mouth. A few touches that make characters feel alive:
 

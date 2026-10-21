@@ -15,6 +15,56 @@ Drag an **Animation** preset, or **Blank Graphics Canvas**, from the Generators 
 
 Presets: curved route with reusable scene objects, animated typography, data chart, revealed route, deterministic confetti, morphing shapes, audio-reactive shapes/bars, reusable information cards, and two cut-out **characters** whose mouths, arms and bodies follow the audio bindings `voice_a` and `voice_b` (bind each character's voice track under those names; their hat, band, jacket, mitten and skin colours are the scene variables `a_hat`, `b_jacket` and so on). These are editable starting points.
 
+## Characters
+
+**Add character...** (under the layer list) puts a ready-made cut-out character into the scene: kids (with a pompom
+hat, long hair, ear flaps or a hood), a man with a cap and beard, a teacher, a woman and a bear. Give them a name, such
+as `Gus`:
+
+- Their layers' ids start with their name (`gus`, `gus_head`, `gus_mouth_O`...), so several can share a scene; a
+  second Gus becomes `gus_2`.
+- Their colours are scene variables (`gus_jacket`, `gus_hat`, `gus_skin`...): change them in **Keys** with **Scene
+  variables**, or in Scene data.
+- Their voice binding is their name in lower case. Bind their voice track under it (**Scene > Bind audio for
+  animation...**, the track, binding name `gus`) and they talk: the mouth opens with the voice, the arms gesture and the
+  body bobs.
+- **Mouth shapes**: the mouth takes the shape of the words (open A, wide E, round O, small L, teeth-on-lip F, closed M
+  for m/b/p, and a resting mouth when quiet). The shapes come from each line's words: a generated voice's text (Generate
+  Voice, Generate Dialogue), spread over the sound of the line, or its word times when the take was aligned.
+
+**Save as character...** saves the selected group (a character you made or changed) to your library, in your profile's
+`Media/Graphics Templates/Characters`; it then appears in Add character in every project. Its fill colours become its
+settings and its most used audio binding becomes its voice.
+
+Make your own talking mouth with layers whose opacity is `{"audio": "gus", "viseme": "O"}`: it is 1 while Gus is
+saying an O, and 0 otherwise. The shapes are `A`, `E`, `O`, `L`, `F`, `M` and `rest`.
+
+**Lip sync follows edits.** A binding made from a track remembers the track. Move, trim, replace or delete a line on it
+(or move the scene) and the mouth's analysis is redone as part of the same edit, so it never drifts from the voice; one
+undo puts both back.
+
+## Moves
+
+The **Moves** box on the Keys tab adds a ready-made move to the selected layer at the playhead, landing back on its own
+animation: **hop**, **jump**, **shake**, **nod**, **wave** (on an arm's group, which turns at its anchor), **spin**,
+**walk** (to the x you give, with a bob in each step), **pop** (scales in), **squash** and **blink** (on an eyes group).
+**Length** 0 uses the move's natural length; **Amount** makes it bigger or smaller (negative: the other way).
+
+## The look
+
+On the Layout tab, every shape has:
+
+- **shading**, 0 to 1: soft light from the top left (`shading_angle` in degrees changes where it comes from: 225 is the
+  top left, 270 above), a highlight fading into a shadow across the shape.
+- **contact shadow**, 0 to 1: a soft shadow on the ground under the layer's box.
+- **blur**: softens the layer (a fraction of the picture's height).
+- **depth**, 0 to 1: how far back the layer is. With **Depth of field** on the Scene tab, far layers blur as the camera
+  zooms in (a close-up softens the background); 0 is the subject's plane.
+
+The Scene tab's **Look** box also turns on **Motion blur**: the whole picture, camera included, is averaged over the
+shutter time, so crash zooms, whip pans and fast hits smear. It draws each frame five times, so the preview is slower
+with it on.
+
 ## Layout and brand workflow
 
 The composer toolbar provides **Snap**, **Arrange**, **Lock**, **Unlock** and **Brand kit…**.

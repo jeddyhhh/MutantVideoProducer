@@ -67,7 +67,9 @@ Story chapters lay out a documentary, compound sequences nest one edit inside an
 Build titles, lower thirds, broadcast layouts, charts and animated scenes directly
 inside the editor. The general 2D graphics engine supports parented layers, reusable
 objects, curved paths, keyframes, easing, morphing, masks, cameras, particles and
-repeaters. Audio and beat bindings connect animation to your soundtrack.
+repeaters. Audio and beat bindings connect animation to your soundtrack. A character library brings
+cut-out characters whose mouths take the shape of their words and follow their voice track through later edits;
+ready-made moves, soft shading, contact shadows, depth of field and motion blur finish the look.
 
 Make cut-out cartoons too: bind a scene to each character's voice track and their mouth, arms and body
 move with their own lines, through every line in the shot. The [animated short tutorial](docs/tutorials/17-animated-short.md)

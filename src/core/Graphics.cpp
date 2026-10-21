@@ -3,7 +3,14 @@
 #include "core/BeatTracker.h"
 #include "core/MotionGraphics.h"
 #include "core/Project.h"
+#include "core/Brand.h"
+#include "core/Profiles.h"
+#include <QCoreApplication>
+#include <QDir>
+#include <QFile>
 #include <QFileInfo>
+#include <QSaveFile>
+#include <QStandardPaths>
 #include <QImageReader>
 #include <QJsonDocument>
 #include <QPainter>
@@ -11,6 +18,7 @@
 #include <QTextLayout>
 #include <QGlyphRun>
 #include <QPainterPath>
+#include <QRegularExpression>
 #include <algorithm>
 #include <cmath>
 
@@ -480,6 +488,46 @@ QJsonObject buildWaveform(const QString &path, int stream, double start,
   }
   return result;
 }
+namespace {
+// A cartoon mouth's shape for a letter: A (open), E (wide), O (round), M (closed: m b p), F (teeth on the lip: f v),
+// L (the other consonants: a small open mouth).
+QString letterShape(QChar c) {
+  switch (c.toLower().unicode()) {
+  case 'a': case 'i': case 'h': case 'y': return "A";
+  case 'e': return "E";
+  case 'o': case 'u': case 'w': case 'q': return "O";
+  case 'm': case 'b': case 'p': return "M";
+  case 'f': case 'v': return "F";
+  default: return c.isLetter() ? "L" : QString();
+  }
+}
+// The shapes of one word over [a, b) seconds: its letters share the time, repeats merged; then rest.
+void wordShapes(QJsonArray &out, const QString &word, double a, double b) {
+  QStringList shapes;
+  for (QChar c : word)
+    if (const QString s = letterShape(c); !s.isEmpty() && (shapes.isEmpty() || shapes.last() != s))
+      shapes << s;
+  if (shapes.isEmpty() || b <= a)
+    return;
+  const double each = (b - a) / shapes.size();
+  for (int i = 0; i < shapes.size(); ++i)
+    out.append(QJsonArray{a + each * i, shapes[i]});
+  out.append(QJsonArray{b, "rest"});
+}
+// What a track binding depends on: the events overlapping the scene, and the scene's place.
+QString trackSignature(const Track &track, double from, double length, int bins) {
+  QStringList parts{QString::number(from, 'f', 4), QString::number(length, 'f', 4), QString::number(bins)};
+  for (const Clip &c : track.clips) {
+    const double start = double(c.start) / kUsPerSecond, end = double(c.end()) / kUsPerSecond;
+    if (end <= from || start >= from + length)
+      continue;
+    parts << QStringLiteral("%1:%2:%3:%4:%5:%6:%7:%8").arg(c.id).arg(c.start).arg(c.length).arg(c.sourceIn).arg(c.mediaId).arg(c.speed)
+                 .arg(c.muted).arg(qHash(c.narration.value("text").toString(c.name)));
+  }
+  return parts.join(';');
+}
+} // namespace
+
 QJsonObject trackEnvelope(const Track &track, const MediaMap &media, double from, double length, int bins,
                           QString *error) {
   auto fail = [&](QString e) {
@@ -529,7 +577,154 @@ QJsonObject trackEnvelope(const Track &track, const MediaMap &media, double from
     la.append(left[size_t(i)]);
     ra.append(right[size_t(i)]);
   }
-  return {{"version", 1}, {"source_in", 0}, {"duration", length}, {"left", la}, {"right", ra}, {"rate", 1}, {"offset", 0}};
+  // Mouth shapes from each line's words: a take's word times when it has them (aligned narration), or else the words
+  // spread over the part of the event with sound, by their length.
+  QJsonArray shapes;
+  for (const Clip &c : track.clips) {
+    const double start = double(c.start) / kUsPerSecond, end = double(c.end()) / kUsPerSecond;
+    if (c.muted || end <= from || start >= from + length)
+      continue;
+    QString text = c.narration.value("text").toString(c.name);
+    if (text.startsWith(QLatin1String("[Timing] ")))
+      text = text.mid(9);
+    const QJsonArray takes = c.narration.value("takes").toArray();
+    const QJsonArray words = takes.isEmpty() ? QJsonArray{}
+                                             : takes[std::clamp(c.narration.value("active_take").toInt(), 0, int(takes.size()) - 1)]
+                                                   .toObject().value("words").toArray();
+    if (!words.isEmpty()) {
+      for (auto w : words) {
+        const auto o = w.toObject();
+        wordShapes(shapes, o["text"].toString(), start - from + o["start"].toString().toDouble() / kUsPerSecond,
+                   start - from + o["end"].toString().toDouble() / kUsPerSecond);
+      }
+      continue;
+    }
+    // The sound's first and last loud moments inside the event.
+    const int b0 = std::clamp(int((start - from) / length * bins), 0, bins - 1), b1 = std::clamp(int((end - from) / length * bins), 0, bins - 1);
+    int first = -1, last = -1;
+    for (int i = b0; i <= b1; ++i)
+      if (std::max(left[size_t(i)], right[size_t(i)]) > .05) {
+        if (first < 0)
+          first = i;
+        last = i;
+      }
+    const QStringList list = text.split(QRegularExpression("\\s+"), Qt::SkipEmptyParts);
+    if (first < 0 || list.isEmpty())
+      continue;
+    const double a = double(first) / bins * length, b = double(last + 1) / bins * length;
+    double weight = 0;
+    for (const QString &w : list)
+      weight += w.size() + (w.back().isPunct() ? 3 : 1); // (a pause after punctuation)
+    double at = a;
+    for (const QString &w : list) {
+      const double span = (b - a) * w.size() / weight, pause = (b - a) * (w.back().isPunct() ? 3 : 1) / weight;
+      wordShapes(shapes, w, at, at + span);
+      at += span + pause;
+    }
+  }
+  return {{"version", 1}, {"source_in", 0}, {"duration", length}, {"left", la}, {"right", ra}, {"rate", 1}, {"offset", 0},
+          {"track_id", track.id}, {"signature", trackSignature(track, from, length, bins)}, {"visemes", shapes}};
+}
+
+QString characterFolder() {
+  const auto home = Profiles::instance().active().home;
+  return home.isEmpty() ? brand::userFolder(QStandardPaths::DocumentsLocation, QStringLiteral("Graphics")) + "/Characters"
+                        : home + "/Media/Graphics Templates/Characters";
+}
+std::vector<CharacterFile> characterLibrary() {
+  std::vector<CharacterFile> out;
+  for (const auto &[folder, builtIn] : {std::pair{QDir(QCoreApplication::applicationDirPath()).filePath("characters"), true},
+                                        std::pair{characterFolder(), false}})
+    for (const QFileInfo &f : QDir(folder).entryInfoList({"*.json"}, QDir::Files, QDir::Name)) {
+      QFile file(f.filePath());
+      if (f.size() > 4 * 1024 * 1024 || !file.open(QIODevice::ReadOnly))
+        continue;
+      const QJsonObject c = QJsonDocument::fromJson(file.readAll()).object();
+      if (c["version"].toInt() == 1 && !c["layers"].toArray().isEmpty())
+        out.push_back({f.filePath(), c, builtIn});
+    }
+  return out;
+}
+bool saveCharacter(const QJsonObject &character, QString *path, QString *error) {
+  QString name;
+  for (QChar c : character["name"].toString())
+    name += c.isLetterOrNumber() || c == ' ' || c == '-' ? c : QChar('_');
+  name = name.trimmed().isEmpty() ? QStringLiteral("Character") : name.trimmed();
+  if (!QDir().mkpath(characterFolder())) {
+    if (error)
+      *error = QStringLiteral("Can't create %1.").arg(characterFolder());
+    return false;
+  }
+  QString target = QDir(characterFolder()).filePath(name + ".json");
+  for (int n = 2; QFileInfo::exists(target); ++n)
+    target = QDir(characterFolder()).filePath(QStringLiteral("%1 %2.json").arg(name).arg(n));
+  QSaveFile file(target);
+  if (!file.open(QIODevice::WriteOnly) || file.write(QJsonDocument(character).toJson(QJsonDocument::Compact)) < 0 || !file.commit()) {
+    if (error)
+      *error = QStringLiteral("Can't save %1.").arg(target);
+    return false;
+  }
+  if (path)
+    *path = target;
+  return true;
+}
+bool trackBindingsStale(const Timeline &tl) {
+  for (const Track &track : tl.tracks)
+    for (const Clip &c : track.clips) {
+      if (c.generator.type != QLatin1String("graphics_overlay") || !c.generator.data.contains("audio"))
+        continue;
+      const QJsonObject audio = c.generator.data["audio"].toObject();
+      for (auto it = audio.begin(); it != audio.end(); ++it) {
+        const QJsonObject binding = it.value().toObject();
+        if (!binding.contains("track_id"))
+          continue;
+        const auto source = std::find_if(tl.tracks.begin(), tl.tracks.end(), [&](const Track &t) { return t.id == binding["track_id"].toInt(); });
+        if (source != tl.tracks.end()
+            && trackSignature(*source, double(c.start) / kUsPerSecond, double(c.length) / kUsPerSecond,
+                              std::clamp(int(binding["left"].toArray().size()), 64, 8192)) != binding["signature"].toString())
+          return true;
+      }
+    }
+  return false;
+}
+bool followTrackBindings(Timeline &tl, const MediaMap &media) {
+  bool changed = false;
+  for (Track &track : tl.tracks)
+    for (Clip &c : track.clips) {
+      if (c.generator.type != QLatin1String("graphics_overlay") || !c.generator.data.contains("audio"))
+        continue;
+      QJsonObject audio = c.generator.data["audio"].toObject();
+      bool touched = false;
+      for (const QString &name : audio.keys()) {
+        const QJsonObject binding = audio[name].toObject();
+        if (!binding.contains("track_id"))
+          continue;
+        const auto source = std::find_if(tl.tracks.begin(), tl.tracks.end(), [&](const Track &t) { return t.id == binding["track_id"].toInt(); });
+        if (source == tl.tracks.end())
+          continue; // (the track was deleted: the mouth keeps what it had)
+        const double from = double(c.start) / kUsPerSecond, length = double(c.length) / kUsPerSecond;
+        const int bins = std::clamp(int(binding["left"].toArray().size()), 64, 8192);
+        const QString signature = trackSignature(*source, from, length, bins);
+        if (signature == binding["signature"].toString())
+          continue;
+        QString error;
+        QJsonObject fresh = trackEnvelope(*source, media, from, length, bins, &error);
+        if (fresh.isEmpty()) { // nothing on the track during the scene any more: silence
+          QJsonArray quiet;
+          for (int i = 0; i < bins; ++i)
+            quiet.append(0);
+          fresh = {{"version", 1}, {"source_in", 0}, {"duration", length}, {"left", quiet}, {"right", quiet}, {"rate", 1}, {"offset", 0},
+                   {"track_id", source->id}, {"signature", signature}, {"visemes", QJsonArray{}}};
+        }
+        audio[name] = fresh;
+        touched = true;
+      }
+      if (touched) {
+        c.generator.data["audio"] = audio;
+        changed = true;
+      }
+    }
+  return changed;
 }
 void addGenerators(std::vector<GeneratorDef> &list) {
   GeneratorDef d;

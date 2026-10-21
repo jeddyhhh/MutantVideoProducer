@@ -18,6 +18,7 @@
 #include <QFontComboBox>
 #include <QFormLayout>
 #include <QGroupBox>
+#include <QInputDialog>
 #include <QHBoxLayout>
 #include <QHeaderView>
 #include <QJsonDocument>
@@ -345,6 +346,8 @@ public:
     QComboBox* align;
     QPushButton *fill, *stroke;
     std::map<QString, QDoubleSpinBox*> spins;
+    QCheckBox* sceneBlur = nullptr;
+    QDoubleSpinBox *sceneShutter = nullptr, *sceneDepth = nullptr;
     bool loading = false;
     Project* project = nullptr;
     double duration = 10, currentTime = 0, eventStart = -1; // (eventStart: where the event is on the timeline)
@@ -416,6 +419,14 @@ public:
         auto* symbolButton = new QPushButton(tr("Make reusable object"));
         left->addWidget(symbolButton);
         connect(symbolButton, &QPushButton::clicked, this, [this] { makeSymbol(); });
+        auto* characterButton = new QPushButton(tr("Add character..."));
+        characterButton->setObjectName("graphicsAddCharacter");
+        left->addWidget(characterButton);
+        connect(characterButton, &QPushButton::clicked, this, [this] { addCharacter(); });
+        auto* saveCharacterButton = new QPushButton(tr("Save as character..."));
+        saveCharacterButton->setObjectName("graphicsSaveCharacter");
+        left->addWidget(saveCharacterButton);
+        connect(saveCharacterButton, &QPushButton::clicked, this, [this] { saveAsCharacter(); });
         for (auto label : {tr("Duplicate"), tr("Delete"), tr("Raise"), tr("Lower")}) {
             auto* button = new QPushButton(label);
             left->addWidget(button);
@@ -560,7 +571,8 @@ public:
         align = new QComboBox;
         align->addItems({"left", "center", "right"});
         form->addRow(tr("Text alignment"), align);
-        for (auto key : {"x", "y", "width", "height", "font_size", "opacity", "rotation", "radius", "stroke_width"}) {
+        for (auto key : {"x", "y", "width", "height", "font_size", "opacity", "rotation", "radius", "stroke_width", "shading", "contact_shadow",
+                         "blur", "depth"}) {
             auto* spin = new QDoubleSpinBox;
             spin->setObjectName("graphics_" + QString(key));
             spin->setDecimals(4);
@@ -568,13 +580,23 @@ public:
             spin->setSingleStep(.01);
             if (QString(key) == "rotation")
                 spin->setRange(-360, 360);
-            else if (QString(key) == "opacity")
+            else if (QString(key) == "opacity" || QString(key) == "shading" || QString(key) == "contact_shadow" || QString(key) == "depth")
                 spin->setRange(0, 1);
+            else if (QString(key) == "blur")
+                spin->setRange(0, .2);
             else if (QString(key) == "font_size")
                 spin->setRange(.001, 1);
             else if (QString(key) == "width" || QString(key) == "height")
                 spin->setRange(0, 4);
             spins[key] = spin;
+            if (QString(key) == "shading")
+                spin->setToolTip(tr("Soft light from the top left: a highlight fading into a shadow (0 to 1)"));
+            else if (QString(key) == "contact_shadow")
+                spin->setToolTip(tr("A soft shadow on the ground under the layer (0 to 1)"));
+            else if (QString(key) == "blur")
+                spin->setToolTip(tr("Softens the layer (a fraction of the picture's height)"));
+            else if (QString(key) == "depth")
+                spin->setToolTip(tr("How far back the layer is: with the camera's depth of field (Scene tab), far layers blur as it zooms in"));
             form->addRow(QString(key).replace('_', ' '), spin);
             connect(spin, qOverload<double>(&QDoubleSpinBox::valueChanged), this, [this, key](double v) { change(key, v); });
         }
@@ -1144,6 +1166,78 @@ public:
         data["layers"] = a;
         refresh(a.size() - 1);
     }
+    // Adds a character from the library (the program's and the user's saved ones) under a name: its voice binding is
+    // that name in lower case.
+    void addCharacter()
+    {
+        const auto library = graphics::characterLibrary();
+        if (library.empty()) {
+            QMessageBox::information(this, tr("Add character"), tr("The character library is missing from this installation."));
+            return;
+        }
+        QDialog dialog(this);
+        dialog.setWindowTitle(tr("Add Character"));
+        dialog.setObjectName("graphicsCharacterDialog");
+        auto* form = new QFormLayout(&dialog);
+        auto* pick = new QListWidget;
+        pick->setObjectName("graphicsCharacterList");
+        for (const auto& c : library)
+            pick->addItem(c.builtIn ? c.character["name"].toString() : tr("%1 (saved)").arg(c.character["name"].toString()));
+        pick->setCurrentRow(0);
+        form->addRow(pick);
+        auto* nameEdit = new QLineEdit;
+        nameEdit->setObjectName("graphicsCharacterName");
+        nameEdit->setPlaceholderText(tr("Their name, e.g. Gus"));
+        form->addRow(tr("Name"), nameEdit);
+        auto* note = new QLabel(tr("Their mouth moves with the voice bound under their name (lower case): Scene > Bind audio for "
+                                   "animation, from their voice track. With the track's words, the mouth takes their shapes."));
+        note->setWordWrap(true);
+        form->addRow(note);
+        auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
+        form->addRow(buttons);
+        connect(buttons, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
+        connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+        if (dialog.exec() != QDialog::Accepted || pick->currentRow() < 0)
+            return;
+        const QJsonObject& character = library[size_t(pick->currentRow())].character;
+        const QString who = nameEdit->text().trimmed().isEmpty() ? character["name"].toString() : nameEdit->text().trimmed();
+        data["version"] = 2;
+        ensureIds();
+        const int before = int(data.value("layers").toArray().size());
+        QString error;
+        const QJsonObject added = motion::withCharacter(data, character, who, .5 - character["width"].toDouble(.14) / 2, .9, &error);
+        if (added.isEmpty()) {
+            QMessageBox::warning(this, tr("Add character"), error);
+            return;
+        }
+        data = added;
+        refresh(before);
+        syncJson();
+        const QString binding = data.value("layers").toArray()[before].toObject()["id"].toString();
+        QMessageBox::information(this, tr("Add character"), tr("%1 is in the scene. Bind their voice track under the name \"%2\" "
+                                                               "(Scene > Bind audio for animation) and they talk.").arg(who, binding));
+    }
+    // Saves the selected group (a character) to the user's library.
+    void saveAsCharacter()
+    {
+        const QJsonObject o = current();
+        if (o["type"].toString() != "group") {
+            QMessageBox::information(this, tr("Save as character"), tr("Select a character's group first."));
+            return;
+        }
+        bool ok = false;
+        const QString title = QInputDialog::getText(this, tr("Save as Character"), tr("Character name"), QLineEdit::Normal,
+                                                    o["name"].toString(o["id"].toString()), &ok);
+        if (!ok)
+            return;
+        QString error, saved;
+        const QJsonObject character = motion::characterFrom(data, o["id"].toString(), title, &error);
+        if (character.isEmpty() || !graphics::saveCharacter(character, &saved, &error)) {
+            QMessageBox::warning(this, tr("Save as character"), error);
+            return;
+        }
+        QMessageBox::information(this, tr("Save as character"), tr("Saved to your character library:\n%1").arg(QDir::toNativeSeparators(saved)));
+    }
     void makeSymbol()
     {
         if (!editableSelection())
@@ -1517,6 +1611,53 @@ public:
         audioState->setWordWrap(true);
         ff->addRow(audioState);
         layout->addWidget(follow);
+        auto* movesBox = new QGroupBox(tr("Moves"));
+        movesBox->setObjectName("graphicsMoves");
+        auto* mf = new QFormLayout(movesBox);
+        auto* move = new QComboBox;
+        move->setObjectName("graphicsMove");
+        for (const QString& m : motion::moves())
+            move->addItem(m, m);
+        mf->addRow(tr("Move"), move);
+        auto* moveLength = new QDoubleSpinBox;
+        moveLength->setRange(0, 60);
+        moveLength->setDecimals(2);
+        moveLength->setSpecialValueText(tr("Natural"));
+        mf->addRow(tr("Length (s)"), moveLength);
+        auto* moveAmount = new QDoubleSpinBox;
+        moveAmount->setRange(-10, 10);
+        moveAmount->setValue(1);
+        mf->addRow(tr("Amount"), moveAmount);
+        auto* walkTo = new QDoubleSpinBox;
+        walkTo->setRange(-1, 2);
+        walkTo->setDecimals(3);
+        walkTo->setValue(.6);
+        mf->addRow(tr("Walk to x"), walkTo);
+        auto* addMove = new QPushButton(tr("Add move at the playhead"));
+        addMove->setObjectName("graphicsAddMove");
+        mf->addRow(addMove);
+        auto* moveHint = new QLabel(tr("On a character's own group. Wave: on an arm's group (it turns at its anchor). Blink: on the eyes."));
+        moveHint->setWordWrap(true);
+        mf->addRow(moveHint);
+        layout->addWidget(movesBox);
+        connect(addMove, &QPushButton::clicked, this, [=] {
+            const int i = layerRow();
+            if (i < 0 || graphics_workflow::locked(data, current()["id"].toString()))
+                return;
+            data["version"] = 2;
+            ensureIds();
+            QString error;
+            const QJsonObject moved = motion::withMove(data, current()["id"].toString(), move->currentData().toString(), currentTime,
+                                                       moveLength->value(), moveAmount->value(), walkTo->value(), &error);
+            if (moved.isEmpty()) {
+                QMessageBox::information(this, tr("Moves"), error);
+                return;
+            }
+            data = moved;
+            load();
+            refreshKeys();
+            syncJson();
+        });
         connect(followOn, &QPushButton::clicked, this, [this] { followAudio(true); });
         connect(followOff, &QPushButton::clicked, this, [this] { followAudio(false); });
         return w;
@@ -1876,6 +2017,44 @@ public:
             refreshKeys();
             syncJson();
         });
+        auto* look = new QGroupBox(tr("Look"));
+        auto* lf = new QFormLayout(look);
+        sceneBlur = new QCheckBox(tr("Motion blur (fast moves and camera moves smear)"));
+        sceneBlur->setObjectName("graphicsMotionBlur");
+        lf->addRow(sceneBlur);
+        sceneShutter = new QDoubleSpinBox;
+        sceneShutter->setRange(.005, .2);
+        sceneShutter->setDecimals(3);
+        sceneShutter->setSingleStep(.005);
+        sceneShutter->setValue(.02);
+        lf->addRow(tr("Shutter (s)"), sceneShutter);
+        sceneDepth = new QDoubleSpinBox;
+        sceneDepth->setObjectName("graphicsDepthOfField");
+        sceneDepth->setRange(0, 10);
+        sceneDepth->setDecimals(2);
+        sceneDepth->setToolTip(tr("As the camera zooms in, layers with a depth (Layout tab) blur: 0 for none"));
+        lf->addRow(tr("Depth of field"), sceneDepth);
+        layout->addWidget(look);
+        auto setLook = [this] {
+            if (loading)
+                return;
+            data["version"] = 2;
+            if (sceneBlur->isChecked())
+                data["motion_blur"] = QJsonObject{{"samples", 5}, {"shutter", sceneShutter->value()}};
+            else
+                data.remove("motion_blur");
+            auto camera = data["camera"].toObject();
+            if (sceneDepth->value() > 0)
+                camera["depth_of_field"] = sceneDepth->value();
+            else
+                camera.remove("depth_of_field");
+            data["camera"] = camera;
+            load();
+            syncJson();
+        };
+        connect(sceneBlur, &QCheckBox::toggled, this, setLook);
+        connect(sceneShutter, qOverload<double>(&QDoubleSpinBox::valueChanged), this, setLook);
+        connect(sceneDepth, qOverload<double>(&QDoubleSpinBox::valueChanged), this, setLook);
         auto* import = new QPushButton(tr("Import chart data…"));
         layout->addWidget(import);
         connect(import, &QPushButton::clicked, this, [this] { importData(); });
@@ -1982,6 +2161,11 @@ public:
     void load()
     {
         loading = true;
+        if (sceneBlur) { // (value(): reading a missing key with [] would add it)
+            sceneBlur->setChecked(data.contains("motion_blur"));
+            sceneShutter->setValue(data.value("motion_blur").toObject().value("shutter").toDouble(.02));
+            sceneDepth->setValue(data.value("camera").toObject().value("depth_of_field").toDouble());
+        }
         auto o = current();
         propertyTabs->setEnabled(!graphics_workflow::locked(data, o["id"].toString()));
         brandRole->setCurrentText(o["brand_role"].toString().isEmpty() ? "None" : o["brand_role"].toString());

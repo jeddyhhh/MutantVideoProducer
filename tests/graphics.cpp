@@ -9,11 +9,13 @@
 #include <QApplication>
 #include <QDataStream>
 #include <QDir>
+#include <QCheckBox>
 #include <QComboBox>
 #include <QDialog>
 #include <QPushButton>
 #include <QDoubleSpinBox>
 #include <QFile>
+#include <QJsonDocument>
 #include <QListWidget>
 #include <QMouseEvent>
 #include <QOffscreenSurface>
@@ -57,6 +59,115 @@ int main(int argc, char **argv) {
     vars["a_jacket"] = "#00ff00";
     recoloured["variables"] = vars;
     check(picture(recoloured) != silent, "characters preset: the a_jacket variable recolours character A");
+  }
+  // The character library: a kid from it added twice, its mouth taking the shape of the words.
+  {
+    const auto library = graphics::characterLibrary();
+    const auto kid = std::find_if(library.begin(), library.end(), [](const graphics::CharacterFile &f) { return f.path.endsWith("kid.json"); });
+    check(library.size() >= 8 && kid != library.end() && kid->builtIn, QStringLiteral("the character library comes with the program (%1)").arg(library.size()));
+    if (kid != library.end()) {
+      QString error;
+      QJsonObject scene{{"version", 2}, {"layers", QJsonArray{QJsonObject{{"type", "rect"}, {"id", "bg"}, {"x", 0}, {"y", 0}, {"width", 1}, {"height", 1},
+                                                                       {"fill", "#8ecae6"}}}}};
+      scene = motion::withCharacter(scene, kid->character, "Gus", .2, .9, &error);
+      scene = motion::withCharacter(scene, kid->character, "Gus", .6, .9, &error);
+      auto find = [&](const QString &id) {
+        for (auto v : scene["layers"].toArray())
+          if (v.toObject()["id"] == id)
+            return v.toObject();
+        return QJsonObject{};
+      };
+      check(error.isEmpty() && !find("gus").isEmpty() && !find("gus_2_mouth_O").isEmpty() && scene["variables"].toObject().contains("gus_jacket")
+                && scene["variables"].toObject().contains("gus_2_jacket") && motion::validate(scene).isEmpty(),
+            QStringLiteral("a character joins a scene under its name, a second one numbered %1").arg(error));
+      QJsonArray loud;
+      for (int i = 0; i < 64; ++i)
+        loud.append(1);
+      scene["audio"] = QJsonObject{{"gus", QJsonObject{{"version", 1}, {"duration", 2}, {"left", loud}, {"right", loud}, {"rate", 1}, {"offset", 0},
+                                                       {"visemes", QJsonArray{QJsonArray{0, "O"}, QJsonArray{1, "M"}}}}}};
+      auto at = [&](const QString &id, double t) { return motion::evaluate(find(id)["opacity"], t, scene).toDouble(); };
+      check(at("gus_mouth_O", .5) == 1 && at("gus_mouth_A", .5) == 0 && at("gus_mouth_shut_m", 1.5) == 1 && at("gus_mouth_O", 1.5) == 0,
+            "the mouth takes the shape of the words: O, then closed for M");
+      QImage o(640, 360, QImage::Format_ARGB32_Premultiplied), m(640, 360, QImage::Format_ARGB32_Premultiplied);
+      o.fill(Qt::transparent);
+      m.fill(Qt::transparent);
+      motion::render(o, scene, .5);
+      motion::render(m, scene, 1.5);
+      check(o != m, "the mouth shapes are drawn");
+      o.save("creative-test/character-o.png");
+      const QJsonObject saved = motion::characterFrom(scene, "gus", "Gus copy", &error);
+      check(saved["layers"].toArray().size() == kid->character["layers"].toArray().size() && saved["binding"] == "gus" &&
+                saved["layers"].toArray()[0].toObject()["id"] == "root" && saved["variables"].toObject().contains("jacket"),
+            QStringLiteral("a scene's character saves back as a library character %1").arg(error));
+      const QJsonObject again = motion::withCharacter(scene, saved, "Mo", .4, .9, &error);
+      bool moBinding = false;
+      for (auto v : again["layers"].toArray())
+        if (v.toObject()["id"] == "mo_mouth_O")
+          moBinding = v.toObject()["opacity"].toObject()["audio"] == "mo";
+      check(moBinding, "a saved character added again speaks under its new name");
+      // Moves: a hop rises and lands, a walk ends where it was sent.
+      const QJsonObject hop = motion::withMove(scene, "gus", "hop", 1, 0, 1, NAN, &error);
+      auto y = [&](const QJsonObject &s, double t) {
+        for (auto v : s["layers"].toArray())
+          if (v.toObject()["id"] == "gus")
+            return motion::evaluate(v.toObject()["y"], t, s).toDouble();
+        return 0.;
+      };
+      check(!hop.isEmpty() && y(hop, 1.25) < y(hop, 1) - .03 && std::abs(y(hop, 1.5) - y(hop, 1)) < 1e-6, "a hop goes up and lands where it was");
+      const QJsonObject walk = motion::withMove(scene, "gus", "walk", 0, 2, 1, .7, &error);
+      double xEnd = 0;
+      for (auto v : walk["layers"].toArray())
+        if (v.toObject()["id"] == "gus")
+          xEnd = motion::evaluate(v.toObject()["x"], 2, walk).toDouble();
+      check(std::abs(xEnd - .7) < 1e-6 && motion::withMove(scene, "gus", "moonwalk", 0, 0, 1, NAN, &error).isEmpty(),
+            "a walk ends where it was sent; an unknown move is refused");
+    }
+  }
+  // The look: shading, blur, depth of field, contact shadows and the scene's motion blur.
+  {
+    auto drawn = [](const QJsonObject &s, double t = 0) {
+      QImage image(320, 180, QImage::Format_ARGB32_Premultiplied);
+      image.fill(Qt::transparent);
+      motion::render(image, s, t);
+      return image;
+    };
+    auto box = [](QJsonObject extra = {}) {
+      QJsonObject o{{"type", "rect"}, {"id", "box"}, {"x", .3}, {"y", .3}, {"width", .4}, {"height", .4}, {"fill", "#808080"}};
+      for (auto it = extra.begin(); it != extra.end(); ++it)
+        o[it.key()] = it.value();
+      return QJsonObject{{"version", 2}, {"layers", QJsonArray{o}}};
+    };
+    const QImage flat = drawn(box()), shaded = drawn(box({{"shading", .8}}));
+    check(qGray(shaded.pixel(100, 60)) > qGray(flat.pixel(100, 60)) && qGray(shaded.pixel(220, 120)) < qGray(flat.pixel(220, 120)),
+          "shading lights the top left and shadows the bottom right");
+    const QImage soft = drawn(box({{"blur", .03}}));
+    check(qAlpha(soft.pixel(96, 90)) > 0 && qAlpha(soft.pixel(96, 90)) < 255 && qAlpha(flat.pixel(94, 90)) == 0, "a blurred layer has soft edges");
+    QJsonObject far = box({{"depth", 1}});
+    far["camera"] = QJsonObject{{"zoom", 2}, {"depth_of_field", 3}};
+    QJsonObject near = far;
+    auto layers = near["layers"].toArray();
+    auto o = layers[0].toObject();
+    o["depth"] = 0;
+    layers[0] = o;
+    near["layers"] = layers;
+    const QImage farImage = drawn(far), nearImage = drawn(near);
+    int softFar = 0, softNear = 0;
+    for (int x = 0; x < 320; ++x) {
+      softFar += qAlpha(farImage.pixel(x, 90)) > 0 && qAlpha(farImage.pixel(x, 90)) < 250;
+      softNear += qAlpha(nearImage.pixel(x, 90)) > 0 && qAlpha(nearImage.pixel(x, 90)) < 250;
+    }
+    check(softFar > softNear + 4, QStringLiteral("depth of field blurs a far layer as the camera zooms in (%1 soft pixels, near %2)").arg(softFar).arg(softNear));
+    const QImage grounded = drawn(box({{"contact_shadow", 1}, {"fill", "#00000000"}, {"stroke", "#000000"}, {"stroke_width", .002}}));
+    check(qAlpha(grounded.pixel(160, 128)) > 20 && qAlpha(grounded.pixel(160, 90)) == 0, "a contact shadow sits under the layer's box");
+    QJsonObject moving = box({{"x", QJsonObject{{"keyframes", QJsonArray{QJsonArray{0, 0}, QJsonArray{1, .6}}}}}});
+    QJsonObject smeared = moving;
+    smeared["motion_blur"] = QJsonObject{{"samples", 6}, {"shutter", .1}};
+    const QImage sharp = drawn(moving, .5), blurredFrame = drawn(smeared, .5);
+    int partial = 0;
+    for (int x = 0; x < 320; ++x)
+      partial += qAlpha(blurredFrame.pixel(x, 90)) > 10 && qAlpha(blurredFrame.pixel(x, 90)) < 245;
+    check(sharp != blurredFrame && partial > 8 && blurredFrame == drawn(smeared, .5),
+          QStringLiteral("scene motion blur smears what moves, the same every time (%1 smeared pixels)").arg(partial));
   }
   auto g = makeGenerator(*findGeneratorPreset("graphics_broadcast"));
   auto img = renderGenerator(g, {640, 360}, 1. / 3, 0, 10 * kUsPerSecond, {});
@@ -164,6 +275,58 @@ int main(int argc, char **argv) {
           "a track's envelope: each event's sound at its timeline place");
     check(graphics::trackEnvelope(voice, media, 20, 2, 400, &error).isEmpty() && !error.isEmpty(),
           "a track with nothing during the scene is refused");
+    // Mouth shapes from the words, spread over the sound of the line.
+    voice.clips[0].narration["text"] = "Hello, Bob";
+    const auto spoken = graphics::trackEnvelope(voice, media, 9.5, 4, 400, &error)["visemes"].toArray();
+    QStringList shapes;
+    for (auto v : spoken)
+      shapes << v.toArray()[1].toString();
+    check(shapes.contains("O") && shapes.contains("M") && shapes.contains("E") && spoken.first().toArray()[0].toDouble() >= .5 &&
+              spoken.last().toArray()[0].toDouble() <= 1.5,
+          QStringLiteral("a line's mouth shapes come from its words, during its sound (%1)").arg(shapes.join(' ')));
+    // Lip sync follows the voice track: moving the line re-analyses the scene's binding, as part of the same edit.
+    Project project;
+    const int mediaId = project.addMedia(item->info);
+    Timeline tl = project.timeline();
+    Track voiceTrack = voice;
+    voiceTrack.id = tl.allocId();
+    voiceTrack.name = "Gus";
+    for (auto &c : voiceTrack.clips) {
+      c.id = tl.allocId();
+      c.mediaId = mediaId;
+    }
+    QJsonObject sceneData{{"version", 2}, {"layers", QJsonArray{QJsonObject{{"type", "rect"}, {"id", "mouth"}, {"x", 0}, {"y", 0}, {"width", 1}, {"height", 1},
+                                                                       {"scale_y", QJsonObject{{"audio", "gus"}, {"base", 0}, {"amount", 1}}}}}}};
+    sceneData["audio"] = QJsonObject{{"gus", graphics::trackEnvelope(voiceTrack, project.snapshot()->media, 9.5, 4, 400, &error)}};
+    Track picture;
+    picture.id = tl.allocId();
+    picture.type = TrackType::Video;
+    Clip scene;
+    scene.id = tl.allocId();
+    scene.start = TimeUs(9.5 * kUsPerSecond);
+    scene.length = 4 * kUsPerSecond;
+    scene.generator = makeGenerator(*findGeneratorPreset("graphics_blank"));
+    scene.generator.data = sceneData;
+    picture.clips.push_back(scene);
+    tl.tracks = {picture, voiceTrack};
+    project.applyEdit(tl, "lip sync scene");
+    auto loudAt = [&](const Timeline &t) { // the first loud bin of the scene's binding, in seconds
+      const auto left = t.findClip(scene.id)->generator.data["audio"].toObject()["gus"].toObject()["left"].toArray();
+      for (int i = 0; i < left.size(); ++i)
+        if (left[i].toDouble() > .1)
+          return i * 4. / left.size();
+      return -1.;
+    };
+    const double soundBefore = loudAt(project.timeline());
+    check(!graphics::trackBindingsStale(project.timeline()), "a freshly bound scene is up to date");
+    Timeline moved = project.timeline();
+    moved.tracks[1].clips[0].start += kUsPerSecond;
+    project.applyEdit(moved, "move the line");
+    const double soundAfter = loudAt(project.timeline());
+    check(std::abs(soundBefore - .5) < .02 && std::abs(soundAfter - 1.5) < .02 && !graphics::trackBindingsStale(project.timeline()),
+          QStringLiteral("moving a voice line moves the mouth with it (sound at %1 s, then %2 s)").arg(soundBefore).arg(soundAfter));
+    project.undoStack()->undo();
+    check(std::abs(loudAt(project.timeline()) - soundBefore) < .02, "one undo puts the line and the mouth back together");
   }
   auto wave = makeGenerator(*findGeneratorPreset("audio_waveform"));
   wave.data = tone;
@@ -378,6 +541,27 @@ int main(int argc, char **argv) {
     check(spec["audio"].toString() == "voice" && std::abs(spec["base"].toDouble() - 0.2) < 1e-9 && std::abs(spec["amount"].toDouble() - 1.5) < 1e-9
               && spec["channel"].toString() == "peak",
           "Follow audio binds a layer's property to a sound from the Keys tab");
+    while (project.undoStack()->index() > undoIndex)
+      project.undoStack()->undo();
+  }
+  {
+    // A move from the Keys tab, and motion blur from the Scene tab.
+    const int undoIndex = project.undoStack()->index();
+    QTimer::singleShot(0, [&] {
+      for (auto *widget : QApplication::topLevelWidgets())
+        if (widget->objectName() == "graphicsComposer") {
+          widget->findChild<QListWidget *>("graphicsLayers")->setCurrentRow(0);
+          auto *move = widget->findChild<QComboBox *>("graphicsMove");
+          move->setCurrentIndex(move->findData("hop"));
+          widget->findChild<QPushButton *>("graphicsAddMove")->click();
+          widget->findChild<QCheckBox *>("graphicsMotionBlur")->setChecked(true);
+          qobject_cast<QDialog *>(widget)->accept();
+        }
+    });
+    composeGraphics(&hiddenParent, &project, id);
+    const QJsonObject edited = project.timeline().findClip(id)->generator.data;
+    check(edited["layers"].toArray()[0].toObject()["y"].toObject().contains("keyframes") && edited["motion_blur"].isObject(),
+          "a move from the Keys tab adds its keys; Scene > Look turns on motion blur");
     while (project.undoStack()->index() > undoIndex)
       project.undoStack()->undo();
   }

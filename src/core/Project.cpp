@@ -1,4 +1,5 @@
 #include "core/Project.h"
+#include "core/Graphics.h"
 #include "core/ProjectCollection.h"
 #include "core/ProjectFormat.h"
 
@@ -552,6 +553,12 @@ void Project::commitEdit(const Timeline& before, const QString& description)
 {
     if (before == m_timeline)
         return;
+    // Lip sync follows a voice track's edits (drags included), in this same undo step.
+    if (graphics::trackBindingsStale(m_timeline)) {
+        Timeline followed = m_timeline;
+        graphics::followTrackBindings(followed, m_media);
+        setTimelineLive(followed);
+    }
     auto packedBefore = PackedTimeline::pack(before, m_packed.get());
     m_packed = PackedTimeline::pack(m_timeline, packedBefore.get());
     m_undo.push(new TimelineEditCommand(this, std::move(packedBefore), m_packed, description));

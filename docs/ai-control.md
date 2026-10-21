@@ -32,7 +32,7 @@ The status bar shows each tool it uses.
 | Tool | What it does |
 |---|---|
 | get_project | Reads the media, tracks, events, effects and their settings, markers. |
-| graphics_overlay | Compose native layered text, shapes and images; create/read/update broadcast presets or custom scenes. `bind_audio` with `source_track` (a track index) and `binding` (a name) binds every sound on that track during the scene, for lip sync from each character's voice track. Colours are `#RRGGBB`, or `#AARRGGBB` with the alpha first. |
+| graphics_overlay | Compose native layered text, shapes and images; create/read/update broadcast presets or custom scenes. `bind_audio` with `source_track` (a track index) and `binding` (a name) binds every sound on that track during the scene, for lip sync from each character's voice track (it follows later edits of the track, and its `visemes` drive mouth shapes). `characters` lists the character library, `add_character` adds one (`character`, `name`, `x`, `colours`), `save_character` saves a group; `move` adds a ready-made move (`move`, `layer_id`, `time`, `duration`, `amount`, `to`). Colours are `#RRGGBB`, or `#AARRGGBB` with the alpha first. |
 | waveform_graphic | Build and style native graphics from real source audio, with embedded peaks, stereo and playback progress. |
 | import_media, add_media_to_timeline | Imports files and places them. |
 | add_text | Adds a title, text or any generator preset; `params` sets the generator's own settings (a title's font, size and colour, a starfield's speed). |
