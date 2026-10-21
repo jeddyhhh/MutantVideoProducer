@@ -6,6 +6,7 @@
 #include <QJsonObject>
 
 #include <algorithm>
+#include <functional>
 #include <cmath>
 #include <set>
 
@@ -60,6 +61,63 @@ std::vector<Range> wordCuts(const std::vector<Caption>& words, const std::vector
     return out;
 }
 
+namespace {
+// Splits every unlocked track at `at`; each piece joins the story chapter of the event it was cut from.
+void splitAt(Timeline& tl, TimeUs at)
+{
+    for (int piece : ops::splitClips(tl, {}, at)) {
+        int ti = -1;
+        const Clip* right = tl.findClip(piece, &ti);
+        const auto left = std::find_if(tl.tracks[size_t(ti)].clips.begin(), tl.tracks[size_t(ti)].clips.end(),
+                                       [&](const Clip& c) { return c.id != piece && c.end() == right->start; });
+        if (left == tl.tracks[size_t(ti)].clips.end())
+            continue;
+        for (int i = 0; i < tl.chapters.size(); ++i) {
+            QJsonObject chapter = tl.chapters[i].toObject();
+            QJsonArray clips = chapter.value(QStringLiteral("clips")).toArray();
+            if (clips.contains(left->id)) {
+                clips.append(piece);
+                chapter[QStringLiteral("clips")] = clips;
+                tl.chapters[i] = chapter;
+            }
+        }
+    }
+}
+
+// Every time in the edit (markers, regions, story chapters) through `moved`.
+void moveTimes(Timeline& tl, const std::function<TimeUs(TimeUs)>& moved)
+{
+    for (Marker& m : tl.markers) {
+        const TimeUs end = moved(m.end());
+        m.time = moved(m.time);
+        m.length = m.isRegion() ? std::max<TimeUs>(1, end - m.time) : 0;
+    }
+    for (int i = 0; i < tl.chapters.size(); ++i) {
+        QJsonObject c = tl.chapters[i].toObject();
+        const auto get = [&](const char* key) { return c.value(QLatin1String(key)).toString().toLongLong(); };
+        const TimeUs start = get("start"), spoken = start + get("narration"), end = spoken + get("listening");
+        c[QStringLiteral("start")] = QString::number(moved(start));
+        c[QStringLiteral("narration")] = QString::number(moved(spoken) - moved(start));
+        c[QStringLiteral("listening")] = QString::number(moved(end) - moved(spoken));
+        tl.chapters[i] = c;
+    }
+    tl.sortMarkers();
+}
+} // namespace
+
+TimeUs insertTime(Timeline& tl, TimeUs at, TimeUs length, const FrameRate& fps)
+{
+    at = std::max<TimeUs>(0, fps.snap(at));
+    length = fps.snap(length);
+    if (length <= 0)
+        return 0;
+    splitAt(tl, at);
+    ops::rippleShift(tl, at, length, {}, {}, false);
+    // Times from `at` on move later; a region or chapter running across it grows.
+    moveTimes(tl, [&](TimeUs t) { return t < at ? t : t + length; });
+    return length;
+}
+
 TimeUs removeRanges(Timeline& tl, std::vector<Range> ranges, const FrameRate& fps)
 {
     for (Range& r : ranges) {
@@ -78,25 +136,8 @@ TimeUs removeRanges(Timeline& tl, std::vector<Range> ranges, const FrameRate& fp
     TimeUs removed = 0;
     // Latest first, so the earlier ranges still find their events where they were.
     for (auto it = merged.rbegin(); it != merged.rend(); ++it) {
-        // (every unlocked track; a piece joins the story chapter of the event it was cut from)
-        for (const TimeUs at : {it->from, it->to})
-            for (int piece : ops::splitClips(tl, {}, at)) {
-                int ti = -1;
-                const Clip* right = tl.findClip(piece, &ti);
-                const auto left = std::find_if(tl.tracks[size_t(ti)].clips.begin(), tl.tracks[size_t(ti)].clips.end(),
-                                               [&](const Clip& c) { return c.id != piece && c.end() == right->start; });
-                if (left == tl.tracks[size_t(ti)].clips.end())
-                    continue;
-                for (int i = 0; i < tl.chapters.size(); ++i) {
-                    QJsonObject chapter = tl.chapters[i].toObject();
-                    QJsonArray clips = chapter.value(QStringLiteral("clips")).toArray();
-                    if (clips.contains(left->id)) {
-                        clips.append(piece);
-                        chapter[QStringLiteral("clips")] = clips;
-                        tl.chapters[i] = chapter;
-                    }
-                }
-            }
+        splitAt(tl, it->from);
+        splitAt(tl, it->to);
         std::set<int> inside;
         for (const Track& t : tl.tracks)
             if (!t.locked)
@@ -116,22 +157,7 @@ TimeUs removeRanges(Timeline& tl, std::vector<Range> ranges, const FrameRate& fp
         }
         ops::rippleShift(tl, it->to, it->from - it->to, {}, {}, false);
         // Times after the cut move back; times inside it land on its start (regions and story chapters shrink).
-        const auto moved = [&](TimeUs t) { return t <= it->from ? t : t < it->to ? it->from : t - (it->to - it->from); };
-        for (Marker& m : tl.markers) {
-            const TimeUs end = moved(m.end());
-            m.time = moved(m.time);
-            m.length = m.isRegion() ? std::max<TimeUs>(1, end - m.time) : 0;
-        }
-        for (int i = 0; i < tl.chapters.size(); ++i) {
-            QJsonObject c = tl.chapters[i].toObject();
-            const auto get = [&](const char* key) { return c.value(QLatin1String(key)).toString().toLongLong(); };
-            const TimeUs start = get("start"), spoken = start + get("narration"), end = spoken + get("listening");
-            c[QStringLiteral("start")] = QString::number(moved(start));
-            c[QStringLiteral("narration")] = QString::number(moved(spoken) - moved(start));
-            c[QStringLiteral("listening")] = QString::number(moved(end) - moved(spoken));
-            tl.chapters[i] = c;
-        }
-        tl.sortMarkers();
+        moveTimes(tl, [&](TimeUs t) { return t <= it->from ? t : t < it->to ? it->from : t - (it->to - it->from); });
         removed += it->to - it->from;
     }
     return removed;

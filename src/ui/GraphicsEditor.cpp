@@ -17,6 +17,7 @@
 #include <QFileDialog>
 #include <QFontComboBox>
 #include <QFormLayout>
+#include <QGroupBox>
 #include <QHBoxLayout>
 #include <QHeaderView>
 #include <QJsonDocument>
@@ -352,6 +353,10 @@ public:
     QLineEdit *keyValue = nullptr, *bezier = nullptr;
     QTableWidget* keyTable = nullptr;
     KeyStrip* keyStrip = nullptr;
+    // Follow audio: a property driven by a binding's sound (a mouth's scale_y by a voice track), without editing JSON.
+    QComboBox *audioName = nullptr, *audioChannel = nullptr;
+    QDoubleSpinBox *audioBase = nullptr, *audioAmount = nullptr, *audioAttack = nullptr, *audioRelease = nullptr;
+    QLabel* audioState = nullptr;
     QPlainTextEdit *sceneJson = nullptr, *layerJson = nullptr;
     QDoubleSpinBox* seconds = nullptr;
     QSlider* scrub = nullptr;
@@ -1266,10 +1271,64 @@ public:
         }
         load();
     }
+    // The selected layer's property follows the chosen sound (or stops: it keeps the value it has when silent).
+    void followAudio(bool on)
+    {
+        const int i = layerRow();
+        const QString prop = propertyBox->currentText();
+        if (i < 0 || prop.isEmpty() || targetBox->currentIndex() != 0 || graphics_workflow::locked(data, current()["id"].toString()))
+            return;
+        if (on && audioName->currentData().toString().isEmpty()) {
+            QMessageBox::information(this, tr("Follow audio"), tr("Bind a sound first: Scene > Bind audio for animation... (a voice track, "
+                                                                  "for lip sync), then choose it here."));
+            return;
+        }
+        const QJsonValue value = on ? QJsonValue(QJsonObject{{"audio", audioName->currentData().toString()},
+                                                             {"channel", audioChannel->currentData().toString()},
+                                                             {"base", audioBase->value()},
+                                                             {"amount", audioAmount->value()},
+                                                             {"attack", audioAttack->value()},
+                                                             {"release", audioRelease->value()}})
+                                    : QJsonValue(audioBase->value());
+        data["version"] = 2;
+        ensureIds();
+        auto a = data["layers"].toArray();
+        a[i] = setLayerProperty(a[i].toObject(), prop.split('.'), value);
+        data["layers"] = a;
+        load();
+        syncJson();
+    }
+    void refreshAudio()
+    {
+        if (!audioName)
+            return;
+        QSignalBlocker blocker(audioName);
+        const QString was = audioName->currentData().toString();
+        audioName->clear();
+        for (const QString& key : data["audio"].toObject().keys())
+            audioName->addItem(key, key);
+        if (audioName->count() == 0)
+            audioName->addItem(tr("(none bound yet)"), QString());
+        const QJsonObject spec = layerProperty(target(), propertyBox->currentText()).toObject();
+        const QString bound = spec["audio"].toString();
+        audioName->setCurrentIndex(std::max(0, audioName->findData(bound.isEmpty() ? was : bound)));
+        if (!bound.isEmpty()) {
+            audioChannel->setCurrentIndex(std::max(0, audioChannel->findData(spec["channel"].toString("peak"))));
+            audioBase->setValue(spec["base"].toDouble());
+            audioAmount->setValue(spec["amount"].toDouble(1));
+            audioAttack->setValue(spec["attack"].toDouble(.03));
+            audioRelease->setValue(spec["release"].toDouble(.12));
+        }
+        audioState->setText(bound.isEmpty() ? tr("%1 doesn't follow a sound. For a mouth: scale_y, silent 0.1, full volume 2.5, and the "
+                                                 "layer's anchor_y at 0 so it opens downwards.")
+                                                  .arg(propertyBox->currentText())
+                                            : tr("%1 follows \"%2\".").arg(propertyBox->currentText(), bound));
+    }
     void refreshKeys()
     {
         if (!propertyBox)
             return;
+        refreshAudio();
         auto v = layerProperty(target(), propertyBox->currentText());
         auto evaluated = motion::evaluate(v, currentTime, data);
         if (evaluated.isUndefined() || evaluated.isNull())
@@ -1418,6 +1477,48 @@ public:
         layout->addWidget(new QLabel(tr("Drag diamonds to retime keys. Colours and text are also "
                                         "animatable.\nAdvanced property paths and values are "
                                         "available in Scene data.")));
+        auto* follow = new QGroupBox(tr("Follow audio"));
+        follow->setObjectName("graphicsFollowAudio");
+        auto* ff = new QFormLayout(follow);
+        audioName = new QComboBox;
+        audioName->setObjectName("graphicsAudioBinding");
+        ff->addRow(tr("Sound"), audioName);
+        audioChannel = new QComboBox;
+        audioChannel->addItem(tr("Loudness (both channels)"), "peak");
+        audioChannel->addItem(tr("Left channel"), "left");
+        audioChannel->addItem(tr("Right channel"), "right");
+        audioChannel->addItem(tr("Beats"), "beat");
+        ff->addRow(tr("Follow"), audioChannel);
+        auto spin = [](double lo, double hi, double v, int decimals) {
+            auto* b = new QDoubleSpinBox;
+            b->setRange(lo, hi);
+            b->setDecimals(decimals);
+            b->setValue(v);
+            return b;
+        };
+        audioBase = spin(-10000, 10000, 0.1, 3);
+        audioAmount = spin(-10000, 10000, 2.5, 3);
+        audioAttack = spin(0.001, 2, 0.02, 3);
+        audioRelease = spin(0.001, 5, 0.1, 3);
+        audioBase->setObjectName("graphicsAudioBase");
+        audioAmount->setObjectName("graphicsAudioAmount");
+        ff->addRow(tr("Value when silent"), audioBase);
+        ff->addRow(tr("Added at full volume"), audioAmount);
+        ff->addRow(tr("Attack (s)"), audioAttack);
+        ff->addRow(tr("Release (s)"), audioRelease);
+        auto* followRow = new QHBoxLayout;
+        auto* followOn = new QPushButton(tr("Follow"));
+        followOn->setObjectName("graphicsAudioFollow");
+        auto* followOff = new QPushButton(tr("Stop following"));
+        followRow->addWidget(followOn);
+        followRow->addWidget(followOff);
+        ff->addRow(followRow);
+        audioState = new QLabel;
+        audioState->setWordWrap(true);
+        ff->addRow(audioState);
+        layout->addWidget(follow);
+        connect(followOn, &QPushButton::clicked, this, [this] { followAudio(true); });
+        connect(followOff, &QPushButton::clicked, this, [this] { followAudio(false); });
         return w;
     }
     QWidget* motionControls()
@@ -1772,6 +1873,7 @@ public:
             data["version"] = 2;
             data["audio"] = audio;
             load();
+            refreshKeys();
             syncJson();
         });
         auto* import = new QPushButton(tr("Import chart data…"));

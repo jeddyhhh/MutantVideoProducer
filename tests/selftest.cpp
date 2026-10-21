@@ -3053,6 +3053,39 @@ int cmdEditing(const QString& mediaDir, const QString& outDir)
                   && tl.markers[1].time == 4 * S && timelineProblem(tl).isEmpty(),
               QStringLiteral("removing ranges merges overlaps, closes the gaps on unlocked tracks and moves markers (%1)").arg(starts(tl.tracks[0])));
     }
+    {
+        // Insert Time: 2 s of empty time at 3 s on the unlocked tracks; markers, a region across it and chapters move or grow.
+        Timeline tl = defaultTimeline();
+        tl.nextId = 100;
+        Clip c;
+        c.id = tl.allocId();
+        c.length = 10 * S;
+        c.generator = makeGenerator(*findGeneratorPreset(QStringLiteral("solid_black")));
+        tl.tracks[0].clips.push_back(c);
+        tl.tracks.push_back(tl.tracks[0]);
+        tl.tracks.back().id = tl.allocId();
+        tl.tracks.back().clips.front().id = tl.allocId();
+        tl.tracks.back().locked = true;
+        tl.markers.push_back(Marker{tl.allocId(), 1 * S, 0, QStringLiteral("before"), 0});
+        tl.markers.push_back(Marker{tl.allocId(), 5 * S, 0, QStringLiteral("after"), 0});
+        tl.markers.push_back(Marker{tl.allocId(), 2 * S, 2 * S, QStringLiteral("across"), 0});
+        tl.chapters.append(QJsonObject{{"id", 1}, {"start", "0"}, {"narration", QString::number(4 * S)}, {"listening", QString::number(1 * S)},
+                                       {"clips", QJsonArray{tl.tracks[0].clips[0].id}}});
+        tl.chapters.append(QJsonObject{{"id", 2}, {"start", QString::number(6 * S)}, {"narration", QString::number(2 * S)}, {"listening", "0"}});
+        const TimeUs added = cuts::insertTime(tl, 3 * S, 2 * S, fps);
+        const Marker* across = nullptr;
+        for (const Marker& m : tl.markers)
+            if (m.name == QLatin1String("across"))
+                across = &m;
+        auto chapter = [&](int i, const char* key) { return tl.chapters[i].toObject().value(QLatin1String(key)).toString().toLongLong(); };
+        check(added == 2 * S && starts(tl.tracks[0]) == QStringLiteral("0.0 5.0") && tl.tracks[0].clips.back().end() == 12 * S
+                  && tl.tracks.back().clips.size() == 1 && tl.tracks.back().clips[0].end() == 10 * S && tl.markers.front().time == 1 * S
+                  && across && across->time == 2 * S && across->length == 4 * S && tl.markers.back().time == 7 * S
+                  && chapter(0, "narration") == 6 * S && chapter(1, "start") == 8 * S
+                  && tl.chapters[0].toObject()["clips"].toArray().size() == 2 && timelineProblem(tl).isEmpty(),
+              QStringLiteral("insert time opens a gap on unlocked tracks; markers, a region across it and chapters move or grow (%1)")
+                  .arg(starts(tl.tracks[0])));
+    }
     // ---- Auto Reframe: finding the subject, and the crop's path ----------------------------------
     {
         auto square = [](double x) {

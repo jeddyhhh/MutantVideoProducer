@@ -4,6 +4,15 @@ What changed in each version of Mutant Video Producer. The newest is first.
 
 ## Unreleased
 
+### Added
+
+- **Insert > Insert Time at the Cursor...**: empty time on every unlocked track, the opposite of Cut Time; what follows,
+  its markers and its story chapters move later, and a region or chapter across it grows. AI control: `cut_time`
+  `insert` with `at` and `length`.
+- Compose Graphics, Keys tab, **Follow audio**: any property of a layer follows a bound sound (loudness, either
+  channel or the beats) with its silent value, how much is added at full volume, attack and release, and **Stop
+  following**; a mouth that moves with a voice track no longer needs JSON.
+
 ### Fixed
 
 - Compose Graphics crashed when a starting layout (or an imported template) with fewer layers replaced a scene whose

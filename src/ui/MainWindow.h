@@ -169,6 +169,7 @@ private:
     bool transcribeTimeline(const QString& modelFile, const struct TranscribeOptions& options, TimeUs from, TimeUs to,
                             class QProgressDialog* progress, std::vector<struct Caption>& captions, QString* error);
     void removeSilences();      // Tools: cut the quiet stretches out of the edit
+    void insertTime();          // Insert: empty time at the cursor on every unlocked track (the opposite of a cut)
     void editByTranscript();    // Tools: strike words in a transcript to cut them out
     // Right-click a video event > Stabilize: how much, analysing it first if needed.
     void stabilizeClip(int clipId);

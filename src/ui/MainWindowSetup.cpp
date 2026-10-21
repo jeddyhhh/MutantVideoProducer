@@ -532,6 +532,10 @@ void MainWindow::createActions()
                           [this] { m_timeline->insertTrack(TrackType::Video); }));
     insert->addAction(act(tr("&Audio Track"), QKeySequence(QStringLiteral("Ctrl+Q")),
                           [this] { m_timeline->insertTrack(TrackType::Audio); }));
+    insert->addAction(act(tr("Insert &Time at the Cursor..."), QKeySequence(), [this] {
+        if (editorActive())
+            insertTime();
+    }));
     insert->addSeparator();
     insert->addAction(act(tr("&Volume Envelope (or Composite Level for video)"), QKeySequence(QStringLiteral("V")),
                           [this] { m_timeline->toggleEnvelope(EnvelopeKind::Volume); }));

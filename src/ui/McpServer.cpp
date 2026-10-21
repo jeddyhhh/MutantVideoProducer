@@ -1168,11 +1168,15 @@ QJsonArray McpServer::toolList()
                    {QStringLiteral("split"), prop("boolean", "Split at them (default true)")}},
                   {QStringLiteral("event_ids")}));
     t.append(tool("cut_time",
-                  "Takes time out of the whole edit, on every unlocked track at once, closing the gaps (markers follow): silences "
+                  "Takes time out of the whole edit, on every unlocked track at once, closing the gaps (markers follow), or puts it in "
+                  "(insert: length seconds of empty time at `at`, what follows moving later): silences "
                   "(Tools > Remove Silences), ranges (seconds), transcribe (Edit by Transcript's words with their times; changes "
                   "nothing) or words (cut the words given by index from a transcribe result, with the pause after each run).",
                   {{QStringLiteral("action"),
-                    enumProp({QStringLiteral("silences"), QStringLiteral("ranges"), QStringLiteral("transcribe"), QStringLiteral("words")}, "What")},
+                    enumProp({QStringLiteral("silences"), QStringLiteral("ranges"), QStringLiteral("transcribe"), QStringLiteral("words"),
+                              QStringLiteral("insert")}, "What")},
+                   {QStringLiteral("at"), prop("number", "insert: seconds (default: the cursor)")},
+                   {QStringLiteral("length"), prop("number", "insert: seconds of empty time")},
                    {QStringLiteral("from"), prop("number", "silences / transcribe: seconds (default 0)")},
                    {QStringLiteral("to"), prop("number", "silences / transcribe: seconds (default: the end)")},
                    {QStringLiteral("threshold_db"), prop("number", "silences: quieter than this is silence (default -40)")},
@@ -3093,6 +3097,15 @@ QJsonObject McpServer::ToolCall::tool_cut_time()
     const QString action = str("action");
     const TimeUs from = us(std::max(0.0, num("from"))), to = has("to") ? us(num("to")) : project->timeline().duration();
     std::vector<cuts::Range> ranges;
+    if (action == QLatin1String("insert")) {
+        const double length = num("length");
+        if (!(length > 0) || length > 3600)
+            return errorResult(QStringLiteral("length: 0 to 3600 seconds"));
+        Timeline tl = project->timeline();
+        const TimeUs added = cuts::insertTime(tl, has("at") ? us(std::max(0.0, num("at"))) : w->m_timeline->cursorTime(), us(length), ps.fps);
+        apply(tl, QStringLiteral("Insert Time"));
+        return jsonResult({{QStringLiteral("inserted_seconds"), sec(added)}});
+    }
     if (action == QLatin1String("silences")) {
         if (to <= from)
             return errorResult(QStringLiteral("nothing to listen to there"));
@@ -3145,7 +3158,7 @@ QJsonObject McpServer::ToolCall::tool_cut_time()
                 removed[size_t(v.toInt())] = true;
         ranges = cuts::wordCuts(words, removed);
     } else {
-        return errorResult(QStringLiteral("action: silences, ranges, transcribe or words"));
+        return errorResult(QStringLiteral("action: silences, ranges, transcribe, words or insert"));
     }
     if (ranges.empty())
         return jsonResult({{QStringLiteral("removed_seconds"), 0}, {QStringLiteral("ranges"), QJsonArray()}});

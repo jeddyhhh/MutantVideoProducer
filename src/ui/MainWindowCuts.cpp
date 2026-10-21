@@ -1,7 +1,8 @@
-// MainWindow: cutting time out of the edit: Remove Silences, Edit by Transcript.
+// MainWindow: cutting time out of the edit (Remove Silences, Edit by Transcript) and putting time in (Insert Time).
 #include "ui/MainWindow.h"
 #include "core/Captions.h"
 #include "core/Cuts.h"
+#include <QInputDialog>
 #include "ui/Help.h"
 #include "ui/TimelineWidget.h"
 
@@ -219,4 +220,22 @@ void MainWindow::editByTranscript()
     m_project->applyEdit(tl, tr("Edit by Transcript"));
     m_timeline->setRegion(0, 0);
     statusBar()->showMessage(tr("Cut %1 s (Ctrl+Z puts it back)").arg(seconds(cut)), 6000);
+}
+
+void MainWindow::insertTime()
+{
+    stopPlayback(false);
+    bool ok = false;
+    const double seconds = QInputDialog::getDouble(this, tr("Insert Time"),
+                                                   tr("Seconds of empty time to make at the cursor, on every unlocked track\n"
+                                                      "(what follows, its markers and its story chapters move later):"),
+                                                   5.0, 0.04, 3600.0, 2, &ok);
+    if (!ok)
+        return;
+    Timeline tl = m_project->timeline();
+    const TimeUs added = cuts::insertTime(tl, m_timeline->cursorTime(), TimeUs(seconds * kUsPerSecond), m_project->settings().fps);
+    if (added <= 0)
+        return;
+    m_project->applyEdit(tl, tr("Insert Time"));
+    statusBar()->showMessage(tr("%1 of empty time made at the cursor.").arg(formatDuration(added)), 5000);
 }

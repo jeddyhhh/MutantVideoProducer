@@ -25,4 +25,8 @@ std::vector<Range> wordCuts(const std::vector<Caption>& words, const std::vector
 // Takes the ranges (snapped to frames, merged) out of every unlocked track, splitting the events at
 // their edges, and closes each gap: what follows, and its markers, move back. Returns the time removed.
 TimeUs removeRanges(Timeline& tl, std::vector<Range> ranges, const FrameRate& fps);
+
+// The opposite: `length` of empty time at `at` (snapped to frames) on every unlocked track, splitting the events there;
+// what follows, its markers and its story chapters move later, and a region or chapter running across `at` grows.
+TimeUs insertTime(Timeline& tl, TimeUs at, TimeUs length, const FrameRate& fps);
 } // namespace cuts

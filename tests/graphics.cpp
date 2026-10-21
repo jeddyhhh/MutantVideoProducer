@@ -9,6 +9,7 @@
 #include <QDataStream>
 #include <QComboBox>
 #include <QDialog>
+#include <QPushButton>
 #include <QDoubleSpinBox>
 #include <QFile>
 #include <QListWidget>
@@ -320,6 +321,39 @@ int main(int argc, char **argv) {
     composeGraphics(&hiddenParent, &project, id);
     check(rows > expected && after == expected,
           QString("choosing a smaller starting layout with the last layers selected (%1 layers, then %2)").arg(rows).arg(after));
+  }
+  {
+    // Follow audio on the Keys tab: a layer's scale_y bound to a sound, with no JSON typed.
+    const int undoIndex = project.undoStack()->index();
+    Timeline tl = project.timeline();
+    auto *clip = tl.findClip(id);
+    QJsonObject scene = clip->generator.data;
+    scene["version"] = 2;
+    scene["audio"] = QJsonObject{{"voice", QJsonObject{{"version", 1}, {"duration", 1.0}, {"left", QJsonArray{0.0, 1.0}},
+                                                      {"right", QJsonArray{0.0, 1.0}}, {"rate", 1}, {"offset", 0}}}};
+    clip->generator.data = scene;
+    project.applyEdit(tl, "test audio binding");
+    QTimer::singleShot(0, [&] {
+      for (auto *widget : QApplication::topLevelWidgets())
+        if (widget->objectName() == "graphicsComposer") {
+          widget->findChild<QListWidget *>("graphicsLayers")->setCurrentRow(0);
+          auto *property = widget->findChild<QComboBox *>("graphicsAnimationProperty");
+          property->setCurrentText("scale_y");
+          auto *sound = widget->findChild<QComboBox *>("graphicsAudioBinding");
+          sound->setCurrentIndex(sound->findData("voice"));
+          widget->findChild<QDoubleSpinBox *>("graphicsAudioBase")->setValue(0.2);
+          widget->findChild<QDoubleSpinBox *>("graphicsAudioAmount")->setValue(1.5);
+          widget->findChild<QPushButton *>("graphicsAudioFollow")->click();
+          qobject_cast<QDialog *>(widget)->accept();
+        }
+    });
+    composeGraphics(&hiddenParent, &project, id);
+    const QJsonObject spec = project.timeline().findClip(id)->generator.data["layers"].toArray()[0].toObject()["scale_y"].toObject();
+    check(spec["audio"].toString() == "voice" && std::abs(spec["base"].toDouble() - 0.2) < 1e-9 && std::abs(spec["amount"].toDouble() - 1.5) < 1e-9
+              && spec["channel"].toString() == "peak",
+          "Follow audio binds a layer's property to a sound from the Keys tab");
+    while (project.undoStack()->index() > undoIndex)
+      project.undoStack()->undo();
   }
   // In a 4:3 project the canvas is 4:3: a drag of 4% of its picture moves the layer by 0.04.
   {
