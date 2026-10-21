@@ -7,6 +7,10 @@ made. Allow 30 minutes.
 You need **Speech Generation** installed (**Tools > AI Components...**) and at least one voice downloaded (see
 [Captions and Subtitles](../captions.md#generate-voice-from-captions)).
 
+The quickest way to the voices: **Tools > Captions > Generate Dialogue from a Script...** with the script as
+`Name: line` lines gives every character a voice, a pitch and their own track in one go
+([how](../captions.md#generate-dialogue-from-a-script)); then skip to step 3. Steps 1 and 2 do the same by hand.
+
 ## 1. Write the lines as captions
 
 1. Start a new project (**File > New**), 1920×1080 at 24 fps, which suits cut-out animation.

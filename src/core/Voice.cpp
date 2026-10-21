@@ -2,6 +2,8 @@
 #include "core/Voice.h"
 #include "core/AiRuntime.h"
 #include "core/Profiles.h"
+#include "core/Effects.h"
+#include "core/Project.h"
 #include <QCoreApplication>
 #include <QCryptographicHash>
 #include <QDir>
@@ -13,6 +15,7 @@
 #include <QStandardPaths>
 #include <algorithm>
 #include <cmath>
+#include <map>
 
 namespace {
 QJsonObject catalog()
@@ -129,5 +132,83 @@ bool readVoiceTakes(const QString& folder, std::vector<VoiceTake>& takes, QStrin
         parsed.push_back(std::move(take));
     }
     takes = std::move(parsed);
+    return true;
+}
+
+std::vector<DialogueLine> dialogueLines(const QString& script)
+{
+    static const QRegularExpression named(QStringLiteral("^([^:]{1,40}):(.*)$"));
+    std::vector<DialogueLine> lines;
+    for (const QString& raw : script.split(QLatin1Char('\n'))) {
+        const QString line = raw.trimmed();
+        if (line.isEmpty() || line.startsWith(QLatin1Char('#')))
+            continue;
+        const auto m = named.match(line);
+        if (m.hasMatch() && !m.captured(1).trimmed().isEmpty())
+            lines.push_back({m.captured(1).trimmed(), m.captured(2).trimmed()});
+        else if (!lines.empty())
+            lines.back().text += (lines.back().text.isEmpty() ? QString() : QStringLiteral(" ")) + line;
+    }
+    std::erase_if(lines, [](const DialogueLine& l) { return l.text.isEmpty(); });
+    return lines;
+}
+QStringList dialogueSpeakers(const std::vector<DialogueLine>& lines)
+{
+    QStringList names;
+    for (const auto& l : lines)
+        if (!names.contains(l.speaker))
+            names.append(l.speaker);
+    return names;
+}
+std::vector<Caption> dialogueCaptions(const std::vector<DialogueLine>& lines, const QString& speaker)
+{
+    std::vector<Caption> captions;
+    TimeUs at = 0;
+    for (const auto& l : lines)
+        if (l.speaker == speaker) {
+            // Room for slow speech: 0.8 s a word plus 4 s, far more than Kokoro needs at normal speed.
+            const TimeUs slot = TimeUs(l.text.split(QLatin1Char(' '), Qt::SkipEmptyParts).size() * 800000) + 4 * kUsPerSecond;
+            captions.push_back({at, at + slot, l.text, 0});
+            at += slot;
+        }
+    return captions;
+}
+bool arrangeDialogue(Timeline& tl, const std::vector<DialogueLine>& lines, const std::vector<DialogueCast>& cast, TimeUs start,
+                     TimeUs gap, const FrameRate& fps, QString* error)
+{
+    Timeline out = tl;
+    std::map<QString, std::pair<Track*, size_t>> next; // each character's track and their next unused event
+    for (const auto& c : cast) {
+        auto track = std::find_if(out.tracks.begin(), out.tracks.end(), [&](const Track& t) { return t.id == c.trackId; });
+        const auto count = std::count_if(lines.begin(), lines.end(), [&](const DialogueLine& l) { return l.speaker == c.name; });
+        if (track == out.tracks.end() || std::ptrdiff_t(track->clips.size()) != count) {
+            if (error)
+                *error = QStringLiteral("The speech for %1 came back with a different number of lines.").arg(c.name);
+            return false;
+        }
+        track->name = c.name;
+        if (std::abs(c.semitones) > 1e-6) {
+            auto pitch = makeEffectOfType(QStringLiteral("a_pitch"), out.allocId());
+            pitch.params[QStringLiteral("semitones")].value = c.semitones;
+            track->effects.push_back(pitch);
+        }
+        next[c.name] = {&*track, 0};
+    }
+    TimeUs at = std::max<TimeUs>(0, fps.snap(start));
+    for (const auto& l : lines) {
+        auto found = next.find(l.speaker);
+        if (found == next.end()) {
+            if (error)
+                *error = QStringLiteral("%1 has no voice.").arg(l.speaker);
+            return false;
+        }
+        Clip& clip = found->second.first->clips[found->second.second++];
+        clip.start = at;
+        clip.name = l.text;
+        at = fps.snap(clip.end() + gap);
+    }
+    for (auto& [name, slot] : next)
+        std::sort(slot.first->clips.begin(), slot.first->clips.end(), [](const Clip& a, const Clip& b) { return a.start < b.start; });
+    tl = std::move(out);
     return true;
 }

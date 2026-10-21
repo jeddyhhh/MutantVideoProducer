@@ -16,6 +16,8 @@
 #include <QFileInfo>
 #include <QFormLayout>
 #include <QGroupBox>
+#include <QHeaderView>
+#include <QJsonArray>
 #include <QHBoxLayout>
 #include <QJsonDocument>
 #include <QLabel>
@@ -23,20 +25,52 @@
 #include <QMediaPlayer>
 #include <QMessageBox>
 #include <QProgressDialog>
+#include <QPlainTextEdit>
 #include <QPushButton>
 #include <QSettings>
 #include <QSpinBox>
 #include <QStatusBar>
 #include <QTemporaryDir>
 #include <QTabWidget>
+#include <QTableWidget>
 #include <QUuid>
 #include <QVBoxLayout>
+#include <map>
+#include <numeric>
 
 VoiceJob* MainWindow::voiceJob()
 {
     if (!m_voiceJob)
         m_voiceJob = new VoiceJob(m_project, this);
     return m_voiceJob;
+}
+
+bool MainWindow::ensureVoiceAssets(QWidget* parent, const std::vector<VoiceAsset>& assets)
+{
+    for (const VoiceAsset& asset : assets) {
+        if (verifyVoiceAsset(voiceAssetPath(asset), asset))
+            continue;
+        QString error;
+        const QString destination = QDir(voiceDataDir()).filePath(asset.file);
+        if (!downloadFile(parent, QUrl(asset.url), destination, tr("Kokoro: %1").arg(QFileInfo(asset.file).fileName()), &error)) {
+            if (!error.isEmpty())
+                QMessageBox::warning(parent, tr("Voice Download"), error);
+            return false;
+        }
+        if (!verifyVoiceAsset(destination, asset)) {
+            QFile::remove(destination);
+            QMessageBox::warning(parent, tr("Voice Download"), tr("The download failed its SHA-256 check. Please download it again."));
+            return false;
+        }
+    }
+    return true;
+}
+
+DialogueJob* MainWindow::dialogueJob()
+{
+    if (!m_dialogueJob)
+        m_dialogueJob = new DialogueJob(m_project, voiceJob(), this);
+    return m_dialogueJob;
 }
 
 void MainWindow::generateVoice()
@@ -259,22 +293,8 @@ void MainWindow::generateVoice()
                 return false;
         }
         const auto& v = voices[size_t(voice->currentIndex())];
-        for (const VoiceAsset& asset : {kokoroModelAsset(), kokoroGpuModelAsset(), v.asset}) {
-            if (verifyVoiceAsset(voiceAssetPath(asset), asset))
-                continue;
-            QString error;
-            const QString destination = QDir(voiceDataDir()).filePath(asset.file);
-            if (!downloadFile(&dlg, QUrl(asset.url), destination, tr("Kokoro: %1").arg(QFileInfo(asset.file).fileName()), &error)) {
-                if (!error.isEmpty())
-                    QMessageBox::warning(&dlg, tr("Voice Download"), error);
-                return false;
-            }
-            if (!verifyVoiceAsset(destination, asset)) {
-                QFile::remove(destination);
-                QMessageBox::warning(&dlg, tr("Voice Download"), tr("The download failed its SHA-256 check. Please download it again."));
-                return false;
-            }
-        }
+        if (!ensureVoiceAssets(&dlg, {kokoroModelAsset(), kokoroGpuModelAsset(), v.asset}))
+            return false;
         refresh();
         return true;
     };
@@ -400,6 +420,191 @@ void MainWindow::generateVoice()
         settings.setValue(QStringLiteral("voice/pitch"), pitch->value());
         settings.setValue(QStringLiteral("voice/retrieval"), retrieval->value());
         settings.setValue(QStringLiteral("voice/protect"), protect->value());
+        dlg.accept();
+    });
+    dlg.exec();
+}
+
+void MainWindow::generateDialogue()
+{
+    if (voiceJob()->busy()) {
+        QMessageBox::information(this, tr("Generate Dialogue"), tr("Voice generation is already running. Wait for it to finish."));
+        return;
+    }
+    const auto voices = localVoiceCatalog();
+    if (voices.empty()) {
+        QMessageBox::warning(this, tr("Generate Dialogue"), tr("The voice catalog is missing from this build."));
+        return;
+    }
+    QSettings settings;
+    QDialog dlg(this);
+    dlg.setWindowTitle(tr("Generate Dialogue from a Script"));
+    dlg.setObjectName(QStringLiteral("generateDialogueDialog"));
+    dlg.resize(720, 640);
+    auto* layout = new QVBoxLayout(&dlg);
+    auto* intro = new QLabel(tr("One line per speech, \"Name: what they say\". Each character gets a voice, a speed and a pitch, and "
+                                "their own audio track named after them, ready for lip sync. A line without a name continues the "
+                                "one above; lines starting with # are notes."),
+                             &dlg);
+    intro->setWordWrap(true);
+    layout->addWidget(intro);
+    auto* engines = new QPushButton(tr("Install / Manage AI Components..."), &dlg);
+    connect(engines, &QPushButton::clicked, &dlg, [this] { aiComponents(); });
+    layout->addWidget(engines);
+    auto* script = new QPlainTextEdit(&dlg);
+    script->setObjectName(QStringLiteral("dialogueScript"));
+    script->setPlaceholderText(tr("Gus: Did you hear that?\nMo: It was just the wind.\nGus: The wind doesn't laugh, Mo."));
+    script->setPlainText(settings.value(QStringLiteral("dialogue/script")).toString());
+    layout->addWidget(script, 2);
+    auto* cast = new QTableWidget(0, 4, &dlg);
+    cast->setObjectName(QStringLiteral("dialogueCast"));
+    cast->setHorizontalHeaderLabels({tr("Character"), tr("Voice"), tr("Speed"), tr("Pitch (semitones)")});
+    cast->horizontalHeader()->setSectionResizeMode(1, QHeaderView::Stretch);
+    cast->verticalHeader()->hide();
+    layout->addWidget(cast, 1);
+    auto* form = new QFormLayout;
+    auto* start = new QDoubleSpinBox(&dlg);
+    start->setRange(0, 86400);
+    start->setDecimals(2);
+    start->setSuffix(tr(" s"));
+    start->setValue(double(m_timeline->cursorTime()) / kUsPerSecond);
+    form->addRow(tr("Start at"), start);
+    auto* gap = new QDoubleSpinBox(&dlg);
+    gap->setRange(0, 10);
+    gap->setDecimals(2);
+    gap->setSingleStep(0.05);
+    gap->setSuffix(tr(" s"));
+    gap->setValue(settings.value(QStringLiteral("dialogue/gap"), 0.3).toDouble());
+    form->addRow(tr("Pause between lines"), gap);
+    layout->addLayout(form);
+    // A new character gets the next voice not yet cast, installed voices first; a name used before keeps its voice.
+    std::vector<size_t> order(voices.size());
+    std::iota(order.begin(), order.end(), size_t(0));
+    std::stable_partition(order.begin(), order.end(), [&](size_t i) { return voiceAssetInstalled(voices[i].asset); });
+    struct Choice {
+        QString voice;
+        double rate = 1;
+        int pitch = 0;
+    };
+    auto refreshCast = [&] {
+        std::map<QString, Choice> kept;
+        for (int r = 0; r < cast->rowCount(); ++r)
+            kept[cast->item(r, 0)->text()] = {qobject_cast<QComboBox*>(cast->cellWidget(r, 1))->currentData().toString(),
+                                              qobject_cast<QDoubleSpinBox*>(cast->cellWidget(r, 2))->value(),
+                                              qobject_cast<QSpinBox*>(cast->cellWidget(r, 3))->value()};
+        const QStringList names = dialogueSpeakers(dialogueLines(script->toPlainText()));
+        QStringList used;
+        for (const QString& name : names) {
+            const QString key = QStringLiteral("dialogue/cast/%1/").arg(name);
+            if (!kept.contains(name) && settings.contains(key + QStringLiteral("voice")))
+                kept[name] = {settings.value(key + QStringLiteral("voice")).toString(), settings.value(key + QStringLiteral("rate"), 1.0).toDouble(),
+                              settings.value(key + QStringLiteral("pitch"), 0).toInt()};
+            if (kept.contains(name))
+                used.append(kept[name].voice);
+        }
+        cast->setRowCount(0);
+        for (const QString& name : names) {
+            if (!kept.contains(name))
+                for (size_t i : order)
+                    if (!used.contains(voices[i].id)) {
+                        kept[name].voice = voices[i].id;
+                        used.append(voices[i].id);
+                        break;
+                    }
+            const Choice choice = kept[name];
+            const int r = cast->rowCount();
+            cast->insertRow(r);
+            auto* item = new QTableWidgetItem(name);
+            item->setFlags(item->flags() & ~Qt::ItemIsEditable);
+            cast->setItem(r, 0, item);
+            auto* voice = new QComboBox;
+            for (const auto& v : voices) {
+                const QString accent = v.language == QLatin1String("en-gb") ? tr("UK") : tr("US");
+                const QString gender = v.id.at(1) == QLatin1Char('f') ? tr("female") : tr("male");
+                voice->addItem(
+                    tr("%1 · %2, %3 · %4").arg(v.name, accent, gender, voiceAssetInstalled(v.asset) ? tr("Installed") : tr("Download")), v.id);
+            }
+            voice->setCurrentIndex(std::max(0, voice->findData(choice.voice)));
+            cast->setCellWidget(r, 1, voice);
+            auto* speed = new QDoubleSpinBox;
+            speed->setRange(0.5, 2);
+            speed->setSingleStep(0.05);
+            speed->setSuffix(tr(" ×"));
+            speed->setValue(choice.rate);
+            cast->setCellWidget(r, 2, speed);
+            auto* pitch = new QSpinBox;
+            pitch->setRange(-24, 24);
+            pitch->setValue(choice.pitch);
+            cast->setCellWidget(r, 3, pitch);
+        }
+    };
+    refreshCast();
+    connect(script, &QPlainTextEdit::textChanged, &dlg, refreshCast);
+    auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);
+    buttons->button(QDialogButtonBox::Ok)->setText(tr("Generate Dialogue"));
+    layout->addWidget(buttons);
+    connect(buttons, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
+    connect(buttons, &QDialogButtonBox::accepted, &dlg, [&] {
+        std::vector<DialogueVoice> people;
+        std::vector<VoiceAsset> assets{kokoroModelAsset(), kokoroGpuModelAsset()};
+        for (int r = 0; r < cast->rowCount(); ++r) {
+            const auto& v = voices[size_t(std::max(0, qobject_cast<QComboBox*>(cast->cellWidget(r, 1))->currentIndex()))];
+            people.push_back({cast->item(r, 0)->text(), v, qobject_cast<QDoubleSpinBox*>(cast->cellWidget(r, 2))->value(),
+                              double(qobject_cast<QSpinBox*>(cast->cellWidget(r, 3))->value())});
+            assets.push_back(v.asset);
+        }
+        if (people.empty()) {
+            QMessageBox::information(&dlg, tr("Generate Dialogue"), tr("Write at least one line, \"Name: what they say\"."));
+            return;
+        }
+        if (!QFileInfo::exists(VoiceJob::workerPath())) {
+            aiComponents();
+            if (!QFileInfo::exists(VoiceJob::workerPath()))
+                return;
+        }
+        if (!ensureVoiceAssets(&dlg, assets))
+            return;
+        QString error;
+        if (!dialogueJob()->start(script->toPlainText(), people, TimeUs(std::llround(start->value() * kUsPerSecond)),
+                                  TimeUs(std::llround(gap->value() * kUsPerSecond)), &error)) {
+            QMessageBox::warning(&dlg, tr("Generate Dialogue"), error);
+            return;
+        }
+        QProgressDialog progress(tr("Starting local speech engine..."), tr("Cancel"), 0, 1000, &dlg);
+        progress.setWindowModality(Qt::WindowModal);
+        progress.setMinimumDuration(0);
+        progress.setAutoClose(false);
+        progress.setAutoReset(false);
+        QEventLoop loop;
+        const auto moved = connect(dialogueJob(), &DialogueJob::progress, &progress, [&](double value, const QString& message) {
+            progress.setLabelText(message);
+            progress.setValue(int(value * 1000));
+        });
+        const auto done = connect(dialogueJob(), &DialogueJob::completed, &loop, &QEventLoop::quit);
+        connect(&progress, &QProgressDialog::canceled, dialogueJob(), &DialogueJob::cancel);
+        if (dialogueJob()->busy())
+            loop.exec();
+        disconnect(moved);
+        disconnect(done);
+        progress.close();
+        const auto result = dialogueJob()->status();
+        if (!result.value("ok").toBool()) {
+            if (result.value("error").toString() != tr("Cancelled"))
+                QMessageBox::warning(&dlg, tr("Generate Dialogue"), result.value("error").toString());
+            return;
+        }
+        settings.setValue(QStringLiteral("dialogue/script"), script->toPlainText());
+        settings.setValue(QStringLiteral("dialogue/gap"), gap->value());
+        for (const auto& p : people) {
+            const QString key = QStringLiteral("dialogue/cast/%1/").arg(p.name);
+            settings.setValue(key + QStringLiteral("voice"), p.voice.id);
+            settings.setValue(key + QStringLiteral("rate"), p.rate);
+            settings.setValue(key + QStringLiteral("pitch"), p.semitones);
+        }
+        statusBar()->showMessage(tr("Generated %1 lines of dialogue on %2 character tracks.")
+                                     .arg(result.value("lines").toInt())
+                                     .arg(result.value("tracks").toArray().size()),
+                                 8000);
         dlg.accept();
     });
     dlg.exec();

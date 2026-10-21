@@ -1090,6 +1090,16 @@ QJsonArray McpServer::toolList()
         def["inputSchema"] = schema;
         t[i] = def;
     }
+    t.append(tool("generate_dialogue",
+                  "Speaks a script of \"Name: line\" lines with a voice per character, each on their own new audio track named after "
+                  "them (for lip sync: graphics_overlay bind_audio with source_track), lines in script order, as one undo step. Poll "
+                  "voice_status (its dialogue field). Do not edit or switch projects until it finishes.",
+                  {{QStringLiteral("script"), prop("string", "One line per speech: Name: what they say")},
+                   {QStringLiteral("cast"),
+                    prop("object", "Per character name: {voice (list_voices id, default af_heart), rate 0.5 to 2, pitch semitones -24 to 24}")},
+                   {QStringLiteral("start"), prop("number", "Seconds (default the cursor)")},
+                   {QStringLiteral("gap"), prop("number", "Seconds between lines, 0 to 10 (default 0.3)")}},
+                  {QStringLiteral("script")}));
     t.append(tool("voice_status",
                   "Progress and result of generate_voice, including timing warnings and output folder. cancel stops the worker.",
                   {{QStringLiteral("cancel"), prop("boolean", "Cancel generation")}}));
@@ -1415,6 +1425,7 @@ struct McpServer::ToolCall {
     QJsonObject tool_ai_components();
     QJsonObject tool_voice_status();
     QJsonObject tool_generate_voice();
+    QJsonObject tool_generate_dialogue();
     QJsonObject tool_list_vst3_plugins();
     QJsonObject tool_set_project_settings();
     QJsonObject tool_live_status();
@@ -2634,9 +2645,36 @@ QJsonObject McpServer::ToolCall::tool_ai_components()
 
 QJsonObject McpServer::ToolCall::tool_voice_status()
 {
-    if (a.value("cancel").toBool())
+    if (a.value("cancel").toBool()) {
+        w->dialogueJob()->cancel();
         w->voiceJob()->cancel();
-    return jsonResult(w->voiceJob()->status());
+    }
+    QJsonObject status = w->voiceJob()->status();
+    if (w->m_dialogueJob)
+        status["dialogue"] = w->m_dialogueJob->status();
+    return jsonResult(status);
+}
+
+QJsonObject McpServer::ToolCall::tool_generate_dialogue()
+{
+    const auto voices = localVoiceCatalog();
+    const QJsonObject castJson = a.value("cast").toObject();
+    std::vector<DialogueVoice> cast;
+    for (const QString& who : dialogueSpeakers(dialogueLines(str("script")))) {
+        const QJsonObject c = castJson.value(who).toObject();
+        const QString id = c.value("voice").toString(QStringLiteral("af_heart"));
+        const auto v = std::find_if(voices.begin(), voices.end(), [&](const LocalVoice& voice) { return voice.id == id; });
+        if (v == voices.end())
+            return errorResult(QStringLiteral("%1: unknown voice %2, use list_voices.").arg(who, id));
+        if (!voiceAssetInstalled(v->asset) || !voiceAssetInstalled(kokoroModelAsset()))
+            return errorResult(QStringLiteral("%1: voice %2 isn't downloaded yet (Tools > Captions > Generate Voice).").arg(who, id));
+        cast.push_back({who, *v, c.value("rate").toDouble(1), c.value("pitch").toDouble(0)});
+    }
+    QString error;
+    const TimeUs start = has("start") ? us(num("start")) : w->m_timeline->cursorTime();
+    if (!w->dialogueJob()->start(str("script"), cast, start, us(num("gap", 0.3)), &error))
+        return errorResult(error);
+    return jsonResult(w->dialogueJob()->status());
 }
 
 QJsonObject McpServer::ToolCall::tool_generate_voice()
@@ -3466,6 +3504,7 @@ QJsonObject McpServer::callTool(const QString& name, const QJsonObject& a)
         {QStringLiteral("ai_components"), {&ToolCall::tool_ai_components, false}},
         {QStringLiteral("voice_status"), {&ToolCall::tool_voice_status, false}},
         {QStringLiteral("generate_voice"), {&ToolCall::tool_generate_voice, false}},
+        {QStringLiteral("generate_dialogue"), {&ToolCall::tool_generate_dialogue, false}},
         {QStringLiteral("list_vst3_plugins"), {&ToolCall::tool_list_vst3_plugins, false}},
         {QStringLiteral("set_project_settings"), {&ToolCall::tool_set_project_settings, false}},
         {QStringLiteral("live_status"), {&ToolCall::tool_live_status, true}},

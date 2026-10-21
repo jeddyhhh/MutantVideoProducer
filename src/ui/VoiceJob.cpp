@@ -565,3 +565,116 @@ QJsonObject VoiceJob::status() const
             {"progress", m_progress},        {"message", m_message}, {"error", m_error}, {"track_id", m_trackId}, {"events", m_count},
             {"timing_warnings", m_warnings}, {"folder", m_folder}};
 }
+
+DialogueJob::DialogueJob(Project* project, VoiceJob* voice, QObject* parent) : QObject(parent), m_project(project), m_voice(voice)
+{
+    connect(m_voice, &VoiceJob::progress, this, [this](double value, const QString& message) {
+        if (!m_busy || m_cast.empty())
+            return;
+        m_progress = (double(m_index) + value) / double(m_cast.size());
+        m_message = tr("%1: %2").arg(m_cast[m_index].name, message);
+        emit progress(m_progress, m_message);
+    });
+    connect(m_voice, &VoiceJob::completed, this, [this](bool ok, const QString& error) {
+        if (!m_busy)
+            return;
+        if (!ok) {
+            finish(m_cancelled ? tr("Cancelled") : tr("%1: %2").arg(m_cast[m_index].name, error));
+            return;
+        }
+        m_tracks.push_back({m_cast[m_index].name, m_voice->status().value("track_id").toInt(), m_cast[m_index].semitones});
+        ++m_index;
+        // The voice job is still emitting: start the next one after it returns.
+        QMetaObject::invokeMethod(this, &DialogueJob::next, Qt::QueuedConnection);
+    });
+}
+bool DialogueJob::start(const QString& script, const std::vector<DialogueVoice>& cast, TimeUs start, TimeUs gap, QString* error)
+{
+    auto fail = [&](const QString& message) {
+        if (error)
+            *error = message;
+        return false;
+    };
+    if (m_busy || m_voice->busy())
+        return fail(tr("Voice generation is already running. Wait for it to finish."));
+    const auto lines = dialogueLines(script);
+    if (lines.empty())
+        return fail(tr("Write the script as one line per speech: \"Name: what they say\"."));
+    std::vector<DialogueVoice> speaking;
+    for (const QString& name : dialogueSpeakers(lines)) {
+        const auto found = std::find_if(cast.begin(), cast.end(), [&](const DialogueVoice& v) { return v.name == name; });
+        if (found == cast.end())
+            return fail(tr("%1 has no voice.").arg(name));
+        if (!std::isfinite(found->rate) || found->rate < 0.5 || found->rate > 2 || !std::isfinite(found->semitones)
+            || std::abs(found->semitones) > 24)
+            return fail(tr("%1: use a speed from 0.5 to 2 and a pitch from -24 to 24 semitones.").arg(name));
+        speaking.push_back(*found);
+    }
+    if (gap < 0 || gap > 10 * kUsPerSecond)
+        return fail(tr("The gap between lines is 0 to 10 seconds."));
+    m_lines = lines;
+    m_cast = std::move(speaking);
+    m_tracks.clear();
+    m_start = std::max<TimeUs>(0, start);
+    m_gap = gap;
+    m_index = 0;
+    m_undoIndex = m_project->undoStack()->index();
+    m_busy = true;
+    m_done = m_ok = m_cancelled = false;
+    m_progress = 0;
+    m_error.clear();
+    m_message = tr("Starting");
+    next();
+    return true;
+}
+void DialogueJob::next()
+{
+    if (!m_busy)
+        return;
+    if (m_cancelled || m_index >= m_cast.size()) {
+        finish(m_cancelled ? tr("Cancelled") : QString());
+        return;
+    }
+    const auto& who = m_cast[m_index];
+    QString error;
+    const QJsonObject options{{"rate", who.rate}, {"timing", "natural"}, {"group", false}};
+    if (!m_voice->start(dialogueCaptions(m_lines, who.name), who.voice, options, false, &error))
+        finish(tr("%1: %2").arg(who.name, error));
+}
+void DialogueJob::finish(const QString& failure)
+{
+    QString error = failure;
+    if (error.isEmpty()) {
+        Timeline tl = m_project->timeline();
+        if (arrangeDialogue(tl, m_lines, m_tracks, m_start, m_gap, m_project->settings().fps, &error)) {
+            // One undo step for the whole dialogue, unless something else was edited in between.
+            if (m_project->undoStack()->index() == m_undoIndex + int(m_tracks.size()))
+                while (m_project->undoStack()->index() > m_undoIndex)
+                    m_project->undoStack()->undo();
+            m_project->applyEdit(tl, tr("Generate Dialogue"));
+        }
+    }
+    // A failure keeps the characters already spoken on their tracks (Undo removes them).
+    m_error = error;
+    m_ok = error.isEmpty();
+    m_busy = false;
+    m_done = true;
+    m_progress = m_ok ? 1 : m_progress;
+    m_message = m_ok ? tr("Dialogue ready") : error;
+    emit completed(m_ok, error);
+}
+void DialogueJob::cancel()
+{
+    if (!m_busy)
+        return;
+    m_cancelled = true;
+    m_voice->cancel();
+}
+QJsonObject DialogueJob::status() const
+{
+    QJsonArray tracks;
+    for (const auto& t : m_tracks)
+        tracks.append(QJsonObject{{"character", t.name}, {"track_id", t.trackId}});
+    return {{"busy", m_busy}, {"done", m_done}, {"ok", m_ok}, {"error", m_error}, {"message", m_message}, {"progress", m_progress},
+            {"lines", int(m_lines.size())}, {"tracks", tracks}};
+}

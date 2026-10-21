@@ -628,6 +628,9 @@ void MainWindow::createActions()
     auto* voiceAction = act(tr("Generate &Voice from Captions..."), QKeySequence(), [this] { if (editorActive()) generateVoice(); });
     voiceAction->setObjectName(QStringLiteral("generateVoice"));
     captionsMenu->addAction(voiceAction);
+    auto* dialogueAction = act(tr("Generate &Dialogue from a Script..."), QKeySequence(), [this] { if (editorActive()) generateDialogue(); });
+    dialogueAction->setObjectName(QStringLiteral("generateDialogue"));
+    captionsMenu->addAction(dialogueAction);
     tools->addSeparator();
     auto* finishingAction = act(tr("Audio &Finishing…"), QKeySequence(), [this] {
         if (editorActive()) { stopPlayback(false); showAudioFinishing(this, m_project); }

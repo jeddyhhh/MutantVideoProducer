@@ -31,6 +31,8 @@ class QTextBrowser;
 class QToolButton;
 class TimelineWidget;
 class VoiceJob;
+class DialogueJob;
+struct VoiceAsset;
 
 class MainWindow : public QMainWindow {
     Q_OBJECT
@@ -93,6 +95,11 @@ private:
     void profilesDialog();
     VoiceJob* voiceJob();
     VoiceJob* m_voiceJob = nullptr;
+    void generateDialogue();
+    DialogueJob* dialogueJob();
+    DialogueJob* m_dialogueJob = nullptr;
+    // Downloads (and SHA-256 checks) whichever of these voice files are missing; false when one fails or is cancelled.
+    bool ensureVoiceAssets(QWidget* parent, const std::vector<VoiceAsset>& assets);
     void createActions();
     void createLayout();
     void connectSignals();

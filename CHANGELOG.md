@@ -14,6 +14,9 @@ What changed in each version of Mutant Video Producer. The newest is first.
   following**; a mouth that moves with a voice track no longer needs JSON.
 - **Animation: characters** (Generators, Graphics): two cut-out characters whose mouths, arms and bodies follow the
   bindings `voice_a` and `voice_b`, who blink, and whose colours are scene variables.
+- **Tools > Captions > Generate Dialogue from a Script...**: `Name: line` lines spoken with a voice, speed and pitch
+  per character, each character on their own track named after them, lines in script order, one undo step; voices
+  are remembered per name. AI control: `generate_dialogue`.
 
 ### Fixed
 

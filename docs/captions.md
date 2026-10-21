@@ -89,6 +89,28 @@ detection. RVC failures leave the timeline unchanged and show its diagnostic log
 The downloadable catalog currently contains Kokoro voices; online RVC catalogs and
 Qwen speech are not part of this version.
 
+## Generate dialogue from a script
+
+**Tools > Captions > Generate Dialogue from a Script...** speaks a whole conversation at once. Type (or paste) the script
+with one speech per line:
+
+```
+# the cabin, night
+Gus: Did you hear that?
+Mo: It was just the wind.
+Gus: The wind doesn't laugh, Mo.
+```
+
+A line without `Name:` continues the speech above it; lines starting with `#` are notes and aren't spoken. Every
+character in the script gets a row: choose their voice (different voices are picked for you, installed ones first),
+their speed, and a pitch in semitones (a Pitch Shift on their track: +4 for a child, -4 for a giant). Set where the
+dialogue starts (the cursor by default) and the pause between lines, then press **Generate Dialogue**.
+
+Each character gets their own audio track named after them, and the lines follow each other in script order with
+natural timing. Missing voices are downloaded first. One **Undo** removes the whole dialogue. The voices you chose
+are remembered for each name, so the next scene with the same characters sounds the same. For lip sync, bind each
+character's track in Compose Graphics (see [Tutorial 17](tutorials/17-animated-short.md)).
+
 ## Import and export subtitle files
 
 - **Import Subtitles (SRT / VTT)...** reads an SRT or WebVTT file onto a Captions track as text events.

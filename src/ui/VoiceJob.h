@@ -44,3 +44,37 @@ private:
     bool m_alignmentRunning = false, m_alignmentReady = false;
     void* m_processTree = nullptr; // Windows job object: cancellation also stops RVC children.
 };
+
+// A script spoken by several characters: one VoiceJob per character, then every line placed in script order on the
+// characters' own tracks (named after them, with their pitch), as one undo step.
+struct DialogueVoice {
+    QString name;
+    LocalVoice voice;
+    double rate = 1, semitones = 0;
+};
+class DialogueJob : public QObject {
+    Q_OBJECT
+public:
+    DialogueJob(Project* project, VoiceJob* voice, QObject* parent = nullptr);
+    bool start(const QString& script, const std::vector<DialogueVoice>& cast, TimeUs start, TimeUs gap, QString* error);
+    bool busy() const { return m_busy; }
+    QJsonObject status() const;
+    void cancel();
+signals:
+    void progress(double value, const QString& message);
+    void completed(bool ok, const QString& error);
+private:
+    void next();
+    void finish(const QString& error);
+    Project* m_project;
+    VoiceJob* m_voice;
+    std::vector<DialogueLine> m_lines;
+    std::vector<DialogueVoice> m_cast;
+    std::vector<DialogueCast> m_tracks;
+    TimeUs m_start = 0, m_gap = 0;
+    int m_undoIndex = 0;
+    size_t m_index = 0;
+    bool m_busy = false, m_done = false, m_ok = false, m_cancelled = false;
+    double m_progress = 0;
+    QString m_error, m_message;
+};

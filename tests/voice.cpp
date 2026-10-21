@@ -51,6 +51,40 @@ int main(int argc, char** argv)
           QStringLiteral("grouping preserves long pauses"));
     check(voiceSentences({{0, 1000000, QStringLiteral("  "), 0}, {-1, 1000000, QStringLiteral("Bad"), 0}}, true).empty(),
           QStringLiteral("empty and invalid captions are ignored"));
+    {
+        const auto lines = dialogueLines(QStringLiteral("# scene one\nGus: Hi there.\n  still Gus.\n\nMo: Hello: friend.\nGus: Bye."));
+        check(lines.size() == 3 && lines[0].speaker == "Gus" && lines[0].text == "Hi there. still Gus." && lines[1].speaker == "Mo"
+                  && lines[1].text == "Hello: friend." && dialogueSpeakers(lines) == QStringList({"Gus", "Mo"}),
+              QStringLiteral("a dialogue script reads as Name: line, continuations join the line, comments are skipped"));
+        const auto gus = dialogueCaptions(lines, "Gus");
+        check(gus.size() == 2 && gus[0].end <= gus[1].start && gus[1].text == "Bye.",
+              QStringLiteral("each character speaks only their lines, never overlapping"));
+        Timeline tl;
+        Track a, b;
+        a.id = tl.allocId();
+        b.id = tl.allocId();
+        a.type = b.type = TrackType::Audio;
+        for (Track* t : {&a, &a, &b}) {
+            Clip c;
+            c.id = tl.allocId();
+            c.start = TimeUs(t->clips.size()) * 10 * kUsPerSecond;
+            c.length = kUsPerSecond;
+            t->clips.push_back(c);
+        }
+        tl.tracks = {a, b};
+        const FrameRate fps{25, 1};
+        check(arrangeDialogue(tl, lines, {{"Gus", a.id, 0}, {"Mo", b.id, -4}}, 2 * kUsPerSecond, 200000, fps, nullptr)
+                  && tl.tracks[0].name == "Gus" && tl.tracks[1].name == "Mo" && tl.tracks[0].effects.empty()
+                  && tl.tracks[1].effects.size() == 1 && tl.tracks[1].effects[0].type == "a_pitch"
+                  && tl.tracks[0].clips[0].start == 2 * kUsPerSecond && tl.tracks[1].clips[0].start == 3200000
+                  && tl.tracks[0].clips[1].start == 4400000 && tl.tracks[0].clips[1].name == "Bye.",
+              QStringLiteral("dialogue lines are placed in script order on each character's track, with their pitch"));
+        const Timeline before = tl;
+        QString arrangeError;
+        check(!arrangeDialogue(tl, lines, {{"Gus", b.id, 0}, {"Mo", a.id, 0}}, 0, 0, fps, &arrangeError) && tl == before
+                  && !arrangeError.isEmpty(),
+              QStringLiteral("a track with the wrong number of lines leaves the timeline alone"));
+    }
     const auto voices = localVoiceCatalog();
     check(voices.size() == 28, QStringLiteral("all 28 curated English voices have metadata"));
     if (voices.empty())
@@ -224,6 +258,33 @@ int main(int argc, char** argv)
         }
         sentence["replace_event"] = initial.tracks.front().id;
         check(!job.start({cues.front()}, voice, sentence, false, &error), "invalid replacement fails safely");
+    }
+    {
+        // Two characters with the same installed voice, the second a pitch lower: one track each, lines in script order.
+        DialogueJob dialogue(&project, &job);
+        const int tracksBefore = int(project.timeline().tracks.size()), undoBefore = project.undoStack()->index();
+        started = dialogue.start(QStringLiteral("Gus: Hello there.\nMo: Hi Gus.\nGus: Bye now."),
+                                 {{"Gus", voice, 1, 0}, {"Mo", voice, 1.1, -4}}, 3 * kUsPerSecond, 250000, &error);
+        check(started, QStringLiteral("dialogue starts: %1").arg(error));
+        if (started) {
+            QEventLoop loop;
+            QTimer::singleShot(180000, &loop, [&] { dialogue.cancel(); });
+            QObject::connect(&dialogue, &DialogueJob::completed, &loop, &QEventLoop::quit);
+            loop.exec();
+            const auto& tracks = project.timeline().tracks;
+            const bool shape = dialogue.status().value("ok").toBool() && int(tracks.size()) == tracksBefore + 2;
+            check(shape && tracks[tracksBefore].name == "Gus" && tracks[tracksBefore + 1].name == "Mo"
+                      && tracks[tracksBefore].clips.size() == 2 && tracks[tracksBefore + 1].clips.size() == 1
+                      && tracks[tracksBefore + 1].effects.size() == 1 && tracks[tracksBefore].clips[0].start == 3 * kUsPerSecond
+                      && tracks[tracksBefore + 1].clips[0].start > tracks[tracksBefore].clips[0].end()
+                      && tracks[tracksBefore].clips[1].start > tracks[tracksBefore + 1].clips[0].end(),
+                  QStringLiteral("dialogue: a track per character, lines in script order: %1").arg(dialogue.status().value("error").toString()));
+            check(project.undoStack()->index() == undoBefore + 1, QStringLiteral("dialogue is one undo step"));
+            project.undoStack()->undo();
+            check(int(project.timeline().tracks.size()) == tracksBefore, QStringLiteral("undo removes the whole dialogue"));
+        }
+        check(!dialogue.start(QStringLiteral("Zed: who am I"), {{"Gus", voice, 1, 0}}, 0, 0, &error) && error.contains("Zed"),
+              QStringLiteral("a character without a voice is refused before anything runs"));
     }
     qputenv("MVP_VOICE_WORKER", (temp.path() + QStringLiteral("/missing.exe")).toUtf8());
     check(!job.start(cues, voice, options, false, &error), QStringLiteral("missing runtime gives a useful error before editing"));
