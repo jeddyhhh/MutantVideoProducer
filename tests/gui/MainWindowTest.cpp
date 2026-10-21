@@ -1827,6 +1827,24 @@ int MainWindow::runEditorTest(QStringList& log)
         const int imported = placeDownloadedClip(clipPath, kUsPerSecond, 2 * kUsPerSecond);
         check(imported && profiles.findMedia(clipPath).value("origin").toString() == QLatin1String("youtube"),
               QStringLiteral("profile media library persists download origins and marks"));
+        {
+            // One write, one announcement: the file watcher seeing our own write (or a write in the home folder, such
+            // as an autosave) used to rebuild every shared bin again, which stalled the editor on big libraries.
+            int announced = 0;
+            const auto counting = connect(&profiles, &Profiles::libraryChanged, this, [&] { ++announced; });
+            QJsonObject rated = profiles.findMedia(clipPath); // (a change to the one entry: the checks below count entries)
+            rated["rating"] = 3;
+            profiles.remember({rated});
+            QFile other(QDir(homeA).filePath(QStringLiteral("unrelated.txt")));
+            other.open(QIODevice::WriteOnly);
+            other.write("x");
+            other.close();
+            QEventLoop wait;
+            QTimer::singleShot(1500, &wait, &QEventLoop::quit);
+            wait.exec();
+            disconnect(counting);
+            check(announced == 1, QStringLiteral("a library write is announced once, and other files in the home don't count (%1)").arg(announced));
+        }
         newProject();
         auto* others = findChild<QCheckBox*>(QStringLiteral("youtubeOtherProjects"));
         check(others && !others->isChecked() && m_youtubeBin->count() == 0,

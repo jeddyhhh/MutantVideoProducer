@@ -2,6 +2,7 @@
 #include <QObject>
 #include <QJsonArray>
 #include <QJsonObject>
+#include <QDateTime>
 #include <QFileSystemWatcher>
 #include <QString>
 #include <vector>
@@ -21,7 +22,9 @@ public:
     QJsonArray media() const;
     bool remember(const QJsonArray& records, QString* error = nullptr);
     QJsonObject findMedia(const QString& path) const;
-    static QString cleanPath(const QString& path);
+    static QString cleanPath(const QString& path); // resolves links: reads the disk
+    // A library file's identity without touching the disk (the library holds thousands, often on slow drives).
+    static QString libraryKey(const QString& path);
 signals:
     void changed();
     void libraryChanged();
@@ -29,4 +32,6 @@ private:
     Profiles();
     void watchLibrary();
     QFileSystemWatcher m_watcher;
+    QDateTime m_written; // our last write of the library, to tell it from a change made elsewhere
+    qint64 m_writtenSize = -1;
 };

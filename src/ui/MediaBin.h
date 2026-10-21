@@ -1,5 +1,6 @@
 #pragma once
 
+#include <QHash>
 #include <QListWidget>
 #include <functional>
 #include <map>
@@ -44,6 +45,7 @@ protected:
     void contextMenuEvent(QContextMenuEvent* e) override;
     void keyPressEvent(QKeyEvent* e) override;
     void paintEvent(QPaintEvent* e) override; // (a hint while it is empty)
+    void showEvent(QShowEvent* e) override;
 
 public:
     // Redraws the icons (a proxy was made or deleted: they carry a "P").
@@ -65,6 +67,7 @@ private:
     QString m_origin;
     bool m_sharedProfile = false;
     std::map<QString, QIcon> m_library;
+    QHash<QString, bool> m_exists; // profile library files found on disk (checked again when the list is shown)
     int m_minRating = 0;
     class QComboBox* m_folderBox = nullptr;
 };

@@ -23,6 +23,11 @@ What changed in each version of Mutant Video Producer. The newest is first.
 
 ### Fixed
 
+- The editor stopped responding while many files were added at once (a long generated dialogue, then an import) with
+  a large profile media library on a slow drive: every file added looked up each library entry on disk, rewrote the
+  library, and rebuilt Profile Media, and the profile home folder's watcher (any autosave or voice take) rebuilt it
+  again. Library paths are now compared without the disk, each file is looked up once, and only the library file is
+  watched, with the editor's own writes ignored.
 - Compose Graphics crashed when a starting layout (or an imported template) with fewer layers replaced a scene whose
   last layers were selected: the old layer list was read in the new, shorter scene before it was rebuilt. (#7)
 - Compose Graphics looks up layers by their row in one place, which skips a row the scene no longer has (grouping,

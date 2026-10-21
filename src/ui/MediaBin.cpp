@@ -152,18 +152,20 @@ void MediaBin::rebuild()
     }
     if (m_sharedProfile) {
         QSet<QString> projectPaths;
-        for (const auto& m : list) projectPaths.insert(Profiles::cleanPath(m->path));
+        for (const auto& m : list) projectPaths.insert(Profiles::libraryKey(m->path));
         for (const auto& value : Profiles::instance().media()) {
             const auto record = value.toObject(); const QString path = record.value("path").toString();
             if (path.isEmpty() || !QDir::isAbsolutePath(path)) continue;
             if (!m_origin.isEmpty() && record.value("origin").toString() != m_origin) continue;
-            const bool inProject = projectPaths.contains(Profiles::cleanPath(path));
+            const bool inProject = projectPaths.contains(Profiles::libraryKey(path));
             if (inProject) continue;
             auto* it = new QListWidgetItem(QFileInfo(path).fileName(), this);
             it->setData(Qt::UserRole, 0); it->setData(Qt::UserRole + 2, path); it->setData(Qt::UserRole + 3, record);
             it->setSelected(selectedPaths.contains(path));
             it->setIcon(placeholderIcon(false)); it->setToolTip(tr("Profile library: %1\nDouble-click or drag to import into this project.").arg(QDir::toNativeSeparators(path)));
-            if (!QFileInfo::exists(path)) { it->setForeground(theme::c().bad); it->setText(it->text() + tr(" (offline)")); }
+            auto known = m_exists.find(path); // (looked up once: the library can hold thousands of files on slow drives)
+            if (known == m_exists.end()) known = m_exists.insert(path, QFileInfo::exists(path));
+            if (!*known) { it->setForeground(theme::c().bad); it->setText(it->text() + tr(" (offline)")); }
         }
     }
     if (m_folderBox) { // the folders to choose from
@@ -193,6 +195,15 @@ QStringList MediaBin::folders() const
 }
 
 void MediaBin::setSharedProfile(bool enabled) { m_sharedProfile = enabled; rebuild(); }
+
+void MediaBin::showEvent(QShowEvent* e)
+{
+    QListWidget::showEvent(e);
+    if (m_sharedProfile && !m_exists.isEmpty()) { // files may have come back or gone while it was hidden
+        m_exists.clear();
+        rebuild();
+    }
+}
 
 void MediaBin::setFilter(const QString& search, const QString& folder, int minRating)
 {

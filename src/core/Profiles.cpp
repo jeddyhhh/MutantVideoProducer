@@ -13,7 +13,15 @@
 Profiles& Profiles::instance() { static Profiles store; return store; }
 Profiles::Profiles()
 {
-    connect(&m_watcher, &QFileSystemWatcher::fileChanged, this, [this] { watchLibrary(); emit libraryChanged(); });
+    // Changes from outside (another copy of the program). Our own writes were announced when they were made, so the
+    // watcher seeing one of them only re-arms (replacing the file drops its watch).
+    connect(&m_watcher, &QFileSystemWatcher::fileChanged, this, [this](const QString& path) {
+        const QFileInfo now(path);
+        const bool ours = now.exists() && now.lastModified() == m_written && now.size() == m_writtenSize;
+        watchLibrary();
+        if (!ours)
+            emit libraryChanged();
+    });
     connect(&m_watcher, &QFileSystemWatcher::directoryChanged, this, [this] { watchLibrary(); emit libraryChanged(); });
     watchLibrary();
 }
@@ -95,9 +103,19 @@ void Profiles::watchLibrary()
     if (!m_watcher.directories().isEmpty()) m_watcher.removePaths(m_watcher.directories());
     const auto p = active();
     if (p.id.isEmpty()) return;
-    if (QFileInfo::exists(p.home)) m_watcher.addPath(p.home);
+    // The file itself, or (until there is one) the home folder for it to appear in: watching the home folder always
+    // reported every autosave and voice take as a library change.
     const QString file = QDir(p.home).filePath(QStringLiteral("montage-library.json"));
     if (QFileInfo::exists(file)) m_watcher.addPath(file);
+    else if (QFileInfo::exists(p.home)) m_watcher.addPath(p.home);
+}
+QString Profiles::libraryKey(const QString& path)
+{
+    QString p = QDir::cleanPath(QFileInfo(path).absoluteFilePath());
+#ifdef Q_OS_WIN
+    p = p.toLower();
+#endif
+    return p;
 }
 QJsonArray Profiles::media() const
 {
@@ -108,8 +126,8 @@ QJsonArray Profiles::media() const
 }
 QJsonObject Profiles::findMedia(const QString& path) const
 {
-    const QString clean = cleanPath(path);
-    for (const auto& r : media()) if (cleanPath(r.toObject().value("path").toString()) == clean) return r.toObject();
+    const QString clean = libraryKey(path);
+    for (const auto& r : media()) if (libraryKey(r.toObject().value("path").toString()) == clean) return r.toObject();
     return {};
 }
 bool Profiles::remember(const QJsonArray& records, QString* error)
@@ -130,17 +148,20 @@ bool Profiles::remember(const QJsonArray& records, QString* error)
     }
     const auto before = values;
     QHash<QString, int> positions;
-    for (int i = 0; i < values.size(); ++i) positions.insert(cleanPath(values[i].toObject().value("path").toString()), i);
+    for (int i = 0; i < values.size(); ++i) positions.insert(libraryKey(values[i].toObject().value("path").toString()), i);
     for (const auto& value : records) {
         auto record = value.toObject(); const QString path = record.value("path").toString();
         if (path.isEmpty()) continue;
         record["path"] = QFileInfo(path).absoluteFilePath();
-        const QString key = cleanPath(path); const int found = positions.value(key, -1);
+        const QString key = libraryKey(path); const int found = positions.value(key, -1);
         if (found < 0) { positions.insert(key, values.size()); values.append(record); } else values[found] = record;
     }
     if (values == before) return true;
     QSaveFile file(path);
     const QByteArray bytes = QJsonDocument(QJsonObject{{"version", 1}, {"media", values}}).toJson();
     if (!file.open(QIODevice::WriteOnly) || file.write(bytes) != bytes.size() || !file.commit()) return fail(tr("Could not save the profile media library."));
+    const QFileInfo written(path);
+    m_written = written.lastModified();
+    m_writtenSize = written.size();
     watchLibrary(); emit libraryChanged(); return true;
 }
