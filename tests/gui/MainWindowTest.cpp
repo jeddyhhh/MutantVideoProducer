@@ -751,6 +751,56 @@ int MainWindow::runEditorTest(QStringList& log)
                           && !content(batched).contains("data") && badRefused && m_project->timeline() == beforeBad,
                       "AI graphics patch and batch: edits by path, many steps as one undo step, a bad step changes nothing");
             }
+            {
+                // dance: moves on the beat of the music under a scene (a click track at 120 bpm)
+                const QString clicks = QDir(QDir::tempPath()).filePath(QStringLiteral("mvp-dance-clicks.wav"));
+                {
+                    const int rate = 48000, seconds = 8;
+                    QByteArray pcm(rate * seconds * 4, 0);
+                    auto* out = reinterpret_cast<qint16*>(pcm.data());
+                    for (int i = 0; i < rate * seconds; ++i) {
+                        const int into = i % (rate / 2); // a click every half second
+                        const double v = into < 2400 ? std::sin(2 * 3.14159265 * 1000 * i / rate) * std::exp(-into / 400.0) * 0.8 : 0;
+                        out[2 * i] = out[2 * i + 1] = qint16(v * 32767);
+                    }
+                    QFile f(clicks);
+                    f.open(QIODevice::WriteOnly);
+                    QDataStream d(&f);
+                    d.setByteOrder(QDataStream::LittleEndian);
+                    f.write("RIFF");
+                    d << quint32(36 + pcm.size());
+                    f.write("WAVEfmt ");
+                    d << quint32(16) << quint16(1) << quint16(2) << quint32(rate) << quint32(rate * 4) << quint16(4) << quint16(16);
+                    f.write("data");
+                    d << quint32(pcm.size());
+                    f.write(pcm);
+                }
+                const auto imported = call("import_media", {{"paths", QJsonArray{clicks}}});
+                const int clickId = content(imported)["media_ids"].toArray().first().toInt(content(imported)["imported"].toArray().first().toObject()["media_id"].toInt());
+                const int clickEvent = content(call("add_media_to_timeline", {{"media_id", clickId}, {"at", 300}}))["event_ids"].toArray().first().toInt();
+                {
+                    // a length past the end of the file: shortened, and said so; with loop: true, the file repeats to fill it
+                    const auto tooLong = content(call("edit_event", {{"event_id", clickEvent}, {"length", 20}}));
+                    const auto looped = content(call("edit_event", {{"event_id", clickEvent}, {"length", 20}, {"loop", true}}));
+                    check(tooLong.contains("warning") && tooLong["length"].toDouble() < 8.1 && !looped.contains("warning")
+                              && std::abs(looped["length"].toDouble() - 20) < 0.05,
+                          "AI edit_event warns when a file is shorter than the length asked for, and loops it on request");
+                    call("edit_event", {{"event_id", clickEvent}, {"length", 8}, {"loop", false}});
+                }
+                const QJsonObject dancer{{"type", "rect"}, {"id", "dancer"}, {"x", .4}, {"y", .4}, {"width", .2}, {"height", .2}, {"fill", "#ffffff"}};
+                const int danceId = content(call("graphics_overlay", {{"action", "create"}, {"scene", QJsonObject{{"version", 2}, {"layers", QJsonArray{dancer}}}},
+                                                                      {"at", 300}, {"length", 8}}))["event_id"].toInt();
+                const auto danced = content(call("graphics_overlay", {{"action", "dance"}, {"event_id", danceId}, {"dancers", QJsonArray{"dancer"}}}));
+                const QJsonObject moved = m_project->timeline().findClip(danceId)
+                                              ? m_project->timeline().findClip(danceId)->generator.data["layers"].toArray().first().toObject()
+                                              : QJsonObject{};
+                if (std::abs(danced["bpm"].toDouble() - 120) > 6 || danced["moves"].toInt() < 8)
+                    note("dance reply: " + QString::fromUtf8(QJsonDocument(danced).toJson(QJsonDocument::Compact)) + " import: "
+                         + QString::fromUtf8(QJsonDocument(imported).toJson(QJsonDocument::Compact)));
+                check(std::abs(danced["bpm"].toDouble() - 120) <= 6 && danced["moves"].toInt() >= 8 && (moved["y"].isObject() || moved["rotation"].isObject()),
+                      "AI graphics dance: moves land on the beats of the music under the scene");
+                // (the file stays: the project still lists it, and a missing file would stop a later test at the relink dialog)
+            }
             if (!id || failed(arrangement) || failed(locked) || !styled)
                 note("Workflow replies: "
                      + QString::fromUtf8(

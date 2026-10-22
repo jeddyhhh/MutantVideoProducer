@@ -863,7 +863,7 @@ QJsonArray McpServer::toolList()
         "only. camera.speaker {zoom (1.7), window (0.5 s), quiet (0.06)} frames whichever character (a layer whose id matches its "
         "binding) is loudest. patch sets or removes properties by dotted path (operations [{layer_id, property, value | "
         "remove}]) without sending the scene; batch runs many move/expression/keyframe/patch steps as one undo step (both answer "
-        "briefly). Animate "
+        "briefly). dance keys moves on the beats of the music under the scene (dancers, moves, every). Animate "
         "properties with {keyframes:[[event-local seconds,value,easing?],...],easing,loop,ping_pong}; numeric, colour, discrete and "
         "compatible path morph values work. follow:{path:layer_id,progress,orient,loop} follows curved paths. Scene variables substitute "
         "{{name}} in text; datasets drive charts. Colours are #RRGGBB, or #AARRGGBB with the alpha FIRST (#00000088 is clear: use "
@@ -874,7 +874,7 @@ QJsonArray McpServer::toolList()
         {{"action",
           prop("string",
                "capabilities, presets, validate, create, get, update, keyframe, bind_audio, export_template, import_template, layout, "
-               "lock, brand, move, characters, add_character, save_character, expression, sets, add_set, patch, batch")},
+               "lock, brand, move, characters, add_character, save_character, expression, sets, add_set, patch, batch, dance")},
          {"event_id", prop("integer", "Existing graphics event")},
          {"preset",
           prop("string", "Existing broadcast layouts or motion_race/titles/chart/route/particles/morph/audio/reusable (motion_ prefix)")},
@@ -907,6 +907,11 @@ QJsonArray McpServer::toolList()
          {"mood", prop("string", "expression: neutral, angry, sad, surprised or smug, for character layer_id from time on")},
          {"operations", arrayProp("object", "patch: [{layer_id ($camera, $variables, $scene too), property (dotted path), value | remove: true}]; "
                                       "batch: [{action: move|expression|keyframe|patch, its other arguments}], in order, as one undo step")},
+         {"dancers", arrayProp("string", "dance: the characters' layer IDs; on each beat of the music under the scene each does the next "
+                                         "move (from, to: event-local seconds; every: beats, default 1; moves: names, default hop, "
+                                         "spin, jump, squash, arms up, shake)")},
+         {"moves", arrayProp("string", "dance: the moves, in turn")},
+         {"every", prop("integer", "dance: a move every this many beats (default 1)")},
          {"set", prop("string", "add_set: a name or file from action sets")},
          {"amount", prop("number", "move: how big (default 1)")},
          {"to", prop("number", "move walk: the x to walk to")},
@@ -947,6 +952,8 @@ QJsonArray McpServer::toolList()
                                    "{type: a transition id from list_effects kind=transition, params: {setting: value}}")},
                    {QStringLiteral("transition_out"), prop("object", "Video: the transition at its end, as transition_in")},
                    {QStringLiteral("reverse"), prop("boolean", "Play the source span backwards")},
+                   {QStringLiteral("loop"), prop("boolean", "Repeat the file so the event can run on past its end (false: it stops there; a "
+                                                            "length past the end without loop is shortened, with a warning)")},
                    {QStringLiteral("params"), prop("object", "A generated event's settings (as add_text params)")},
                    {QStringLiteral("pan_crop"),
                     prop("object", "Event Pan/Crop settings (mode Fit/Fill/Stretch, centerX, centerY, zoom, rotation, flipH, flipV), "
@@ -1852,11 +1859,11 @@ QJsonObject McpServer::ToolCall::tool_graphics_overlay()
         return jsonResult({{"sets", out}});
     }
     if (!QStringList{"create", "get", "update", "refresh", "keyframe", "bind_audio", "export_template", "import_template", "layout",
-                     "lock", "brand", "move", "add_character", "save_character", "expression", "add_set", "patch", "batch"}
+                     "lock", "brand", "move", "add_character", "save_character", "expression", "add_set", "patch", "batch", "dance"}
              .contains(action)
         || (wave
             && QStringList{"keyframe", "bind_audio", "export_template", "import_template", "layout", "lock", "brand", "move", "add_character",
-                           "save_character", "expression", "add_set", "patch", "batch"}.contains(action))
+                           "save_character", "expression", "add_set", "patch", "batch", "dance"}.contains(action))
         || (!wave && action == "refresh"))
         return errorResult("Unsupported graphics action.");
     Timeline tl = project->timeline();
@@ -1875,7 +1882,7 @@ QJsonObject McpServer::ToolCall::tool_graphics_overlay()
     QJsonObject data = c ? c->generator.data : QJsonObject{};
     double at = has("at") ? num("at") : sec(w->m_timeline->cursorTime()), length = has("length") ? num("length") : 10;
     double rate = 1;
-    if (!wave && QStringList{"move", "add_character", "save_character", "expression", "add_set", "patch", "batch"}.contains(action)) {
+    if (!wave && QStringList{"move", "add_character", "save_character", "expression", "add_set", "patch", "batch", "dance"}.contains(action)) {
         QString error;
         QJsonObject changed;
         if (action == "move") {
@@ -1883,6 +1890,45 @@ QJsonObject McpServer::ToolCall::tool_graphics_overlay()
                                        has("to") ? num("to") : std::nan(""), &error);
         } else if (action == "expression") {
             changed = motion::withExpression(data, str("layer_id"), str("mood"), num("time"), &error);
+        } else if (action == "dance") {
+            // Every dancer moves on the music's beats under the scene, the moves in turn (a bear swaps arm gestures for a hop).
+            const double from = std::max(0.0, has("from") ? num("from") : 0.0), to = has("to") ? num("to") : sec(c->length);
+            const auto snap = project->snapshot();
+            BeatSettings bs;
+            bs.band = BeatSettings::Full;
+            const BeatScan scan = scanBeats(*snap, c->start + us(from), c->start + us(std::min(to, sec(c->length))), {}, bs);
+            QStringList moves;
+            for (auto v : a["moves"].toArray())
+                moves << v.toString();
+            if (moves.isEmpty())
+                moves = {"hop", "spin", "jump", "squash", "arms up", "shake"};
+            QStringList dancers;
+            for (auto v : a["dancers"].toArray())
+                dancers << v.toString();
+            if (dancers.isEmpty() || scan.beats.size() < 2)
+                return errorResult(dancers.isEmpty() ? "dance: name the dancers (their layer IDs)." : "dance: no beat found under this scene.");
+            const int every = std::clamp(integer("every", 1), 1, 16);
+            const double beat = 60.0 / std::max(1.0, scan.bpm);
+            changed = data;
+            int keyed = 0;
+            for (size_t b = 0; b < scan.beats.size(); b += size_t(every)) {
+                const double at = sec(scan.beats[b] - c->start);
+                for (int n = 0; n < dancers.size(); ++n) {
+                    const QString move = moves[int((b / size_t(every) + size_t(n)) % size_t(moves.size()))];
+                    QString e;
+                    QJsonObject next = motion::withMove(changed, dancers[n], move, at, beat * every * 0.6, has("amount") ? num("amount") : 1,
+                                                        std::nan(""), &e);
+                    if (next.isEmpty()) // (no arms, or not a move for this layer: a hop instead)
+                        next = motion::withMove(changed, dancers[n], "hop", at, beat * every * 0.6, 1, std::nan(""), &e);
+                    if (next.isEmpty())
+                        return errorResult("dance: " + e);
+                    changed = next;
+                    ++keyed;
+                }
+            }
+            c->generator.data = changed;
+            apply(tl, "Graphics / dance");
+            return jsonResult({{"event_id", eventId}, {"bpm", scan.bpm}, {"moves", keyed}});
         } else if (action == "patch" || action == "batch") {
             // (locked layers stay as they are)
             auto lockedIn = [&](const QJsonArray& ops) {
@@ -2201,6 +2247,7 @@ QJsonObject McpServer::ToolCall::tool_graphics_overlay()
 QJsonObject McpServer::ToolCall::tool_edit_event()
 {
     Timeline tl = project->timeline();
+    TimeUs shortened = 0; // the length asked for, when the file ends before it
     int trackIndex = -1;
     Clip* c = tl.findClip(integer("event_id"), &trackIndex);
     if (!c)
@@ -2224,10 +2271,16 @@ QJsonObject McpServer::ToolCall::tool_edit_event()
                 in = std::min(in, std::max<TimeUs>(0, gm->info.duration - ps.fps.frameDuration()));
             g->sourceIn = in;
         }
+        if (has("loop") && fromSource) // (the file repeating, so the event can run on past its end)
+            g->loopLength = a.value(QStringLiteral("loop")).toBool() ? gm->info.duration : 0;
         if (has("length"))
             g->length = std::max(ps.fps.frameDuration(), ps.fps.snap(us(num("length")))); // whole frames, as placed events start on one
-        if (fromSource && (has("length") || has("source_in")))
+        if (fromSource && (has("length") || has("source_in")) && g->loopLength <= 0) {
+            const TimeUs asked = g->length;
             g->length = std::clamp(g->length, ps.fps.frameDuration(), std::max(ps.fps.frameDuration(), ops::maxClipLength(gm.get(), *g)));
+            if (g->id == c->id && g->length < asked - ps.fps.frameDuration())
+                shortened = asked;
+        }
         if (has("reverse"))
             g->reverse = a.value(QStringLiteral("reverse")).toBool();
     }
@@ -2314,8 +2367,12 @@ QJsonObject McpServer::ToolCall::tool_edit_event()
     tl.sortClips();
     apply(tl, QStringLiteral("Edit Event"));
     const Clip* now = tl.findClip(id);
-    return jsonResult(
-        {{QStringLiteral("event_id"), id}, {QStringLiteral("start"), sec(now->start)}, {QStringLiteral("length"), sec(now->length)}});
+    QJsonObject out{{QStringLiteral("event_id"), id}, {QStringLiteral("start"), sec(now->start)}, {QStringLiteral("length"), sec(now->length)}};
+    if (shortened > 0)
+        out[QStringLiteral("warning")] = QStringLiteral("The file ends there: the event is %1 s long, not %2 s. loop: true repeats the file to "
+                                                        "fill it, or a lower speed stretches it.")
+                                             .arg(sec(now->length), 0, 'f', 2).arg(sec(shortened), 0, 'f', 2);
+    return jsonResult(out);
 }
 
 QJsonObject McpServer::ToolCall::tool_split()

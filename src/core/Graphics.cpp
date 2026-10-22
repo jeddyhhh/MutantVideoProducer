@@ -587,8 +587,8 @@ QJsonObject trackEnvelope(const Track &track, const MediaMap &media, double from
     ra.append(right[size_t(i)]);
   }
   // Mouth shapes from each line's words: a take's word times when it has them (aligned narration), or else the words
-  // spread over the part of the event with sound, by their length.
-  QJsonArray shapes;
+  // spread over the part of the event with sound, by their length. And each line's words and times, for subtitles.
+  QJsonArray shapes, said;
   for (const Clip &c : track.clips) {
     const double start = double(c.start) / kUsPerSecond, end = double(c.end()) / kUsPerSecond;
     if (c.muted || end <= from || start >= from + length)
@@ -596,6 +596,7 @@ QJsonObject trackEnvelope(const Track &track, const MediaMap &media, double from
     QString text = c.narration.value("text").toString(c.name);
     if (text.startsWith(QLatin1String("[Timing] ")))
       text = text.mid(9);
+    said.append(QJsonArray{start - from, end - from, text});
     const QJsonArray takes = c.narration.value("takes").toArray();
     const QJsonArray words = takes.isEmpty() ? QJsonArray{}
                                              : takes[std::clamp(c.narration.value("active_take").toInt(), 0, int(takes.size()) - 1)]
@@ -642,7 +643,7 @@ QJsonObject trackEnvelope(const Track &track, const MediaMap &media, double from
   for (const auto &v : ordered)
     shapes.append(v);
   return {{"version", 1}, {"source_in", 0}, {"duration", length}, {"left", la}, {"right", ra}, {"rate", 1}, {"offset", 0},
-          {"track_id", track.id}, {"signature", trackSignature(track, from, length, bins)}, {"visemes", shapes}};
+          {"track_id", track.id}, {"signature", trackSignature(track, from, length, bins)}, {"visemes", shapes}, {"lines", said}};
 }
 
 QString characterFolder() {

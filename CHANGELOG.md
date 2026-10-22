@@ -6,6 +6,11 @@ What changed in each version of Mutant Video Producer. The newest is first.
 
 ### Added
 
+- Sets: their signs are scene variables (`set_banner`, `set_chalk`, `set_menu`...), reworded in the Keys tab.
+- AI control, `graphics_overlay` `dance`: characters move on the beat of the music under a scene, in one step.
+- Animation scenes: a text layer can show the line being said on a bound voice track (`{"subtitle": binding}`).
+- AI control, `edit_event` `loop`: a file repeats so its event can run past its end; a length the file can't fill comes
+  back with a warning instead of being shortened silently.
 - Generate Dialogue scripts: `(pause 2)` leaves silence before the next line, and `[radio]`, `[phone]`, `[megaphone]`,
   `[echo]`, `[hall]`, `[dream]` or `[backwards]` at the start of a speech gives it that sound.
 - AI control, `graphics_overlay` `patch`: change scene properties by path (a sign's words, a layer's effects, the camera)
@@ -52,6 +57,7 @@ What changed in each version of Mutant Video Producer. The newest is first.
 
 ### Fixed
 
+- The Limiter caught sample peaks only, so a mix limited at -1.5 dB still measured above -1.5 dBTP; it now holds its ceiling as a true peak (between samples, oversampled four times).
 - Lip sync ignored reversed lines: a line played backwards kept the mouth shut and the speaker camera away. Its sound and mouth shapes now play backwards too.
 - Audio finishing told a mix already at its loudness target that it needed a limiter for more gain.
 - Animation scenes: text animated a word at a time lost the spaces between its words at small sizes ("DIRECTOROF"),

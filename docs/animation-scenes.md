@@ -44,6 +44,10 @@ saying an O, and 0 otherwise. The shapes are `A`, `E`, `O`, `L`, `F`, `M` and `r
 **Set expression**: the face changes at the playhead and stays until the next one. The expression is the scene variable
 `gus_mood`, so it can also be keyed with **Scene variables**.
 
+**Subtitles.** A text layer whose `text` is `{"subtitle": "gus"}` shows the words of whichever line is playing on Gus's
+bound voice track, and nothing between lines (`"upper": true` for capitals, `"hold"` for how long the words stay after
+the line, 0.3 s by default). It suits backwards speech, a foreign line, or a karaoke card.
+
 **Lip sync follows edits.** A binding made from a track remembers the track. Move, trim, replace or delete a line on it
 (or move the scene) and the mouth's analysis is redone as part of the same edit, so it never drifts from the voice; one
 undo puts both back.
@@ -65,7 +69,9 @@ bedroom, a cottage kitchen, a snowy street, woods with a cave, a western main st
 a rocket, outer space and more. Some sets have a front part (a
 desk, a counter, a window frame) drawn in front of the characters. A scene has one set: adding another replaces it.
 The set's layers are grouped as `set` (and `set_front`), with a depth of 1, so **Depth of field** softens them in a
-close-up. Your own sets go in your profile's `Media/Graphics Templates/Sets`, as JSON files with `name`, `layers` and an
+close-up. A set's signs (the town hall banner, the classroom board, the cafeteria menu, the shop fronts) are scene
+variables named `set_banner`, `set_chalk`, `set_menu` and so on: reword them in the Keys tab's Scene variables (or with a
+`patch` of `$variables`). Your own sets go in your profile's `Media/Graphics Templates/Sets`, as JSON files with `name`, `layers` and an
 optional `front` list of layers.
 
 ## Video in a scene
@@ -220,6 +226,9 @@ Channels are `peak`, `left`, `right`, `beat`; numeric base and amount control re
 - `patch` (`event_id`, `operations`: `[{layer_id, property, value}]`, or `remove: true` instead of a value) changes
   properties without sending the whole scene: `property` is a dotted path (`shadow.blur`), and `layer_id` can be a layer,
   `$camera`, `$variables` or `$scene` (the scene's own keys, such as `motion_blur`). Locked layers are refused.
+- `dance` (`event_id`, `dancers`: layer IDs, optional `moves`, `every`, `from`, `to`, `amount`) finds the beat of the music
+  under the scene and keys a move on each beat for every dancer, the moves in turn (default hop, spin, jump, squash, arms
+  up, shake), as one undo step.
 - `batch` (`event_id`, `operations`: `[{action, ...}]`) runs `move`, `expression`, `keyframe` and `patch` steps in order as
   one undo step; if any step fails, nothing changes and the reply names the step. Both answer briefly instead of with the
   scene.

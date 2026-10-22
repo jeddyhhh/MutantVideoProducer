@@ -300,6 +300,20 @@ int main(int argc, char **argv) {
                   (withFront == sets.end() || layers[layers.size() - 1].toObject()["id"].toString().startsWith("setf_")) &&
                   layers.size() > scene["layers"].toArray().size(),
               "a set goes behind the scene and replaces the set before it " + error);
+        const auto hall = std::find_if(sets.begin(), sets.end(), [](const graphics::CharacterFile &f) { return f.path.endsWith("town-hall.json"); });
+        if (hall != sets.end()) {
+          const QJsonObject withHall = motion::withSet(scene, hall->character, &error);
+          const QJsonObject reworded = motion::withPatch(withHall, QJsonArray{QJsonObject{{"layer_id", "$variables"}, {"property", "set_banner"},
+                                                                                         {"value", "FEELINGS ARE BACK"}}}, &error);
+          QJsonObject banner;
+          for (auto v : reworded["layers"].toArray())
+            if (v.toObject()["id"] == "set_banner_t")
+              banner = v.toObject();
+          const QJsonObject replaced = motion::withSet(reworded, sets[0].character, &error);
+          check(withHall["variables"].toObject()["set_banner"] == "TOWN MEETING TONIGHT" &&
+                    motion::evaluate(banner["text"], 0, reworded) == "FEELINGS ARE BACK" && !replaced["variables"].toObject().contains("set_banner"),
+                "a set's signs are scene variables (set_banner), gone with the set");
+        }
       }
     }
     // Draft previews draw fewer motion blur samples (and look the same with none).
@@ -525,6 +539,15 @@ int main(int argc, char **argv) {
       check(!reversed.isEmpty() && loud(forward, 5, 95) < .01 && loud(forward, 105, 195) > .2 && loud(reversed, 5, 95) > .2 &&
                 loud(reversed, 105, 195) < .01 && forward["signature"] != reversed["signature"],
             "a reversed line moves the mouth where its sound is " + error);
+      // Subtitles: a text bound to the track shows the words of the line playing, and nothing between lines.
+      backwards.clips[0].reverse = false;
+      backwards.clips[0].name = "Is the door still a door?";
+      const auto said = graphics::trackEnvelope(backwards, media, 29, 4, 200, &error);
+      const QJsonObject scene{{"version", 2}, {"audio", QJsonObject{{"blip", said}}}, {"layers", QJsonArray{}}};
+      const QJsonObject words{{"subtitle", "blip"}, {"upper", true}};
+      check(motion::evaluate(words, 0.5, scene).toString().isEmpty() && motion::evaluate(words, 2.0, scene) == "IS THE DOOR STILL A DOOR?" &&
+                motion::evaluate(words, 3.5, scene).toString().isEmpty() && motion::animating(QJsonObject{{"text", words}}),
+            "a subtitle bound to a voice track shows the line being said");
     }
     check(graphics::trackEnvelope(voice, media, 20, 2, 400, &error).isEmpty() && !error.isEmpty(),
           "a track with nothing during the scene is refused");

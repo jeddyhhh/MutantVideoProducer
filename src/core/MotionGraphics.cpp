@@ -316,6 +316,15 @@ QJsonValue evaluate(const QJsonValue &v, double time,
   } guard(depth);
   if (v.isObject()) {
     auto o = v.toObject();
+    if (o.contains("subtitle")) { // the words of the line playing on that binding's track (or none)
+      const double hold = o.value("hold").toDouble(0.3);
+      for (auto line : scene["audio"].toObject()[o["subtitle"].toString()].toObject()["lines"].toArray()) {
+        const QJsonArray l = line.toArray();
+        if (time >= l[0].toDouble() && time < l[1].toDouble() + hold)
+          return o.value("upper").toBool() ? l[2].toString().toUpper() : l[2].toString();
+      }
+      return QString();
+    }
     if (o.contains("audio"))
       return o["base"].toDouble() +
              o["amount"].toDouble(1) * audioLevel(o, scene, time);
@@ -367,7 +376,7 @@ QJsonValue evaluate(const QJsonValue &v, double time,
 bool animating(const QJsonValue &v) {
   if (v.isObject()) {
     auto o = v.toObject();
-    if (o.contains("keyframes") || o.contains("audio") ||
+    if (o.contains("keyframes") || o.contains("audio") || o.contains("subtitle") ||
         o.contains("variable") || o.contains("in") || o.contains("out") ||
         o.contains("follow") || o.contains("text_animation") ||
         o["type"] == "particles" || o["type"] == "repeater")
@@ -2271,13 +2280,23 @@ QJsonObject withSet(const QJsonObject &scene, const QJsonObject &set, QString *e
     if (id != "set" && id != "set_front" && !id.startsWith("set_") && !id.startsWith("setf_"))
       kept.append(v);
   }
-  auto part = [](const QJsonArray &layers, const QString &group, const QString &prefix, const QString &name, double depth) {
+  // Its signs (the words on it) become scene variables, set_<sign>, to reword in the Keys tab or with a patch.
+  QJsonObject signs;
+  auto part = [&signs](const QJsonArray &layers, const QString &group, const QString &prefix, const QString &name, double depth) {
     QJsonObject g{{"type", "group"}, {"id", group}, {"name", name}, {"x", 0}, {"y", 0}, {"width", 1}, {"height", 1}};
     if (depth > 0)
       g["depth"] = depth;
     QJsonArray out{g};
     for (auto v : layers) {
       QJsonObject o = v.toObject();
+      if (o.value("type") == "text" && o.value("text").isString() && !o.value("text").toString().trimmed().isEmpty()) {
+        QString key = o.value("id").toString();
+        if (key.endsWith("_t"))
+          key.chop(2);
+        key = "set_" + key;
+        signs[key] = o.value("text");
+        o["text"] = QJsonObject{{"variable", key}};
+      }
       o["id"] = prefix + o.value("id").toString();
       o["parent"] = o.contains("parent") ? prefix + o.value("parent").toString() : group;
       if (o.value("mask").isString())
@@ -2295,6 +2314,14 @@ QJsonObject withSet(const QJsonObject &scene, const QJsonObject &set, QString *e
   QJsonObject result = scene;
   result["version"] = 2;
   result["layers"] = layers;
+  QJsonObject variables = scene.value("variables").toObject();
+  for (const QString &k : variables.keys()) // (the signs of the set before)
+    if (k.startsWith("set_"))
+      variables.remove(k);
+  for (auto it = signs.begin(); it != signs.end(); ++it)
+    variables[it.key()] = it.value();
+  if (!variables.isEmpty())
+    result["variables"] = variables;
   if (auto e = validate(result); !e.isEmpty()) {
     if (error)
       *error = e;
