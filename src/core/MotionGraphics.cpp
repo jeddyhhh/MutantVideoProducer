@@ -1674,7 +1674,7 @@ void paint(QPainter &p, QSizeF size, const QJsonObject &scene, double time) {
     // The whole picture, camera included, averaged over a shutter (seconds)
     // around the time: fast moves, crash zooms and whip pans smear.
     const auto b = blur.toObject();
-    const int samples = std::clamp(b["samples"].toInt(5), 2, draftRender ? 3 : 8);
+    const int samples = std::clamp(b["samples"].toInt(5), 2, draftRender ? 2 : 8);
     const double shutter = std::clamp(b["shutter"].toDouble(.02), 0., .2);
     Average frames;
     QImage frame(size.toSize(), QImage::Format_ARGB32_Premultiplied);
