@@ -349,6 +349,37 @@ int main(int argc, char **argv) {
     }
     check(same, "text animated a word or a letter at a time keeps its spacing (" + seen + ")");
   }
+  // Patching: small changes by path, without sending the scene; and room for more characters.
+  {
+    QJsonObject scene{{"version", 2}, {"layers", QJsonArray{QJsonObject{{"type", "text"}, {"id", "sign"}, {"text", "OPEN"}, {"x", 0}, {"y", 0},
+                                                                     {"width", 1}, {"height", 0.2}, {"shadow", QJsonObject{{"blur", 0.01}}}}}}};
+    QString error;
+    const QJsonObject patched = motion::withPatch(scene, QJsonArray{
+        QJsonObject{{"layer_id", "sign"}, {"property", "text"}, {"value", "CLOSED"}},
+        QJsonObject{{"layer_id", "sign"}, {"property", "shadow.blur"}, {"value", 0.03}},
+        QJsonObject{{"layer_id", "sign"}, {"property", "effects"}, {"value", QJsonArray{QJsonObject{{"type", "glow"}}}}},
+        QJsonObject{{"layer_id", "$camera"}, {"property", "zoom"}, {"value", 1.5}},
+        QJsonObject{{"layer_id", "$scene"}, {"property", "motion_blur"}, {"value", QJsonObject{{"samples", 4}}}}}, &error);
+    const QJsonObject sign = patched["layers"].toArray()[0].toObject();
+    check(error.isEmpty() && sign["text"] == "CLOSED" && sign["shadow"].toObject()["blur"].toDouble() == 0.03 && sign.contains("effects") &&
+              patched["camera"].toObject()["zoom"].toDouble() == 1.5 && patched.contains("motion_blur"),
+          "a patch sets properties by path on layers, the camera and the scene " + error);
+    const QJsonObject removed = motion::withPatch(patched, QJsonArray{QJsonObject{{"layer_id", "sign"}, {"property", "effects"}, {"remove", true}}}, &error);
+    check(!removed["layers"].toArray()[0].toObject().contains("effects"), "a patch removes a property");
+    check(motion::withPatch(scene, QJsonArray{QJsonObject{{"layer_id", "sign"}, {"property", "id"}, {"value", "x"}}}, &error).isEmpty() &&
+              motion::withPatch(scene, QJsonArray{QJsonObject{{"layer_id", "nobody"}, {"property", "text"}, {"value", "x"}}}, &error).isEmpty() &&
+              error.contains("Change 1"),
+          "a patch refuses structural properties and missing layers, naming the change");
+    QJsonArray many;
+    for (int i = 0; i < 900; ++i)
+      many.append(QJsonObject{{"type", "rect"}, {"id", QStringLiteral("r%1").arg(i)}, {"x", 0}, {"y", 0}, {"width", 0.01}, {"height", 0.01}});
+    QJsonArray tooMany = many;
+    for (int i = 900; i < motion::kMaxLayers + 1; ++i)
+      tooMany.append(QJsonObject{{"type", "rect"}, {"id", QStringLiteral("r%1").arg(i)}, {"x", 0}, {"y", 0}, {"width", 0.01}, {"height", 0.01}});
+    check(motion::validate(QJsonObject{{"version", 2}, {"layers", many}}).isEmpty() &&
+              !motion::validate(QJsonObject{{"version", 2}, {"layers", tooMany}}).isEmpty(),
+          "a scene holds up to 1024 layers (a dozen library characters)");
+  }
   // Playing a scene in the preview: the frames drawn ahead on other cores are the frames drawn one by one.
   {
     GeneratorSpec spec = makeGenerator(*findGeneratorPreset("graphics_blank"));

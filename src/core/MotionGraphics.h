@@ -46,6 +46,12 @@ QStringList moves();
 // A character's expression from `time` on (their <id>_mood variable, held): neutral, angry, sad, surprised, smug.
 QStringList expressions();
 QJsonObject withExpression(const QJsonObject &scene, const QString &characterId, const QString &mood, double time, QString *error);
+// Small changes in one step: each {layer_id, property, value} sets a layer's property (a dotted path such as
+// "shadow.blur"), or with remove: true takes it away; layer_id may also be $camera, $variables or $scene (the scene's own
+// keys). Structural properties (id, type, parent, children) stay as they are. Empty on error.
+QJsonObject withPatch(const QJsonObject &scene, const QJsonArray &operations, QString *error);
+// The most layers a version 2 scene stores, reusable definitions included.
+constexpr int kMaxLayers = 1024;
 QJsonObject withMove(const QJsonObject &scene, const QString &layerId, const QString &move, double time, double duration,
                      double amount, double to, QString *error);
 struct PathHandle {

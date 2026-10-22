@@ -420,8 +420,8 @@ QString validate(const QJsonObject &s) {
     if (depth > 16)
       return "Layer nesting limit: 16.";
     for (auto v : a) {
-      if (!v.isObject() || ++count > 512)
-        return "Scene limit: 512 layers (including reusable definitions).";
+      if (!v.isObject() || ++count > kMaxLayers)
+        return QStringLiteral("Scene limit: %1 layers (including reusable definitions).").arg(kMaxLayers);
       auto o = v.toObject();
       auto type = o["type"].toString();
       if (!QStringList{"rect", "ellipse", "line", "text", "image", "video", "path",
@@ -2014,7 +2014,7 @@ QJsonObject capabilities() {
                   "shading + contact shadows", "scene motion blur", "moves",
                   "characters"}},
       {"limits", QJsonObject{{"scene_bytes", 4194304},
-                             {"layers", 512},
+                             {"layers", kMaxLayers},
                              {"nesting", 16},
                              {"keys_per_property", 256},
                              {"expanded_layers", 4096},
@@ -2102,6 +2102,75 @@ QJsonObject withKeyframe(const QJsonObject &scene, const QString &layerId,
     return fail("Choose an existing layer ID, $camera or $variables.");
   if (auto e = validate(result); !e.isEmpty())
     return fail(e);
+  return result;
+}
+QJsonObject withPatch(const QJsonObject &scene, const QJsonArray &operations, QString *error) {
+  auto fail = [&](int i, QString e) {
+    if (error)
+      *error = QStringLiteral("Change %1: %2").arg(i + 1).arg(e);
+    return QJsonObject{};
+  };
+  if (operations.isEmpty() || operations.size() > 4096) {
+    if (error)
+      *error = "Give 1 to 4096 changes.";
+    return {};
+  }
+  QJsonObject result = scene;
+  result["version"] = 2;
+  for (int i = 0; i < operations.size(); ++i) {
+    const QJsonObject op = operations[i].toObject();
+    const QString layerId = op.value("layer_id").toString(), property = op.value("property").toString();
+    const bool remove = op.value("remove").toBool();
+    const QStringList parts = property.split('.');
+    if (property.isEmpty() || parts.size() > 8 || parts.contains(QString()))
+      return fail(i, "Name a property (a dotted path for one inside another, such as shadow.blur).");
+    if (!remove && (op.value("value").isUndefined() || op.value("value").isNull()))
+      return fail(i, "Give a value, or remove: true.");
+    if (layerId != "$scene" && layerId != "$variables" && layerId != "$camera" &&
+        QStringList{"id", "parent", "type", "children", "symbol"}.contains(parts.first()))
+      return fail(i, "Structural layer properties (id, type, parent, children) cannot be patched.");
+    if (layerId == "$scene" && QStringList{"layers", "version", "symbols"}.contains(parts.first()))
+      return fail(i, "Change the scene's layers through their IDs.");
+    std::function<QJsonObject(QJsonObject, int)> set = [&](QJsonObject o, int depth) {
+      const QString key = parts[depth];
+      if (depth + 1 < parts.size())
+        o[key] = set(o.value(key).toObject(), depth + 1);
+      else if (remove)
+        o.remove(key);
+      else
+        o[key] = op.value("value");
+      return o;
+    };
+    bool found = true;
+    if (layerId == "$scene")
+      result = set(result, 0);
+    else if (layerId == "$camera" || layerId == "$variables")
+      result[layerId.mid(1)] = set(result.value(layerId.mid(1)).toObject(), 0);
+    else {
+      found = false;
+      std::function<QJsonArray(QJsonArray)> visit = [&](QJsonArray a) {
+        for (int k = 0; k < a.size(); ++k) {
+          QJsonObject o = a[k].toObject();
+          if (o.value("id") == layerId) {
+            o = set(o, 0);
+            found = true;
+          }
+          if (o.contains("children"))
+            o["children"] = visit(o.value("children").toArray());
+          a[k] = o;
+        }
+        return a;
+      };
+      result["layers"] = visit(result.value("layers").toArray());
+    }
+    if (!found)
+      return fail(i, QStringLiteral("No layer %1 (or $camera, $variables, $scene).").arg(layerId));
+  }
+  if (auto e = validate(result); !e.isEmpty()) {
+    if (error)
+      *error = e;
+    return {};
+  }
   return result;
 }
 namespace {

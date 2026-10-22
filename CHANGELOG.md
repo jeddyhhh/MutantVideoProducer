@@ -6,6 +6,9 @@ What changed in each version of Mutant Video Producer. The newest is first.
 
 ### Added
 
+- AI control, `graphics_overlay` `patch`: change scene properties by path (a sign's words, a layer's effects, the camera)
+  without sending the whole scene; and `batch`: many moves, expressions, keys and patches as one undo step.
+- Animation scenes hold up to 1024 layers (was 512): about a dozen library characters and a set.
 - **Insert > Insert Time at the Cursor...**: empty time on every unlocked track, the opposite of Cut Time; what follows,
   its markers and its story chapters move later, and a region or chapter across it grows. AI control: `cut_time`
   `insert` with `at` and `length`.

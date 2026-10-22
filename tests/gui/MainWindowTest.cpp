@@ -730,6 +730,27 @@ int MainWindow::runEditorTest(QStringList& log)
                             {"secondary", "#0000ff"}, {"accent", "#ff6600"}, {"foreground", "#ffffff"}, {"background", "#000000"}};
             auto branded = content(call("graphics_overlay", {{"action", "brand"}, {"event_id", id}, {"brand", kit}}));
             bool styled = branded["data"].toObject()["layers"].toArray().first().toObject()["fill"] == "#ff6600";
+            {
+                // patch and batch: small edits and many steps, each one undo step, answered briefly
+                const bool patched = !failed(call("graphics_overlay", {{"action", "patch"}, {"event_id", id}, {"operations", QJsonArray{
+                    QJsonObject{{"layer_id", "shape"}, {"property", "fill"}, {"value", "#123456"}}}}}));
+                const int before = m_project->undoStack()->index();
+                const auto batched = call("graphics_overlay", {{"action", "batch"}, {"event_id", id}, {"operations", QJsonArray{
+                    QJsonObject{{"action", "keyframe"}, {"layer_id", "shape"}, {"property", "x"}, {"time", 1}, {"value", 0.5}},
+                    QJsonObject{{"action", "move"}, {"layer_id", "shape"}, {"move", "hop"}, {"time", 0.2}},
+                    QJsonObject{{"action", "patch"}, {"operations", QJsonArray{QJsonObject{{"layer_id", "$camera"}, {"property", "zoom"},
+                                                                                           {"value", 1.2}}}}}}}});
+                const QJsonObject data = m_project->timeline().findClip(id)->generator.data;
+                const QJsonObject layer = data["layers"].toArray().first().toObject();
+                const auto beforeBad = m_project->timeline();
+                const bool badRefused = failed(call("graphics_overlay", {{"action", "batch"}, {"event_id", id}, {"operations", QJsonArray{
+                    QJsonObject{{"action", "move"}, {"layer_id", "shape"}, {"move", "hop"}, {"time", 0.5}},
+                    QJsonObject{{"action", "fly"}, {"layer_id", "shape"}}}}}));
+                check(patched && !failed(batched) && layer["fill"] == "#123456" && layer["x"].isObject() && layer["y"].isObject()
+                          && data["camera"].toObject()["zoom"].toDouble() == 1.2 && m_project->undoStack()->index() == before + 1
+                          && !content(batched).contains("data") && badRefused && m_project->timeline() == beforeBad,
+                      "AI graphics patch and batch: edits by path, many steps as one undo step, a bad step changes nothing");
+            }
             if (!id || failed(arrangement) || failed(locked) || !styled)
                 note("Workflow replies: "
                      + QString::fromUtf8(

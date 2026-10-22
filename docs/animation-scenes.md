@@ -217,11 +217,17 @@ Channels are `peak`, `left`, `right`, `beat`; numeric base and amount control re
   `name`) use the character library; `expression` (`layer_id`, `mood`, `time`) changes a character's face from `time`.
 - `move` adds a ready-made move or gesture (`move`, `layer_id`, `time`, `duration`, `amount`, `to`).
 - `sets` lists the set library; `add_set` (`event_id`, `set`: a name or file) puts one behind the scene.
+- `patch` (`event_id`, `operations`: `[{layer_id, property, value}]`, or `remove: true` instead of a value) changes
+  properties without sending the whole scene: `property` is a dotted path (`shadow.blur`), and `layer_id` can be a layer,
+  `$camera`, `$variables` or `$scene` (the scene's own keys, such as `motion_blur`). Locked layers are refused.
+- `batch` (`event_id`, `operations`: `[{action, ...}]`) runs `move`, `expression`, `keyframe` and `patch` steps in order as
+  one undo step; if any step fails, nothing changes and the reply names the step. Both answer briefly instead of with the
+  scene.
 - `export_template` takes event ID, path and explicit `overwrite` when replacing a file.
 - `import_template` validates a JSON file and inserts a new editable event, with optional at/length/track.
 
 ## Limits and scope
 
-Scenes: 4 MB, 512 stored layers including definitions, depth 16, 256 keys per property, 512 commands per path and 4096 expanded reusable layers. Repeaters: 128 copies. Particles: 2048 per layer. Charts: 128 rows. Audio: one-hour analysis ranges, 64–8192 bins, at most 8192 detected beat times. Rendering has a bounded 32,768 drawing-operation budget; keep very large nested particle/text/effect compositions below it. Text animation processes up to 2048 units and text layout up to 256 lines.
+Scenes: 4 MB, 1024 stored layers including definitions (about a dozen library characters and a set), depth 16, 256 keys per property, 512 commands per path and 4096 expanded reusable layers. Repeaters: 128 copies. Particles: 2048 per layer. Charts: 128 rows. Audio: one-hour analysis ranges, 64–8192 bins, at most 8192 detected beat times. Rendering has a bounded 32,768 drawing-operation budget; keep very large nested particle/text/effect compositions below it. Text animation processes up to 2048 units and text layout up to 256 lines.
 
 This is a 2D scene graph with articulated parenting, not a full 3D renderer or an IK/character-rigging suite. The scene format and renderer are separated so additional animation systems can be added later.

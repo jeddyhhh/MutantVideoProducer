@@ -174,7 +174,7 @@ int main(int argc, char **argv) {
   check(!motion::validate(localCycle).isEmpty(),
         "symbol-local parent cycles rejected");
   QJsonArray tooMany;
-  for (int i = 0; i < 513; ++i)
+  for (int i = 0; i < motion::kMaxLayers + 1; ++i)
     tooMany.append(rect(QString::number(i)));
   check(!motion::validate(scene(tooMany)).isEmpty(), "layer budget enforced");
   auto huge = scene({QJsonObject{

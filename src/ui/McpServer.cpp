@@ -861,7 +861,9 @@ QJsonArray McpServer::toolList()
         "add_set) are ready backgrounds, replaced by the next add_set. Layer type video {path, source_in, speed, loop, fit: "
         "cover|contain} plays a file inside its box; a layer's effects [{type: video effect id, params}] apply to its own picture "
         "only. camera.speaker {zoom (1.7), window (0.5 s), quiet (0.06)} frames whichever character (a layer whose id matches its "
-        "binding) is loudest. Animate "
+        "binding) is loudest. patch sets or removes properties by dotted path (operations [{layer_id, property, value | "
+        "remove}]) without sending the scene; batch runs many move/expression/keyframe/patch steps as one undo step (both answer "
+        "briefly). Animate "
         "properties with {keyframes:[[event-local seconds,value,easing?],...],easing,loop,ping_pong}; numeric, colour, discrete and "
         "compatible path morph values work. follow:{path:layer_id,progress,orient,loop} follows curved paths. Scene variables substitute "
         "{{name}} in text; datasets drive charts. Colours are #RRGGBB, or #AARRGGBB with the alpha FIRST (#00000088 is clear: use "
@@ -872,7 +874,7 @@ QJsonArray McpServer::toolList()
         {{"action",
           prop("string",
                "capabilities, presets, validate, create, get, update, keyframe, bind_audio, export_template, import_template, layout, "
-               "lock, brand, move, characters, add_character, save_character, expression, sets, add_set")},
+               "lock, brand, move, characters, add_character, save_character, expression, sets, add_set, patch, batch")},
          {"event_id", prop("integer", "Existing graphics event")},
          {"preset",
           prop("string", "Existing broadcast layouts or motion_race/titles/chart/route/particles/morph/audio/reusable (motion_ prefix)")},
@@ -903,6 +905,8 @@ QJsonArray McpServer::toolList()
          {"brand", prop("object", "version:1, name, font and primary/secondary/accent/background/foreground colours")},
          {"move", prop("string", "move: hop, jump, shake, nod, wave, spin, walk, pop, squash, blink, point, arms up or shrug, on layer_id at time")},
          {"mood", prop("string", "expression: neutral, angry, sad, surprised or smug, for character layer_id from time on")},
+         {"operations", arrayProp("object", "patch: [{layer_id ($camera, $variables, $scene too), property (dotted path), value | remove: true}]; "
+                                      "batch: [{action: move|expression|keyframe|patch, its other arguments}], in order, as one undo step")},
          {"set", prop("string", "add_set: a name or file from action sets")},
          {"amount", prop("number", "move: how big (default 1)")},
          {"to", prop("number", "move walk: the x to walk to")},
@@ -1846,11 +1850,11 @@ QJsonObject McpServer::ToolCall::tool_graphics_overlay()
         return jsonResult({{"sets", out}});
     }
     if (!QStringList{"create", "get", "update", "refresh", "keyframe", "bind_audio", "export_template", "import_template", "layout",
-                     "lock", "brand", "move", "add_character", "save_character", "expression", "add_set"}
+                     "lock", "brand", "move", "add_character", "save_character", "expression", "add_set", "patch", "batch"}
              .contains(action)
         || (wave
             && QStringList{"keyframe", "bind_audio", "export_template", "import_template", "layout", "lock", "brand", "move", "add_character",
-                           "save_character", "expression", "add_set"}.contains(action))
+                           "save_character", "expression", "add_set", "patch", "batch"}.contains(action))
         || (!wave && action == "refresh"))
         return errorResult("Unsupported graphics action.");
     Timeline tl = project->timeline();
@@ -1869,7 +1873,7 @@ QJsonObject McpServer::ToolCall::tool_graphics_overlay()
     QJsonObject data = c ? c->generator.data : QJsonObject{};
     double at = has("at") ? num("at") : sec(w->m_timeline->cursorTime()), length = has("length") ? num("length") : 10;
     double rate = 1;
-    if (!wave && QStringList{"move", "add_character", "save_character", "expression", "add_set"}.contains(action)) {
+    if (!wave && QStringList{"move", "add_character", "save_character", "expression", "add_set", "patch", "batch"}.contains(action)) {
         QString error;
         QJsonObject changed;
         if (action == "move") {
@@ -1877,6 +1881,54 @@ QJsonObject McpServer::ToolCall::tool_graphics_overlay()
                                        has("to") ? num("to") : std::nan(""), &error);
         } else if (action == "expression") {
             changed = motion::withExpression(data, str("layer_id"), str("mood"), num("time"), &error);
+        } else if (action == "patch" || action == "batch") {
+            // (locked layers stay as they are)
+            auto lockedIn = [&](const QJsonArray& ops) {
+                for (auto v : ops)
+                    if (graphics_workflow::locked(data, v.toObject().value("layer_id").toString()))
+                        return v.toObject().value("layer_id").toString();
+                return QString();
+            };
+            const QJsonArray ops = a["operations"].toArray();
+            if (action == "patch") {
+                if (const QString l = lockedIn(ops); !l.isEmpty())
+                    return errorResult("Unlock " + l + " (or its parent) first.");
+                changed = motion::withPatch(data, ops, &error);
+            } else {
+                if (ops.isEmpty() || ops.size() > 2048)
+                    return errorResult("batch: give 1 to 2048 operations.");
+                changed = data;
+                for (int i = 0; i < ops.size() && !changed.isEmpty(); ++i) {
+                    const QJsonObject o = ops[i].toObject();
+                    const QString kind = o.value("action").toString(), layer = o.value("layer_id").toString();
+                    auto n = [&](const char* k, double d) { return o.contains(k) ? o.value(k).toDouble() : d; };
+                    QString e;
+                    if (kind != "patch" && graphics_workflow::locked(changed, layer))
+                        return errorResult(QStringLiteral("batch step %1: unlock %2 (or its parent) first.").arg(i + 1).arg(layer));
+                    if (kind == "move")
+                        changed = motion::withMove(changed, layer, o.value("move").toString(), n("time", 0), n("duration", 0), n("amount", 1),
+                                                   n("to", std::nan("")), &e);
+                    else if (kind == "expression")
+                        changed = motion::withExpression(changed, layer, o.value("mood").toString(), n("time", 0), &e);
+                    else if (kind == "keyframe")
+                        changed = motion::withKeyframe(changed, layer, o.value("property").toString(), n("time", 0), o.value("value"),
+                                                       o.contains("easing") ? o.value("easing") : QJsonValue("linear"), &e);
+                    else if (kind == "patch") {
+                        if (const QString l = lockedIn(o.value("operations").toArray()); !l.isEmpty())
+                            return errorResult(QStringLiteral("batch step %1: unlock %2 (or its parent) first.").arg(i + 1).arg(l));
+                        changed = motion::withPatch(changed, o.value("operations").toArray(), &e);
+                    } else
+                        return errorResult(QStringLiteral("batch step %1: actions are move, expression, keyframe and patch.").arg(i + 1));
+                    if (changed.isEmpty())
+                        return errorResult(QStringLiteral("batch step %1 (%2): %3").arg(i + 1).arg(kind, e));
+                }
+            }
+            if (changed.isEmpty())
+                return errorResult(error);
+            c->generator.data = changed;
+            apply(tl, "Graphics / " + action);
+            return jsonResult({{"event_id", eventId}, {"applied", action == "batch" ? int(ops.size()) : 1},
+                               {"layers", int(changed["layers"].toArray().size())}});
         } else if (action == "add_set") {
             const auto library = graphics::setLibrary();
             const QString wanted = str("set");

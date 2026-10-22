@@ -471,7 +471,7 @@ public:
                         }
                 }
                 if (label == tr("Duplicate")) {
-                    if (a.size() + std::max(1, int(subtree.size())) > (data["version"].toInt() == 2 ? 512 : 128))
+                    if (a.size() + std::max(1, int(subtree.size())) > (data["version"].toInt() == 2 ? motion::kMaxLayers : 128))
                         return;
                     QHash<QString, QString> ids;
                     for (auto id : subtree)
@@ -709,7 +709,7 @@ public:
         };
         connect(addButton, &QPushButton::clicked, this, [this, add] {
             auto a = data["layers"].toArray();
-            if (a.size() >= (data["version"].toInt() == 2 ? 512 : 128))
+            if (a.size() >= (data["version"].toInt() == 2 ? motion::kMaxLayers : 128))
                 return;
             QJsonObject o{{"type", add->currentText()},
                           {"name", add->currentText() + " " + QString::number(a.size() + 1)},
