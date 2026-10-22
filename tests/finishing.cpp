@@ -62,6 +62,21 @@ int main(int argc, char** argv)
         });
         check(limited.error.isEmpty() && limited.truePeak <= -2.7 && limited.truePeak > -6,
               QStringLiteral("the limiter holds a -3 dB ceiling between samples too (true peak %1 dBTP)").arg(limited.truePeak, 0, 'f', 2));
+        // And on a full mix's worth of high frequencies: loud noise with sharp clicks in it.
+        auto noisy = def->create();
+        noisy->reset(rate);
+        uint32_t seed = 12345;
+        auto limitedNoise = finishing::analyze(rate, frames, [&](int64_t pos, int n, float* out) {
+            for (int i = 0; i < n; ++i) {
+                seed = seed * 1664525u + 1013904223u;
+                const double white = (double(seed >> 8) / double(1u << 24)) * 2 - 1;
+                const double click = (pos + i) % 4801 < 3 ? ((pos + i) % 2 ? 1.0 : -1.0) : 0.0;
+                out[2 * i] = out[2 * i + 1] = float(std::clamp(white * 0.7 + click * 0.9, -1.0, 1.0));
+            }
+            noisy->process(out, n, params);
+        });
+        check(limitedNoise.error.isEmpty() && limitedNoise.truePeak <= -2.85,
+              QStringLiteral("the limiter holds a -3 dB ceiling on loud noise and clicks (true peak %1 dBTP)").arg(limitedNoise.truePeak, 0, 'f', 2));
     }
     auto crest = finishing::analyze(rate, frames, [&](int64_t pos, int n, float* out) {
         for (int i = 0; i < n; ++i) {

@@ -66,6 +66,8 @@ What changed in each version of Mutant Video Producer. The newest is first.
 
 ### Fixed
 
+- The Limiter let loud high-frequency material (clicks, cymbals, noise) swing past its ceiling between samples (a -3 dB
+  ceiling measured -0.9 dBTP); its true-peak estimate now matches the loudness meter's.
 - The Limiter caught sample peaks only, so a mix limited at -1.5 dB still measured above -1.5 dBTP; it now holds its ceiling as a true peak (between samples, oversampled four times).
 - Lip sync ignored reversed lines: a line played backwards kept the mouth shut and the speaker camera away. Its sound and mouth shapes now play backwards too.
 - Audio finishing told a mix already at its loudness target that it needed a limiter for more gain.

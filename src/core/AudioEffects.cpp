@@ -297,14 +297,20 @@ public:
             double peak = std::max(std::abs(s[i * 2]), std::abs(s[i * 2 + 1]));
             // True peak: where the waveform swings between samples (oversampled four times), which a meter counts and
             // a converter plays, though no sample holds it.
-            static const auto taps = [] { // windowed sinc, 8 taps for each of the three points between two samples
-                std::array<std::array<double, 8>, 3> c{};
+            // (32 taps a point, Blackman-Harris windowed, as the loudness meter's resampler: fewer underestimated near
+            // the top of the spectrum, where clicks and cymbals swing furthest between samples)
+            static const auto taps = [] {
+                constexpr int N = kTruePeakTaps;
+                std::array<std::array<double, N>, 3> c{};
                 for (int k = 0; k < 3; ++k) {
                     double sum = 0;
-                    for (int j = 0; j < 8; ++j) {
-                        const double x = 3 + (k + 1) / 4.0 - j; // (the point sits between taps 3 and 4)
+                    for (int j = 0; j < N; ++j) {
+                        const double x = (N / 2 - 1) + (k + 1) / 4.0 - j; // (the point sits between taps N/2-1 and N/2)
                         const double sinc = std::abs(x) < 1e-9 ? 1 : std::sin(std::numbers::pi * x) / (std::numbers::pi * x);
-                        c[size_t(k)][size_t(j)] = sinc * (0.5 + 0.5 * std::cos(std::numbers::pi * x / 4.5));
+                        const double u = (x + N / 2.0) / N; // 0 to 1 across the filter
+                        const double window = 0.35875 - 0.48829 * std::cos(2 * std::numbers::pi * u) + 0.14128 * std::cos(4 * std::numbers::pi * u)
+                                              - 0.01168 * std::cos(6 * std::numbers::pi * u);
+                        c[size_t(k)][size_t(j)] = sinc * window;
                         sum += c[size_t(k)][size_t(j)];
                     }
                     for (auto& v : c[size_t(k)])
@@ -315,14 +321,15 @@ public:
             for (int ch = 0; ch < 2; ++ch) {
                 auto& h = m_history[size_t(ch)];
                 std::copy(h.begin() + 1, h.end(), h.begin());
-                h[7] = s[i * 2 + ch];
+                h[kTruePeakTaps - 1] = s[i * 2 + ch];
                 for (const auto& c : taps) {
                     double v = 0;
-                    for (int j = 0; j < 8; ++j)
+                    for (int j = 0; j < kTruePeakTaps; ++j)
                         v += c[size_t(j)] * h[size_t(j)];
                     peak = std::max(peak, std::abs(v));
                 }
             }
+            peak *= 1.0175; // (a 0.15 dB margin for what the estimate still misses)
             const double req = peak > ceiling ? ceiling / peak : 1.0;
             // Sliding-window minimum of the required gain over the lookahead
             // (the sample leaving the delay line included).
@@ -356,7 +363,8 @@ private:
     std::deque<std::pair<int64_t, double>> m_window;
     int64_t m_index = 0;
     double m_gain = 1;
-    std::array<std::array<double, 8>, 2> m_history{}; // each channel's last eight input samples
+    static constexpr int kTruePeakTaps = 32;
+    std::array<std::array<double, kTruePeakTaps>, 2> m_history{}; // each channel's last input samples
 };
 
 // ---- Noise gate ------------------------------------------------------------------------------
