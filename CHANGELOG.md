@@ -47,6 +47,8 @@ What changed in each version of Mutant Video Producer. The newest is first.
 
 ### Fixed
 
+- Animation scenes: text animated a word at a time lost the spaces between its words at small sizes ("DIRECTOROF"),
+  and centred text sat slightly off centre. Text is now drawn exactly where its layout puts it.
 - Playing an animation scene with characters was slow (a few frames a second at full preview quality): every hidden
   mouth shape and expression was still drawn off screen, every outlined shape built an outline nobody used, a whole
   frame was blurred for one small soft layer, and the scene was checked again on every frame. A scene with four

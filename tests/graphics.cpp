@@ -316,6 +316,39 @@ int main(int argc, char **argv) {
     motion::setDraft(false);
     check(full != draft && drawn(moving, .5) == full, "a draft preview draws less motion blur, and only while drafting");
   }
+  // Text animated a word (or a letter) at a time ends up where the same text without animation is: the words keep their spaces.
+  {
+    auto ink = [](const QImage &im) {
+      int left = im.width(), right = -1;
+      for (int y = 0; y < im.height(); ++y)
+        for (int x = 0; x < im.width(); ++x)
+          if (qAlpha(im.pixel(x, y)) > 60) {
+            left = std::min(left, x);
+            right = std::max(right, x);
+          }
+      return std::pair{left, right};
+    };
+    QJsonObject text{{"type", "text"}, {"id", "t"}, {"text", "FROM THE DIRECTOR OF A VIDEO OF HIMSELF"}, {"x", 0.05}, {"y", 0.3},
+                     {"width", 0.9}, {"height", 0.3}, {"font_size", 0.045}, {"font", "Times New Roman"}, {"bold", true}, {"align", "center"},
+                     {"fill", "#ffffff"}};
+    auto drawnText = [&](const QJsonObject &layer) {
+      QImage im(480, 270, QImage::Format_ARGB32_Premultiplied);
+      im.fill(Qt::transparent);
+      motion::render(im, QJsonObject{{"version", 2}, {"layers", QJsonArray{layer}}}, 5);
+      return im;
+    };
+    const auto plain = ink(drawnText(text));
+    bool same = true;
+    QString seen = QStringLiteral("plain %1-%2").arg(plain.first).arg(plain.second);
+    for (const char *unit : {"word", "character"}) {
+      QJsonObject animated = text;
+      animated["text_animation"] = QJsonObject{{"unit", unit}, {"style", "fade"}, {"stagger", 0.02}, {"duration", 0.2}};
+      const auto got = ink(drawnText(animated));
+      seen += QStringLiteral(", %1 %2-%3").arg(unit).arg(got.first).arg(got.second);
+      same = same && std::abs(got.first - plain.first) <= 2 && std::abs(got.second - plain.second) <= 2;
+    }
+    check(same, "text animated a word or a letter at a time keeps its spacing (" + seen + ")");
+  }
   // Playing a scene in the preview: the frames drawn ahead on other cores are the frames drawn one by one.
   {
     GeneratorSpec spec = makeGenerator(*findGeneratorPreset("graphics_blank"));

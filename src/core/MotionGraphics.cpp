@@ -7,6 +7,7 @@
 #include <QColor>
 #include <QFont>
 #include <QFontMetricsF>
+#include <QGlyphRun>
 #include <QImageReader>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -15,6 +16,7 @@
 #include <QPainter>
 #include <QPainterPathStroker>
 #include <QRadialGradient>
+#include <QRawFont>
 #include <QRegularExpression>
 #include <QSet>
 #include <QTextBoundaryFinder>
@@ -1142,12 +1144,22 @@ public:
       }
     }
     auto fill = brush(o, b, t, scene);
+    // Glyphs where the layout put them (its wrapping and alignment): drawing
+    // the text again with addText spaces it a little wider, so animated
+    // words ran into each other and centred text sat off centre.
+    auto glyphs = [&](QPainterPath &path, const QTextLine &line, int first, int length) {
+      for (const QGlyphRun &run : line.glyphRuns(first, length)) {
+        const QRawFont raw = run.rawFont();
+        const auto indexes = run.glyphIndexes();
+        const auto positions = run.positions();
+        for (qsizetype g = 0; g < indexes.size(); ++g)
+          path.addPath(raw.pathForGlyph(indexes[g]).translated(QPointF(b.x(), top) + positions[g]));
+      }
+    };
     if (anim.isEmpty()) {
       QPainterPath all;
       for (auto line : lines)
-        all.addText(QPointF(b.x() + line.cursorToX(line.textStart()),
-                            top + line.y() + line.ascent()),
-                    font, words.mid(line.textStart(), line.textLength()));
+        glyphs(all, line, line.textStart(), line.textLength());
       decoration(p, all, o["shadow"].toObject(), size, t, scene, false);
       decoration(p, all, o["glow"].toObject(), size, t, scene, true);
       p.setPen(Qt::NoPen);
@@ -1179,9 +1191,7 @@ public:
           int last =
               std::min(start + length, part.textStart() + part.textLength());
           if (last > first)
-            glyph.addText(QPointF(b.x() + part.cursorToX(first),
-                                  top + part.y() + part.ascent()),
-                          font, words.mid(first, last - first));
+            glyphs(glyph, part, first, last - first);
         }
         p.save();
         p.setOpacity(p.opacity() *
