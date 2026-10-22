@@ -863,7 +863,7 @@ QJsonArray McpServer::toolList()
         "only. camera.speaker {zoom (1.7), window (0.5 s), quiet (0.06)} frames whichever character (a layer whose id matches its "
         "binding) is loudest. patch sets or removes properties by dotted path (operations [{layer_id, property, value | "
         "remove}]) without sending the scene; batch runs many move/expression/keyframe/patch steps as one undo step (both answer "
-        "briefly). dance keys moves on the beats of the music under the scene (dancers, moves, every). Animate "
+        "briefly). props / add_prop (layer_id: a character, prop, hand R|L) put a prop in a hand; it moves with the arm. dance keys moves on the beats of the music under the scene (dancers, moves, every). Animate "
         "properties with {keyframes:[[event-local seconds,value,easing?],...],easing,loop,ping_pong}; numeric, colour, discrete and "
         "compatible path morph values work. follow:{path:layer_id,progress,orient,loop} follows curved paths. Scene variables substitute "
         "{{name}} in text; datasets drive charts. Colours are #RRGGBB, or #AARRGGBB with the alpha FIRST (#00000088 is clear: use "
@@ -874,7 +874,7 @@ QJsonArray McpServer::toolList()
         {{"action",
           prop("string",
                "capabilities, presets, validate, create, get, update, keyframe, bind_audio, export_template, import_template, layout, "
-               "lock, brand, move, characters, add_character, save_character, expression, sets, add_set, patch, batch, dance")},
+               "lock, brand, move, characters, add_character, save_character, expression, sets, add_set, props, add_prop, patch, batch, dance")},
          {"event_id", prop("integer", "Existing graphics event")},
          {"preset",
           prop("string", "Existing broadcast layouts or motion_race/titles/chart/route/particles/morph/audio/reusable (motion_ prefix)")},
@@ -913,6 +913,8 @@ QJsonArray McpServer::toolList()
          {"moves", arrayProp("string", "dance: the moves, in turn")},
          {"every", prop("integer", "dance: a move every this many beats (default 1)")},
          {"set", prop("string", "add_set: a name or file from action sets")},
+         {"prop", prop("string", "add_prop: a name or file from action props, put in character layer_id's hand")},
+         {"hand", prop("string", "add_prop: R (default) or L")},
          {"amount", prop("number", "move: how big (default 1)")},
          {"to", prop("number", "move walk: the x to walk to")},
          {"character", prop("string", "add_character: a name or file from action characters")},
@@ -1205,9 +1207,10 @@ QJsonArray McpServer::toolList()
     t.append(tool("delete_track", "Removes a track and its events, or (empty: true) every track that has no events.",
                   {{QStringLiteral("track"), prop("integer", "Track index (see get_project)")},
                    {QStringLiteral("empty"), prop("boolean", "Remove every empty track instead")}}));
-    t.append(tool("freeze_frame", "Holds a video event's picture: at the time, the event is split and its frame there is held for the length (later events on that track move along).",
+    t.append(tool("freeze_frame", "Holds a video event's picture: at the time, the event is split and its frame there is held for the length (later events on that track move along; with in_place, the hold covers the time after it instead and nothing moves). For an animation scene, key its \"time\" instead (graphics_overlay).",
                   {{QStringLiteral("time"), prop("number", "Seconds, over a video event")},
-                   {QStringLiteral("length"), prop("number", "Seconds held (default 2)")}},
+                   {QStringLiteral("length"), prop("number", "Seconds held (default 2)")},
+                   {QStringLiteral("in_place"), prop("boolean", "Hold over the following time, moving nothing later (its sound plays on)")}},
                   {QStringLiteral("time")}));
     t.append(tool("scene_changes",
                   "Finds the cuts between shots inside video events (Tools > Split Selected Events at Scene Changes) and, unless "
@@ -1852,6 +1855,12 @@ QJsonObject McpServer::ToolCall::tool_graphics_overlay()
                                    {"colours", c.character["variables"]}});
         return jsonResult({{"characters", out}});
     }
+    if (!wave && action == "props") {
+        QJsonArray out;
+        for (const auto& c : graphics::propLibrary())
+            out.append(QJsonObject{{"name", c.character["name"]}, {"path", c.path}, {"built_in", c.builtIn}});
+        return jsonResult({{"props", out}});
+    }
     if (!wave && action == "sets") {
         QJsonArray out;
         for (const auto& c : graphics::setLibrary())
@@ -1859,11 +1868,11 @@ QJsonObject McpServer::ToolCall::tool_graphics_overlay()
         return jsonResult({{"sets", out}});
     }
     if (!QStringList{"create", "get", "update", "refresh", "keyframe", "bind_audio", "export_template", "import_template", "layout",
-                     "lock", "brand", "move", "add_character", "save_character", "expression", "add_set", "patch", "batch", "dance"}
+                     "lock", "brand", "move", "add_character", "save_character", "expression", "add_set", "add_prop", "patch", "batch", "dance"}
              .contains(action)
         || (wave
             && QStringList{"keyframe", "bind_audio", "export_template", "import_template", "layout", "lock", "brand", "move", "add_character",
-                           "save_character", "expression", "add_set", "patch", "batch", "dance"}.contains(action))
+                           "save_character", "expression", "add_set", "add_prop", "patch", "batch", "dance"}.contains(action))
         || (!wave && action == "refresh"))
         return errorResult("Unsupported graphics action.");
     Timeline tl = project->timeline();
@@ -1882,7 +1891,7 @@ QJsonObject McpServer::ToolCall::tool_graphics_overlay()
     QJsonObject data = c ? c->generator.data : QJsonObject{};
     double at = has("at") ? num("at") : sec(w->m_timeline->cursorTime()), length = has("length") ? num("length") : 10;
     double rate = 1;
-    if (!wave && QStringList{"move", "add_character", "save_character", "expression", "add_set", "patch", "batch", "dance"}.contains(action)) {
+    if (!wave && QStringList{"move", "add_character", "save_character", "expression", "add_set", "add_prop", "patch", "batch", "dance"}.contains(action)) {
         QString error;
         QJsonObject changed;
         if (action == "move") {
@@ -1977,6 +1986,16 @@ QJsonObject McpServer::ToolCall::tool_graphics_overlay()
             apply(tl, "Graphics / " + action);
             return jsonResult({{"event_id", eventId}, {"applied", action == "batch" ? int(ops.size()) : 1},
                                {"layers", int(changed["layers"].toArray().size())}});
+        } else if (action == "add_prop") {
+            const auto library = graphics::propLibrary();
+            const QString wanted = str("prop");
+            auto it = std::find_if(library.begin(), library.end(), [&](const graphics::CharacterFile& f) {
+                return f.character["name"].toString().compare(wanted, Qt::CaseInsensitive) == 0 || f.path == wanted
+                       || QFileInfo(f.path).completeBaseName().compare(wanted, Qt::CaseInsensitive) == 0;
+            });
+            if (it == library.end())
+                return errorResult("Unknown prop: action props lists the library.");
+            changed = motion::withProp(data, it->character, str("layer_id"), has("hand") ? str("hand") : QStringLiteral("R"), &error);
         } else if (action == "add_set") {
             const auto library = graphics::setLibrary();
             const QString wanted = str("set");
@@ -3324,7 +3343,7 @@ QJsonObject McpServer::ToolCall::tool_freeze_frame()
 {
     const TimeUs length = us(std::clamp(num("length", 2), 0.1, 60.0));
     w->m_timeline->setCursorTime(us(std::max(0.0, num("time"))), false);
-    const int id = w->m_timeline->insertFreezeFrame(length);
+    const int id = w->m_timeline->insertFreezeFrame(length, a.value(QStringLiteral("in_place")).toBool());
     if (!id)
         return errorResult(QStringLiteral("no video event from a file at %1 s (generated pictures can't be frozen)").arg(num("time")));
     return jsonResult({{QStringLiteral("event_id"), id}, {QStringLiteral("length"), sec(length)}});

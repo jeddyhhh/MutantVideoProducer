@@ -740,14 +740,14 @@ int MainWindow::runEditorTest(QStringList& log)
                     QJsonObject{{"action", "move"}, {"layer_id", "shape"}, {"move", "hop"}, {"time", 0.2}},
                     QJsonObject{{"action", "patch"}, {"operations", QJsonArray{QJsonObject{{"layer_id", "$camera"}, {"property", "zoom"},
                                                                                            {"value", 1.2}}}}}}}});
-                const QJsonObject data = m_project->timeline().findClip(id)->generator.data;
-                const QJsonObject layer = data["layers"].toArray().first().toObject();
+                const QJsonObject sceneData = m_project->timeline().findClip(id)->generator.data;
+                const QJsonObject layer = sceneData["layers"].toArray().first().toObject();
                 const auto beforeBad = m_project->timeline();
                 const bool badRefused = failed(call("graphics_overlay", {{"action", "batch"}, {"event_id", id}, {"operations", QJsonArray{
                     QJsonObject{{"action", "move"}, {"layer_id", "shape"}, {"move", "hop"}, {"time", 0.5}},
                     QJsonObject{{"action", "fly"}, {"layer_id", "shape"}}}}}));
                 check(patched && !failed(batched) && layer["fill"] == "#123456" && layer["x"].isObject() && layer["y"].isObject()
-                          && data["camera"].toObject()["zoom"].toDouble() == 1.2 && m_project->undoStack()->index() == before + 1
+                          && sceneData["camera"].toObject()["zoom"].toDouble() == 1.2 && m_project->undoStack()->index() == before + 1
                           && !content(batched).contains("data") && badRefused && m_project->timeline() == beforeBad,
                       "AI graphics patch and batch: edits by path, many steps as one undo step, a bad step changes nothing");
             }

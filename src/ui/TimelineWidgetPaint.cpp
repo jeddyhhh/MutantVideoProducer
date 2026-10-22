@@ -23,6 +23,8 @@
 #include <QApplication>
 #include <QPaintEvent>
 #include <QPainterPath>
+#include <QJsonArray>
+#include <QJsonObject>
 #include <QToolTip>
 #include <QWheelEvent>
 #include <QTemporaryDir>
@@ -181,6 +183,52 @@ void TimelineWidget::paintGenerated(QPainter& p, const Clip& c, const QRectF& bo
         p.drawImage(QPointF(body.left() + i * thumbW, body.top()), thumb.image);
 }
 
+std::vector<TimelineWidget::MoodMark> TimelineWidget::moodMarks(const Clip& c, const QRectF& body) const
+{
+    std::vector<MoodMark> out;
+    if (c.generator.type != QLatin1String("graphics_overlay") || body.height() < 16)
+        return out;
+    const QJsonObject variables = c.generator.data.value(QStringLiteral("variables")).toObject();
+    int row = 0;
+    for (auto it = variables.begin(); it != variables.end(); ++it) {
+        if (!it.key().endsWith(QLatin1String("_mood")) || !it.value().isObject())
+            continue;
+        const QJsonArray keys = it.value().toObject().value(QStringLiteral("keyframes")).toArray();
+        const double y = body.bottom() - 13 - (row++ % 2) * 13; // (two rows, so neighbours' marks don't sit on each other)
+        for (int i = 0; i < keys.size(); ++i) {
+            const QJsonArray k = keys[i].toArray();
+            const double x = timeToX(c.start + TimeUs(k[0].toDouble() * kUsPerSecond));
+            out.push_back({it.key(), i, k[0].toDouble(), k[1].toString(), QRectF(x - 6, y, 13, 12)});
+        }
+    }
+    return out;
+}
+
+void TimelineWidget::paintMoods(QPainter& p, const Clip& c, const QRectF& body)
+{
+    static const std::map<QString, QColor> colours{{QStringLiteral("angry"), QColor(0xd0, 0x00, 0x00)}, {QStringLiteral("sad"), QColor(0x3a, 0x86, 0xff)},
+                                                   {QStringLiteral("surprised"), QColor(0xff, 0xbe, 0x0b)}, {QStringLiteral("smug"), QColor(0x83, 0x38, 0xec)},
+                                                   {QStringLiteral("neutral"), QColor(0x8d, 0x99, 0xae)}};
+    const auto marks = moodMarks(c, body);
+    if (marks.empty())
+        return;
+    p.save();
+    QFont f = font();
+    f.setPixelSize(9);
+    f.setBold(true);
+    p.setFont(f);
+    p.setRenderHint(QPainter::Antialiasing, true);
+    for (const MoodMark& m : marks) {
+        const auto colour = colours.find(m.mood);
+        p.setPen(QPen(QColor(0, 0, 0, 160), 1));
+        p.setBrush(colour == colours.end() ? QColor(0x8d, 0x99, 0xae) : colour->second);
+        p.drawRoundedRect(m.rect, 3, 3);
+        p.setPen(Qt::white);
+        p.drawText(m.rect, Qt::AlignCenter, m.variable.left(1).toUpper());
+    }
+    p.restore();
+}
+
 void TimelineWidget::paintEvent(QPaintEvent* e)
 {
     m_paintArea = e->region();
@@ -328,6 +376,7 @@ void TimelineWidget::paintTrackClips(QPainter& p, const Track& track, int top, i
             p.drawText(body.adjusted(6, 0, 0, 0), Qt::AlignVCenter | Qt::AlignLeft, tr("Media offline"));
         } else if (c.isGenerated()) {
             paintGenerated(p, c, QRectF(rx0, body.top(), rx1 - rx0, body.height()));
+            paintMoods(p, c, QRectF(rx0, body.top(), rx1 - rx0, body.height()));
         } else if (isVisualTrack(track.type)) {
             paintThumbnails(p, c, QRectF(rx0, body.top(), rx1 - rx0, body.height()));
         } else {

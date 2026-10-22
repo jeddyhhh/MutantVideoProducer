@@ -50,6 +50,9 @@ QJsonObject withExpression(const QJsonObject &scene, const QString &characterId,
 // "shadow.blur"), or with remove: true takes it away; layer_id may also be $camera, $variables or $scene (the scene's own
 // keys). Structural properties (id, type, parent, children) stay as they are. Empty on error.
 QJsonObject withPatch(const QJsonObject &scene, const QJsonArray &operations, QString *error);
+// A prop (a library prop: a group "root" of layers, its width and height on the picture and its grip, the point held)
+// in a character's hand ("R" or "L"): it hangs from the arm and moves with every gesture. Empty on error.
+QJsonObject withProp(const QJsonObject &scene, const QJsonObject &prop, const QString &characterId, const QString &hand, QString *error);
 // The most layers a version 2 scene stores, reusable definitions included.
 constexpr int kMaxLayers = 1024;
 QJsonObject withMove(const QJsonObject &scene, const QString &layerId, const QString &move, double time, double duration,

@@ -434,7 +434,7 @@ QString validate(const QJsonObject &s) {
       auto o = v.toObject();
       auto type = o["type"].toString();
       if (!QStringList{"rect", "ellipse", "line", "text", "image", "video", "path",
-                       "group", "instance", "repeater", "particles", "chart"}
+                       "group", "instance", "repeater", "particles", "chart", "noise", "flash"}
                .contains(type))
         return "Unknown animation layer type.";
       auto id = o["id"].toString();
@@ -1035,31 +1035,61 @@ public:
       // Speaker camera: the layer whose id is a voice binding's name (any
       // case: a character's group) and that has been loudest over the last
       // moment is framed head and shoulders; nobody talking, the keyed shot.
+      // Its shots [[from, to, kind]] change that for a while: "wide" (the
+      // keyed shot), "listener" (whoever spoke last before the speaker: a
+      // reaction), "two" (speaker and listener together), "speaker".
       const double window = std::clamp(speaker["window"].toDouble(.5), .05, 3.);
-      double best = speaker["quiet"].toDouble(.06);
-      QString who;
+      const double now = std::isfinite(speakerTime) ? speakerTime : t;
+      QString kind = "speaker";
+      for (auto v : speaker["shots"].toArray()) {
+        const QJsonArray shot = v.toArray();
+        if (now >= shot[0].toDouble() && now < shot[1].toDouble())
+          kind = shot[2].toString("speaker");
+      }
       const QJsonObject audio = scene["audio"].toObject();
-      for (auto it = audio.begin(); it != audio.end(); ++it) {
-        QString id;
+      QVector<QPair<QString, QString>> cast; // (layer id, binding)
+      for (auto it = audio.begin(); it != audio.end(); ++it)
         for (auto k = ids.constBegin(); k != ids.constEnd(); ++k)
           if (k.key().compare(it.key(), Qt::CaseInsensitive) == 0)
-            id = k.key();
-        if (id.isEmpty())
-          continue;
-        const QJsonObject binding{{"audio", it.key()}, {"attack", .02}, {"release", .1}};
-        double level = 0;
-        const double now = std::isfinite(speakerTime) ? speakerTime : t;
-        for (int k = 0; k < 6; ++k)
-          level += audioLevel(binding, scene, std::max(0., now - window * k / 5)) / 6;
-        if (level > best) {
-          best = level;
+            cast.append({k.key(), it.key()});
+      auto level = [&](const QString &binding, double from, double to, int samples) {
+        const QJsonObject b{{"audio", binding}, {"attack", .02}, {"release", .1}};
+        double sum = 0;
+        for (int k = 0; k < samples; ++k)
+          sum += audioLevel(b, scene, std::max(0., to - (to - from) * k / std::max(1, samples - 1))) / samples;
+        return sum;
+      };
+      double best = speaker["quiet"].toDouble(.06);
+      QString who;
+      for (const auto &[id, binding] : cast)
+        if (const double l = level(binding, now - window, now, 6); l > best) {
+          best = l;
           who = id;
         }
+      QString other; // the listener: who spoke most in the seconds before the speaker's moment
+      if (kind == "listener" || kind == "two") {
+        double most = speaker["quiet"].toDouble(.06) * .5;
+        for (const auto &[id, binding] : cast)
+          if (id != who)
+            if (const double l = level(binding, now - 8, now - window, 24); l > most) {
+              most = l;
+              other = id;
+            }
       }
-      if (!who.isEmpty()) {
-        const auto target = pose(ids[who], t);
-        center = target.world.map(QPointF(target.box.center().x(), target.box.top() + target.box.height() * .3));
+      auto head = [&](const QString &id) {
+        const auto target = pose(ids[id], t);
+        return target.world.map(QPointF(target.box.center().x(), target.box.top() + target.box.height() * .3));
+      };
+      const QString framed = kind == "listener" ? (other.isEmpty() ? who : other) : kind == "wide" ? QString() : who;
+      if (!framed.isEmpty()) {
         zoom = std::clamp(speaker["zoom"].toDouble(1.7), 1., 6.);
+        center = head(framed);
+        if (kind == "two" && !other.isEmpty()) { // both heads, with room around them
+          const QPointF a = head(who), b = head(other);
+          center = (a + b) / 2;
+          const double spanX = std::abs(a.x() - b.x()) + size.width() * .3, spanY = std::abs(a.y() - b.y()) + size.height() * .4;
+          zoom = std::clamp(std::min({zoom, size.width() / spanX, size.height() / spanY}), 1., 6.);
+        }
         // (kept inside the picture)
         const double halfW = size.width() / 2 / zoom, halfH = size.height() / 2 / zoom;
         center.setX(std::clamp(center.x(), halfW, size.width() - halfW));
@@ -1219,6 +1249,65 @@ public:
         p.restore();
         --budget;
       }
+    p.restore();
+  }
+  // Generated texture over the box: TV static, film grain or drifting fog, new each frame (rate a second), the same every
+  // time for the same seed.
+  void drawNoise(QPainter &p, const QJsonObject &o, const QRectF &b, double t) {
+    auto hash = [](uint32_t x, uint32_t y, uint32_t seed) {
+      uint32_t h = x * 374761393u + y * 668265263u + seed * 2246822519u;
+      h = (h ^ (h >> 13)) * 1274126177u;
+      return (h ^ (h >> 16)) / double(0xffffffffu);
+    };
+    const QString style = o["style"].toString("static");
+    const uint32_t seed = uint32_t(o["seed"].toInt(1));
+    const double amount = std::clamp(number(o, "amount", style == "static" ? 1 : .5, t, scene), 0., 1.);
+    QColor tint = o.contains("fill") ? colour(o["fill"], t, scene) : QColor(Qt::white);
+    if (b.width() < 1 || b.height() < 1 || amount <= 0)
+      return;
+    QImage cells;
+    if (style == "fog") {
+      // Two octaves of smooth value noise, drifting sideways.
+      const int w = 48, h = std::max(4, int(48 * b.height() / b.width()));
+      cells = QImage(w, h, QImage::Format_ARGB32_Premultiplied);
+      const double drift = t * number(o, "speed", .05, t, scene), scale = std::clamp(number(o, "scale", 3, t, scene), .2, 20.);
+      auto smooth = [&](double x, double y) {
+        const double fx = std::floor(x), fy = std::floor(y), ux = x - fx, uy = y - fy;
+        const double sx = ux * ux * (3 - 2 * ux), sy = uy * uy * (3 - 2 * uy);
+        auto at = [&](double i, double j) { return hash(uint32_t(int64_t(i) & 0xffff), uint32_t(int64_t(j) & 0xffff), seed); };
+        return (at(fx, fy) * (1 - sx) + at(fx + 1, fy) * sx) * (1 - sy) + (at(fx, fy + 1) * (1 - sx) + at(fx + 1, fy + 1) * sx) * sy;
+      };
+      for (int y = 0; y < h; ++y)
+        for (int x = 0; x < w; ++x) {
+          const double u = double(x) / w * scale + drift * scale, v = double(y) / h * scale * h / w;
+          const double n = std::clamp((smooth(u, v) * .65 + smooth(u * 2.1 + 7, v * 2.1 + 3) * .35 - .3) * 1.6, 0., 1.) * amount;
+          QColor c = tint;
+          c.setAlphaF(c.alphaF() * n);
+          cells.setPixelColor(x, y, c);
+        }
+    } else {
+      const double grain = std::clamp(number(o, "grain", style == "static" ? .004 : .002, t, scene), .0005, .1) * size.height();
+      const int w = std::clamp(int(b.width() / grain), 1, 960), h = std::clamp(int(b.height() / grain), 1, 540);
+      const uint32_t frame = uint32_t(std::floor(t * std::clamp(number(o, "rate", 24, t, scene), 1., 60.)));
+      cells = QImage(w, h, QImage::Format_ARGB32_Premultiplied);
+      for (int y = 0; y < h; ++y) {
+        auto *row = reinterpret_cast<QRgb *>(cells.scanLine(y));
+        for (int x = 0; x < w; ++x) {
+          const double n = hash(uint32_t(x), uint32_t(y), seed * 7919u + frame);
+          if (style == "static") { // snow: grey levels, fully covering
+            const int g = int(n * 255 * tint.lightnessF() + .5);
+            row[x] = qPremultiply(qRgba(g, g, g, int(255 * amount)));
+          } else { // grain: light and dark specks over the picture
+            const double a = std::abs(n - .5) * 2 * amount;
+            const int g = n > .5 ? 255 : 0;
+            row[x] = qPremultiply(qRgba(g, g, g, int(a * 160)));
+          }
+        }
+      }
+    }
+    p.save();
+    p.setRenderHint(QPainter::SmoothPixmapTransform, style != "static");
+    p.drawImage(b, cells);
     p.restore();
   }
   void drawChart(QPainter &p, const QJsonObject &o, const QRectF &b, double t) {
@@ -1548,6 +1637,31 @@ public:
       }
     } else if (type == "particles")
       drawParticles(p, o, at.box, t);
+    else if (type == "noise")
+      drawNoise(p, o, at.box, t);
+    else if (type == "flash") {
+      // Flashes of colour over the box: at each of its times (and on each beat of a binding), fading over decay seconds.
+      const double decay = std::clamp(number(o, "decay", .25, t, scene), .01, 10.);
+      double level = 0;
+      auto hit = [&](double at) {
+        if (t >= at)
+          level = std::max(level, std::exp(-3 * (t - at) / decay));
+      };
+      for (auto v : o["times"].toArray())
+        hit(v.toDouble());
+      if (o.contains("beats")) {
+        const QJsonObject audio = scene["audio"].toObject()[o["beats"].toString()].toObject();
+        const double rate = audio["rate"].toDouble(1), offset = audio["offset"].toDouble();
+        for (auto v : audio["beats"].toArray())
+          hit((v.toDouble() - offset) / std::max(1e-6, rate));
+      }
+      level *= std::clamp(number(o, "strength", 1, t, scene), 0., 1.);
+      if (level > .003) {
+        QColor c = o.contains("fill") ? colour(o["fill"], t, scene) : QColor(Qt::white);
+        c.setAlphaF(c.alphaF() * level);
+        p.fillRect(at.box, c);
+      }
+    }
     else if (type == "chart")
       drawChart(p, o, at.box, t);
     else if (type == "text")
@@ -1556,8 +1670,10 @@ public:
       // A clip inside the scene: it moves with its group and the camera and takes masks. Picture only (put the clip on a
       // track too for its sound).
       const QSize want = at.box.size().toSize().expandedTo(QSize(2, 2));
-      const QImage frame = videoFrame(evaluate(o["path"], t, scene).toString(),
-                                      number(o, "source_in", 0, t, scene) + t * number(o, "speed", 1, t, scene),
+      // (source_time, keyframed, remaps it: a TV that slows, rewinds or pauses)
+      const double clipTime = o.contains("source_time") ? number(o, "source_time", 0, t, scene)
+                                                          : number(o, "source_in", 0, t, scene) + t * number(o, "speed", 1, t, scene);
+      const QImage frame = videoFrame(evaluate(o["path"], t, scene).toString(), clipTime,
                                       evaluate(o["loop"], t, scene).toBool(), want.boundedTo(QSize(3840, 2160)));
       if (!frame.isNull()) {
         QSizeF fit = frame.size();
@@ -1675,6 +1791,9 @@ bool checked(const QJsonObject &scene) {
 void paint(QPainter &p, QSizeF size, const QJsonObject &scene, double time) {
   if (!std::isfinite(time) || !checked(scene))
     return;
+  // The scene's own clock: "time" keyed against the event's time plays it backwards, holds it (a freeze) or slows it.
+  if (scene.contains("time"))
+    time = std::clamp(evaluate(scene["time"], time, scene).toDouble(time), 0., 3600.);
   p.setRenderHint(QPainter::Antialiasing);
   p.setRenderHint(QPainter::SmoothPixmapTransform);
   int budget = 32768;
@@ -2007,7 +2126,7 @@ QJsonObject capabilities() {
       {"scene_versions", QJsonArray{1, 2}},
       {"layer_types",
        QJsonArray{"rect", "ellipse", "line", "text", "image", "video", "path", "group",
-                  "instance", "repeater", "particles", "chart"}},
+                  "instance", "repeater", "particles", "chart", "noise", "flash"}},
       {"easing",
        QJsonArray{"linear", "hold", "ease_in", "ease_out", "ease_in_out",
                   "smooth", "bounce", "elastic", "[x1,y1,x2,y2]"}},
@@ -2329,6 +2448,64 @@ QJsonObject withSet(const QJsonObject &scene, const QJsonObject &set, QString *e
   }
   return result;
 }
+QJsonObject withProp(const QJsonObject &scene, const QJsonObject &prop, const QString &characterId, const QString &hand, QString *error) {
+  auto fail = [&](QString e) {
+    if (error)
+      *error = e;
+    return QJsonObject{};
+  };
+  const QJsonArray parts = prop["layers"].toArray();
+  if (parts.isEmpty() || parts[0].toObject()["type"] != "group")
+    return fail("A prop is a group of layers.");
+  const QString arm = characterId + (hand.compare("L", Qt::CaseInsensitive) == 0 ? "_armL" : "_armR"), holder = arm + "_t";
+  QJsonArray layers = scene["layers"].toArray();
+  int last = -1;
+  QSet<QString> taken;
+  for (int i = 0; i < layers.size(); ++i) {
+    const QString id = layers[i].toObject().value("id").toString();
+    taken.insert(id);
+    if (id == holder || id.startsWith(holder + "_"))
+      last = i;
+  }
+  if (last < 0)
+    return fail(QStringLiteral("%1 has no hand to hold it (choose a library character's own group).").arg(characterId));
+  // The arm's size on the picture (its box, the camera aside), so the prop keeps its own size in any character's hand.
+  QJsonObject still = scene;
+  still.remove("camera");
+  const QRectF box = bounds(still, arm, 0, QSizeF(1, 1));
+  if (box.width() <= 0 || box.height() <= 0)
+    return fail("The arm has no size.");
+  const double w = prop["width"].toDouble(.05) / box.width(), h = prop["height"].toDouble(.05) / box.height();
+  const QJsonArray grip = prop["grip"].toArray();
+  const double gx = grip.size() == 2 ? grip[0].toDouble(.5) : .5, gy = grip.size() == 2 ? grip[1].toDouble(.5) : .5;
+  QString key = characterId + "_" + characterKey(prop["name"].toString("prop"));
+  for (int n = 2; taken.contains(key); ++n)
+    key = characterId + "_" + characterKey(prop["name"].toString("prop")) + "_" + QString::number(n);
+  auto id = [&](const QString &i) { return i == "root" ? key : key + "_" + i; };
+  QJsonArray made;
+  for (int i = 0; i < parts.size(); ++i) {
+    QJsonObject o = parts[i].toObject();
+    if (i == 0) { // held at the hand (the middle of the hand, near the bottom of the arm)
+      o["x"] = .5 - gx * w;
+      o["y"] = .83 - gy * h;
+      o["width"] = w;
+      o["height"] = h;
+      o["parent"] = holder;
+      o["name"] = prop["name"].toString("Prop") + " (" + characterId + ")";
+    } else if (o.contains("parent"))
+      o["parent"] = id(o["parent"].toString());
+    o["id"] = id(o.value("id").toString());
+    made.append(o);
+  }
+  for (int i = 0; i < made.size(); ++i)
+    layers.insert(last + 1 + i, made[i]);
+  QJsonObject result = scene;
+  result["version"] = 2;
+  result["layers"] = layers;
+  if (auto e = validate(result); !e.isEmpty())
+    return fail(e);
+  return result;
+}
 QJsonObject characterFrom(const QJsonObject &scene, const QString &groupId, const QString &title, QString *error) {
   auto fail = [&](QString e) {
     if (error)
@@ -2397,7 +2574,8 @@ bool setDraft(bool draft) {
   return was;
 }
 QStringList moves() {
-  return {"hop", "jump", "shake", "nod", "wave", "spin", "walk", "pop", "squash", "blink", "point", "arms up", "shrug"};
+  return {"hop", "jump", "shake", "nod", "wave", "spin", "walk", "walk in", "walk out", "pop", "squash", "blink", "float", "fall",
+          "get up", "sit", "stand", "point", "arms up", "shrug"};
 }
 QStringList expressions() { return {"neutral", "angry", "sad", "surprised", "smug"}; }
 QJsonObject withExpression(const QJsonObject &scene, const QString &characterId, const QString &mood, double time, QString *error) {
@@ -2453,7 +2631,8 @@ QJsonObject withMove(const QJsonObject &scene, const QString &layerId,
   if (layer.isEmpty())
     return fail("Choose an existing layer ID.");
   static const QMap<QString, double> natural{{"hop", .5}, {"jump", .8}, {"shake", .6}, {"nod", .5}, {"wave", 1.2},
-                                             {"spin", .8}, {"walk", 2}, {"pop", .35}, {"squash", .4}, {"blink", .14}};
+                                             {"spin", .8}, {"walk", 2}, {"walk in", 2}, {"walk out", 2}, {"pop", .35}, {"squash", .4},
+                                             {"blink", .14}, {"float", 4}, {"fall", .6}, {"get up", .8}, {"sit", .4}, {"stand", .4}};
   const double d = std::clamp(duration > 0 ? duration : natural[move], .05, 60.);
   amount = std::isfinite(amount) ? std::clamp(amount, -10., 10.) : 1;
   // The property's own value where the move starts and where it ends, so a
@@ -2503,6 +2682,66 @@ QJsonObject withMove(const QJsonObject &scene, const QString &layerId,
       key("y", s + .15, y0 - .015 * std::abs(amount));
     }
     key("y", d, y0);
+  } else if (move == "walk in" || move == "walk out") {
+    // From off the frame to its place (or to x), or from its place off the frame: the left side, or the right with a
+    // negative amount. Before it walks in it is off the frame; after it walks out it stays off.
+    const double x0 = value("x", 0, time), y0 = value("y", 0, time), w = layer.value("width").toDouble(.15);
+    const double off = amount < 0 ? 1.05 : -w - .05;
+    const double from = move == "walk in" ? off : x0, target = move == "walk in" ? (std::isfinite(to) ? to : x0) : (std::isfinite(to) ? to : off);
+    if (move == "walk in" && time > 0)
+      result = withKeyframe(result, layerId, "x", 0, from, "hold", &e);
+    key("x", 0, from, "linear");
+    key("x", d, target, "linear");
+    for (double s = 0; s + .15 <= d; s += .3) {
+      key("y", s, y0);
+      key("y", s + .15, y0 - .015);
+    }
+    key("y", d, y0);
+  } else if (move == "float") {
+    // Weightless: drifting up and down and tilting, two seconds a sway, back where it was at the end.
+    const double y0 = value("y", 0, time), r0 = value("rotation", 0, time), y1 = value("y", 0, time + d), r1 = value("rotation", 0, time + d);
+    key("y", 0, y0);
+    key("rotation", 0, r0);
+    int i = 0;
+    for (double s = 1; s < d - .5; s += 1, ++i) {
+      key("y", s, y0 - (i % 2 ? .02 : .06) * amount);
+      key("rotation", s, r0 + (i % 2 ? -8 : 8) * amount);
+    }
+    key("y", d, y1);
+    key("rotation", d, r1);
+  } else if (move == "fall" || move == "get up") {
+    // Over sideways (to the right; negative amount: the left) and stays down; get up stands it again.
+    const double r0 = value("rotation", 0, time), y0 = value("y", 0, time), h = layer.value("height").toDouble(.4);
+    const double down = 82 * (amount < 0 ? -1 : 1), drop = h * .35;
+    if (move == "fall") {
+      key("rotation", 0, r0, "ease_in");
+      key("rotation", d * .7, r0 + down * 1.08, "ease_out");
+      key("rotation", d, r0 + down, "hold");
+      key("y", 0, y0, "ease_in");
+      key("y", d * .7, y0 + drop, "ease_out");
+      key("y", d, y0 + drop * .96, "hold");
+    } else {
+      const double upright = std::abs(r0) > 45 ? 0 : r0;
+      key("rotation", 0, r0, "ease_in_out");
+      key("rotation", d, upright, "hold");
+      key("y", 0, y0, "ease_in_out");
+      key("y", d, std::abs(r0) > 45 ? y0 - drop * .96 : y0, "hold");
+    }
+  } else if (move == "sit" || move == "stand") {
+    // Down onto something (shorter, lower) and stays; stand gets up again.
+    const double s0 = value("scale_y", 1, time), y0 = value("y", 0, time), h = layer.value("height").toDouble(.4);
+    const double low = .8, sink = h * (1 - low) * .5 * amount;
+    if (move == "sit") {
+      key("scale_y", 0, s0, "ease_out");
+      key("scale_y", d, s0 * low, "hold");
+      key("y", 0, y0, "ease_out");
+      key("y", d, y0 + sink, "hold");
+    } else {
+      key("scale_y", 0, s0, "ease_out");
+      key("scale_y", d, s0 < 1 ? 1 : s0, "hold");
+      key("y", 0, y0, "ease_out");
+      key("y", d, s0 < 1 ? y0 - sink : y0, "hold");
+    }
   } else if (move == "pop") {
     key("scale_x", 0, 0, "ease_out");
     key("scale_y", 0, 0, "ease_out");

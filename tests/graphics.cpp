@@ -16,6 +16,7 @@
 #include <QPushButton>
 #include <QDoubleSpinBox>
 #include <QFile>
+#include <QFileInfo>
 #include <QJsonDocument>
 #include <QListWidget>
 #include <QMouseEvent>
@@ -215,6 +216,11 @@ int main(int argc, char **argv) {
     const QRgb inside = played.pixel(160, 90);
     check(qRed(inside) > 200 && qGreen(inside) < 60 && qAlpha(played.pixel(20, 20)) == 0 && motion::validate(QJsonObject{{"version", 2}, {"layers", QJsonArray{video}}}).isEmpty(),
           "a video layer plays its file inside its box");
+    QJsonObject remapped = video;
+    remapped["source_time"] = QJsonObject{{"keyframes", QJsonArray{QJsonArray{0, 0.2}, QJsonArray{10, 0.6}}}};
+    remapped["loop"] = false;
+    const QImage late = drawn(QJsonObject{{"version", 2}, {"layers", QJsonArray{remapped}}}, 9.0);
+    check(qRed(late.pixel(160, 90)) > 200, "a video layer's source_time picks the moment of the file it shows");
     // A layer's effects change only that layer.
     QJsonObject inverted = rect("a", 0, 0, .5, 1, "#ffffff");
     inverted["effects"] = QJsonArray{QJsonObject{{"type", "invert"}}};
@@ -260,6 +266,12 @@ int main(int argc, char **argv) {
     turnsBlurred["motion_blur"] = QJsonObject{{"samples", 6}, {"shutter", .1}};
     check(cut > 0 && drawn(turnsBlurred, cut) == drawn(turns, cut) && drawn(turnsBlurred, cut - .02) == drawn(turns, cut - .02),
           QStringLiteral("the speaker camera cuts cleanly under motion blur (cut at %1 s)").arg(cut));
+    // Its shots: a reaction (the listener), or the keyed wide shot, for a while.
+    QJsonObject shots = turns;
+    shots["camera"] = QJsonObject{{"speaker", QJsonObject{{"zoom", 2}, {"shots", QJsonArray{QJsonArray{1.4, 1.7, "listener"}, QJsonArray{1.7, 2, "wide"}}}}}};
+    const QImage reaction = drawn(shots, 1.5), stillWide = drawn(shots, 1.8), onBob = drawn(shots, 1.3);
+    check(qGreen(reaction.pixel(160, 90)) > 200 && qAlpha(stillWide.pixel(160, 90)) == 0 && qBlue(onBob.pixel(160, 90)) > 200,
+          "the speaker camera's shots: a reaction of the listener, then the wide shot, then the speaker again");
     // A library character's expression and gestures.
     const auto library = graphics::characterLibrary();
     const auto kid = std::find_if(library.begin(), library.end(), [](const graphics::CharacterFile &f) { return f.path.endsWith("kid.json"); });
@@ -277,6 +289,23 @@ int main(int argc, char **argv) {
       check(!angry.isEmpty() && shown > 0 && shown < 10 && motion::withExpression(scene, "bg", "angry", 1, &error).isEmpty(),
             QStringLiteral("an expression shows from its time on, only on a character (%1)").arg(shown));
       check(drawn(angry, .5) != drawn(angry, 1.5), "an expression changes the face");
+      // Props: one in Gus's hand hangs from his arm, so it goes up when he points.
+      const auto props = graphics::propLibrary();
+      const auto phone = std::find_if(props.begin(), props.end(), [](const graphics::CharacterFile &f) { return QFileInfo(f.path).completeBaseName() == "phone"; });
+      check(props.size() >= 8 && phone != props.end(), QStringLiteral("the prop library comes with the program (%1)").arg(props.size()));
+      if (phone != props.end()) {
+        const QJsonObject held = motion::withProp(scene, phone->character, "gus", "R", &error);
+        const QJsonObject pointing = motion::withMove(held, "gus", "point", 1, 0, 1, NAN, &error);
+        QJsonObject root;
+        for (auto v : held["layers"].toArray())
+          if (v.toObject()["id"] == "gus_phone")
+            root = v.toObject();
+        const QRectF before = motion::bounds(pointing, "gus_phone", 0.5, QSizeF(1, 1)), up = motion::bounds(pointing, "gus_phone", 1.8, QSizeF(1, 1));
+        check(root["parent"] == "gus_armR_t" && std::abs(before.width() - phone->character["width"].toDouble()) < 0.01 && up.center().y() < before.center().y() - 0.02 &&
+                  motion::withProp(scene, phone->character, "bg", "R", &error).isEmpty(),
+              QStringLiteral("a prop is held in the hand at its own size and moves with the arm (%1, width %2, y %3 then %4)")
+                  .arg(root["parent"].toString()).arg(before.width()).arg(before.center().y()).arg(up.center().y()));
+      }
       const QJsonObject point = motion::withMove(scene, "gus", "point", 1, 0, 1, NAN, &error);
       double arm = 0;
       for (auto v : point["layers"].toArray())
@@ -362,6 +391,51 @@ int main(int argc, char **argv) {
       same = same && std::abs(got.first - plain.first) <= 2 && std::abs(got.second - plain.second) <= 2;
     }
     check(same, "text animated a word or a letter at a time keeps its spacing (" + seen + ")");
+  }
+  // The scene's own clock, video time, generated textures, flashes and the new moves.
+  {
+    auto drawn = [](const QJsonObject &sc, double t) {
+      QImage image(320, 180, QImage::Format_ARGB32_Premultiplied);
+      image.fill(Qt::transparent);
+      motion::render(image, sc, t);
+      return image;
+    };
+    QJsonObject moving{{"version", 2}, {"layers", QJsonArray{QJsonObject{{"type", "rect"}, {"id", "m"}, {"y", 0.3}, {"width", 0.2}, {"height", 0.4},
+                                                                      {"fill", "#ffffff"}, {"x", QJsonObject{{"keyframes", QJsonArray{QJsonArray{0, 0}, QJsonArray{1, 0.8}}}}}}}}};
+    QJsonObject reversed = moving, frozen = moving;
+    reversed["time"] = QJsonObject{{"keyframes", QJsonArray{QJsonArray{0, 1}, QJsonArray{1, 0}}}};
+    frozen["time"] = QJsonObject{{"keyframes", QJsonArray{QJsonArray{0, 0.5}, QJsonArray{1, 0.5}}}};
+    check(drawn(reversed, 0.25) == drawn(moving, 0.75) && drawn(frozen, 0.9) == drawn(moving, 0.5) && drawn(frozen, 0.1) == drawn(moving, 0.5),
+          "a scene's time can play it backwards or hold it (a freeze)");
+    QJsonObject textures{{"version", 2}, {"layers", QJsonArray{
+        QJsonObject{{"type", "noise"}, {"id", "snow"}, {"style", "static"}, {"x", 0}, {"y", 0}, {"width", 0.5}, {"height", 1}},
+        QJsonObject{{"type", "noise"}, {"id", "fog"}, {"style", "fog"}, {"x", 0.5}, {"y", 0}, {"width", 0.5}, {"height", 1}, {"amount", 1}}}}};
+    const QImage a = drawn(textures, 1.0), b = drawn(textures, 1.0 + 1. / 24);
+    int softFog = 0, flatFog = 0;
+    for (int x = 170; x < 320; x += 5) {
+      softFog += qAlpha(a.pixel(x, 90)) > 10 && qAlpha(a.pixel(x, 90)) < 245;
+      flatFog += qAlpha(a.pixel(x, 90)) == qAlpha(a.pixel(170, 90));
+    }
+    check(qAlpha(a.pixel(40, 40)) == 255 && a.copy(0, 0, 160, 180) != b.copy(0, 0, 160, 180) && a == drawn(textures, 1.0) && softFog > 5 &&
+              flatFog < 25,
+          QStringLiteral("noise layers: static that changes every frame (the same each time), soft drifting fog (%1 soft)").arg(softFog));
+    QJsonObject flash{{"version", 2}, {"layers", QJsonArray{QJsonObject{{"type", "flash"}, {"id", "f"}, {"x", 0}, {"y", 0}, {"width", 1}, {"height", 1},
+                                                                     {"times", QJsonArray{1.0}}, {"decay", 0.25}}}}};
+    check(qAlpha(drawn(flash, 0.9).pixel(10, 10)) == 0 && qAlpha(drawn(flash, 1.0).pixel(10, 10)) > 240 && qAlpha(drawn(flash, 1.3).pixel(10, 10)) < 20,
+          "a flash layer flashes at its times and fades over its decay");
+    QString error;
+    QJsonObject person{{"version", 2}, {"layers", QJsonArray{QJsonObject{{"type", "rect"}, {"id", "p"}, {"x", 0.4}, {"y", 0.5}, {"width", 0.15},
+                                                                      {"height", 0.4}, {"fill", "#ffffff"}}}}};
+    auto at = [&](const QJsonObject &sc, const char *property, double t, double fallback) {
+      return motion::evaluate(sc["layers"].toArray()[0].toObject()[property], t, sc).toDouble(fallback);
+    };
+    const QJsonObject walkIn = motion::withMove(person, "p", "walk in", 1, 2, 1, NAN, &error);
+    const QJsonObject fell = motion::withMove(person, "p", "fall", 1, 0, 1, NAN, &error);
+    const QJsonObject sat = motion::withMove(person, "p", "sit", 1, 0, 1, NAN, &error);
+    const QJsonObject floated = motion::withMove(person, "p", "float", 0, 4, 1, NAN, &error);
+    check(at(walkIn, "x", 0.5, 0) < 0 && std::abs(at(walkIn, "x", 3, 0) - 0.4) < 1e-6 && std::abs(at(fell, "rotation", 5, 0) - 82) < 1 &&
+              std::abs(at(sat, "scale_y", 5, 1) - 0.8) < 1e-6 && std::abs(at(floated, "y", 4, 0) - 0.5) < 1e-6 && at(floated, "y", 1, 0) < 0.5,
+          "new moves: walk in from off the frame, fall and stay down, sit, float " + error);
   }
   // Patching: small changes by path, without sending the scene; and room for more characters.
   {

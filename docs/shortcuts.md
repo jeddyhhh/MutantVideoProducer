@@ -37,6 +37,7 @@ already in use can be moved to the new command. **Reset All** brings back the de
 | M | Marker at the cursor (or where playback is) |
 | R | Region from the time selection |
 | Shift+F | Freeze frame at the cursor |
+| Alt+Shift+F | Freeze frame in place (holds over what follows, nothing moves) |
 | Ctrl+L | Auto ripple on / off |
 | F8 | Snapping on / off (hold Shift while dragging to bypass it) |
 | V / P | Volume (or composite level) / pan envelope on the selected track |

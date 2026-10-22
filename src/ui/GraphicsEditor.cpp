@@ -410,7 +410,7 @@ public:
         list->setObjectName("graphicsLayers");
         left->addWidget(list, 1);
         auto* add = new QComboBox;
-        add->addItems({"text", "rect", "ellipse", "line", "image", "video", "path", "group", "chart", "particles", "repeater", "instance"});
+        add->addItems({"text", "rect", "ellipse", "line", "image", "video", "noise", "flash", "path", "group", "chart", "particles", "repeater", "instance"});
         left->addWidget(add);
         auto* addButton = new QPushButton(tr("Add layer"));
         addButton->setObjectName("graphicsAddLayer");
@@ -429,6 +429,10 @@ public:
         saveCharacterButton->setObjectName("graphicsSaveCharacter");
         left->addWidget(saveCharacterButton);
         connect(saveCharacterButton, &QPushButton::clicked, this, [this] { saveAsCharacter(); });
+        auto* propButton = new QPushButton(tr("Add prop..."));
+        propButton->setObjectName("graphicsAddProp");
+        left->addWidget(propButton);
+        connect(propButton, &QPushButton::clicked, this, [this] { addProp(); });
         auto* setButton = new QPushButton(tr("Add set..."));
         setButton->setObjectName("graphicsAddSet");
         left->addWidget(setButton);
@@ -724,6 +728,18 @@ public:
             auto type = add->currentText();
             if (!QStringList{"text", "rect", "ellipse", "line", "image"}.contains(type))
                 data["version"] = 2;
+            if (type == "noise" || type == "flash") { // (static over the whole picture; a flash every second)
+                o["x"] = 0;
+                o["y"] = 0;
+                o["width"] = 1;
+                o["height"] = 1;
+                o.remove("text");
+                o.remove("fill");
+                if (type == "noise")
+                    o["style"] = "static";
+                else
+                    o["times"] = QJsonArray{0.5, 1.5, 2.5};
+            }
             if (type == "video") { // (its file: Choose file)
                 o["height"] = .5; // (a 16:9 picture in a 16:9 frame)
                 o.remove("fill");
@@ -1260,6 +1276,36 @@ public:
         }
         data = added;
         refresh(std::max(0, layerRow()));
+        syncJson();
+    }
+    // A prop from the library in the selected character's hand: it hangs from the arm and moves with its gestures.
+    void addProp()
+    {
+        const QString who = current()["id"].toString();
+        const auto library = graphics::propLibrary();
+        if (library.empty() || current()["type"].toString() != "group") {
+            QMessageBox::information(this, tr("Add prop"), library.empty() ? tr("The prop library is missing from this installation.")
+                                                                           : tr("Select a character's own group first."));
+            return;
+        }
+        QStringList names;
+        for (const auto& c : library)
+            names << c.character["name"].toString();
+        bool ok = false;
+        const QString pick = QInputDialog::getItem(this, tr("Add Prop"), tr("Prop for %1").arg(current()["name"].toString(who)), names, 0, false, &ok);
+        if (!ok)
+            return;
+        const QString hand = QInputDialog::getItem(this, tr("Add Prop"), tr("Hand"), {tr("Right"), tr("Left")}, 0, false, &ok);
+        if (!ok)
+            return;
+        QString error;
+        const QJsonObject added = motion::withProp(data, library[size_t(names.indexOf(pick))].character, who, hand == tr("Left") ? "L" : "R", &error);
+        if (added.isEmpty()) {
+            QMessageBox::warning(this, tr("Add prop"), error);
+            return;
+        }
+        data = added;
+        refresh(layerRow());
         syncJson();
     }
     // A video effect on the selected layer (or group) only: its "effects", applied to its own picture.

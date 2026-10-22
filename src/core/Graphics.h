@@ -41,6 +41,8 @@ std::vector<CharacterFile> characterLibrary();
 // The set library (backgrounds): the program's (sets next to it) and the user's (Graphics Templates, Sets).
 QString setFolder();
 std::vector<CharacterFile> setLibrary();
+// The prop library (things to hold): the program's (props next to it) and the user's (Graphics Templates, Props).
+std::vector<CharacterFile> propLibrary();
 // Saves a character (motion::characterFrom) to the user's library; its path in *path.
 bool saveCharacter(const QJsonObject &character, QString *path, QString *error);
 void addGenerators(std::vector<GeneratorDef> &list);

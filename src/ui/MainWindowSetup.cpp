@@ -562,6 +562,13 @@ void MainWindow::createActions()
         if (m_timeline->insertFreezeFrame(2 * kUsPerSecond))
             statusBar()->showMessage(tr("Freeze frame added: trim its end to change how long it holds."), 5000);
     }));
+    insert->addAction(act(tr("Freeze Frame in &Place (2 s over what follows)"), QKeySequence(QStringLiteral("Alt+Shift+F")), [this] {
+        if (!editorActive())
+            return;
+        stopPlayback(false);
+        if (m_timeline->insertFreezeFrame(2 * kUsPerSecond, true))
+            statusBar()->showMessage(tr("Freeze frame added in place: the picture holds for 2 s, the sound and everything after stay put."), 5000);
+    }));
     insert->addSeparator();
     auto insertGenerated = [this](const char* preset) {
         stopPlayback(false);

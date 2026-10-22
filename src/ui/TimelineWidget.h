@@ -86,7 +86,8 @@ public:
     // Freeze frame: holds the picture at the cursor for `length` on the
     // selected video event (or the top one under the cursor), pushing the
     // rest of it (and its grouped audio) later. Returns the new event's id.
-    int insertFreezeFrame(TimeUs length);
+    // inPlace: the held frame covers the time after the cursor (the event carries on after it, nothing moves later).
+    int insertFreezeFrame(TimeUs length, bool inPlace = false);
     void removeTransitionsFromSelection();
     int selectedTrack() const { return m_selectedTrack; }
 
@@ -189,8 +190,20 @@ private:
         None, Move, TrimLeft, TrimRight, FadeIn, FadeOut, Gain, Scrub, TimeSelect,
         RegionNew, RegionStart, RegionEnd, RegionMove, TrackLevel, TrackPan, TrackResize,
         EnvelopePoint, EnvelopeSegment, MarkerMove, MarkerStart, MarkerEnd, TrackReorder, RubberBand,
-        Slip, Slide, Roll
+        Slip, Slide, Roll, MoodMove
     };
+    // A character's expression key in an animation scene, shown on the event (and dragged along it).
+    struct MoodMark {
+        QString variable; // <character>_mood
+        int index = 0;    // its key
+        double time = 0;  // event-local seconds
+        QString mood;
+        QRectF rect;
+    };
+    std::vector<MoodMark> moodMarks(const Clip& clip, const QRectF& body) const;
+    int m_moodClip = 0, m_moodIndex = 0;
+    QString m_moodVariable;
+    double m_moodPressTime = 0;
     // Ctrl+drag: copies of the selection are moved (the originals stay).
     bool m_copyDrag = false;
     std::set<int> m_copyIds;
@@ -296,6 +309,7 @@ private:
     void paintThumbnails(QPainter& p, const Clip& clip, const QRectF& body);
     void paintWaveform(QPainter& p, const Clip& clip, const QRectF& body);
     void paintGenerated(QPainter& p, const Clip& clip, const QRectF& body);
+    void paintMoods(QPainter& p, const Clip& clip, const QRectF& body);
     void paintRuler(QPainter& p);
     void paintHeaders(QPainter& p);
 

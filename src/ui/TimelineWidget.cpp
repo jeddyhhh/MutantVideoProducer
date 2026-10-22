@@ -777,7 +777,7 @@ void TimelineWidget::trimSelectionToCursor(bool start)
     m_project->applyEdit(tl, start ? tr("Trim Start to Cursor") : tr("Trim End to Cursor"));
 }
 
-int TimelineWidget::insertFreezeFrame(TimeUs length)
+int TimelineWidget::insertFreezeFrame(TimeUs length, bool inPlace)
 {
     Timeline tl = m_project->timeline();
     const TimeUs at = quantize(m_cursor);
@@ -809,7 +809,8 @@ int TimelineWidget::insertFreezeFrame(TimeUs length)
         if (tl.findClip(id, &gti))
             tracks.insert(tl.tracks[size_t(gti)].id);
     }
-    ops::rippleInsert(tl, at, length, tracks, {}, m_ripple == RippleMode::All);
+    if (!inPlace)
+        ops::rippleInsert(tl, at, length, tracks, {}, m_ripple == RippleMode::All);
     // A held frame: the same footage at 0% speed (a flat velocity of 0).
     freeze.id = tl.allocId();
     freeze.start = at;
@@ -825,6 +826,8 @@ int TimelineWidget::insertFreezeFrame(TimeUs length)
     reassignEffectIds(freeze.effects, [&] { return tl.allocId(); });
     tl.tracks[size_t(ti)].clips.push_back(freeze);
     tl.sortClips();
+    if (inPlace) // (the event is cut around the hold, its sound plays on)
+        ops::overwriteOverlaps(tl, {freeze.id});
     m_project->applyEdit(tl, tr("Freeze Frame"));
     setSelection({freeze.id});
     return freeze.id;

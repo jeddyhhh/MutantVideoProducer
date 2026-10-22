@@ -22,6 +22,8 @@
 #include <QPainter>
 #include <QApplication>
 #include <QPainterPath>
+#include <QJsonArray>
+#include <QJsonObject>
 #include <QToolTip>
 #include <QWheelEvent>
 #include <QTemporaryDir>
@@ -122,6 +124,23 @@ void TimelineWidget::mousePressEvent(QMouseEvent* e)
     const Hit hit = hitTest(p);
     if (hit.track >= 0)
         m_selectedTrack = hit.track;
+    if (hit.clipId) { // a character's expression key on a scene: dragged along it
+        const Track& track = m_project->timeline().tracks[size_t(hit.track)];
+        const Clip* c = m_project->timeline().findClip(hit.clipId);
+        const int top = trackTop(hit.track), h = trackHeight(track);
+        const QRectF body(timeToX(c->start), top + 1 + kTitleH, timeToX(c->end()) - timeToX(c->start), h - 2 - kTitleH);
+        for (const MoodMark& m : moodMarks(*c, body))
+            if (m.rect.adjusted(-2, -2, 2, 2).contains(p)) {
+                m_before = m_project->timeline();
+                m_moodClip = c->id;
+                m_moodVariable = m.variable;
+                m_moodIndex = m.index;
+                m_moodPressTime = m.time;
+                m_pressTime = xToTime(p.x());
+                m_drag = Drag::MoodMove;
+                return;
+            }
+    }
     if (hit.clipId) {
         const std::set<int> group = ops::expandToGroups(m_project->timeline(), {hit.clipId});
         std::set<int> sel = m_selection;
@@ -394,6 +413,39 @@ void TimelineWidget::mouseMoveEvent(QMouseEvent* e)
     case Drag::MarkerMove:
     case Drag::MarkerStart:
     case Drag::MarkerEnd: dragMarker(p, e->modifiers()); break;
+    case Drag::MoodMove: {
+        Timeline tl = m_before;
+        Clip* c = tl.findClip(m_moodClip);
+        if (!c)
+            break;
+        QJsonObject data = c->generator.data;
+        QJsonObject variables = data.value(QStringLiteral("variables")).toObject();
+        QJsonObject spec = variables.value(m_moodVariable).toObject();
+        QJsonArray keys = spec.value(QStringLiteral("keyframes")).toArray();
+        if (m_moodIndex >= keys.size())
+            break;
+        const double length = double(c->length) / kUsPerSecond;
+        double when = std::clamp(m_moodPressTime + double(xToTime(p.x()) - m_pressTime) / kUsPerSecond, 0.0, length);
+        when = double(quantize(TimeUs(when * kUsPerSecond))) / kUsPerSecond;
+        QJsonArray k = keys[m_moodIndex].toArray();
+        k[0] = when;
+        keys.removeAt(m_moodIndex);
+        int at = 0; // (in time order, and never on another key's time)
+        while (at < keys.size() && keys[at].toArray()[0].toDouble() < when)
+            ++at;
+        if (at < keys.size() && std::abs(keys[at].toArray()[0].toDouble() - when) < 1e-6)
+            k[0] = when + 0.001;
+        keys.insert(at, k);
+        spec[QStringLiteral("keyframes")] = keys;
+        variables[m_moodVariable] = spec;
+        data[QStringLiteral("variables")] = variables;
+        c->generator.data = data;
+        m_project->setTimelineLive(tl);
+        QToolTip::showText(viewport()->mapToGlobal(p + QPoint(14, 10)),
+                           tr("%1: %2 at %3").arg(m_moodVariable.chopped(5), k[1].toString(), formatTimecode(c->start + TimeUs(when * kUsPerSecond), m_project->settings().fps)),
+                           viewport());
+        break;
+    }
     case Drag::TrackReorder: {
         const int gap = reorderGap(p.y());
         const int gapNow = gap == m_pressTrack || gap == m_pressTrack + 1 ? -1 : gap;
@@ -469,6 +521,10 @@ void TimelineWidget::mouseReleaseEvent(QMouseEvent* e)
     case Drag::RegionNew:
         if (!m_dragMoved)
             setRegion(0, 0);
+        break;
+    case Drag::MoodMove:
+        if (m_dragMoved)
+            m_project->commitEdit(m_before, tr("Move Expression"));
         break;
     case Drag::MarkerMove:
     case Drag::MarkerStart:

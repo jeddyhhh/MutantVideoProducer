@@ -39,6 +39,10 @@ settings and its most used audio binding becomes its voice.
 Make your own talking mouth with layers whose opacity is `{"audio": "gus", "viseme": "O"}`: it is 1 while Gus is
 saying an O, and 0 otherwise. The shapes are `A`, `E`, `O`, `L`, `F`, `M` and `rest`.
 
+**Expressions on the timeline.** A scene's expression keys show on its event in the timeline as small coloured marks
+(a character's initial: red angry, blue sad, yellow surprised, purple smug, grey neutral). Drag one along the event to
+move that change of face.
+
 **Expressions.** Library characters have five faces: **neutral**, **angry**, **sad**, **surprised** and **smug**
 (brows and eyelids). On the Keys tab, select the character's own group, choose one in the **Expression** box and press
 **Set expression**: the face changes at the playhead and stays until the next one. The expression is the scene variable
@@ -61,6 +65,17 @@ animation: **hop**, **jump**, **shake**, **nod**, **wave** (on an arm's group, w
 
 Gestures go on a library character's own group and turn its arms, then bring them back: **point** (the right arm),
 **arms up** (both, for a cheer or a panic) and **shrug**.
+
+More moves, on a character's group (or any layer): **walk in** (from off the left of the frame to where it stands, or to
+the x you give; a negative amount comes in from the right; it is off the frame until then), **walk out** (off the frame,
+and it stays off), **float** (weightless, drifting and tilting, back where it was at the end), **fall** (over sideways and
+it stays down; negative amount: the other way) and **get up**, **sit** (shorter and lower, and stays) and **stand**. For
+slow motion, give any move a longer **Length**.
+
+**Props.** **Add prop...** (under the layer list) puts a prop from the library in the selected character's hand: a phone,
+a megaphone, a shovel, a lunchbox, a mitten, a clapperboard, a mug or a sign. It hangs from the arm, so it rises when
+they point or throw their arms up, and it keeps its own size in anyone's hand. Your own props go in your profile's
+`Media/Graphics Templates/Props` (a group `root` of layers, with `width`, `height` and `grip`: the point the hand holds).
 
 ## Sets
 
@@ -107,7 +122,22 @@ blur, layer motion blur and layer effects are lighter), and renders always draw 
 **Camera frames whoever is talking** (Look box) cuts the camera to the character who is talking: the one whose voice
 binding has been loudest over the last half second, framed head and shoulders at the **Close-up zoom**. A character is a
 layer (their group) whose id is their binding's name, as added by Add character. Nobody talking, the camera does what
-it is keyed to do. In Scene data it is the camera's `speaker`: `{"zoom": 1.7, "window": 0.5, "quiet": 0.06}`.
+it is keyed to do. In Scene data it is the camera's `speaker`: `{"zoom": 1.7, "window": 0.5, "quiet": 0.06}`. Its `shots`
+change that for a while: `[[from, to, "listener"], [from, to, "two"], [from, to, "wide"]]` (event-local seconds) give a
+reaction shot of whoever spoke last before the speaker, a two-shot of both, or the keyed wide shot.
+
+**The scene's own time.** A scene's `time` (Scene data), keyed against the event's time, plays it at another time:
+`{"keyframes": [[0, 4], [4, 0]]}` plays four seconds backwards, `[[2, 2], [5, 2]]` holds the moment at two seconds
+for three seconds (a freeze inside a scene), and slower keys are slow motion. Its voices' mouths follow the picture.
+
+**Video in a scene** can also take a `source_time` (seconds of the file, keyed): the moment it shows, instead of
+`source_in` and `speed`, so a TV in a scene can slow down, rewind or pause.
+
+**Textures and flashes.** A `noise` layer fills its box with `style` `static` (TV snow), `grain` (film grain over what is
+under it) or `fog` (soft drifting fog in its `fill` colour), new every frame (`rate` a second) and the same every time for
+its `seed`; `amount`, `grain` (speck size), `scale` and `speed` (fog) tune it. A `flash` layer flashes its `fill` (white)
+over its box at each of its `times` (event-local seconds), and on each beat of a binding with `beats`, fading over
+`decay` seconds (0.25) at `strength` 1: camera flashes, lightning, a strobe. Both are in the layer picker.
 
 ## Layout and brand workflow
 
@@ -226,6 +256,8 @@ Channels are `peak`, `left`, `right`, `beat`; numeric base and amount control re
 - `patch` (`event_id`, `operations`: `[{layer_id, property, value}]`, or `remove: true` instead of a value) changes
   properties without sending the whole scene: `property` is a dotted path (`shadow.blur`), and `layer_id` can be a layer,
   `$camera`, `$variables` or `$scene` (the scene's own keys, such as `motion_blur`). Locked layers are refused.
+- `props` lists the prop library; `add_prop` (`event_id`, `layer_id`: a character, `prop`, `hand`: `R` or `L`) puts one in
+  their hand.
 - `dance` (`event_id`, `dancers`: layer IDs, optional `moves`, `every`, `from`, `to`, `amount`) finds the beat of the music
   under the scene and keys a move on each beat for every dancer, the moves in turn (default hop, spin, jump, squash, arms
   up, shake), as one undo step.

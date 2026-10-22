@@ -6,6 +6,15 @@ What changed in each version of Mutant Video Producer. The newest is first.
 
 ### Added
 
+- Compose Graphics, **Add prop...**: a library of props (phone, megaphone, shovel, lunchbox, mitten, clapperboard, mug,
+  sign) held in a character's hand, moving with the arm. AI control: `graphics_overlay` `props`, `add_prop`.
+- Moves: walk in, walk out, float, fall, get up, sit and stand.
+- Timeline: a scene's expression keys show on its event, and drag along it.
+- Speaker camera shots: a reaction of the listener, a two-shot or the wide shot for a while (`camera.speaker.shots`).
+- Animation scenes: a scene's `time` plays it backwards, holds it (a freeze) or slows it; a video layer's `source_time`
+  picks the moment of its file; `noise` layers (TV static, film grain, fog) and `flash` layers (at times, or on the beat).
+- Freeze Frame in place (AI control: `freeze_frame` `in_place`): the held frame covers the following time and nothing
+  moves later.
 - Sets: their signs are scene variables (`set_banner`, `set_chalk`, `set_menu`...), reworded in the Keys tab.
 - AI control, `graphics_overlay` `dance`: characters move on the beat of the music under a scene, in one step.
 - Animation scenes: a text layer can show the line being said on a bound voice track (`{"subtitle": binding}`).

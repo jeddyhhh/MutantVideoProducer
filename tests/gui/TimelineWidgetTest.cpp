@@ -3,6 +3,7 @@
 #include "ui/TimelineLayout.h"
 #include "core/AudioFinishing.h"
 #include "core/AudioMixer.h"
+#include "core/Generators.h"
 #include "core/PanCrop.h"
 #include "core/Presets.h"
 #include "core/TimelineOps.h"
@@ -557,6 +558,45 @@ int TimelineWidget::runEditTest(QStringList& log)
                   && vclips2.size() == 4 && vclips2[2].start == 2 * kUsPerSecond && m_project->timeline().tracks[size_t(audioTrack)].clips[1].start == 2 * kUsPerSecond,
               QStringLiteral("Shift+F holds the frame at the cursor for 1 s and pushes the rest (and its audio) later (%1)").arg(lay.join(QStringLiteral(", "))));
         reset();
+        setCursorTime(kUsPerSecond / 2);
+        const Timeline beforeHold = m_project->timeline();
+        const int holdId = insertFreezeFrame(kUsPerSecond, true);
+        const auto& held = m_project->timeline().tracks[size_t(videoTrack)].clips;
+        check(holdId && held.size() == 4 && held[1].id == holdId && held[1].start == kUsPerSecond / 2 && held[2].start == 3 * kUsPerSecond / 2
+                  && held[2].end() == 2 * kUsPerSecond && held[3].start == 3 * kUsPerSecond
+                  && m_project->timeline().tracks[size_t(audioTrack)].clips == beforeHold.tracks[size_t(audioTrack)].clips,
+              QStringLiteral("a freeze in place holds over the following second; nothing moves and the sound plays on"));
+        reset();
+        {
+            // A character's expression keys show on the scene's event and drag along it.
+            Timeline tl = m_project->timeline();
+            Clip scene;
+            scene.id = tl.allocId();
+            scene.start = 6 * kUsPerSecond;
+            scene.length = 4 * kUsPerSecond;
+            scene.generator = makeGenerator(*findGeneratorPreset("graphics_blank"));
+            scene.generator.data = QJsonObject{{"version", 2}, {"layers", QJsonArray{}},
+                                               {"variables", QJsonObject{{"gus_mood", QJsonObject{{"keyframes", QJsonArray{QJsonArray{0, "neutral", "hold"},
+                                                                                                                        QJsonArray{2, "angry", "hold"}}}}}}}};
+            tl.tracks[size_t(videoTrack)].clips.push_back(scene);
+            tl.sortClips();
+            m_project->applyEdit(tl, QStringLiteral("scene"));
+            m_viewStart = 5 * kUsPerSecond; // (the scene in view)
+            updateScrollBars();
+            const int y = trackTop(videoTrack) + trackHeight(m_project->timeline().tracks[size_t(videoTrack)]) - 1 - 7;
+            const int x = int(timeToX(8 * kUsPerSecond));
+            mouse(QEvent::MouseButtonPress, QPoint(x, y));
+            mouse(QEvent::MouseMove, QPoint(x + 50, y), Qt::NoButton);
+            mouse(QEvent::MouseMove, QPoint(x + 100, y), Qt::NoButton);
+            mouse(QEvent::MouseButtonRelease, QPoint(x + 100, y));
+            const Clip* moved = m_project->timeline().findClip(scene.id);
+            const QJsonArray keys = moved->generator.data["variables"].toObject()["gus_mood"].toObject()["keyframes"].toArray();
+            check(moved->start == scene.start && keys.size() == 2 && std::abs(keys[1].toArray()[0].toDouble() - 3) < 0.05 && keys[1].toArray()[1] == "angry",
+                  QStringLiteral("an expression key on a scene's event drags along it (angry now at %1 s)").arg(keys[1].toArray()[0].toDouble()));
+            reset();
+            m_viewStart = 0;
+            updateScrollBars();
+        }
         selectA();
         setFadeCurveOnSelection(true, 4);
         check(clipAt(videoTrack, 0).fadeInCurve == 4 && clipAt(audioTrack, 0).fadeInCurve == 4,

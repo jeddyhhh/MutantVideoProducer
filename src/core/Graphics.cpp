@@ -674,6 +674,11 @@ QString setFolder() {
                         : home + "/Media/Graphics Templates/Sets";
 }
 std::vector<CharacterFile> setLibrary() { return libraryFiles("sets", setFolder()); }
+std::vector<CharacterFile> propLibrary() {
+  const auto home = Profiles::instance().active().home;
+  return libraryFiles("props", home.isEmpty() ? brand::userFolder(QStandardPaths::DocumentsLocation, QStringLiteral("Graphics")) + "/Props"
+                                              : home + "/Media/Graphics Templates/Props");
+}
 bool saveCharacter(const QJsonObject &character, QString *path, QString *error) {
   QString name;
   for (QChar c : character["name"].toString())
