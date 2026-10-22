@@ -902,6 +902,7 @@ public:
   QVector<int> roots;
   int &budget;
   int unblurred = -1; // the layer being drawn into its blur's own picture
+  double speakerTime = NAN; // the frame's own time while motion blur draws its moments (the speaker camera cuts once)
   Graph(QJsonObject scene, QSizeF size, int &budget)
       : scene(std::move(scene)), size(size), budget(budget) {
     collect(this->scene["layers"].toArray(), {});
@@ -1016,8 +1017,9 @@ public:
           continue;
         const QJsonObject binding{{"audio", it.key()}, {"attack", .02}, {"release", .1}};
         double level = 0;
+        const double now = std::isfinite(speakerTime) ? speakerTime : t;
         for (int k = 0; k < 6; ++k)
-          level += audioLevel(binding, scene, std::max(0., t - window * k / 5)) / 6;
+          level += audioLevel(binding, scene, std::max(0., now - window * k / 5)) / 6;
         if (level > best) {
           best = level;
           who = id;
@@ -1393,11 +1395,26 @@ public:
           unblurred = was;
         }
         layer = blurred(layer, softness);
-        layerEffects(layer, effects, t, size.height() / 1080.);
+        QPoint corner;
+        if (!effects.isEmpty()) {
+          // The effects work on the layer's own box (and its blur's spread):
+          // a CRT bends the TV's picture, not the room, and noise stays on it.
+          const auto at = pose(i, t);
+          const QRect box = (at.world * camera)
+                                .mapRect(at.box)
+                                .adjusted(-3 * softness, -3 * softness, 3 * softness, 3 * softness)
+                                .toAlignedRect()
+                                .intersected(layer.rect());
+          if (box.isEmpty())
+            return;
+          layer = layer.copy(box);
+          corner = box.topLeft();
+          layerEffects(layer, effects, t, size.height() / 1080.);
+        }
         p.save();
         p.setWorldTransform({});
         p.setOpacity(opacity);
-        p.drawImage(0, 0, layer);
+        p.drawImage(corner, layer);
         p.restore();
         return;
       }
@@ -1620,6 +1637,7 @@ void paint(QPainter &p, QSizeF size, const QJsonObject &scene, double time) {
         fp.setRenderHints(p.renderHints());
         int each = 32768;
         Graph graph(scene, size, each);
+        graph.speakerTime = time;
         graph.drawRoots(fp, std::max(0., time + shutter * (double(j) / (samples - 1) - .5)));
       }
       frames.add(frame);

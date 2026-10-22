@@ -47,6 +47,10 @@ What changed in each version of Mutant Video Producer. The newest is first.
 
 ### Fixed
 
+- A layer's effects could paint outside the layer: a CRT on a TV in a scene put black corners on the whole picture,
+  and noise covered the whole frame. They now work on the layer's own box.
+- With scene motion blur, the speaker camera showed a double picture on the frame where it cut to the next speaker;
+  every moment of a frame now frames the same speaker.
 - A layer's motion blur drew its overlapping parts added together (too bright where they overlap); its moments are now
   averaged.
 - Playing in the editor, the sound could fall behind the picture for the rest of the playback (lip sync looked

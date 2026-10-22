@@ -220,6 +220,14 @@ int main(int argc, char **argv) {
     inverted["effects"] = QJsonArray{QJsonObject{{"type", "invert"}}};
     const QImage two = drawn(QJsonObject{{"version", 2}, {"layers", QJsonArray{inverted, rect("b", .5, 0, .5, 1, "#ffffff")}}});
     check(qGray(two.pixel(80, 90)) < 30 && qGray(two.pixel(240, 90)) > 225, "a layer's effect changes that layer only");
+    QJsonObject screen = rect("tv", .3, .3, .4, .4, "#ff0000");
+    screen["effects"] = QJsonArray{QJsonObject{{"type", "crt"}}, QJsonObject{{"type", "noise"}}};
+    const QImage tv = drawn(QJsonObject{{"version", 2}, {"layers", QJsonArray{screen}}});
+    int outside = 0;
+    for (int y = 0; y < 180; y += 3)
+      for (int x = 0; x < 320; x += 3)
+        outside += (x < 90 || x > 230 || y < 50 || y > 130) && qAlpha(tv.pixel(x, y)) != 0;
+    check(outside == 0 && qRed(tv.pixel(160, 90)) > 150, QStringLiteral("a layer's effects stay inside its box (%1 pixels outside)").arg(outside));
     // The speaker camera frames whoever is loudest.
     QJsonArray loud, quiet;
     for (int i = 0; i < 64; ++i) {
@@ -236,6 +244,22 @@ int main(int argc, char **argv) {
     const QImage close = drawn(talk, 1);
     check(qAlpha(wide.pixel(160, 90)) == 0 && qBlue(close.pixel(160, 90)) > 200 && qGreen(close.pixel(160, 90)) < 60,
           "the speaker camera frames whoever is talking");
+    // Under motion blur the speaker camera still cuts: every moment of a frame frames the same speaker.
+    QJsonArray first, second;
+    for (int i = 0; i < 64; ++i) {
+      first.append(i < 32 ? 1 : 0);
+      second.append(i < 32 ? 0 : 1);
+    }
+    QJsonObject turns = talk;
+    turns["audio"] = QJsonObject{{"ann", envelope(first)}, {"bob", envelope(second)}};
+    double cut = -1;
+    for (double t = 1; t < 1.6 && cut < 0; t += .01)
+      if (drawn(turns, t).pixel(160, 90) != drawn(turns, 1).pixel(160, 90))
+        cut = t;
+    QJsonObject turnsBlurred = turns;
+    turnsBlurred["motion_blur"] = QJsonObject{{"samples", 6}, {"shutter", .1}};
+    check(cut > 0 && drawn(turnsBlurred, cut) == drawn(turns, cut) && drawn(turnsBlurred, cut - .02) == drawn(turns, cut - .02),
+          QStringLiteral("the speaker camera cuts cleanly under motion blur (cut at %1 s)").arg(cut));
     // A library character's expression and gestures.
     const auto library = graphics::characterLibrary();
     const auto kid = std::find_if(library.begin(), library.end(), [](const graphics::CharacterFile &f) { return f.path.endsWith("kid.json"); });
