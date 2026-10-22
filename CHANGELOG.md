@@ -33,6 +33,17 @@ What changed in each version of Mutant Video Producer. The newest is first.
   `graphics_overlay` `move`.
 - The look: layer **shading**, **contact shadow**, **blur** and **depth** (with the camera's **depth of field**), and
   scene **motion blur** (Scene tab > Look).
+- Compose Graphics, **video** layers: a video file playing inside a layer's box (a TV, a phone, a window), cover or
+  contain, with its start, speed and looping.
+- Compose Graphics, **Add set...**: a library of 17 ready-made backgrounds (some with a front part drawn in front of the
+  characters), one per scene, plus your own. AI control: `graphics_overlay` `sets`, `add_set`.
+- Compose Graphics, **Effect on this layer...**: any video effect on one layer or group of a scene only.
+- **Camera frames whoever is talking** (Scene tab > Look): the camera cuts to the loudest character by itself.
+- **Expressions** (Keys tab): library characters look neutral, angry, sad, surprised or smug from the playhead on; and
+  the gestures **point**, **arms up** and **shrug** in Moves. AI control: `graphics_overlay` `expression`.
+- Generate Dialogue, **Exact mouth timing**: each word of each line is timed (with a Whisper model) so mouth shapes land
+  on the words. AI control: `generate_dialogue` `align`.
+- Playing a heavy scene, the preview draws motion blur and layer effects at draft quality; renders are unchanged.
 
 ### Fixed
 

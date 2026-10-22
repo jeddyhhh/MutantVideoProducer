@@ -58,10 +58,23 @@ def colour_variables(layers, owner, c, prefix=""):
     return variables
 
 
+def rename_mood(value, to):
+    """The rig's mood variable (voice_mood) under another name."""
+    if isinstance(value, dict):
+        if value.get("variable") == "voice_mood":
+            value = {**value, "variable": to}
+        return {k: rename_mood(v, to) for k, v in value.items()}
+    if isinstance(value, list):
+        return [rename_mood(v, to) for v in value]
+    return value
+
+
 def character(name, c):
     cid = "Voice"  # (its binding is then "voice"; the ids lose the prefix below)
     layers = build(cid, c, 0.0, r.KH if c["kind"] == "kid" else r.AH if c["kind"] == "adult" else r.BH)
     variables = colour_variables(layers, cid, c)
+    variables["mood"] = "neutral"  # (expressions: neutral, angry, sad, surprised, smug)
+    layers = rename_mood(layers, "mood")
     out = []
     for layer in layers:
         layer = dict(layer)
@@ -95,6 +108,7 @@ def preset():
         part = build(cid, c, x, GROUND)
         part[0]["name"] = "Character A (voice_a)" if cid == "voice_a" else "Character B (voice_b)"
         VARS.update(colour_variables(part, cid, c, prefix))
+        VARS[f"{cid}_mood"] = "neutral"
         for layer in part:
             if layer["id"].replace(cid + "_", "") in SHADED:
                 layer["shading"] = 0.35

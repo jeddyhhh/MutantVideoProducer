@@ -478,6 +478,7 @@ add_custom_target(mvp_docs ALL
     COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_SOURCE_DIR}/data/examples" "$<TARGET_FILE_DIR:mvp_selftest>/examples"
     COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_SOURCE_DIR}/data/sfx" "$<TARGET_FILE_DIR:mvp_selftest>/sfx"
     COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_SOURCE_DIR}/data/characters" "$<TARGET_FILE_DIR:mvp_selftest>/characters"
+    COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_SOURCE_DIR}/data/sets" "$<TARGET_FILE_DIR:mvp_selftest>/sets"
     COMMENT "Copying the user guide and example projects")
 
 # ---------------------------------------------------------------------------

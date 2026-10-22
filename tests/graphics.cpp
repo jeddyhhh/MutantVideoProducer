@@ -1,6 +1,7 @@
 #include "core/Graphics.h"
 #include "core/MotionGraphics.h"
 #include "core/Compositor.h"
+#include "core/Exporter.h"
 #include "core/FrameRenderer.h"
 #include "core/GpuCompositor.h"
 #include "core/Project.h"
@@ -168,6 +169,128 @@ int main(int argc, char **argv) {
       partial += qAlpha(blurredFrame.pixel(x, 90)) > 10 && qAlpha(blurredFrame.pixel(x, 90)) < 245;
     check(sharp != blurredFrame && partial > 8 && blurredFrame == drawn(smeared, .5),
           QStringLiteral("scene motion blur smears what moves, the same every time (%1 smeared pixels)").arg(partial));
+  }
+  // Video layers, a layer's own effects, the speaker camera, expressions, gestures and sets.
+  {
+    auto drawn = [](const QJsonObject &s, double t = 0) {
+      QImage image(320, 180, QImage::Format_ARGB32_Premultiplied);
+      image.fill(Qt::transparent);
+      motion::render(image, s, t);
+      return image;
+    };
+    auto rect = [](const QString &id, double x, double y, double w, double h, const QString &fill) {
+      return QJsonObject{{"type", "rect"}, {"id", id}, {"x", x}, {"y", y}, {"width", w}, {"height", h}, {"fill", fill}};
+    };
+    // A second of red video, made by the exporter, plays inside a layer's box.
+    QTemporaryDir videoDir;
+    Project source;
+    ProjectSettings small;
+    small.width = 320;
+    small.height = 180;
+    source.setSettings(small);
+    Timeline vt = source.timeline();
+    Track track;
+    track.id = vt.allocId();
+    track.type = TrackType::Video;
+    Clip red;
+    red.id = vt.allocId();
+    red.length = kUsPerSecond;
+    red.generator = makeGenerator(*findGeneratorPreset("graphics_blank"));
+    red.generator.data = QJsonObject{{"version", 2}, {"layers", QJsonArray{rect("r", 0, 0, 1, 1, "#ff0000")}}};
+    track.clips.push_back(red);
+    vt.tracks = {track};
+    source.applyEdit(vt, "red");
+    const ExportPreset *mp4 = nullptr;
+    for (const auto &preset : exportPresets())
+      if (!mp4 && preset.extension == "mp4" && presetAvailable(preset))
+        mp4 = &preset;
+    Exporter exporter;
+    ExportSettings es = mp4 ? settingsFromPreset(*mp4, source.settings()) : ExportSettings{};
+    es.path = videoDir.filePath("red.mp4");
+    es.rangeStart = 0;
+    es.rangeEnd = kUsPerSecond;
+    check(mp4 && exporter.run(*source.snapshot(), es), "a test video is made: " + exporter.error());
+    QJsonObject video{{"type", "video"}, {"id", "tv"}, {"x", .25}, {"y", .25}, {"width", .5}, {"height", .5}, {"path", es.path}, {"loop", true}};
+    const QImage played = drawn(QJsonObject{{"version", 2}, {"layers", QJsonArray{video}}}, .5);
+    const QRgb inside = played.pixel(160, 90);
+    check(qRed(inside) > 200 && qGreen(inside) < 60 && qAlpha(played.pixel(20, 20)) == 0 && motion::validate(QJsonObject{{"version", 2}, {"layers", QJsonArray{video}}}).isEmpty(),
+          "a video layer plays its file inside its box");
+    // A layer's effects change only that layer.
+    QJsonObject inverted = rect("a", 0, 0, .5, 1, "#ffffff");
+    inverted["effects"] = QJsonArray{QJsonObject{{"type", "invert"}}};
+    const QImage two = drawn(QJsonObject{{"version", 2}, {"layers", QJsonArray{inverted, rect("b", .5, 0, .5, 1, "#ffffff")}}});
+    check(qGray(two.pixel(80, 90)) < 30 && qGray(two.pixel(240, 90)) > 225, "a layer's effect changes that layer only");
+    // The speaker camera frames whoever is loudest.
+    QJsonArray loud, quiet;
+    for (int i = 0; i < 64; ++i) {
+      loud.append(1);
+      quiet.append(0);
+    }
+    auto envelope = [](const QJsonArray &a) {
+      return QJsonObject{{"version", 1}, {"duration", 2}, {"left", a}, {"right", a}, {"rate", 1}, {"offset", 0}};
+    };
+    QJsonObject talk{{"version", 2}, {"layers", QJsonArray{rect("Ann", .05, .3, .3, .5, "#00ff00"), rect("Bob", .65, .3, .3, .5, "#0000ff")}},
+                     {"audio", QJsonObject{{"ann", envelope(quiet)}, {"bob", envelope(loud)}}}};
+    const QImage wide = drawn(talk, 1);
+    talk["camera"] = QJsonObject{{"speaker", QJsonObject{{"zoom", 2}}}};
+    const QImage close = drawn(talk, 1);
+    check(qAlpha(wide.pixel(160, 90)) == 0 && qBlue(close.pixel(160, 90)) > 200 && qGreen(close.pixel(160, 90)) < 60,
+          "the speaker camera frames whoever is talking");
+    // A library character's expression and gestures.
+    const auto library = graphics::characterLibrary();
+    const auto kid = std::find_if(library.begin(), library.end(), [](const graphics::CharacterFile &f) { return f.path.endsWith("kid.json"); });
+    if (kid != library.end()) {
+      QString error;
+      QJsonObject scene{{"version", 2}, {"layers", QJsonArray{rect("bg", 0, 0, 1, 1, "#8ecae6")}}};
+      scene = motion::withCharacter(scene, kid->character, "Gus", .4, .9, &error);
+      const QJsonObject angry = motion::withExpression(scene, "gus", "angry", 1, &error);
+      int shown = 0;
+      for (auto v : angry["layers"].toArray()) {
+        const QJsonObject o = v.toObject();
+        if (o["opacity"].toObject()["equals"] == "angry")
+          shown += 1 + 10 * (motion::evaluate(o["opacity"], .5, angry).toDouble() != 0) + 100 * (motion::evaluate(o["opacity"], 1.5, angry).toDouble() != 1);
+      }
+      check(!angry.isEmpty() && shown > 0 && shown < 10 && motion::withExpression(scene, "bg", "angry", 1, &error).isEmpty(),
+            QStringLiteral("an expression shows from its time on, only on a character (%1)").arg(shown));
+      check(drawn(angry, .5) != drawn(angry, 1.5), "an expression changes the face");
+      const QJsonObject point = motion::withMove(scene, "gus", "point", 1, 0, 1, NAN, &error);
+      double arm = 0;
+      for (auto v : point["layers"].toArray())
+        if (v.toObject()["id"] == "gus_armR_pose")
+          arm = motion::evaluate(v.toObject()["rotation"], 1.8, point).toDouble();
+      check(std::abs(arm + 80) < 1e-6 && motion::withMove(scene, "bg", "point", 1, 0, 1, NAN, &error).isEmpty(),
+            "pointing turns the character's arm; a layer without arms is refused");
+      // Sets: one set at a time, behind the scene, its front part in front.
+      error.clear();
+      const auto sets = graphics::setLibrary();
+      check(sets.size() >= 17, QStringLiteral("the set library comes with the program (%1)").arg(sets.size()));
+      if (sets.size() >= 2) {
+        const auto withFront = std::find_if(sets.begin(), sets.end(), [](const graphics::CharacterFile &f) { return !f.character["front"].toArray().isEmpty(); });
+        QJsonObject set = motion::withSet(scene, sets[0].character, &error);
+        set = motion::withSet(set, withFront == sets.end() ? sets[1].character : withFront->character, &error);
+        const QJsonArray layers = set["layers"].toArray();
+        int groups = 0;
+        for (auto v : layers)
+          groups += v.toObject()["id"] == "set";
+        check(!set.isEmpty() && groups == 1 && layers[0].toObject()["id"] == "set" &&
+                  (withFront == sets.end() || layers[layers.size() - 1].toObject()["id"].toString().startsWith("setf_")) &&
+                  layers.size() > scene["layers"].toArray().size(),
+              "a set goes behind the scene and replaces the set before it " + error);
+      }
+    }
+    // Draft previews draw fewer motion blur samples (and look the same with none).
+    QJsonObject moving{{"version", 2}, {"layers", QJsonArray{rect("m", 0, .3, .2, .4, "#ffffff")}}};
+    auto layers = moving["layers"].toArray();
+    auto m = layers[0].toObject();
+    m["x"] = QJsonObject{{"keyframes", QJsonArray{QJsonArray{0, 0}, QJsonArray{1, .8}}}};
+    layers[0] = m;
+    moving["layers"] = layers;
+    moving["motion_blur"] = QJsonObject{{"samples", 8}, {"shutter", .1}};
+    const QImage full = drawn(moving, .5);
+    motion::setDraft(true);
+    const QImage draft = drawn(moving, .5);
+    motion::setDraft(false);
+    check(full != draft && drawn(moving, .5) == full, "a draft preview draws less motion blur, and only while drafting");
   }
   auto g = makeGenerator(*findGeneratorPreset("graphics_broadcast"));
   auto img = renderGenerator(g, {640, 360}, 1. / 3, 0, 10 * kUsPerSecond, {});

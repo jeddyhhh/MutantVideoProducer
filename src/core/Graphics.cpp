@@ -631,10 +631,11 @@ QString characterFolder() {
   return home.isEmpty() ? brand::userFolder(QStandardPaths::DocumentsLocation, QStringLiteral("Graphics")) + "/Characters"
                         : home + "/Media/Graphics Templates/Characters";
 }
-std::vector<CharacterFile> characterLibrary() {
+namespace {
+std::vector<CharacterFile> libraryFiles(const QString &builtInFolder, const QString &userFolder) {
   std::vector<CharacterFile> out;
-  for (const auto &[folder, builtIn] : {std::pair{QDir(QCoreApplication::applicationDirPath()).filePath("characters"), true},
-                                        std::pair{characterFolder(), false}})
+  for (const auto &[folder, builtIn] : {std::pair{QDir(QCoreApplication::applicationDirPath()).filePath(builtInFolder), true},
+                                        std::pair{userFolder, false}})
     for (const QFileInfo &f : QDir(folder).entryInfoList({"*.json"}, QDir::Files, QDir::Name)) {
       QFile file(f.filePath());
       if (f.size() > 4 * 1024 * 1024 || !file.open(QIODevice::ReadOnly))
@@ -645,6 +646,14 @@ std::vector<CharacterFile> characterLibrary() {
     }
   return out;
 }
+} // namespace
+std::vector<CharacterFile> characterLibrary() { return libraryFiles("characters", characterFolder()); }
+QString setFolder() {
+  const auto home = Profiles::instance().active().home;
+  return home.isEmpty() ? brand::userFolder(QStandardPaths::DocumentsLocation, QStringLiteral("Graphics")) + "/Sets"
+                        : home + "/Media/Graphics Templates/Sets";
+}
+std::vector<CharacterFile> setLibrary() { return libraryFiles("sets", setFolder()); }
 bool saveCharacter(const QJsonObject &character, QString *path, QString *error) {
   QString name;
   for (QChar c : character["name"].toString())
@@ -740,9 +749,11 @@ void addGenerators(std::vector<GeneratorDef> &list) {
   d.render = [](QImage &img, const Params &p, const GeneratorContext &c) {
     QImage drawn(img.size(), QImage::Format_ARGB32_Premultiplied);
     drawn.fill(Qt::transparent);
+    const bool was = motion::setDraft(!c.highQuality);
     drawScene(drawn,
               c.data && !c.data->isEmpty() ? *c.data : scene("broadcast"),
               double(c.time) / kUsPerSecond);
+    motion::setDraft(was);
     QPainter q(&img);
     q.setOpacity(p.num("opacity"));
     q.drawImage(0, 0, drawn);
@@ -765,7 +776,9 @@ void addGenerators(std::vector<GeneratorDef> &list) {
   };
   d.paint = [](QPainter &painter, QSize size, const Params &p, const GeneratorContext &c) {
     painter.setOpacity(p.num("opacity"));
+    const bool was = motion::setDraft(!c.highQuality);
     paintScene(painter, size, c.data && !c.data->isEmpty() ? *c.data : scene("broadcast"), double(c.time) / kUsPerSecond);
+    motion::setDraft(was);
     return true;
   };
   list.push_back(d);

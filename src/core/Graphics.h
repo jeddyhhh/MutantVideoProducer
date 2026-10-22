@@ -38,6 +38,9 @@ struct CharacterFile {
 };
 QString characterFolder();
 std::vector<CharacterFile> characterLibrary();
+// The set library (backgrounds): the program's (sets next to it) and the user's (Graphics Templates, Sets).
+QString setFolder();
+std::vector<CharacterFile> setLibrary();
 // Saves a character (motion::characterFrom) to the user's library; its path in *path.
 bool saveCharacter(const QJsonObject &character, QString *path, QString *error);
 void addGenerators(std::vector<GeneratorDef> &list);

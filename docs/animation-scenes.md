@@ -39,6 +39,11 @@ settings and its most used audio binding becomes its voice.
 Make your own talking mouth with layers whose opacity is `{"audio": "gus", "viseme": "O"}`: it is 1 while Gus is
 saying an O, and 0 otherwise. The shapes are `A`, `E`, `O`, `L`, `F`, `M` and `rest`.
 
+**Expressions.** Library characters have five faces: **neutral**, **angry**, **sad**, **surprised** and **smug**
+(brows and eyelids). On the Keys tab, select the character's own group, choose one in the **Expression** box and press
+**Set expression**: the face changes at the playhead and stays until the next one. The expression is the scene variable
+`gus_mood`, so it can also be keyed with **Scene variables**.
+
 **Lip sync follows edits.** A binding made from a track remembers the track. Move, trim, replace or delete a line on it
 (or move the scene) and the mouth's analysis is redone as part of the same edit, so it never drifts from the voice; one
 undo puts both back.
@@ -49,6 +54,34 @@ The **Moves** box on the Keys tab adds a ready-made move to the selected layer a
 animation: **hop**, **jump**, **shake**, **nod**, **wave** (on an arm's group, which turns at its anchor), **spin**,
 **walk** (to the x you give, with a bob in each step), **pop** (scales in), **squash** and **blink** (on an eyes group).
 **Length** 0 uses the move's natural length; **Amount** makes it bigger or smaller (negative: the other way).
+
+Gestures go on a library character's own group and turn its arms, then bring them back: **point** (the right arm),
+**arms up** (both, for a cheer or a panic) and **shrug**.
+
+## Sets
+
+**Add set...** (under the layer list) puts a ready-made background behind everything in the scene: a classroom, a
+bedroom, a cottage kitchen, a snowy street, woods with a cave, a western main street, mission control, the inside of
+a rocket, outer space and more. Some sets have a front part (a
+desk, a counter, a window frame) drawn in front of the characters. A scene has one set: adding another replaces it.
+The set's layers are grouped as `set` (and `set_front`), with a depth of 1, so **Depth of field** softens them in a
+close-up. Your own sets go in your profile's `Media/Graphics Templates/Sets`, as JSON files with `name`, `layers` and an
+optional `front` list of layers.
+
+## Video in a scene
+
+Choose **video** in the layer picker and press **Add layer**, then **Choose file...** on the Layout tab: the video plays
+inside the layer's box, so it can be a TV, a phone, a window or a porthole, moved, scaled, turned and animated like any
+layer. In Layer data, `fit` is `cover` (fills the box, cropped; the default) or `contain` (all of it, letterboxed),
+`source_in` is where in the file it starts (seconds), `speed` its playback speed and `loop` whether it starts again at
+its end. The picture only: put its sound on an audio track.
+
+## Effects on one layer
+
+**Effect on this layer...** (under the layer list) applies a video effect to the selected layer (or group) only: a glow
+on a sign, a blur or tint on the background, an old-film look on a TV screen. The layer's `effects` list in Layer data
+holds them, each `{"type": effect id, "params": {setting: value}}` with the settings of the effect of that id (see
+`list_effects`); choose **(remove this layer's effects)** to clear them.
 
 ## The look
 
@@ -62,8 +95,13 @@ On the Layout tab, every shape has:
   zooms in (a close-up softens the background); 0 is the subject's plane.
 
 The Scene tab's **Look** box also turns on **Motion blur**: the whole picture, camera included, is averaged over the
-shutter time, so crash zooms, whip pans and fast hits smear. It draws each frame five times, so the preview is slower
-with it on.
+shutter time, so crash zooms, whip pans and fast hits smear. It draws each frame five times; the preview while playing draws fewer (draft quality: motion
+blur, layer motion blur and layer effects are lighter), and renders always draw them in full.
+
+**Camera frames whoever is talking** (Look box) cuts the camera to the character who is talking: the one whose voice
+binding has been loudest over the last half second, framed head and shoulders at the **Close-up zoom**. A character is a
+layer (their group) whose id is their binding's name, as added by Add character. Nobody talking, the camera does what
+it is keyed to do. In Scene data it is the camera's `speaker`: `{"zoom": 1.7, "window": 0.5, "quiet": 0.06}`.
 
 ## Layout and brand workflow
 
@@ -175,6 +213,10 @@ Channels are `peak`, `left`, `right`, `beat`; numeric base and amount control re
   place on the timeline, so one binding per character's voice track drives that character's mouth across all their lines
   (e.g. bind `bolt` to Bolt's voice track and give the mouth `scale_y: {audio: "bolt", base: 0.1, amount: 1.2}`). Track
   envelopes have no beats. In Compose Graphics, Bind audio for animation lists the audio tracks too.
+- `characters`, `add_character` (`character`, `name`, `x`, `ground`, `colours`) and `save_character` (`layer_id`,
+  `name`) use the character library; `expression` (`layer_id`, `mood`, `time`) changes a character's face from `time`.
+- `move` adds a ready-made move or gesture (`move`, `layer_id`, `time`, `duration`, `amount`, `to`).
+- `sets` lists the set library; `add_set` (`event_id`, `set`: a name or file) puts one behind the scene.
 - `export_template` takes event ID, path and explicit `overwrite` when replacing a file.
 - `import_template` validates a JSON file and inserts a new editable event, with optional at/length/track.
 

@@ -454,7 +454,7 @@ void VoiceJob::finish(const QString& failure)
                 m_trackId = track.id;
                 tl.tracks.push_back(track);
             }
-            if (m_alignmentReady) {
+            if (m_alignmentReady && !m_options.value("words_only").toBool()) { // (words_only: just the takes' word times)
                 std::erase_if(tl.tracks, [&](Track& t) {
                     std::erase_if(t.clips, [&](const Clip& c) {
                         return c.narration.value("caption_owner").toInt() == replacement && replacement != 0;
@@ -588,7 +588,8 @@ DialogueJob::DialogueJob(Project* project, VoiceJob* voice, QObject* parent) : Q
         QMetaObject::invokeMethod(this, &DialogueJob::next, Qt::QueuedConnection);
     });
 }
-bool DialogueJob::start(const QString& script, const std::vector<DialogueVoice>& cast, TimeUs start, TimeUs gap, QString* error)
+bool DialogueJob::start(const QString& script, const std::vector<DialogueVoice>& cast, TimeUs start, TimeUs gap, QString* error,
+                        const QString& alignmentModel)
 {
     auto fail = [&](const QString& message) {
         if (error)
@@ -617,6 +618,7 @@ bool DialogueJob::start(const QString& script, const std::vector<DialogueVoice>&
     m_tracks.clear();
     m_start = std::max<TimeUs>(0, start);
     m_gap = gap;
+    m_alignmentModel = alignmentModel;
     m_index = 0;
     m_undoIndex = m_project->undoStack()->index();
     m_busy = true;
@@ -637,7 +639,12 @@ void DialogueJob::next()
     }
     const auto& who = m_cast[m_index];
     QString error;
-    const QJsonObject options{{"rate", who.rate}, {"timing", "natural"}, {"group", false}};
+    QJsonObject options{{"rate", who.rate}, {"timing", "natural"}, {"group", false}};
+    if (!m_alignmentModel.isEmpty()) { // each word's time, for mouth shapes on the right sounds
+        options["align_captions"] = true;
+        options["alignment_model"] = m_alignmentModel;
+        options["words_only"] = true;
+    }
     if (!m_voice->start(dialogueCaptions(m_lines, who.name), who.voice, options, false, &error))
         finish(tr("%1: %2").arg(who.name, error));
 }

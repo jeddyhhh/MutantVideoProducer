@@ -856,7 +856,12 @@ QJsonArray McpServer::toolList()
         "shading (0-1, light from shading_angle, default 225 = top left), contact_shadow (0-1), blur (fraction of height) and depth (0-1, "
         "blurred by camera.depth_of_field as the camera zooms in); scene motion_blur {samples, shutter seconds}. A track binding's "
         "visemes give mouth shapes: {audio:binding, viseme:A|E|O|L|F|M|rest} is 1 while speaking that shape. Characters "
-        "(action characters / add_character) come with such mouths; source_track bindings follow later edits of the track. Animate "
+        "(action characters / add_character) come with such mouths; source_track bindings follow later edits of the track. Their "
+        "expression (action expression: neutral, angry, sad, surprised, smug) is the scene variable <id>_mood. Sets (action sets / "
+        "add_set) are ready backgrounds, replaced by the next add_set. Layer type video {path, source_in, speed, loop, fit: "
+        "cover|contain} plays a file inside its box; a layer's effects [{type: video effect id, params}] apply to its own picture "
+        "only. camera.speaker {zoom (1.7), window (0.5 s), quiet (0.06)} frames whichever character (a layer whose id matches its "
+        "binding) is loudest. Animate "
         "properties with {keyframes:[[event-local seconds,value,easing?],...],easing,loop,ping_pong}; numeric, colour, discrete and "
         "compatible path morph values work. follow:{path:layer_id,progress,orient,loop} follows curved paths. Scene variables substitute "
         "{{name}} in text; datasets drive charts. Colours are #RRGGBB, or #AARRGGBB with the alpha FIRST (#00000088 is clear: use "
@@ -867,7 +872,7 @@ QJsonArray McpServer::toolList()
         {{"action",
           prop("string",
                "capabilities, presets, validate, create, get, update, keyframe, bind_audio, export_template, import_template, layout, "
-               "lock, brand, move, characters, add_character, save_character")},
+               "lock, brand, move, characters, add_character, save_character, expression, sets, add_set")},
          {"event_id", prop("integer", "Existing graphics event")},
          {"preset",
           prop("string", "Existing broadcast layouts or motion_race/titles/chart/route/particles/morph/audio/reusable (motion_ prefix)")},
@@ -896,7 +901,9 @@ QJsonArray McpServer::toolList()
          {"reference", prop("string", "canvas (default), safe or selection")},
          {"locked", prop("boolean", "Protect selected layers (true), or unlock them (false)")},
          {"brand", prop("object", "version:1, name, font and primary/secondary/accent/background/foreground colours")},
-         {"move", prop("string", "move: hop, jump, shake, nod, wave, spin, walk, pop, squash or blink, on layer_id at time")},
+         {"move", prop("string", "move: hop, jump, shake, nod, wave, spin, walk, pop, squash, blink, point, arms up or shrug, on layer_id at time")},
+         {"mood", prop("string", "expression: neutral, angry, sad, surprised or smug, for character layer_id from time on")},
+         {"set", prop("string", "add_set: a name or file from action sets")},
          {"amount", prop("number", "move: how big (default 1)")},
          {"to", prop("number", "move walk: the x to walk to")},
          {"character", prop("string", "add_character: a name or file from action characters")},
@@ -1115,7 +1122,9 @@ QJsonArray McpServer::toolList()
                    {QStringLiteral("cast"),
                     prop("object", "Per character name: {voice (list_voices id, default af_heart), rate 0.5 to 2, pitch semitones -24 to 24}")},
                    {QStringLiteral("start"), prop("number", "Seconds (default the cursor)")},
-                   {QStringLiteral("gap"), prop("number", "Seconds between lines, 0 to 10 (default 0.3)")}},
+                   {QStringLiteral("gap"), prop("number", "Seconds between lines, 0 to 10 (default 0.3)")},
+                   {QStringLiteral("align"), prop("boolean", "Time each word with the Auto Captions model for exact mouth shapes (default true when "
+                                                             "a model is downloaded)")}},
                   {QStringLiteral("script")}));
     t.append(tool("voice_status",
                   "Progress and result of generate_voice, including timing warnings and output folder. cancel stops the worker.",
@@ -1830,12 +1839,18 @@ QJsonObject McpServer::ToolCall::tool_graphics_overlay()
                                    {"colours", c.character["variables"]}});
         return jsonResult({{"characters", out}});
     }
+    if (!wave && action == "sets") {
+        QJsonArray out;
+        for (const auto& c : graphics::setLibrary())
+            out.append(QJsonObject{{"name", c.character["name"]}, {"path", c.path}, {"built_in", c.builtIn}});
+        return jsonResult({{"sets", out}});
+    }
     if (!QStringList{"create", "get", "update", "refresh", "keyframe", "bind_audio", "export_template", "import_template", "layout",
-                     "lock", "brand", "move", "add_character", "save_character"}
+                     "lock", "brand", "move", "add_character", "save_character", "expression", "add_set"}
              .contains(action)
         || (wave
             && QStringList{"keyframe", "bind_audio", "export_template", "import_template", "layout", "lock", "brand", "move", "add_character",
-                           "save_character"}.contains(action))
+                           "save_character", "expression", "add_set"}.contains(action))
         || (!wave && action == "refresh"))
         return errorResult("Unsupported graphics action.");
     Timeline tl = project->timeline();
@@ -1854,12 +1869,25 @@ QJsonObject McpServer::ToolCall::tool_graphics_overlay()
     QJsonObject data = c ? c->generator.data : QJsonObject{};
     double at = has("at") ? num("at") : sec(w->m_timeline->cursorTime()), length = has("length") ? num("length") : 10;
     double rate = 1;
-    if (!wave && QStringList{"move", "add_character", "save_character"}.contains(action)) {
+    if (!wave && QStringList{"move", "add_character", "save_character", "expression", "add_set"}.contains(action)) {
         QString error;
         QJsonObject changed;
         if (action == "move") {
             changed = motion::withMove(data, str("layer_id"), str("move"), num("time"), num("duration", 0), num("amount", 1),
                                        has("to") ? num("to") : std::nan(""), &error);
+        } else if (action == "expression") {
+            changed = motion::withExpression(data, str("layer_id"), str("mood"), num("time"), &error);
+        } else if (action == "add_set") {
+            const auto library = graphics::setLibrary();
+            const QString wanted = str("set");
+            auto it = std::find_if(library.begin(), library.end(), [&](const graphics::CharacterFile& f) {
+                return f.character["name"].toString().compare(wanted, Qt::CaseInsensitive) == 0 || f.path == wanted
+                       || QFileInfo(f.path).completeBaseName().compare(wanted, Qt::CaseInsensitive) == 0;
+            });
+            if (it == library.end())
+                return errorResult("Unknown set: action sets lists the library.");
+            data["version"] = 2;
+            changed = motion::withSet(data, it->character, &error);
         } else if (action == "save_character") {
             QString path;
             const QJsonObject character = motion::characterFrom(data, str("layer_id"), str("name"), &error);
@@ -2758,7 +2786,12 @@ QJsonObject McpServer::ToolCall::tool_generate_dialogue()
     }
     QString error;
     const TimeUs start = has("start") ? us(num("start")) : w->m_timeline->cursorTime();
-    if (!w->dialogueJob()->start(str("script"), cast, start, us(num("gap", 0.3)), &error))
+    QString alignmentModel; // (word times for exact mouth shapes, when a speech model is there and not turned off)
+    if (!has("align") || a.value("align").toBool())
+        for (const auto& candidate : {"ggml-base.bin", "ggml-small.bin", "ggml-tiny.bin", "ggml-medium.bin"})
+            if (alignmentModel.isEmpty() && QFileInfo::exists(w->whisperModelPath(candidate)))
+                alignmentModel = w->whisperModelPath(candidate);
+    if (!w->dialogueJob()->start(str("script"), cast, start, us(num("gap", 0.3)), &error, alignmentModel))
         return errorResult(error);
     return jsonResult(w->dialogueJob()->status());
 }

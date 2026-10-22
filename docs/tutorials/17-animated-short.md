@@ -40,6 +40,8 @@ For a head start, press **Add character...** (Layout tab) and pick one from the 
 more, each with a mouth that takes the shape of their words, arms that gesture and eyes that blink. Name them (`Gus`),
 bind their voice track under `gus` (step 5), and change their colours in the scene variables (`gus_jacket`...).
 **Animation: characters** is a two-shot of two of them already in a scene. Save your own with **Save as character...**.
+**Add set...** puts a background behind them (a classroom, a bedroom, mission control...), and **Expression** on the Keys
+tab makes them angry, sad, surprised or smug from the playhead on.
 To build one from shapes:
 
 On the **Layout** tab:
@@ -89,6 +91,8 @@ On the **Keys** tab, choose the camera:
 - A **close-up**: key `zoom` to 2 and `x`/`y` to the speaker's face at the start of a line, and back to 1 at its end.
   Put two keys a frame apart (1/24 s) for a hard cut, or further apart for a push in.
 - A **dutch angle**: key the camera's `rotation` to −8 for a tense line.
+- **Camera frames whoever is talking** (Scene tab > Look): the camera cuts to each speaker in turn by itself, with no
+  keys at all; key the camera only for the shots in between.
 - A **hit**: shake the camera's `x` by ±0.01 for a fifth of a second. Leave the wide shot at zoom 1.025 so a shake
   never shows past the edge of the picture.
 

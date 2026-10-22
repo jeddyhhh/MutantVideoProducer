@@ -1,4 +1,5 @@
 #include "core/Brand.h"
+#include "core/Effects.h"
 #include "ui/GraphicsEditor.h"
 #include "core/Graphics.h"
 #include "core/GraphicsWorkflow.h"
@@ -347,7 +348,8 @@ public:
     QPushButton *fill, *stroke;
     std::map<QString, QDoubleSpinBox*> spins;
     QCheckBox* sceneBlur = nullptr;
-    QDoubleSpinBox *sceneShutter = nullptr, *sceneDepth = nullptr;
+    QDoubleSpinBox *sceneShutter = nullptr, *sceneDepth = nullptr, *sceneSpeakerZoom = nullptr;
+    QCheckBox* sceneSpeaker = nullptr;
     bool loading = false;
     Project* project = nullptr;
     double duration = 10, currentTime = 0, eventStart = -1; // (eventStart: where the event is on the timeline)
@@ -408,7 +410,7 @@ public:
         list->setObjectName("graphicsLayers");
         left->addWidget(list, 1);
         auto* add = new QComboBox;
-        add->addItems({"text", "rect", "ellipse", "line", "image", "path", "group", "chart", "particles", "repeater", "instance"});
+        add->addItems({"text", "rect", "ellipse", "line", "image", "video", "path", "group", "chart", "particles", "repeater", "instance"});
         left->addWidget(add);
         auto* addButton = new QPushButton(tr("Add layer"));
         addButton->setObjectName("graphicsAddLayer");
@@ -427,6 +429,14 @@ public:
         saveCharacterButton->setObjectName("graphicsSaveCharacter");
         left->addWidget(saveCharacterButton);
         connect(saveCharacterButton, &QPushButton::clicked, this, [this] { saveAsCharacter(); });
+        auto* setButton = new QPushButton(tr("Add set..."));
+        setButton->setObjectName("graphicsAddSet");
+        left->addWidget(setButton);
+        connect(setButton, &QPushButton::clicked, this, [this] { addSet(); });
+        auto* effectButton = new QPushButton(tr("Effect on this layer..."));
+        effectButton->setObjectName("graphicsLayerEffect");
+        left->addWidget(effectButton);
+        connect(effectButton, &QPushButton::clicked, this, [this] { layerEffect(); });
         for (auto label : {tr("Duplicate"), tr("Delete"), tr("Raise"), tr("Lower")}) {
             auto* button = new QPushButton(label);
             left->addWidget(button);
@@ -615,11 +625,13 @@ public:
                 }
             });
         path = new QLineEdit;
-        form->addRow(tr("Image"), path);
-        auto* browse = new QPushButton(tr("Choose image…"));
+        form->addRow(tr("Image / video"), path);
+        auto* browse = new QPushButton(tr("Choose file…"));
         form->addRow(browse);
         connect(browse, &QPushButton::clicked, this, [this] {
-            auto p = QFileDialog::getOpenFileName(this, tr("Overlay image"), {}, tr("Images (*.png *.jpg *.jpeg *.webp *.bmp *.svg)"));
+            auto p = current()["type"].toString() == "video"
+                         ? QFileDialog::getOpenFileName(this, tr("Video in the scene"), {}, tr("Videos (*.mp4 *.mov *.mkv *.webm *.avi *.m4v)"))
+                         : QFileDialog::getOpenFileName(this, tr("Overlay image"), {}, tr("Images (*.png *.jpg *.jpeg *.webp *.bmp *.svg)"));
             if (!p.isEmpty())
                 path->setText(p);
         });
@@ -712,6 +724,12 @@ public:
             auto type = add->currentText();
             if (!QStringList{"text", "rect", "ellipse", "line", "image"}.contains(type))
                 data["version"] = 2;
+            if (type == "video") { // (its file: Choose file)
+                o["height"] = .5; // (a 16:9 picture in a 16:9 frame)
+                o.remove("fill");
+                o.remove("text");
+                o["loop"] = true;
+            }
             if (type == "group") {
                 o["x"] = 0;
                 o["y"] = 0;
@@ -1217,6 +1235,69 @@ public:
         QMessageBox::information(this, tr("Add character"), tr("%1 is in the scene. Bind their voice track under the name \"%2\" "
                                                                "(Scene > Bind audio for animation) and they talk.").arg(who, binding));
     }
+    // Puts a set from the library behind the scene (its front part in front), replacing the set added before.
+    void addSet()
+    {
+        const auto library = graphics::setLibrary();
+        if (library.empty()) {
+            QMessageBox::information(this, tr("Add set"), tr("The set library is missing from this installation."));
+            return;
+        }
+        QStringList names;
+        for (const auto& c : library)
+            names << (c.builtIn ? c.character["name"].toString() : tr("%1 (saved)").arg(c.character["name"].toString()));
+        bool ok = false;
+        const QString pick = QInputDialog::getItem(this, tr("Add Set"), tr("Background (it replaces the set added before)"), names, 0, false, &ok);
+        if (!ok)
+            return;
+        data["version"] = 2;
+        ensureIds();
+        QString error;
+        const QJsonObject added = motion::withSet(data, library[size_t(names.indexOf(pick))].character, &error);
+        if (added.isEmpty()) {
+            QMessageBox::warning(this, tr("Add set"), error);
+            return;
+        }
+        data = added;
+        refresh(std::max(0, layerRow()));
+        syncJson();
+    }
+    // A video effect on the selected layer (or group) only: its "effects", applied to its own picture.
+    void layerEffect()
+    {
+        const int i = layerRow();
+        if (i < 0 || graphics_workflow::locked(data, current()["id"].toString()))
+            return;
+        QStringList names{tr("(remove this layer's effects)")};
+        QStringList ids{QString()};
+        for (const EffectDef& e : videoEffects())
+            if (e.apply) {
+                names << e.name;
+                ids << e.id;
+            }
+        bool ok = false;
+        const QString pick = QInputDialog::getItem(this, tr("Effect on This Layer"),
+                                                   tr("Applied to this layer's own picture (its settings: Layer data, \"effects\")"), names, 1,
+                                                   false, &ok);
+        if (!ok)
+            return;
+        const QString id = ids[names.indexOf(pick)];
+        data["version"] = 2;
+        ensureIds();
+        auto a = data["layers"].toArray();
+        QJsonObject o = a[i].toObject();
+        if (id.isEmpty()) {
+            o.remove("effects");
+        } else {
+            QJsonArray effects = o.value("effects").toArray();
+            effects.append(QJsonObject{{"type", id}, {"params", QJsonObject{}}});
+            o["effects"] = effects;
+        }
+        a[i] = o;
+        data["layers"] = a;
+        load();
+        syncJson();
+    }
     // Saves the selected group (a character) to the user's library.
     void saveAsCharacter()
     {
@@ -1636,10 +1717,34 @@ public:
         auto* addMove = new QPushButton(tr("Add move at the playhead"));
         addMove->setObjectName("graphicsAddMove");
         mf->addRow(addMove);
-        auto* moveHint = new QLabel(tr("On a character's own group. Wave: on an arm's group (it turns at its anchor). Blink: on the eyes."));
+        auto* moveHint = new QLabel(tr("On a character's own group (point, arms up and shrug turn its arms). Wave: on an arm's group (it turns at its anchor). Blink: on the eyes."));
         moveHint->setWordWrap(true);
         mf->addRow(moveHint);
         layout->addWidget(movesBox);
+        auto* moodBox = new QGroupBox(tr("Expression"));
+        auto* moodForm = new QFormLayout(moodBox);
+        auto* mood = new QComboBox;
+        mood->setObjectName("graphicsExpression");
+        mood->addItems(motion::expressions());
+        moodForm->addRow(tr("From the playhead"), mood);
+        auto* setMood = new QPushButton(tr("Set expression"));
+        setMood->setObjectName("graphicsSetExpression");
+        moodForm->addRow(setMood);
+        layout->addWidget(moodBox);
+        connect(setMood, &QPushButton::clicked, this, [=] {
+            if (layerRow() < 0)
+                return;
+            QString error;
+            const QJsonObject changed = motion::withExpression(data, current()["id"].toString(), mood->currentText(), currentTime, &error);
+            if (changed.isEmpty()) {
+                QMessageBox::information(this, tr("Expression"), error);
+                return;
+            }
+            data = changed;
+            load();
+            refreshKeys();
+            syncJson();
+        });
         connect(addMove, &QPushButton::clicked, this, [=] {
             const int i = layerRow();
             if (i < 0 || graphics_workflow::locked(data, current()["id"].toString()))
@@ -2034,6 +2139,15 @@ public:
         sceneDepth->setDecimals(2);
         sceneDepth->setToolTip(tr("As the camera zooms in, layers with a depth (Layout tab) blur: 0 for none"));
         lf->addRow(tr("Depth of field"), sceneDepth);
+        sceneSpeaker = new QCheckBox(tr("Camera frames whoever is talking"));
+        sceneSpeaker->setObjectName("graphicsSpeakerCamera");
+        sceneSpeaker->setToolTip(tr("The camera closes in on the character whose voice binding is loudest (a group named like its binding)"));
+        lf->addRow(sceneSpeaker);
+        sceneSpeakerZoom = new QDoubleSpinBox;
+        sceneSpeakerZoom->setRange(1, 6);
+        sceneSpeakerZoom->setDecimals(2);
+        sceneSpeakerZoom->setValue(1.7);
+        lf->addRow(tr("Close-up zoom"), sceneSpeakerZoom);
         layout->addWidget(look);
         auto setLook = [this] {
             if (loading)
@@ -2048,6 +2162,10 @@ public:
                 camera["depth_of_field"] = sceneDepth->value();
             else
                 camera.remove("depth_of_field");
+            if (sceneSpeaker->isChecked())
+                camera["speaker"] = QJsonObject{{"zoom", sceneSpeakerZoom->value()}};
+            else
+                camera.remove("speaker");
             data["camera"] = camera;
             load();
             syncJson();
@@ -2055,6 +2173,8 @@ public:
         connect(sceneBlur, &QCheckBox::toggled, this, setLook);
         connect(sceneShutter, qOverload<double>(&QDoubleSpinBox::valueChanged), this, setLook);
         connect(sceneDepth, qOverload<double>(&QDoubleSpinBox::valueChanged), this, setLook);
+        connect(sceneSpeaker, &QCheckBox::toggled, this, setLook);
+        connect(sceneSpeakerZoom, qOverload<double>(&QDoubleSpinBox::valueChanged), this, setLook);
         auto* import = new QPushButton(tr("Import chart data…"));
         layout->addWidget(import);
         connect(import, &QPushButton::clicked, this, [this] { importData(); });
@@ -2165,6 +2285,8 @@ public:
             sceneBlur->setChecked(data.contains("motion_blur"));
             sceneShutter->setValue(data.value("motion_blur").toObject().value("shutter").toDouble(.02));
             sceneDepth->setValue(data.value("camera").toObject().value("depth_of_field").toDouble());
+            sceneSpeaker->setChecked(data.value("camera").toObject().contains("speaker"));
+            sceneSpeakerZoom->setValue(data.value("camera").toObject().value("speaker").toObject().value("zoom").toDouble(1.7));
         }
         auto o = current();
         propertyTabs->setEnabled(!graphics_workflow::locked(data, o["id"].toString()));
@@ -2174,7 +2296,7 @@ public:
         font->setEnabled(isText);
         bold->setEnabled(isText);
         align->setEnabled(isText);
-        path->setEnabled(isImage);
+        path->setEnabled(isImage || o["type"].toString() == "video");
         name->setText(o["name"].toString());
         words->setPlainText(motion::evaluate(o["text"], currentTime, data).toString());
         font->setCurrentFont(QFont(motion::evaluate(o["font"], currentTime, data).toString("Segoe UI")));

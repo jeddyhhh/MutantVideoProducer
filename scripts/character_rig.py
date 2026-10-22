@@ -231,6 +231,37 @@ def look_keys(cid, cast_x, lines, width_of):
 
 
 # ---- the parts every character shares ----------------------------------------------------------------------------
+MOODS = ("neutral", "angry", "sad", "surprised", "smug")
+
+
+def mood(cid, which):
+    """1 while the character's mood variable (<name>_mood: neutral, angry, sad, surprised, smug) is `which`."""
+    return {"variable": f"{cid.lower()}_mood", "equals": which}
+
+
+def expressions(cid, parent, x, y, w, h, skin):
+    """Brows and lids for each mood, over the eyes: hidden while neutral."""
+    g = f"{cid}_mood"
+    brow = {"stroke": OL, "stroke_width": OW * 3.2}
+    shapes = {
+        "angry": ([["M", 0.04, -0.28], ["L", 0.46, -0.04]], [["M", 0.54, -0.04], ["L", 0.96, -0.28]],
+                  [["M", 0, 0], ["L", 0.53, 0], ["L", 0.53, 0.5], ["L", 0, 0.12], ["Z"]], [["M", 0.47, 0], ["L", 1, 0], ["L", 1, 0.12], ["L", 0.47, 0.5], ["Z"]]),
+        "sad": ([["M", 0.04, -0.06], ["L", 0.46, -0.32]], [["M", 0.54, -0.32], ["L", 0.96, -0.06]],
+                [["M", 0, 0], ["L", 0.53, 0], ["L", 0.53, 0.12], ["L", 0, 0.45], ["Z"]], [["M", 0.47, 0], ["L", 1, 0], ["L", 1, 0.45], ["L", 0.47, 0.12], ["Z"]]),
+        "surprised": ([["M", 0.04, -0.22], ["Q", 0.25, -0.5, 0.46, -0.22]], [["M", 0.54, -0.22], ["Q", 0.75, -0.5, 0.96, -0.22]], None, None),
+        "smug": ([["M", 0.04, -0.12], ["L", 0.46, -0.12]], [["M", 0.54, -0.2], ["Q", 0.75, -0.42, 0.96, -0.2]],
+                 [["M", 0, 0], ["L", 0.53, 0], ["L", 0.53, 0.45], ["L", 0, 0.45], ["Z"]], [["M", 0.47, 0], ["L", 1, 0], ["L", 1, 0.45], ["L", 0.47, 0.45], ["Z"]]),
+    }
+    L = [G(g, parent, x, y, w, h)]
+    for name, (bl, br, ll, lr) in shapes.items():
+        m = f"{g}_{name}"
+        L.append(G(m, g, 0, 0, 1, 1, opacity=mood(cid, name)))
+        if ll:
+            L += [P(f"{m}_lidl", ll, skin, parent=m, **stroke()), P(f"{m}_lidr", lr, skin, parent=m, **stroke())]
+        L += [P(f"{m}_browl", bl, "#00000000", parent=m, **brow), P(f"{m}_browr", br, "#00000000", parent=m, **brow)]
+    return L
+
+
 def eyes(cid, parent, x, y, w, h, look, pupil=OL, white="#ffffff", lids=None, lashes=False):
     g, lk = f"{cid}_eyes", f"{cid}_look"
     L = [G(g, parent, x, y, w, h, anchor_y=0.5, scale_y=blink()),
@@ -287,10 +318,12 @@ def mouth(cid, parent, x, y, w, h, lips=None, big=1.0):
 
 
 def arm(cid, side, parent, x, y, w, h, sleeve, hand, extra, gesture, mitten=True):
-    """Outer group (actions) > inner group (talking) > sleeve and hand, pivoting at the shoulder."""
-    o, i = f"{cid}_arm{side}", f"{cid}_arm{side}_t"
+    """Outer group (actions) > pose group (gestures: point, arms up, shrug) > inner group (talking) > sleeve and hand,
+    pivoting at the shoulder."""
+    o, pose, i = f"{cid}_arm{side}", f"{cid}_arm{side}_pose", f"{cid}_arm{side}_t"
     return [G(o, parent, x, y, w, h, anchor_x=0.5, anchor_y=0.08, rotation=extra),
-            G(i, o, 0, 0, 1, 1, anchor_x=0.5, anchor_y=0.08, rotation=gesture),
+            G(pose, o, 0, 0, 1, 1, anchor_x=0.5, anchor_y=0.08, rotation=0),
+            G(i, pose, 0, 0, 1, 1, anchor_x=0.5, anchor_y=0.08, rotation=gesture),
             P(f"{i}_sleeve", [["M", 0.28, 0.1], ["Q", 0.28, -0.02, 0.5, -0.02], ["Q", 0.72, -0.02, 0.72, 0.1], ["L", 0.79, 0.74], ["Q", 0.5, 0.84, 0.21, 0.74],
                               ["Z"]], sleeve, parent=i, **stroke()),
             E(f"{i}_hand", 0.14, 0.66, 0.72, 0.34 if mitten else 0.26, hand, parent=i, **stroke())]
@@ -370,6 +403,7 @@ def kid(cid, c, x, y_home, motion, look, front=None):
         add(P(f"{cid}_tophatbrim", [["M", 0.08, 0.2], ["Q", 0.5, 0.15, 0.92, 0.2], ["Q", 0.94, 0.25, 0.88, 0.24], ["Q", 0.5, 0.21, 0.12, 0.24],
                                     ["Q", 0.06, 0.25, 0.08, 0.2], ["Z"]], "#111111", **stroke()))
     L += eyes(cid, b, 0.225, 0.255, 0.55, 0.19, look, lids=c["skin"] if c.get("lids") else None, lashes=c.get("lashes"))
+    L += expressions(cid, b, 0.225, 0.255, 0.55, 0.19, c["skin"])
     L += mouth(cid, b, 0.405, 0.5, 0.19, 0.09)
     return L
 
@@ -431,6 +465,7 @@ def adult(cid, c, x, y_home, motion, look):
         add(P(f"{cid}_beard", [["M", 0.17, 0.2], ["C", 0.18, 0.33, 0.33, 0.39, 0.5, 0.39], ["C", 0.67, 0.39, 0.82, 0.33, 0.83, 0.2], ["Q", 0.8, 0.29, 0.65, 0.27],
                                ["Q", 0.5, 0.22, 0.35, 0.27], ["Q", 0.2, 0.29, 0.17, 0.2], ["Z"]], c["hair"], **stroke()))
     L += eyes(cid, b, 0.31, 0.135, 0.38, 0.075, look)
+    L += expressions(cid, b, 0.31, 0.135, 0.38, 0.075, c["skin"])
     if c.get("glasses"):
         add(P(f"{cid}_glasses", oval(0.405, 0.172, 0.095, 0.045) + oval(0.595, 0.172, 0.095, 0.045) + [["M", 0.5, 0.17], ["L", 0.5, 0.17]], "#00000000",
               stroke=OL, stroke_width=0.0028))
@@ -530,6 +565,7 @@ def bear(cid, c, x, y_home, motion, look):
           P(f"{hd}_nose", [["M", 0.43, 0.6], ["Q", 0.5, 0.56, 0.57, 0.6], ["Q", 0.57, 0.66, 0.5, 0.7], ["Q", 0.43, 0.66, 0.43, 0.6], ["Z"]], "#1a1a1a", parent=hd),
           E(f"{hd}_noseshine", 0.47, 0.59, 0.03, 0.025, "#ffffff", opacity=0.6, parent=hd)]
     L += eyes(cid, hd, 0.32, 0.3, 0.36, 0.16, look)
+    L += expressions(cid, hd, 0.32, 0.3, 0.36, 0.16, c["fur"])
     L += mouth(cid, hd, 0.42, 0.74, 0.16, 0.08, big=1.4)
     L += [P(f"{hd}_fangs", [["M", 0.44, 0.745], ["L", 0.46, 0.79], ["L", 0.48, 0.745], ["M", 0.52, 0.745], ["L", 0.54, 0.79], ["L", 0.56, 0.745]], "#ffffff",
             parent=hd, opacity=talk(cid, 0, 4))]

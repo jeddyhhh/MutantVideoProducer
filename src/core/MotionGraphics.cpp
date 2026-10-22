@@ -1,5 +1,9 @@
 #include "core/MotionGraphics.h"
 #include "core/Graphics.h"
+#include "core/Effects.h"
+#include "core/FrameConverter.h"
+#include "core/MediaInfo.h"
+#include "core/VideoDecoder.h"
 #include <QColor>
 #include <QFont>
 #include <QFontMetricsF>
@@ -313,6 +317,8 @@ QJsonValue evaluate(const QJsonValue &v, double time,
     if (o.contains("audio"))
       return o["base"].toDouble() +
              o["amount"].toDouble(1) * audioLevel(o, scene, time);
+    if (o.contains("variable") && o.contains("equals")) // 1 while a variable (a character's mood) has that value, else 0
+      return evaluate(scene["variables"].toObject()[o["variable"].toString()], time, scene) == o["equals"] ? 1 : 0;
     if (o.contains("variable")) {
       auto value = evaluate(
           scene["variables"].toObject()[o["variable"].toString()], time, scene);
@@ -416,7 +422,7 @@ QString validate(const QJsonObject &s) {
         return "Scene limit: 512 layers (including reusable definitions).";
       auto o = v.toObject();
       auto type = o["type"].toString();
-      if (!QStringList{"rect", "ellipse", "line", "text", "image", "path",
+      if (!QStringList{"rect", "ellipse", "line", "text", "image", "video", "path",
                        "group", "instance", "repeater", "particles", "chart"}
                .contains(type))
         return "Unknown animation layer type.";
@@ -737,6 +743,72 @@ struct Average {
     return out;
   }
 };
+// Draft rendering (the editor's preview): motion blur takes fewer moments. Set per render thread by the graphics
+// generator from its context's quality.
+thread_local bool draftRender = false;
+// A video layer's picture at `seconds` into its file: a decoder per file and render thread, kept between frames.
+QImage videoFrame(const QString &file, double seconds, bool loop, QSize want) {
+  struct Source {
+    std::unique_ptr<VideoDecoder> decoder;
+    FrameConverter converter;
+    double duration = 0;
+    bool failed = false;
+  };
+  thread_local std::map<QString, Source> sources;
+  if (sources.size() > 12 && !sources.count(file))
+    sources.clear(); // (a few files at a time; the rest open again when needed)
+  Source &s = sources[file];
+  if (!s.decoder && !s.failed) {
+    const MediaInfo info = probeMedia(file);
+    s.decoder = std::make_unique<VideoDecoder>();
+    if (info.video.empty() || !s.decoder->open(file, info.video.front().index, nullptr, false)) {
+      s.decoder.reset();
+      s.failed = true;
+    } else
+      s.duration = double(info.duration) / kUsPerSecond;
+  }
+  if (!s.decoder)
+    return {};
+  if (loop && s.duration > 0)
+    seconds = std::fmod(std::max(0., seconds), s.duration);
+  const AVFrame *frame = s.decoder->frameAt(TimeUs(std::clamp(seconds, 0., 86400.) * kUsPerSecond));
+  return frame ? s.converter.convert(frame, want, !draftRender) : QImage();
+}
+// A layer's own video effects ([{"type": id, "params": {setting: value}}]) on its picture.
+void layerEffects(QImage &image, const QJsonArray &effects, double t, double scale) {
+  for (const auto &v : effects) {
+    const QJsonObject e = v.toObject();
+    const EffectDef *def = findEffect(e.value("type").toString());
+    if (!def || !def->apply)
+      continue;
+    ParamMap values = makeEffect(*def, 0).params;
+    const QJsonObject given = e.value("params").toObject();
+    for (const ParamDef &d : def->params) {
+      const QJsonValue x = given.value(d.id);
+      if (x.isUndefined())
+        continue;
+      double value = x.toDouble();
+      if (x.isBool())
+        value = x.toBool() ? 1 : 0;
+      else if (x.isString() && d.type == ParamType::Choice)
+        value = std::max<qsizetype>(0, d.choices.indexOf(x.toString()));
+      else if (x.isString() && d.type == ParamType::Color)
+        value = double(QColor(x.toString()).rgb() & 0xffffffu);
+      else if (x.isString())
+        continue;
+      values[d.id].value = d.type == ParamType::Color ? value : std::clamp(value, d.min, d.max);
+    }
+    RenderContext ctx;
+    ctx.time = TimeUs(t * kUsPerSecond);
+    ctx.timelineTime = ctx.time;
+    ctx.scale = scale;
+    ctx.highQuality = !draftRender;
+    ctx.contentRect = QRectF(QPointF(), image.size());
+    std::unique_ptr<EffectState> state; // (each frame fresh: effects that remember earlier frames start over)
+    image.bits();
+    def->apply(image, resolveParams(def->params, values, ctx.time), ctx, state);
+  }
+}
 // One box blur pass of `r` pixels along rows (or columns) of a premultiplied image.
 void boxPass(QImage &image, int r, bool rows) {
   const int w = image.width(), h = image.height();
@@ -926,10 +998,44 @@ public:
       center += QPointF(number(c, "offset_x", 0, t, scene) * size.width(),
                         number(c, "offset_y", 0, t, scene) * size.height());
     }
+    double zoom = number(c, "zoom", 1, t, scene);
+    if (auto speaker = c["speaker"].toObject(); !speaker.isEmpty()) {
+      // Speaker camera: the layer whose id is a voice binding's name (any
+      // case: a character's group) and that has been loudest over the last
+      // moment is framed head and shoulders; nobody talking, the keyed shot.
+      const double window = std::clamp(speaker["window"].toDouble(.5), .05, 3.);
+      double best = speaker["quiet"].toDouble(.06);
+      QString who;
+      const QJsonObject audio = scene["audio"].toObject();
+      for (auto it = audio.begin(); it != audio.end(); ++it) {
+        QString id;
+        for (auto k = ids.constBegin(); k != ids.constEnd(); ++k)
+          if (k.key().compare(it.key(), Qt::CaseInsensitive) == 0)
+            id = k.key();
+        if (id.isEmpty())
+          continue;
+        const QJsonObject binding{{"audio", it.key()}, {"attack", .02}, {"release", .1}};
+        double level = 0;
+        for (int k = 0; k < 6; ++k)
+          level += audioLevel(binding, scene, std::max(0., t - window * k / 5)) / 6;
+        if (level > best) {
+          best = level;
+          who = id;
+        }
+      }
+      if (!who.isEmpty()) {
+        const auto target = pose(ids[who], t);
+        center = target.world.map(QPointF(target.box.center().x(), target.box.top() + target.box.height() * .3));
+        zoom = std::clamp(speaker["zoom"].toDouble(1.7), 1., 6.);
+        // (kept inside the picture)
+        const double halfW = size.width() / 2 / zoom, halfH = size.height() / 2 / zoom;
+        center.setX(std::clamp(center.x(), halfW, size.width() - halfW));
+        center.setY(std::clamp(center.y(), halfH, size.height() - halfH));
+      }
+    }
     QTransform m;
     m.translate(size.width() / 2, size.height() / 2);
-    m.scale(std::clamp(number(c, "zoom", 1, t, scene), .01, 100.),
-            std::clamp(number(c, "zoom", 1, t, scene), .01, 100.));
+    m.scale(std::clamp(zoom, .01, 100.), std::clamp(zoom, .01, 100.));
     m.rotate(-number(c, "rotation", 0, t, scene));
     m.translate(-center.x(), -center.y());
     return m * base;
@@ -1235,7 +1341,7 @@ public:
       }
       if (!blur.isEmpty()) {
         int samples =
-            std::clamp(int(number(blur, "samples", 5, t, scene)), 1, 8);
+            std::clamp(int(number(blur, "samples", 5, t, scene)), 1, draftRender ? 2 : 8);
         double shutter =
             std::clamp(number(blur, "shutter", .03, t, scene), 0., .2);
         // Each moment drawn on its own, then averaged (drawing them all with
@@ -1274,7 +1380,8 @@ public:
                     std::clamp(number(o, "depth", 0, t, scene), 0., 1.) *
                     std::max(0., number(lens, "zoom", 1, t, scene) - 1) *
                     .01 * size.height();
-      if (softness >= .5) {
+      const QJsonArray effects = o["effects"].toArray();
+      if (softness >= .5 || !effects.isEmpty()) {
         QImage layer(size.toSize(), QImage::Format_ARGB32_Premultiplied);
         layer.fill(Qt::transparent);
         {
@@ -1285,10 +1392,12 @@ public:
           draw(i, lp, t, camera, 1, depth + 1, true);
           unblurred = was;
         }
+        layer = blurred(layer, softness);
+        layerEffects(layer, effects, t, size.height() / 1080.);
         p.save();
         p.setWorldTransform({});
         p.setOpacity(opacity);
-        p.drawImage(0, 0, blurred(layer, softness));
+        p.drawImage(0, 0, layer);
         p.restore();
         return;
       }
@@ -1384,7 +1493,22 @@ public:
       drawChart(p, o, at.box, t);
     else if (type == "text")
       drawText(p, o, at.box, t);
-    else if (type == "image") {
+    else if (type == "video") {
+      // A clip inside the scene: it moves with its group and the camera and takes masks. Picture only (put the clip on a
+      // track too for its sound).
+      const QSize want = at.box.size().toSize().expandedTo(QSize(2, 2));
+      const QImage frame = videoFrame(evaluate(o["path"], t, scene).toString(),
+                                      number(o, "source_in", 0, t, scene) + t * number(o, "speed", 1, t, scene),
+                                      evaluate(o["loop"], t, scene).toBool(), want.boundedTo(QSize(3840, 2160)));
+      if (!frame.isNull()) {
+        QSizeF fit = frame.size();
+        fit.scale(at.box.size(), o["fit"].toString() == "contain" ? Qt::KeepAspectRatio : Qt::KeepAspectRatioByExpanding);
+        p.save();
+        p.setClipRect(at.box, Qt::IntersectClip);
+        p.drawImage(QRectF(at.box.center() - QPointF(fit.width() / 2, fit.height() / 2), fit), frame);
+        p.restore();
+      }
+    } else if (type == "image") {
       QImageReader reader(evaluate(o["path"], t, scene).toString());
       reader.setAutoTransform(true);
       if (reader.size().width() > 8192 || reader.size().height() > 8192)
@@ -1485,7 +1609,7 @@ void paint(QPainter &p, QSizeF size, const QJsonObject &scene, double time) {
     // The whole picture, camera included, averaged over a shutter (seconds)
     // around the time: fast moves, crash zooms and whip pans smear.
     const auto b = blur.toObject();
-    const int samples = std::clamp(b["samples"].toInt(5), 2, 8);
+    const int samples = std::clamp(b["samples"].toInt(5), 2, draftRender ? 3 : 8);
     const double shutter = std::clamp(b["shutter"].toDouble(.02), 0., .2);
     Average frames;
     QImage frame(size.toSize(), QImage::Format_ARGB32_Premultiplied);
@@ -1807,7 +1931,7 @@ QJsonObject capabilities() {
   return {
       {"scene_versions", QJsonArray{1, 2}},
       {"layer_types",
-       QJsonArray{"rect", "ellipse", "line", "text", "image", "path", "group",
+       QJsonArray{"rect", "ellipse", "line", "text", "image", "video", "path", "group",
                   "instance", "repeater", "particles", "chart"}},
       {"easing",
        QJsonArray{"linear", "hold", "ease_in", "ease_out", "ease_in_out",
@@ -1998,6 +2122,51 @@ QJsonObject withCharacter(const QJsonObject &scene, const QJsonObject &character
     return fail(e);
   return result;
 }
+QJsonObject withSet(const QJsonObject &scene, const QJsonObject &set, QString *error) {
+  const QJsonArray back = set["layers"].toArray(), front = set["front"].toArray();
+  if (back.isEmpty()) {
+    if (error)
+      *error = "A set is a list of layers.";
+    return {};
+  }
+  // The set added before goes (a scene has one set).
+  QJsonArray kept;
+  for (auto v : scene["layers"].toArray()) {
+    const QString id = v.toObject().value("id").toString();
+    if (id != "set" && id != "set_front" && !id.startsWith("set_") && !id.startsWith("setf_"))
+      kept.append(v);
+  }
+  auto part = [](const QJsonArray &layers, const QString &group, const QString &prefix, const QString &name, double depth) {
+    QJsonObject g{{"type", "group"}, {"id", group}, {"name", name}, {"x", 0}, {"y", 0}, {"width", 1}, {"height", 1}};
+    if (depth > 0)
+      g["depth"] = depth;
+    QJsonArray out{g};
+    for (auto v : layers) {
+      QJsonObject o = v.toObject();
+      o["id"] = prefix + o.value("id").toString();
+      o["parent"] = o.contains("parent") ? prefix + o.value("parent").toString() : group;
+      if (o.value("mask").isString())
+        o["mask"] = prefix + o.value("mask").toString();
+      out.append(o);
+    }
+    return out;
+  };
+  QJsonArray layers = part(back, "set", "set_", "Set: " + set["name"].toString(), 1);
+  for (auto v : kept)
+    layers.append(v);
+  if (!front.isEmpty())
+    for (auto v : part(front, "set_front", "setf_", "Set front: " + set["name"].toString(), 0))
+      layers.append(v);
+  QJsonObject result = scene;
+  result["version"] = 2;
+  result["layers"] = layers;
+  if (auto e = validate(result); !e.isEmpty()) {
+    if (error)
+      *error = e;
+    return {};
+  }
+  return result;
+}
 QJsonObject characterFrom(const QJsonObject &scene, const QString &groupId, const QString &title, QString *error) {
   auto fail = [&](QString e) {
     if (error)
@@ -2060,8 +2229,24 @@ QJsonObject characterFrom(const QJsonObject &scene, const QString &groupId, cons
   return {{"version", 1}, {"name", title.trimmed().isEmpty() ? root["name"].toString(groupId) : title.trimmed()}, {"binding", voice},
           {"width", root["width"]}, {"height", root["height"]}, {"variables", colours}, {"layers", out}};
 }
+bool setDraft(bool draft) {
+  const bool was = draftRender;
+  draftRender = draft;
+  return was;
+}
 QStringList moves() {
-  return {"hop", "jump", "shake", "nod", "wave", "spin", "walk", "pop", "squash", "blink"};
+  return {"hop", "jump", "shake", "nod", "wave", "spin", "walk", "pop", "squash", "blink", "point", "arms up", "shrug"};
+}
+QStringList expressions() { return {"neutral", "angry", "sad", "surprised", "smug"}; }
+QJsonObject withExpression(const QJsonObject &scene, const QString &characterId, const QString &mood, double time, QString *error) {
+  const QString key = characterId.toLower() + "_mood";
+  if (!expressions().contains(mood) || !scene["variables"].toObject().contains(key)) {
+    if (error)
+      *error = expressions().contains(mood) ? QStringLiteral("%1 has no expressions (a library character's group has them).").arg(characterId)
+                                            : "Expressions: " + expressions().join(", ") + ".";
+    return {};
+  }
+  return withKeyframe(scene, "$variables", key, time, mood, "hold", error);
 }
 QJsonObject withMove(const QJsonObject &scene, const QString &layerId,
                      const QString &move, double time, double duration,
@@ -2073,6 +2258,25 @@ QJsonObject withMove(const QJsonObject &scene, const QString &layerId,
   };
   if (!moves().contains(move))
     return fail("Moves: " + moves().join(", ") + ".");
+  if (move == "point" || move == "arms up" || move == "shrug") {
+    // Gestures: on a character's own group, they turn its arms' pose groups and bring them back.
+    const double d = std::clamp(duration > 0 ? duration : (move == "shrug" ? .8 : 1.6), .1, 60.);
+    QJsonObject result = scene;
+    QString e;
+    for (const auto &[side, angle] : {std::pair{"R", move == "point" ? -80. : move == "arms up" ? -150. : -35.},
+                                      std::pair{"L", move == "point" ? 0. : move == "arms up" ? 150. : 35.}}) {
+      if (angle == 0)
+        continue;
+      const QString arm = layerId + "_arm" + side + "_pose";
+      for (const auto &[at, v, easing] : {std::tuple{0., 0., "ease_out"}, std::tuple{d * .2, angle * amount, "hold"},
+                                          std::tuple{d * .8, angle * amount, "ease_in_out"}, std::tuple{d, 0., "linear"}}) {
+        result = withKeyframe(result, arm, "rotation", std::max(0., time + at), v, easing, &e);
+        if (result.isEmpty())
+          return fail(QStringLiteral("%1 has no arms to gesture with (choose a character's own group).").arg(layerId));
+      }
+    }
+    return result;
+  }
   QJsonObject layer;
   std::function<void(const QJsonArray &)> find = [&](const QJsonArray &a) {
     for (auto v : a) {

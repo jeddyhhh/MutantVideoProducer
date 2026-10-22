@@ -56,7 +56,9 @@ class DialogueJob : public QObject {
     Q_OBJECT
 public:
     DialogueJob(Project* project, VoiceJob* voice, QObject* parent = nullptr);
-    bool start(const QString& script, const std::vector<DialogueVoice>& cast, TimeUs start, TimeUs gap, QString* error);
+    // alignmentModel: a Whisper model; each line's words are then timed (exact mouth shapes).
+    bool start(const QString& script, const std::vector<DialogueVoice>& cast, TimeUs start, TimeUs gap, QString* error,
+               const QString& alignmentModel = {});
     bool busy() const { return m_busy; }
     QJsonObject status() const;
     void cancel();
@@ -72,6 +74,7 @@ private:
     std::vector<DialogueVoice> m_cast;
     std::vector<DialogueCast> m_tracks;
     TimeUs m_start = 0, m_gap = 0;
+    QString m_alignmentModel;
     int m_undoIndex = 0;
     size_t m_index = 0;
     bool m_busy = false, m_done = false, m_ok = false, m_cancelled = false;

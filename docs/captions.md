@@ -105,6 +105,8 @@ A line without `Name:` continues the speech above it; lines starting with `#` ar
 character in the script gets a row: choose their voice (different voices are picked for you, installed ones first),
 their speed, and a pitch in semitones (a Pitch Shift on their track: +4 for a child, -4 for a giant). Set where the
 dialogue starts (the cursor by default) and the pause between lines, then press **Generate Dialogue**.
+**Exact mouth timing** (on when a Whisper model is installed) finds when each word is said in every line, so an animated
+character's mouth shapes land on the words instead of being spread evenly over the line.
 
 Each character gets their own audio track named after them, and the lines follow each other in script order with
 natural timing. Missing voices are downloaded first. One **Undo** removes the whole dialogue. The voices you chose

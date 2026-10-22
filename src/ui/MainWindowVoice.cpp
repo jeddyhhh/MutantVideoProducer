@@ -476,6 +476,18 @@ void MainWindow::generateDialogue()
     gap->setSuffix(tr(" s"));
     gap->setValue(settings.value(QStringLiteral("dialogue/gap"), 0.3).toDouble());
     form->addRow(tr("Pause between lines"), gap);
+    // Word times (Whisper) put each mouth shape on its sound: with an Auto Captions model downloaded.
+    QString alignmentModel;
+    for (const char* candidate : {"ggml-base.bin", "ggml-small.bin", "ggml-tiny.bin", "ggml-medium.bin"})
+        if (alignmentModel.isEmpty() && QFileInfo::exists(whisperModelPath(QString::fromLatin1(candidate))))
+            alignmentModel = whisperModelPath(QString::fromLatin1(candidate));
+    auto* align = new QCheckBox(tr("Exact mouth timing (times each word with the Auto Captions model)"), &dlg);
+    align->setObjectName(QStringLiteral("dialogueAlign"));
+    align->setEnabled(!alignmentModel.isEmpty());
+    align->setChecked(!alignmentModel.isEmpty() && settings.value(QStringLiteral("dialogue/align"), true).toBool());
+    if (alignmentModel.isEmpty())
+        align->setToolTip(tr("Download a speech model in Tools > Captions > Auto Captions first."));
+    form->addRow(QString(), align);
     layout->addLayout(form);
     // A new character gets the next voice not yet cast, installed voices first; a name used before keeps its voice.
     std::vector<size_t> order(voices.size());
@@ -566,7 +578,7 @@ void MainWindow::generateDialogue()
             return;
         QString error;
         if (!dialogueJob()->start(script->toPlainText(), people, TimeUs(std::llround(start->value() * kUsPerSecond)),
-                                  TimeUs(std::llround(gap->value() * kUsPerSecond)), &error)) {
+                                  TimeUs(std::llround(gap->value() * kUsPerSecond)), &error, align->isChecked() ? alignmentModel : QString())) {
             QMessageBox::warning(&dlg, tr("Generate Dialogue"), error);
             return;
         }
@@ -595,6 +607,8 @@ void MainWindow::generateDialogue()
         }
         settings.setValue(QStringLiteral("dialogue/script"), script->toPlainText());
         settings.setValue(QStringLiteral("dialogue/gap"), gap->value());
+        if (align->isEnabled())
+            settings.setValue(QStringLiteral("dialogue/align"), align->isChecked());
         for (const auto& p : people) {
             const QString key = QStringLiteral("dialogue/cast/%1/").arg(p.name);
             settings.setValue(key + QStringLiteral("voice"), p.voice.id);
