@@ -527,8 +527,8 @@ QString trackSignature(const Track &track, double from, double length, int bins)
     const double start = double(c.start) / kUsPerSecond, end = double(c.end()) / kUsPerSecond;
     if (end <= from || start >= from + length)
       continue;
-    parts << QStringLiteral("%1:%2:%3:%4:%5:%6:%7:%8").arg(c.id).arg(c.start).arg(c.length).arg(c.sourceIn).arg(c.mediaId).arg(c.speed)
-                 .arg(c.muted).arg(qHash(c.narration.value("text").toString(c.name)));
+    parts << QStringLiteral("%1:%2:%3:%4:%5:%6:%7:%8:%9").arg(c.id).arg(c.start).arg(c.length).arg(c.sourceIn).arg(c.mediaId).arg(c.speed)
+                 .arg(c.muted).arg(qHash(c.narration.value("text").toString(c.name))).arg(c.reverse);
   }
   return parts.join(';');
 }
@@ -547,7 +547,7 @@ QJsonObject trackEnvelope(const Track &track, const MediaMap &media, double from
   std::vector<double> left(size_t(bins), 0), right(size_t(bins), 0);
   int used = 0;
   for (const Clip &c : track.clips) {
-    if (c.muted || c.isGenerated() || c.isSequence() || c.reverse || c.hasRamp() || c.loopLength > 0)
+    if (c.muted || c.isGenerated() || c.isSequence() || c.hasRamp() || c.loopLength > 0)
       continue;
     const auto m = media.find(c.mediaId);
     if (m == media.end() || !m->second->info.hasAudio())
@@ -562,16 +562,19 @@ QJsonObject trackEnvelope(const Track &track, const MediaMap &media, double from
     if (!m->second->info.audioStream(stream))
       stream = m->second->info.audio.front().index;
     QString e;
-    const QJsonObject w = buildWaveform(m->second->path, stream, double(c.sourceIn) / kUsPerSecond + (a - start) * c.speed,
+    // (reversed: the window's sound is the source's span from the other end, its peaks read backwards)
+    const double end = double(c.end()) / kUsPerSecond;
+    const QJsonObject w = buildWaveform(m->second->path, stream, double(c.sourceIn) / kUsPerSecond + ((c.reverse ? end - b : a - start)) * c.speed,
                                         (b - a) * c.speed, n, &e);
     if (w.isEmpty())
       return fail(e);
     const QJsonArray l = w["left"].toArray(), r = w["right"].toArray(); // (at least 64 peaks: folded into n)
     for (int k = 0; k < n; ++k) {
       const qsizetype s0 = qsizetype(k) * l.size() / n, s1 = std::max(s0 + 1, qsizetype(k + 1) * l.size() / n);
+      const size_t at = size_t(ia + (c.reverse ? n - 1 - k : k));
       for (qsizetype s = s0; s < std::min(s1, l.size()); ++s) {
-        left[size_t(ia + k)] = std::max(left[size_t(ia + k)], l[s].toDouble());
-        right[size_t(ia + k)] = std::max(right[size_t(ia + k)], r[s].toDouble());
+        left[at] = std::max(left[at], l[s].toDouble());
+        right[at] = std::max(right[at], r[s].toDouble());
       }
     }
     ++used;
@@ -600,8 +603,11 @@ QJsonObject trackEnvelope(const Track &track, const MediaMap &media, double from
     if (!words.isEmpty()) {
       for (auto w : words) {
         const auto o = w.toObject();
-        wordShapes(shapes, o["text"].toString(), start - from + o["start"].toString().toDouble() / kUsPerSecond,
-                   start - from + o["end"].toString().toDouble() / kUsPerSecond);
+        const double ws = o["start"].toString().toDouble() / kUsPerSecond, we = o["end"].toString().toDouble() / kUsPerSecond;
+        if (c.reverse) // (said backwards: each word where its sound is)
+          wordShapes(shapes, o["text"].toString(), end - from - we, end - from - ws);
+        else
+          wordShapes(shapes, o["text"].toString(), start - from + ws, start - from + we);
       }
       continue;
     }
@@ -628,6 +634,13 @@ QJsonObject trackEnvelope(const Track &track, const MediaMap &media, double from
       at += span + pause;
     }
   }
+  std::vector<QJsonArray> ordered; // (in time order: a reversed line's words were added from its end)
+  for (auto v : shapes)
+    ordered.push_back(v.toArray());
+  std::stable_sort(ordered.begin(), ordered.end(), [](const QJsonArray &x, const QJsonArray &y) { return x[0].toDouble() < y[0].toDouble(); });
+  shapes = {};
+  for (const auto &v : ordered)
+    shapes.append(v);
   return {{"version", 1}, {"source_in", 0}, {"duration", length}, {"left", la}, {"right", ra}, {"rate", 1}, {"offset", 0},
           {"track_id", track.id}, {"signature", trackSignature(track, from, length, bins)}, {"visemes", shapes}};
 }

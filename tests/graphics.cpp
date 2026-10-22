@@ -472,6 +472,29 @@ int main(int argc, char **argv) {
     check(graphics::validateWaveform(env).isEmpty() && left.size() == 400 && before == 0 && after == 0 &&
               std::abs(during - .25) < .01 && std::abs(loud - .5) < .01,
           "a track's envelope: each event's sound at its timeline place");
+    {
+      // Said backwards: a two second line (silence, then the tone) reversed is the tone, then silence.
+      error.clear();
+      Track backwards;
+      backwards.type = TrackType::Audio;
+      Clip turned;
+      turned.mediaId = 1;
+      turned.start = 30 * kUsPerSecond;
+      turned.length = 2 * kUsPerSecond;
+      backwards.clips.push_back(turned);
+      const auto forward = graphics::trackEnvelope(backwards, media, 30, 2, 200, &error);
+      backwards.clips[0].reverse = true;
+      const auto reversed = graphics::trackEnvelope(backwards, media, 30, 2, 200, &error);
+      auto loud = [](const QJsonObject &env, int from, int to) {
+        double peak = 0;
+        for (int i = from; i < to; ++i)
+          peak = std::max(peak, env["left"].toArray()[i].toDouble());
+        return peak;
+      };
+      check(!reversed.isEmpty() && loud(forward, 5, 95) < .01 && loud(forward, 105, 195) > .2 && loud(reversed, 5, 95) > .2 &&
+                loud(reversed, 105, 195) < .01 && forward["signature"] != reversed["signature"],
+            "a reversed line moves the mouth where its sound is " + error);
+    }
     check(graphics::trackEnvelope(voice, media, 20, 2, 400, &error).isEmpty() && !error.isEmpty(),
           "a track with nothing during the scene is refused");
     // Mouth shapes from the words, spread over the sound of the line.
