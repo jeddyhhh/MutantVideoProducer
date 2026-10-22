@@ -4,6 +4,7 @@
 #include "core/TimelineOps.h"
 
 #include <QAbstractScrollArea>
+#include <QRegion>
 #include <map>
 #include <optional>
 #include <set>
@@ -311,6 +312,7 @@ private:
     MediaCache* m_cache;
 
     TimeUs m_viewStart = 0;
+    QRegion m_paintArea; // what this repaint covers (clips and headers outside it are not drawn)
     double m_pxPerSec = 60.0;
     int m_scrollY = 0;
     TimeUs m_cursor = 0;

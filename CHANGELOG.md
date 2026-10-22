@@ -47,6 +47,12 @@ What changed in each version of Mutant Video Producer. The newest is first.
 
 ### Fixed
 
+- Playing an animation scene with characters was slow (a few frames a second at full preview quality): every hidden
+  mouth shape and expression was still drawn off screen, every outlined shape built an outline nobody used, a whole
+  frame was blurred for one small soft layer, and the scene was checked again on every frame. A scene with four
+  characters now draws three to five times faster, a soft-lit one ten times faster, and while playing the preview
+  draws a scene's next frames ahead on the other cores.
+- Playing, the timeline redrew every event on every frame just to move the playhead; it now redraws the playhead.
 - A layer's effects could paint outside the layer: a CRT on a TV in a scene put black corners on the whole picture,
   and noise covered the whole frame. They now work on the layer's own box.
 - With scene motion blur, the speaker camera showed a double picture on the frame where it cut to the next speaker;

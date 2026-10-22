@@ -842,6 +842,26 @@ void boxPass(QImage &image, int r, bool rows) {
 }
 // A soft blur of `radius` pixels: shrunk, box blurred three times each way,
 // and grown back (cheap enough for a whole frame).
+// The part of a picture that has anything in it (empty: nothing drawn).
+QRect drawnBounds(const QImage &image) {
+  int top = image.height(), bottom = -1, left = image.width(), right = -1;
+  for (int y = 0; y < image.height(); ++y) {
+    const auto *row = reinterpret_cast<const quint32 *>(image.constScanLine(y));
+    int first = 0;
+    while (first < image.width() && !(row[first] >> 24))
+      ++first;
+    if (first == image.width())
+      continue;
+    int last = image.width() - 1;
+    while (!(row[last] >> 24))
+      --last;
+    top = std::min(top, y);
+    bottom = y;
+    left = std::min(left, first);
+    right = std::max(right, last);
+  }
+  return bottom < 0 ? QRect() : QRect(QPoint(left, top), QPoint(right, bottom));
+}
 QImage blurred(const QImage &image, double radius) {
   if (radius < .5 || image.isNull())
     return image;
@@ -1369,6 +1389,10 @@ public:
         return;
       }
     }
+    // Invisible at this moment: nothing to blur, isolate or draw (a
+    // character's hidden mouth shapes and expressions cost nothing).
+    if (isolate && number(o, "opacity", 1, t, scene) <= 0)
+      return;
     QString type = o["type"].toString();
     // Softness: the layer's own blur, plus depth of field: with the camera's
     // depth_of_field, a layer's depth (0 the subject, 1 far away) blurs it
@@ -1394,23 +1418,22 @@ public:
           draw(i, lp, t, camera, 1, depth + 1, true);
           unblurred = was;
         }
-        layer = blurred(layer, softness);
-        QPoint corner;
+        // Only the part the layer covers is blurred and given its effects
+        // (a small soft light costs little); the effects work on that and
+        // the layer's own box: a CRT bends the TV's picture, not the room,
+        // and noise stays on it.
+        QRect region = drawnBounds(layer);
         if (!effects.isEmpty()) {
-          // The effects work on the layer's own box (and its blur's spread):
-          // a CRT bends the TV's picture, not the room, and noise stays on it.
           const auto at = pose(i, t);
-          const QRect box = (at.world * camera)
-                                .mapRect(at.box)
-                                .adjusted(-3 * softness, -3 * softness, 3 * softness, 3 * softness)
-                                .toAlignedRect()
-                                .intersected(layer.rect());
-          if (box.isEmpty())
-            return;
-          layer = layer.copy(box);
-          corner = box.topLeft();
-          layerEffects(layer, effects, t, size.height() / 1080.);
+          region |= (at.world * camera).mapRect(at.box).toAlignedRect();
         }
+        const int spread = int(std::ceil(3 * softness)) + 2;
+        region = region.adjusted(-spread, -spread, spread, spread).intersected(layer.rect());
+        if (region.isEmpty())
+          return;
+        const QPoint corner = region.topLeft();
+        layer = blurred(layer.copy(region), softness);
+        layerEffects(layer, effects, t, size.height() / 1080.);
         p.save();
         p.setWorldTransform({});
         p.setOpacity(opacity);
@@ -1561,19 +1584,23 @@ public:
                          ? portion(body, number(o, "trim_start", 0, t, scene),
                                    number(o, "trim_end", 1, t, scene))
                          : body;
+      // The outline a shadow or glow follows (only then: uniting paths is slow).
+      const QJsonObject shadow = o["shadow"].toObject(), glow = o["glow"].toObject();
       QPainterPath silhouette;
-      if (type != "line" && !trimmed &&
-          (o.contains("gradient") || colour(o["fill"], t, scene).alpha() > 0))
-        silhouette = body;
-      if (stroke > 0 || type == "line") {
-        QPainterPathStroker stroker;
-        stroker.setWidth(std::max(1., stroke));
-        stroker.setCapStyle(Qt::RoundCap);
-        stroker.setJoinStyle(Qt::RoundJoin);
-        silhouette = silhouette.united(stroker.createStroke(painted));
+      if (!shadow.isEmpty() || !glow.isEmpty()) {
+        if (type != "line" && !trimmed &&
+            (o.contains("gradient") || colour(o["fill"], t, scene).alpha() > 0))
+          silhouette = body;
+        if (stroke > 0 || type == "line") {
+          QPainterPathStroker stroker;
+          stroker.setWidth(std::max(1., stroke));
+          stroker.setCapStyle(Qt::RoundCap);
+          stroker.setJoinStyle(Qt::RoundJoin);
+          silhouette = silhouette.united(stroker.createStroke(painted));
+        }
+        decoration(p, silhouette, shadow, size, t, scene, false);
+        decoration(p, silhouette, glow, size, t, scene, true);
       }
-      decoration(p, silhouette, o["shadow"].toObject(), size, t, scene, false);
-      decoration(p, silhouette, o["glow"].toObject(), size, t, scene, true);
       p.setBrush(brush(o, at.box, t, scene));
       p.setPen(stroke > 0 || type == "line" ? pen : QPen(Qt::NoPen));
       if (trimmed)
@@ -1615,8 +1642,19 @@ void render(QImage &image, const QJsonObject &scene, double time) {
   QPainter p(&image);
   paint(p, image.size(), scene, time);
 }
+// A scene is checked once, not on every frame: checking a big one (characters, long voice envelopes) takes longer
+// than drawing it. (The same scene is the same shared data, so the comparison is quick.)
+bool checked(const QJsonObject &scene) {
+  thread_local QJsonObject last;
+  thread_local bool valid = false;
+  if (last.isEmpty() || scene != last) {
+    valid = validate(scene).isEmpty();
+    last = scene;
+  }
+  return valid;
+}
 void paint(QPainter &p, QSizeF size, const QJsonObject &scene, double time) {
-  if (!std::isfinite(time) || !validate(scene).isEmpty())
+  if (!std::isfinite(time) || !checked(scene))
     return;
   p.setRenderHint(QPainter::Antialiasing);
   p.setRenderHint(QPainter::SmoothPixmapTransform);

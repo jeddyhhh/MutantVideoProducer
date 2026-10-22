@@ -252,9 +252,19 @@ void TimelineWidget::setCursorTime(TimeUs t, bool ensureVisible)
 
 void TimelineWidget::setPlayhead(std::optional<TimeUs> t)
 {
+    const std::optional<TimeUs> was = m_playhead;
+    const TimeUs viewStart = m_viewStart;
     m_playhead = t;
     if (t)
         ensureTimeVisible(*t, true);
+    if (was && t && m_viewStart == viewStart) {
+        // Playing, only the playhead moves: repaint its old and new places and the timecode, not every clip.
+        auto strip = [this](TimeUs at) { return QRect(int(timeToX(at)) - 7, 0, 14, viewport()->height()); };
+        viewport()->update(strip(*was));
+        viewport()->update(strip(*t));
+        viewport()->update(QRect(0, 0, kHeaderWidth, kTopH));
+        return;
+    }
     viewport()->update();
 }
 

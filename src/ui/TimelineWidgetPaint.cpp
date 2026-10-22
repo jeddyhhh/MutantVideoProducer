@@ -21,6 +21,7 @@
 #include <QMimeData>
 #include <QPainter>
 #include <QApplication>
+#include <QPaintEvent>
 #include <QPainterPath>
 #include <QToolTip>
 #include <QWheelEvent>
@@ -180,8 +181,9 @@ void TimelineWidget::paintGenerated(QPainter& p, const Clip& c, const QRectF& bo
         p.drawImage(QPointF(body.left() + i * thumbW, body.top()), thumb.image);
 }
 
-void TimelineWidget::paintEvent(QPaintEvent*)
+void TimelineWidget::paintEvent(QPaintEvent* e)
 {
+    m_paintArea = e->region();
     QPainter p(viewport());
     const int W = viewport()->width();
     const int H = viewport()->height();
@@ -310,6 +312,8 @@ void TimelineWidget::paintTrackClips(QPainter& p, const Track& track, int top, i
         const double vx0 = std::max(rx0, double(kHeaderWidth) - 4), vx1 = std::min(rx1, double(W) + 4);
         const QRectF r(rx0, top + 1, rx1 - rx0, height - 2);
         const QRectF vr(vx0, r.top(), vx1 - vx0, r.height());
+        if (!m_paintArea.intersects(vr.toAlignedRect().adjusted(-2, -2, 2, 2)))
+            continue; // (not being repainted: its title and picture would be laid out for nothing)
         const QRectF body(vx0, r.top() + kTitleH, vx1 - vx0, r.height() - kTitleH);
         const bool selected = m_selection.count(c.id) > 0;
         auto media = m_project->mediaItem(c.mediaId);
@@ -629,6 +633,8 @@ void TimelineWidget::paintHeaders(QPainter& p)
 {
     const int H = viewport()->height();
     const auto& tracks = m_project->timeline().tracks;
+    if (!m_paintArea.intersects(QRect(0, kTopH, kHeaderWidth, H - kTopH)))
+        return; // (the headers are not being repainted)
     p.save();
     p.setClipRect(QRect(0, kTopH, kHeaderWidth, H - kTopH));
     p.fillRect(QRect(0, kTopH, kHeaderWidth, H - kTopH), theme::c().timelineBg);

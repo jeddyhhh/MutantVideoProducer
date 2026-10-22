@@ -19,8 +19,14 @@
 #include <QGlyphRun>
 #include <QPainterPath>
 #include <QRegularExpression>
+#include <QThreadPool>
 #include <algorithm>
+#include <atomic>
 #include <cmath>
+#include <deque>
+#include <future>
+#include <mutex>
+#include <optional>
 
 namespace graphics {
 namespace {
@@ -735,6 +741,97 @@ bool followTrackBindings(Timeline &tl, const MediaMap &media) {
     }
   return changed;
 }
+namespace {
+// Playing a scene in the preview: while its frames are asked for one after another, the next few are drawn ahead on other
+// cores, so a heavy scene (several characters, motion blur) keeps up. Scrubbing, stills and renders draw as before.
+class Lookahead {
+public:
+  std::optional<QImage> take(const QJsonObject &scene, QSize size, const GeneratorContext &c) {
+    const TimeUs step = c.fps.frameDuration();
+    if (step <= 0 || size.isEmpty())
+      return std::nullopt;
+    std::unique_lock lock(m_mutex);
+    std::optional<std::shared_future<QImage>> ready;
+    for (auto it = m_jobs.begin(); it != m_jobs.end();) {
+      const bool same = it->size == size && it->scene == scene;
+      if (same && it->time == c.time)
+        ready = it->image;
+      if (same && it->time <= c.time)
+        it = m_jobs.erase(it);
+      else
+        ++it;
+    }
+    // Playing: this scene was last asked for a moment before (playback skips frames when it falls behind).
+    auto seen = std::find_if(m_seen.begin(), m_seen.end(), [&](const Seen &v) { return v.size == size && v.scene == scene; });
+    const bool playing = seen != m_seen.end() && c.time > seen->time && c.time - seen->time <= 8 * step;
+    if (seen == m_seen.end()) {
+      if (m_seen.size() >= 8)
+        m_seen.pop_front();
+      m_seen.push_back({scene, size, c.time});
+    } else {
+      seen->time = c.time;
+    }
+    if (playing) {
+      const int ahead = std::clamp(QThread::idealThreadCount() - 2, 1, 6);
+      for (int k = 1; k <= ahead; ++k) {
+        const TimeUs t = c.time + k * step;
+        if (std::any_of(m_jobs.begin(), m_jobs.end(), [&](const Job &j) { return j.time == t && j.size == size && j.scene == scene; }))
+          continue;
+        if (m_pending >= 2 * ahead) // (never more than a little work waiting)
+          break;
+        auto promise = std::make_shared<std::promise<QImage>>();
+        m_jobs.push_back({scene, size, t, promise->get_future().share()});
+        ++m_pending;
+        pool().start([this, promise, scene, size, t] {
+          QImage image(size, QImage::Format_ARGB32_Premultiplied);
+          image.fill(Qt::transparent);
+          const bool was = motion::setDraft(true);
+          drawScene(image, scene, double(t) / kUsPerSecond);
+          motion::setDraft(was);
+          promise->set_value(std::move(image));
+          --m_pending;
+        });
+      }
+      while (m_jobs.size() > 12) // (several scenes on screen at once each keep their own)
+        m_jobs.pop_front();
+    }
+    lock.unlock();
+    if (!ready)
+      return std::nullopt;
+    return ready->get();
+  }
+
+private:
+  struct Job {
+    QJsonObject scene;
+    QSize size;
+    TimeUs time = 0;
+    std::shared_future<QImage> image;
+  };
+  static QThreadPool &pool() {
+    static QThreadPool *threads = [] {
+      auto *p = new QThreadPool; // (kept for the program's life: its threads keep their open video decoders)
+      p->setMaxThreadCount(std::clamp(QThread::idealThreadCount() - 2, 1, 6));
+      p->setExpiryTimeout(-1);
+      return p;
+    }();
+    return *threads;
+  }
+  struct Seen {
+    QJsonObject scene;
+    QSize size;
+    TimeUs time = 0;
+  };
+  std::mutex m_mutex;
+  std::deque<Job> m_jobs;
+  std::deque<Seen> m_seen;
+  std::atomic<int> m_pending{0};
+};
+Lookahead &lookahead() {
+  static Lookahead *ahead = new Lookahead; // (never destroyed: its pool's threads may still be drawing at exit)
+  return *ahead;
+}
+} // namespace
 void addGenerators(std::vector<GeneratorDef> &list) {
   GeneratorDef d;
   d.id = "graphics_overlay";
@@ -747,13 +844,18 @@ void addGenerators(std::vector<GeneratorDef> &list) {
       "layouts.";
   d.params = {number("opacity", "Opacity", 0, 1, 1)};
   d.render = [](QImage &img, const Params &p, const GeneratorContext &c) {
-    QImage drawn(img.size(), QImage::Format_ARGB32_Premultiplied);
-    drawn.fill(Qt::transparent);
-    const bool was = motion::setDraft(!c.highQuality);
-    drawScene(drawn,
-              c.data && !c.data->isEmpty() ? *c.data : scene("broadcast"),
-              double(c.time) / kUsPerSecond);
-    motion::setDraft(was);
+    const QJsonObject &s = c.data && !c.data->isEmpty() ? *c.data : scene("broadcast");
+    QImage drawn;
+    if (!c.highQuality && s["version"].toInt() == 2)
+      if (auto ahead = lookahead().take(s, img.size(), c))
+        drawn = std::move(*ahead);
+    if (drawn.isNull()) {
+      drawn = QImage(img.size(), QImage::Format_ARGB32_Premultiplied);
+      drawn.fill(Qt::transparent);
+      const bool was = motion::setDraft(!c.highQuality);
+      drawScene(drawn, s, double(c.time) / kUsPerSecond);
+      motion::setDraft(was);
+    }
     QPainter q(&img);
     q.setOpacity(p.num("opacity"));
     q.drawImage(0, 0, drawn);
@@ -776,8 +878,14 @@ void addGenerators(std::vector<GeneratorDef> &list) {
   };
   d.paint = [](QPainter &painter, QSize size, const Params &p, const GeneratorContext &c) {
     painter.setOpacity(p.num("opacity"));
+    const QJsonObject &s = c.data && !c.data->isEmpty() ? *c.data : scene("broadcast");
+    if (!c.highQuality && s["version"].toInt() == 2)
+      if (auto ahead = lookahead().take(s, size, c)) {
+        painter.drawImage(QRect(QPoint(), size), *ahead);
+        return true;
+      }
     const bool was = motion::setDraft(!c.highQuality);
-    paintScene(painter, size, c.data && !c.data->isEmpty() ? *c.data : scene("broadcast"), double(c.time) / kUsPerSecond);
+    paintScene(painter, size, s, double(c.time) / kUsPerSecond);
     motion::setDraft(was);
     return true;
   };

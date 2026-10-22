@@ -316,6 +316,25 @@ int main(int argc, char **argv) {
     motion::setDraft(false);
     check(full != draft && drawn(moving, .5) == full, "a draft preview draws less motion blur, and only while drafting");
   }
+  // Playing a scene in the preview: the frames drawn ahead on other cores are the frames drawn one by one.
+  {
+    GeneratorSpec spec = makeGenerator(*findGeneratorPreset("graphics_blank"));
+    spec.data = motion::charactersScene();
+    spec.data["camera"] = QJsonObject{{"zoom", QJsonObject{{"keyframes", QJsonArray{QJsonArray{0, 1}, QJsonArray{1, 1.6}}}}}};
+    const FrameRate fps{24, 1};
+    int differing = 0;
+    for (int f = 0; f < 16; ++f) {
+      const TimeUs t = fps.timeOf(f);
+      const QImage played = renderGenerator(spec, {320, 180}, 1. / 6, t, 10 * kUsPerSecond, fps);
+      QImage direct(320, 180, QImage::Format_ARGB32_Premultiplied);
+      direct.fill(Qt::transparent);
+      const bool was = motion::setDraft(true);
+      graphics::drawScene(direct, spec.data, double(t) / kUsPerSecond);
+      motion::setDraft(was);
+      differing += played != direct;
+    }
+    check(differing == 0, QStringLiteral("frames drawn ahead while playing match frames drawn one by one (%1 differ)").arg(differing));
+  }
   auto g = makeGenerator(*findGeneratorPreset("graphics_broadcast"));
   auto img = renderGenerator(g, {640, 360}, 1. / 3, 0, 10 * kUsPerSecond, {});
   check(qAlpha(img.pixel(500, 150)) == 0 && qAlpha(img.pixel(10, 10)) > 0,
