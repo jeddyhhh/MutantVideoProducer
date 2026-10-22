@@ -19,7 +19,7 @@ Setting, keyframing and grouping them works as for video: see [Effects](effects.
 | Parametric EQ | Low cut, low shelf, two bell bands, high shelf and high cut. Bands at 0 dB are off. |
 | Filter | Low-pass, high-pass, band-pass or notch, resonant; 24 dB/octave stacks two stages. |
 | Compressor | Evens out loud and quiet parts. Stereo-linked, soft knee. |
-| Limiter | Brick-wall, with 2 ms lookahead: nothing goes over the ceiling. |
+| Limiter | Brick-wall, with 2 ms lookahead: nothing goes over the ceiling, between samples included (true peak), so a -1.5 dB ceiling meets a -1.5 dBTP target. |
 | Noise Gate | Silences sound below the threshold (hum, room noise between words). |
 | Reverb | Room reverb (Freeverb). On a track, the tail rings out past the end of events. |
 | Delay / Echo | Repeating echoes, optionally bouncing between left and right. |

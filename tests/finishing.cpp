@@ -1,3 +1,4 @@
+#include "core/AudioEffects.h"
 #include "core/AudioFinishing.h"
 #include "core/GraphicsWorkflow.h"
 #include "core/Graphics.h"
@@ -46,6 +47,22 @@ int main(int argc, char** argv)
             out[2 * i] = out[2 * i + 1] = float(.9 * std::sin(2 * pi * 12000 * (pos + i) / rate + pi / 4));
     });
     check(hot.error.isEmpty() && hot.truePeak > hot.samplePeak + 1.5, "intersample peaks are detected beyond sample peaks");
+    {
+        // The limiter holds its ceiling as a true peak: the same hot signal through it, 3 dB down.
+        const auto* def = findAudioEffect("a_limiter");
+        auto limiter = def->create();
+        limiter->reset(rate);
+        ParamMap values;
+        values["ceiling"].value = -3;
+        const Params params = resolveParams(def->params, values, 0);
+        auto limited = finishing::analyze(rate, frames, [&](int64_t pos, int n, float* out) {
+            for (int i = 0; i < n; ++i)
+                out[2 * i] = out[2 * i + 1] = float(.9 * std::sin(2 * pi * 12000 * (pos + i) / rate + pi / 4));
+            limiter->process(out, n, params);
+        });
+        check(limited.error.isEmpty() && limited.truePeak <= -2.7 && limited.truePeak > -6,
+              QStringLiteral("the limiter holds a -3 dB ceiling between samples too (true peak %1 dBTP)").arg(limited.truePeak, 0, 'f', 2));
+    }
     auto crest = finishing::analyze(rate, frames, [&](int64_t pos, int n, float* out) {
         for (int i = 0; i < n; ++i) {
             auto t = pos + i;

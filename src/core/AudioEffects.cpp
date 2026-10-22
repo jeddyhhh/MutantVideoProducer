@@ -16,7 +16,9 @@ extern "C" {
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <array>
 #include <deque>
+#include <numbers>
 #include <map>
 #include <mutex>
 #include <vector>
@@ -285,19 +287,49 @@ public:
         m_gain = 1;
         m_window.clear();
         m_index = 0;
+        m_history = {};
     }
     void process(float* s, int frames, const Params& p) override
     {
         const double ceiling = dbToLin(p.num(QStringLiteral("ceiling")));
         const double rel = timeCoef(p.num(QStringLiteral("release")), m_rate);
         for (int i = 0; i < frames; ++i) {
-            const double peak = std::max(std::abs(s[i * 2]), std::abs(s[i * 2 + 1]));
+            double peak = std::max(std::abs(s[i * 2]), std::abs(s[i * 2 + 1]));
+            // True peak: where the waveform swings between samples (oversampled four times), which a meter counts and
+            // a converter plays, though no sample holds it.
+            static const auto taps = [] { // windowed sinc, 8 taps for each of the three points between two samples
+                std::array<std::array<double, 8>, 3> c{};
+                for (int k = 0; k < 3; ++k) {
+                    double sum = 0;
+                    for (int j = 0; j < 8; ++j) {
+                        const double x = 3 + (k + 1) / 4.0 - j; // (the point sits between taps 3 and 4)
+                        const double sinc = std::abs(x) < 1e-9 ? 1 : std::sin(std::numbers::pi * x) / (std::numbers::pi * x);
+                        c[size_t(k)][size_t(j)] = sinc * (0.5 + 0.5 * std::cos(std::numbers::pi * x / 4.5));
+                        sum += c[size_t(k)][size_t(j)];
+                    }
+                    for (auto& v : c[size_t(k)])
+                        v /= sum;
+                }
+                return c;
+            }();
+            for (int ch = 0; ch < 2; ++ch) {
+                auto& h = m_history[size_t(ch)];
+                std::copy(h.begin() + 1, h.end(), h.begin());
+                h[7] = s[i * 2 + ch];
+                for (const auto& c : taps) {
+                    double v = 0;
+                    for (int j = 0; j < 8; ++j)
+                        v += c[size_t(j)] * h[size_t(j)];
+                    peak = std::max(peak, std::abs(v));
+                }
+            }
             const double req = peak > ceiling ? ceiling / peak : 1.0;
-            // Sliding-window minimum of the required gain over the lookahead.
+            // Sliding-window minimum of the required gain over the lookahead
+            // (the sample leaving the delay line included).
             while (!m_window.empty() && m_window.back().second >= req)
                 m_window.pop_back();
             m_window.emplace_back(m_index, req);
-            while (m_window.front().first <= m_index - m_look)
+            while (m_window.front().first < m_index - m_look)
                 m_window.pop_front();
             ++m_index;
             const double target = m_window.front().second;
@@ -324,6 +356,7 @@ private:
     std::deque<std::pair<int64_t, double>> m_window;
     int64_t m_index = 0;
     double m_gain = 1;
+    std::array<std::array<double, 8>, 2> m_history{}; // each channel's last eight input samples
 };
 
 // ---- Noise gate ------------------------------------------------------------------------------
@@ -831,7 +864,7 @@ std::vector<AudioEffectDef> buildAudioEffects()
     d.id = QStringLiteral("a_limiter");
     d.name = QStringLiteral("Limiter");
     d.category = QStringLiteral("Dynamics");
-    d.description = QStringLiteral("Brick-wall limiter with 2 ms lookahead: nothing exceeds the ceiling.");
+    d.description = QStringLiteral("Brick-wall limiter with 2 ms lookahead: nothing exceeds the ceiling, between samples (true peak) included.");
     d.params = {num("ceiling", "Ceiling", -24, 0, -0.3, 1, " dB"), num("release", "Release", 1, 1000, 60, 0, " ms", true)};
     d.create = make([] { return new LimiterProcessor; });
     list.push_back(d);
