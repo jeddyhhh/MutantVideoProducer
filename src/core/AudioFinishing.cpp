@@ -164,8 +164,9 @@ QStringList warnings(const Report& r, const Target& t) {
     if (r.audible && std::abs(r.rmsLeft-r.rmsRight) > 6) out << "Left/right RMS levels differ by more than 6 dB.";
     if (r.silenceSeconds >= 3) out << QString("Longest near-silent section: %1 s. Check whether the pause is intentional.").arg(r.silenceSeconds, 0, 'f', 1);
     if (r.seconds < 3) out << "Short mix: short-term loudness and loudness range are not representative.";
+    // (only while the mix is short of the target: one already on it, with peaks near the ceiling, needs nothing)
     auto gain = safeGain(r, t);
-    if (std::isfinite(gain) && gain < t.lufs-r.integrated-.1)
+    if (std::isfinite(gain) && t.lufs - r.integrated > .5 && gain < t.lufs-r.integrated-.1)
         out << "True-peak headroom limits the gain: reaching the loudness target needs dynamics control (a Limiter in Master FX: the gain then goes in front of it).";
     return out;
 }

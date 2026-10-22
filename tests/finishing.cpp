@@ -36,6 +36,11 @@ int main(int argc, char** argv)
     check(std::abs(r.samplePeak + 20) < .05 && r.truePeak >= r.samplePeak, "sample and oversampled true peaks are distinct measurements");
     check(std::abs(r.correlation - 1) < .00001, "identical stereo channels correlate positively");
     check(std::abs(finishing::safeGain(r, {"Test", -16, -1.5}) - 4) < .3, "safe gain reaches loudness target when headroom permits");
+    finishing::Report onTarget = r;
+    onTarget.integrated = -16.07;
+    onTarget.truePeak = -1.42;
+    check(!finishing::warnings(onTarget, {"Test", -16, -1.5}).join(' ').contains("dynamics control"),
+          "a mix already at its loudness target is not told it needs a limiter");
     auto hot = finishing::analyze(rate, frames, [&](int64_t pos, int n, float* out) {
         for (int i = 0; i < n; ++i)
             out[2 * i] = out[2 * i + 1] = float(.9 * std::sin(2 * pi * 12000 * (pos + i) / rate + pi / 4));

@@ -47,6 +47,7 @@ What changed in each version of Mutant Video Producer. The newest is first.
 
 ### Fixed
 
+- Audio finishing told a mix already at its loudness target that it needed a limiter for more gain.
 - Animation scenes: text animated a word at a time lost the spaces between its words at small sizes ("DIRECTOROF"),
   and centred text sat slightly off centre. Text is now drawn exactly where its layout puts it.
 - Playing an animation scene with characters was slow (a few frames a second at full preview quality): every hidden
