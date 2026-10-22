@@ -1122,7 +1122,9 @@ QJsonArray McpServer::toolList()
                   "Speaks a script of \"Name: line\" lines with a voice per character, each on their own new audio track named after "
                   "them (for lip sync: graphics_overlay bind_audio with source_track), lines in script order, as one undo step. Poll "
                   "voice_status (its dialogue field). Do not edit or switch projects until it finishes.",
-                  {{QStringLiteral("script"), prop("string", "One line per speech: Name: what they say")},
+                  {{QStringLiteral("script"), prop("string", "One line per speech: Name: what they say. A line (pause 2) adds two seconds of silence "
+                                                              "before the next; [radio], [phone], [megaphone], [echo], [hall], [dream] or "
+                                                              "[backwards] at the start of a line gives it that sound (not spoken)")},
                    {QStringLiteral("cast"),
                     prop("object", "Per character name: {voice (list_voices id, default af_heart), rate 0.5 to 2, pitch semitones -24 to 24}")},
                    {QStringLiteral("start"), prop("number", "Seconds (default the cursor)")},

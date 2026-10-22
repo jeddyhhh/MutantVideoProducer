@@ -601,6 +601,8 @@ bool DialogueJob::start(const QString& script, const std::vector<DialogueVoice>&
     const auto lines = dialogueLines(script);
     if (lines.empty())
         return fail(tr("Write the script as one line per speech: \"Name: what they say\"."));
+    if (const QString t = unknownTreatment(lines); !t.isEmpty())
+        return fail(tr("No treatment called [%1]. Treatments: %2.").arg(t, dialogueTreatments().join(QStringLiteral(", "))));
     std::vector<DialogueVoice> speaking;
     for (const QString& name : dialogueSpeakers(lines)) {
         const auto found = std::find_if(cast.begin(), cast.end(), [&](const DialogueVoice& v) { return v.name == name; });

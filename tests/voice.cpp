@@ -85,6 +85,34 @@ int main(int argc, char** argv)
                   && !arrangeError.isEmpty(),
               QStringLiteral("a track with the wrong number of lines leaves the timeline alone"));
     }
+    {
+        // Pauses and treatments in the script: not spoken, but heard.
+        const auto lines = dialogueLines(QStringLiteral("(pause 1.2)\nGus: [radio] Over.\n(pause)\n(Pause 2s)\nMo: [echo, backwards][hall] Hello.\nGus: Bye."));
+        check(lines.size() == 3 && lines[0].pause == 1.2 && lines[0].text == "Over." && lines[0].treatments == QStringList({"radio"})
+                  && lines[1].pause == 3 && lines[1].text == "Hello." && lines[1].treatments == QStringList({"echo", "backwards", "hall"})
+                  && lines[2].pause == 0 && unknownTreatment(lines).isEmpty()
+                  && unknownTreatment(dialogueLines(QStringLiteral("Gus: [laughs] Ha."))) == "laughs",
+              QStringLiteral("a script's pauses and [treatments] are read, not spoken"));
+        Timeline tl;
+        Track a, b;
+        a.id = tl.allocId();
+        b.id = tl.allocId();
+        a.type = b.type = TrackType::Audio;
+        for (Track* t : {&a, &a, &b}) {
+            Clip c;
+            c.id = tl.allocId();
+            c.start = TimeUs(t->clips.size()) * 10 * kUsPerSecond;
+            c.length = kUsPerSecond;
+            t->clips.push_back(c);
+        }
+        tl.tracks = {a, b};
+        const FrameRate fps{25, 1};
+        const bool arranged = arrangeDialogue(tl, lines, {{"Gus", a.id, 0}, {"Mo", b.id, 0}}, 0, 0, fps, nullptr);
+        const Clip &over = tl.tracks[0].clips[0], &hello = tl.tracks[1].clips[0];
+        check(arranged && over.start == 1200000 && over.effects.size() == 1 && over.effects[0].type == "a_ffmpeg" && hello.start == 5200000
+                  && hello.reverse && hello.effects.size() == 2 && hello.effects[1].type == "a_reverb" && !tl.tracks[0].clips[1].reverse,
+              QStringLiteral("a pause adds its silence before the line; a treatment adds its sound (backwards plays it reversed)"));
+    }
     const auto voices = localVoiceCatalog();
     check(voices.size() == 28, QStringLiteral("all 28 curated English voices have metadata"));
     if (voices.empty())

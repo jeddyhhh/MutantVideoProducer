@@ -444,7 +444,9 @@ void MainWindow::generateDialogue()
     auto* layout = new QVBoxLayout(&dlg);
     auto* intro = new QLabel(tr("One line per speech, \"Name: what they say\". Each character gets a voice, a speed and a pitch, and "
                                 "their own audio track named after them, ready for lip sync. A line without a name continues the "
-                                "one above; lines starting with # are notes."),
+                                "one above; lines starting with # are notes. (pause 2) on a line of its own leaves two seconds; "
+                                "[radio], [phone], [megaphone], [echo], [hall], [dream] or [backwards] before a speech gives it "
+                                "that sound."),
                              &dlg);
     intro->setWordWrap(true);
     layout->addWidget(intro);

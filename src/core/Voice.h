@@ -38,11 +38,19 @@ struct VoiceTake {
 bool readVoiceTakes(const QString& folder, std::vector<VoiceTake>& takes, QString* error);
 
 // A dialogue script: "Name: line" per line; a line without a name continues the last speaker's line. Blank lines and
-// lines starting with # are skipped.
+// lines starting with # are skipped. "(pause 2)" on its own line adds that many seconds of silence before the next line
+// ("(pause)": one second). Treatments in brackets at the start of a line give it a sound: "Gus: [radio] Hello" (several:
+// "[radio, echo]" or "[radio][echo]"); they are not spoken.
 struct DialogueLine {
     QString speaker, text;
+    double pause = 0;       // seconds of silence before the line
+    QStringList treatments; // lower case, as written
 };
 std::vector<DialogueLine> dialogueLines(const QString& script);
+// The treatments a script can give a line: radio, phone, megaphone, echo, hall, dream, backwards.
+QStringList dialogueTreatments();
+// The first treatment the script asks for that doesn't exist, or empty.
+QString unknownTreatment(const std::vector<DialogueLine>& lines);
 QStringList dialogueSpeakers(const std::vector<DialogueLine>& lines); // in order of first appearance
 // Each character's lines spoken on their own: captions spaced so natural-length speech never overlaps.
 std::vector<Caption> dialogueCaptions(const std::vector<DialogueLine>& lines, const QString& speaker);

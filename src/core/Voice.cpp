@@ -137,20 +137,85 @@ bool readVoiceTakes(const QString& folder, std::vector<VoiceTake>& takes, QStrin
 
 std::vector<DialogueLine> dialogueLines(const QString& script)
 {
-    static const QRegularExpression named(QStringLiteral("^([^:]{1,40}):(.*)$"));
+    static const QRegularExpression named(QStringLiteral("^([^:\\[\\(]{1,40}):(.*)$"));
+    static const QRegularExpression pause(QStringLiteral("^\\(\\s*pause(?:\\s+(\\d+(?:\\.\\d+)?)\\s*s?)?\\s*\\)$"),
+                                          QRegularExpression::CaseInsensitiveOption);
+    static const QRegularExpression tags(QStringLiteral("^\\s*\\[([^\\]]*)\\]\\s*"));
     std::vector<DialogueLine> lines;
+    double waiting = 0; // (a pause belongs to the line after it)
     for (const QString& raw : script.split(QLatin1Char('\n'))) {
         const QString line = raw.trimmed();
         if (line.isEmpty() || line.startsWith(QLatin1Char('#')))
             continue;
+        if (const auto p = pause.match(line); p.hasMatch()) {
+            waiting = std::min(600.0, waiting + (p.captured(1).isEmpty() ? 1.0 : p.captured(1).toDouble()));
+            continue;
+        }
         const auto m = named.match(line);
-        if (m.hasMatch() && !m.captured(1).trimmed().isEmpty())
-            lines.push_back({m.captured(1).trimmed(), m.captured(2).trimmed()});
-        else if (!lines.empty())
+        if (m.hasMatch() && !m.captured(1).trimmed().isEmpty()) {
+            DialogueLine l{m.captured(1).trimmed(), m.captured(2).trimmed(), waiting, {}};
+            for (auto t = tags.match(l.text); t.hasMatch(); t = tags.match(l.text)) {
+                for (const QString& name : t.captured(1).split(QLatin1Char(','), Qt::SkipEmptyParts))
+                    if (!name.trimmed().isEmpty())
+                        l.treatments << name.trimmed().toLower();
+                l.text = l.text.mid(t.capturedLength());
+            }
+            lines.push_back(l);
+            waiting = 0;
+        } else if (!lines.empty())
             lines.back().text += (lines.back().text.isEmpty() ? QString() : QStringLiteral(" ")) + line;
     }
     std::erase_if(lines, [](const DialogueLine& l) { return l.text.isEmpty(); });
     return lines;
+}
+namespace {
+// What each treatment does to a line: FFmpeg filters, or a reverb.
+const std::map<QString, QString>& treatmentFilters()
+{
+    static const std::map<QString, QString> filters{
+        {QStringLiteral("radio"), QStringLiteral("highpass=f=500,lowpass=f=3000,acrusher=bits=10:mode=log:aa=1")},
+        {QStringLiteral("phone"), QStringLiteral("highpass=f=300,lowpass=f=3400,acrusher=bits=8:mode=log:aa=1")},
+        {QStringLiteral("megaphone"), QStringLiteral("bandpass=f=1600:width_type=q:w=1.2,acrusher=bits=8:mode=log:aa=1,volume=1.4")},
+        {QStringLiteral("echo"), QStringLiteral("aecho=0.8:0.7:60|120:0.35|0.2")}};
+    return filters;
+}
+void treat(Timeline& tl, Clip& clip, const QString& name)
+{
+    if (name == QLatin1String("backwards")) {
+        clip.reverse = true;
+        return;
+    }
+    if (const auto f = treatmentFilters().find(name); f != treatmentFilters().end()) {
+        auto fx = makeEffectOfType(QStringLiteral("a_ffmpeg"), tl.allocId());
+        fx.params[QStringLiteral("filter")].text = f->second;
+        clip.effects.push_back(fx);
+        return;
+    }
+    const bool dream = name == QLatin1String("dream");
+    auto reverb = makeEffectOfType(QStringLiteral("a_reverb"), tl.allocId());
+    reverb.params[QStringLiteral("room")].value = dream ? 0.9 : 0.7;
+    reverb.params[QStringLiteral("wet")].value = dream ? 0.45 : 0.3;
+    reverb.params[QStringLiteral("predelay")].value = dream ? 60 : 20;
+    clip.effects.push_back(reverb);
+    if (dream) {
+        auto pitch = makeEffectOfType(QStringLiteral("a_pitch"), tl.allocId());
+        pitch.params[QStringLiteral("semitones")].value = -2;
+        clip.effects.push_back(pitch);
+    }
+}
+} // namespace
+QStringList dialogueTreatments()
+{
+    return {QStringLiteral("radio"), QStringLiteral("phone"), QStringLiteral("megaphone"), QStringLiteral("echo"), QStringLiteral("hall"),
+            QStringLiteral("dream"), QStringLiteral("backwards")};
+}
+QString unknownTreatment(const std::vector<DialogueLine>& lines)
+{
+    for (const auto& l : lines)
+        for (const QString& t : l.treatments)
+            if (!dialogueTreatments().contains(t))
+                return t;
+    return {};
 }
 QStringList dialogueSpeakers(const std::vector<DialogueLine>& lines)
 {
@@ -203,8 +268,11 @@ bool arrangeDialogue(Timeline& tl, const std::vector<DialogueLine>& lines, const
             return false;
         }
         Clip& clip = found->second.first->clips[found->second.second++];
+        at = fps.snap(at + TimeUs(std::llround(l.pause * kUsPerSecond)));
         clip.start = at;
         clip.name = l.text;
+        for (const QString& t : l.treatments)
+            treat(out, clip, t);
         at = fps.snap(clip.end() + gap);
     }
     for (auto& [name, slot] : next)

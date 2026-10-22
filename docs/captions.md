@@ -101,7 +101,11 @@ Mo: It was just the wind.
 Gus: The wind doesn't laugh, Mo.
 ```
 
-A line without `Name:` continues the speech above it; lines starting with `#` are notes and aren't spoken. Every
+A line without `Name:` continues the speech above it; lines starting with `#` are notes and aren't spoken.
+`(pause 2)` on a line of its own leaves two seconds of silence before the next speech (`(pause)`: one second). A
+treatment in brackets at the start of a speech gives it a sound, and isn't spoken: `Gus: [radio] Come in, base.` The
+treatments are `radio`, `phone`, `megaphone`, `echo`, `hall`, `dream` (reverb, pitched down a little) and `backwards`
+(played in reverse; lip sync follows it). Several go together: `[radio, echo]`. Every
 character in the script gets a row: choose their voice (different voices are picked for you, installed ones first),
 their speed, and a pitch in semitones (a Pitch Shift on their track: +4 for a child, -4 for a giant). Set where the
 dialogue starts (the cursor by default) and the pause between lines, then press **Generate Dialogue**.

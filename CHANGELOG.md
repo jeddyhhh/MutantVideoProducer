@@ -6,6 +6,8 @@ What changed in each version of Mutant Video Producer. The newest is first.
 
 ### Added
 
+- Generate Dialogue scripts: `(pause 2)` leaves silence before the next line, and `[radio]`, `[phone]`, `[megaphone]`,
+  `[echo]`, `[hall]`, `[dream]` or `[backwards]` at the start of a speech gives it that sound.
 - AI control, `graphics_overlay` `patch`: change scene properties by path (a sign's words, a layer's effects, the camera)
   without sending the whole scene; and `batch`: many moves, expressions, keys and patches as one undo step.
 - Animation scenes hold up to 1024 layers (was 512): about a dozen library characters and a set.
