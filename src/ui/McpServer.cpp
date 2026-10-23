@@ -847,7 +847,8 @@ QJsonArray McpServer::toolList()
         {"action"}));
     t.append(tool(
         "graphics_overlay",
-        "Native scene graph and animation engine. Actions "
+        "Native scene graph and animation engine, for Graphics Overlay events (version 1 scenes: text and graphics) and Animation "
+        "events (version 2 scenes; create with a motion_ preset or a v2 scene makes one; every action takes both). Actions "
         "capabilities/presets/validate/create/get/update/keyframe/bind_audio/export_template/import_template/layout/lock/brand. layout "
         "arranges selected layer_ids by operation and reference, preserving animation offsets. lock protects layer edits and descendants. "
         "brand applies a reusable font/palette kit to tagged static brand_role fills and static text fonts; locked/animated styles are "
@@ -1646,7 +1647,7 @@ QJsonObject McpServer::ToolCall::tool_get_project()
                 o["narration"] = c.narration;
             if (c.isGenerated()) {
                 o[QStringLiteral("generator")] = c.generator.type;
-                if (c.generator.type == "graphics_overlay" || c.generator.type == "audio_waveform")
+                if (graphics::isScene(c.generator.type) || c.generator.type == "audio_waveform")
                     o["generator_data"] = c.generator.data;
                 const auto text = c.generator.params.find(QStringLiteral("text"));
                 if (text != c.generator.params.end())
@@ -1881,7 +1882,7 @@ QJsonObject McpServer::ToolCall::tool_graphics_overlay()
     size_t tracksBefore = 0; // set when a new event is inserted
     if (action != "create" && action != "import_template") {
         c = tl.findClip(eventId);
-        if (!c || c->generator.type != type)
+        if (!c || (wave ? c->generator.type != type : !graphics::isScene(c->generator.type)))
             return errorResult("Choose an event of the matching graphics generator type.");
         if (!wave)
             c->generator.data = graphics_workflow::prepare(c->generator.data);
@@ -2233,7 +2234,7 @@ QJsonObject McpServer::ToolCall::tool_graphics_overlay()
     if (!std::isfinite(at) || !std::isfinite(length) || at < 0 || length <= 0 || length > 3600)
         return errorResult("Use a nonnegative start and an event duration up to one hour.");
     if (action == "create" || action == "import_template") {
-        const auto* preset = findGeneratorPreset(wave ? "audio_waveform" : "graphics_blank");
+        const auto* preset = findGeneratorPreset(wave ? "audio_waveform" : graphics::sceneType(data) == "animation" ? "animation_blank" : "graphics_blank");
         auto insertion = *preset;
         insertion.length = us(length);
         tracksBefore = tl.tracks.size();
@@ -2245,6 +2246,8 @@ QJsonObject McpServer::ToolCall::tool_graphics_overlay()
             c->generator.params["rate"].value = rate;
     }
     c->generator.data = data;
+    if (!wave)
+        c->generator.type = graphics::sceneType(data); // (an overlay given a version 2 scene becomes an Animation clip)
     if (has("length"))
         c->length = ps.fps.snap(us(length));
     if (has("params")) {

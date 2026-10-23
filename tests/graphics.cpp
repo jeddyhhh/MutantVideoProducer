@@ -38,6 +38,14 @@ int main(int argc, char **argv) {
     auto s = graphics::scene(id);
     check(graphics::validateScene(s).isEmpty(), "valid preset " + id);
   }
+  // Animation is its own clip type: motion presets make one, the broadcast layouts stay Graphics Overlays.
+  {
+    const auto *anim = findGeneratorPreset("animation_characters"), *overlay = findGeneratorPreset("graphics_broadcast");
+    check(anim && anim->generator == "animation" && graphics::sceneType(makeGenerator(*anim).data) == "animation" && overlay
+              && overlay->generator == "graphics_overlay" && graphics::sceneType(makeGenerator(*overlay).data) == "graphics_overlay"
+              && findGeneratorPreset("animation_blank") && !findGeneratorPreset("graphics_motion_characters"),
+          "motion presets make Animation clips, broadcast presets Graphics Overlays");
+  }
   // The characters preset: valid, character A's mouth follows voice_a, and a colour variable recolours a part.
   {
     QJsonObject chars = graphics::scene("motion_characters");

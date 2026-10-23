@@ -204,6 +204,8 @@ QStringList presets() {
          motion::presets();
 }
 QJsonObject scene(const QString &preset) {
+  if (preset == "motion_blank")
+    return {{"version", 2}, {"layers", QJsonArray{}}};
   if (motion::presets().contains(preset))
     return motion::preset(preset);
   QJsonArray l;
@@ -705,7 +707,7 @@ bool saveCharacter(const QJsonObject &character, QString *path, QString *error) 
 bool trackBindingsStale(const Timeline &tl) {
   for (const Track &track : tl.tracks)
     for (const Clip &c : track.clips) {
-      if (c.generator.type != QLatin1String("graphics_overlay") || !c.generator.data.contains("audio"))
+      if (!isScene(c.generator.type) || !c.generator.data.contains("audio"))
         continue;
       const QJsonObject audio = c.generator.data["audio"].toObject();
       for (auto it = audio.begin(); it != audio.end(); ++it) {
@@ -725,7 +727,7 @@ bool followTrackBindings(Timeline &tl, const MediaMap &media) {
   bool changed = false;
   for (Track &track : tl.tracks)
     for (Clip &c : track.clips) {
-      if (c.generator.type != QLatin1String("graphics_overlay") || !c.generator.data.contains("audio"))
+      if (!isScene(c.generator.type) || !c.generator.data.contains("audio"))
         continue;
       QJsonObject audio = c.generator.data["audio"].toObject();
       bool touched = false;
@@ -857,10 +859,9 @@ void addGenerators(std::vector<GeneratorDef> &list) {
   d.name = "Graphics Overlay";
   d.category = "Graphics";
   d.description =
-      "Compose editable graphics and 2D animation with groups, curves, "
-      "keyframes, cameras, reusable objects and audio bindings. Open Compose "
-      "Graphics to edit layers; presets provide broadcast and animation "
-      "layouts.";
+      "Text and graphics over the picture: titles, lower thirds, cards and "
+      "frames, with keyframes. Open Compose Graphics to edit layers; presets "
+      "provide broadcast layouts.";
   d.params = {number("opacity", "Opacity", 0, 1, 1)};
   d.render = [](QImage &img, const Params &p, const GeneratorContext &c) {
     const QJsonObject &s = c.data && !c.data->isEmpty() ? *c.data : scene("broadcast");
@@ -908,6 +909,14 @@ void addGenerators(std::vector<GeneratorDef> &list) {
     motion::setDraft(was);
     return true;
   };
+  list.push_back(d);
+  d.id = "animation"; // (the same scene drawing, with the full animation tools in its composer)
+  d.name = "Animation";
+  d.category = "Animation";
+  d.description =
+      "2D animation: characters with moves, expressions and lip sync, sets and "
+      "props, groups, curves, cameras, particles, reusable objects and audio "
+      "bindings. Open Compose Animation to edit; presets provide examples.";
   list.push_back(d);
   d = {};
   d.id = "audio_waveform";
@@ -957,20 +966,28 @@ void addGenerators(std::vector<GeneratorDef> &list) {
 void addPresets(std::vector<GeneratorPreset> &list) {
   for (const auto &id : presets()) {
     GeneratorPreset p;
-    p.id = "graphics_" + id;
+    const bool animation = id.startsWith("motion_");
+    p.id = animation ? "animation_" + id.mid(7) : "graphics_" + id;
     p.name = id == "broadcast"     ? "Broadcast Frame"
              : id == "lower_third" ? "Broadcast Lower Third"
              : id == "info_card"   ? "Information Card"
              : id == "timeline"    ? "History Timeline"
-             : id.startsWith("motion_")
-                 ? QString("Animation: %1").arg(id.mid(7).replace('_', ' '))
-                 : "Blank Graphics Canvas";
-    p.category = "Graphics";
-    p.generator = "graphics_overlay";
+             : animation ? QString("Animation: %1").arg(id.mid(7).replace('_', ' '))
+                         : "Blank Graphics Canvas";
+    p.category = animation ? "Animation" : "Graphics";
+    p.generator = animation ? "animation" : "graphics_overlay";
     p.texts["preset"] = id;
     p.length = 10 * kUsPerSecond;
     list.push_back(p);
   }
+  GeneratorPreset blank;
+  blank.id = "animation_blank";
+  blank.name = "Blank Animation";
+  blank.category = "Animation";
+  blank.generator = "animation";
+  blank.texts["preset"] = "motion_blank";
+  blank.length = 10 * kUsPerSecond;
+  list.push_back(blank);
   GeneratorPreset p;
   p.id = "audio_waveform";
   p.name = "Audio Waveform Graphic";

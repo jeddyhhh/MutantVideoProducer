@@ -665,7 +665,7 @@ GeneratorSpec makeGenerator(const GeneratorPreset& preset)
         g.params[id].value = v;
     for (const auto& [id, v] : preset.texts)
         g.params[id].text = v;
-    if(g.type=="graphics_overlay"){auto it=preset.texts.find("preset");g.data=graphics::scene(it==preset.texts.end()?"broadcast":it->second);}
+    if(graphics::isScene(g.type)){auto it=preset.texts.find("preset");g.data=graphics::scene(it==preset.texts.end()?"broadcast":it->second);}
     return g;
 }
 

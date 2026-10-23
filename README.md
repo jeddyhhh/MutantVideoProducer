@@ -81,7 +81,7 @@ Snapping, alignment, distribution, layer locks and reusable brand kits help keep
 layouts consistent. Scenes remain editable and use the same renderer in preview
 and export. Learn more about [animation scenes](docs/animation-scenes.md).
 
-![The Graphics Overlay Composer with editable layers and animation controls](docs/screenshots/graphics-composer.png)
+![The Animation Composer with editable layers and animation controls](docs/screenshots/graphics-composer.png)
 
 Generate waveform graphics from real source audio: stereo bars, envelopes or lines,
 with playback progress and scrolling options.

@@ -360,7 +360,7 @@ int main(int argc, char **argv) {
   Project project;
   auto timeline = project.timeline();
   int eid = ops::insertGenerated(
-      timeline, *findGeneratorPreset("graphics_blank"), 0, -1, {});
+      timeline, *findGeneratorPreset("animation_blank"), 0, -1, {});
   timeline.findClip(eid)->generator.data = motion::preset("motion_route");
   project.applyEdit(timeline, "motion fixture");
   Compositor cpu;

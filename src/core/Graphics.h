@@ -9,6 +9,10 @@ struct Timeline;
 struct MediaItem;
 
 namespace graphics {
+// Clip types drawn from a scene: Graphics Overlay (text and graphics) and Animation (characters, sets, cameras).
+inline bool isScene(const QString &type) { return type == QLatin1String("graphics_overlay") || type == QLatin1String("animation"); }
+// Which of the two a scene belongs in: version 2 scenes (the animation engine) are Animation clips.
+inline QString sceneType(const QJsonObject &scene) { return scene.value("version").toInt() == 2 ? "animation" : "graphics_overlay"; }
 QStringList presets();
 QJsonObject scene(const QString &preset);
 QString validateScene(const QJsonObject &scene);

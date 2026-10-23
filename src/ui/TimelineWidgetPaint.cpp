@@ -186,7 +186,7 @@ void TimelineWidget::paintGenerated(QPainter& p, const Clip& c, const QRectF& bo
 std::vector<TimelineWidget::MoodMark> TimelineWidget::moodMarks(const Clip& c, const QRectF& body) const
 {
     std::vector<MoodMark> out;
-    if (c.generator.type != QLatin1String("graphics_overlay") || body.height() < 16)
+    if ((c.generator.type != QLatin1String("animation") && c.generator.type != QLatin1String("graphics_overlay")) || body.height() < 16)
         return out;
     const QJsonObject variables = c.generator.data.value(QStringLiteral("variables")).toObject();
     int row = 0;

@@ -372,12 +372,15 @@ public:
     QComboBox* layoutReference = nullptr;
     QComboBox* brandRole = nullptr;
     QWidget* propertyTabs = nullptr;
-    Designer(QWidget* parent, QJsonObject scene, Project* project = nullptr, double duration = 10, double eventStart = -1)
-        : QDialog(parent), data(std::move(scene)), project(project), duration(std::clamp(duration, .1, 3600.)), eventStart(eventStart)
+    bool animation = true; // (false: a Graphics Overlay, with only the text and graphics tools)
+    Designer(QWidget* parent, QJsonObject scene, Project* project = nullptr, double duration = 10, double eventStart = -1,
+             bool animation = true)
+        : QDialog(parent), data(std::move(scene)), project(project), duration(std::clamp(duration, .1, 3600.)), eventStart(eventStart),
+          animation(animation)
     {
         if (parent && parent->testAttribute(Qt::WA_DontShowOnScreen))
             setAttribute(Qt::WA_DontShowOnScreen);
-        setWindowTitle(tr("Graphics Overlay Composer"));
+        setWindowTitle(animation ? tr("Animation Composer") : tr("Graphics Overlay Composer"));
         setObjectName("graphicsComposer");
         resize(1380, 860);
         normalize();
@@ -386,8 +389,11 @@ public:
         auto* presets = new QComboBox;
         presets->setObjectName("graphicsPresets");
         presets->addItem(tr("Choose a starting layout…"), QString());
+        if (animation)
+            presets->addItem("motion_blank", "motion_blank");
         for (auto id : graphics::presets())
-            presets->addItem(id, id);
+            if (id.startsWith("motion_") == animation)
+                presets->addItem(id, id);
         top->addWidget(new QLabel(tr("Preset:")));
         top->addWidget(presets);
         auto* openTemplate = new QPushButton(tr("Open template…"));
@@ -410,15 +416,19 @@ public:
         list->setObjectName("graphicsLayers");
         left->addWidget(list, 1);
         auto* add = new QComboBox;
-        add->addItems({"text", "rect", "ellipse", "line", "image", "video", "noise", "flash", "path", "group", "chart", "particles", "repeater", "instance"});
+        add->addItems({"text", "rect", "ellipse", "line", "image"});
+        if (animation)
+            add->addItems({"video", "noise", "flash", "path", "group", "chart", "particles", "repeater", "instance"});
         left->addWidget(add);
         auto* addButton = new QPushButton(tr("Add layer"));
         addButton->setObjectName("graphicsAddLayer");
         left->addWidget(addButton);
         auto* groupButton = new QPushButton(tr("Group selected layers"));
+        groupButton->setObjectName("graphicsGroup");
         left->addWidget(groupButton);
         connect(groupButton, &QPushButton::clicked, this, [this] { groupSelection(); });
         auto* symbolButton = new QPushButton(tr("Make reusable object"));
+        symbolButton->setObjectName("graphicsMakeSymbol");
         left->addWidget(symbolButton);
         connect(symbolButton, &QPushButton::clicked, this, [this] { makeSymbol(); });
         auto* characterButton = new QPushButton(tr("Add character..."));
@@ -802,11 +812,20 @@ public:
         auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
         buttons->button(QDialogButtonBox::Ok)->setText(tr("Apply"));
         root->addWidget(buttons);
-        tabs->addTab(motionControls(), tr("Motion"));
+        tabs->setTabVisible(tabs->addTab(motionControls(), tr("Motion")), animation);
         tabs->addTab(animationControls(), tr("Keys"));
         tabs->addTab(sceneControls(), tr("Scene"));
         connect(tabs, &QTabWidget::currentChanged, this, [this](int) { syncJson(); });
         installPlayback(root);
+        if (!animation) { // (an overlay keeps to version 1 scenes: these tools make version 2 ones, an Animation's)
+            for (auto name : {"graphicsGroup", "graphicsMakeSymbol", "graphicsAddCharacter", "graphicsSaveCharacter", "graphicsAddProp",
+                              "graphicsAddSet", "graphicsLayerEffect", "graphicsFollowAudio", "graphicsMoves", "graphicsExpression",
+                              "graphicsBindAudio", "graphicsLook", "graphicsImportChart", "graphicsRecordKeys"})
+                if (auto* widget = findChild<QWidget*>(name))
+                    widget->hide();
+            while (targetBox->count() > 1) // (the camera and scene variables)
+                targetBox->removeItem(1);
+        }
         connect(buttons, &QDialogButtonBox::accepted, this, [this] {
             if (!applyLayerJson() || !applyPendingJson())
                 return;
@@ -1768,9 +1787,10 @@ public:
         mf->addRow(moveHint);
         layout->addWidget(movesBox);
         auto* moodBox = new QGroupBox(tr("Expression"));
+        moodBox->setObjectName("graphicsExpression");
         auto* moodForm = new QFormLayout(moodBox);
         auto* mood = new QComboBox;
-        mood->setObjectName("graphicsExpression");
+        mood->setObjectName("graphicsMood");
         mood->addItems(motion::expressions());
         moodForm->addRow(tr("From the playhead"), mood);
         auto* setMood = new QPushButton(tr("Set expression"));
@@ -2169,6 +2189,7 @@ public:
             syncJson();
         });
         auto* look = new QGroupBox(tr("Look"));
+        look->setObjectName("graphicsLook");
         auto* lf = new QFormLayout(look);
         sceneBlur = new QCheckBox(tr("Motion blur (fast moves and camera moves smear)"));
         sceneBlur->setObjectName("graphicsMotionBlur");
@@ -2222,6 +2243,7 @@ public:
         connect(sceneSpeaker, &QCheckBox::toggled, this, setLook);
         connect(sceneSpeakerZoom, qOverload<double>(&QDoubleSpinBox::valueChanged), this, setLook);
         auto* import = new QPushButton(tr("Import chart data…"));
+        import->setObjectName("graphicsImportChart");
         layout->addWidget(import);
         connect(import, &QPushButton::clicked, this, [this] { importData(); });
         auto* tabs = new QTabWidget;
@@ -2514,10 +2536,12 @@ QJsonObject pickAnimationAudio(QWidget* parent, Project* project, double duratio
 void composeGraphics(QWidget* parent, Project* project, int eventId)
 {
     const auto* clip = project->timeline().findClip(eventId);
-    if (!clip || clip->generator.type != "graphics_overlay")
+    if (!clip || !graphics::isScene(clip->generator.type))
         return;
-    Designer dialog(parent, clip->generator.data.isEmpty() ? graphics::scene("broadcast") : clip->generator.data, project,
-                    double(clip->length) / kUsPerSecond, double(clip->start) / kUsPerSecond);
+    const bool animation = clip->generator.type == "animation" || graphics::sceneType(clip->generator.data) == "animation";
+    Designer dialog(parent,
+                    clip->generator.data.isEmpty() ? graphics::scene(animation ? "motion_blank" : "broadcast") : clip->generator.data, project,
+                    double(clip->length) / kUsPerSecond, double(clip->start) / kUsPerSecond, animation);
     if (dialog.exec() != QDialog::Accepted)
         return;
     auto error = graphics::validateScene(dialog.data);
@@ -2528,7 +2552,8 @@ void composeGraphics(QWidget* parent, Project* project, int eventId)
     auto tl = project->timeline();
     if (auto* c = tl.findClip(eventId)) {
         c->generator.data = dialog.data;
-        project->applyEdit(tl, "Compose Graphics Overlay");
+        c->generator.type = graphics::sceneType(dialog.data); // (scene data edited into version 2 makes it an Animation)
+        project->applyEdit(tl, animation ? "Compose Animation" : "Compose Graphics Overlay");
     }
 }
 void chooseWaveformAudio(QWidget* parent, Project* project, int eventId)

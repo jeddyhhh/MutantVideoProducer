@@ -1,6 +1,7 @@
 #include "core/ProjectCollection.h"
 #include "core/ProjectFormat.h"
 #include "core/Effects.h"
+#include "core/Graphics.h"
 #include <QCryptographicHash>
 #include <QDateTime>
 #include <QHash>
@@ -105,7 +106,7 @@ void scene(QJsonObject& s, const Rewrite& rewrite, int sceneDepth=0) {
 void walk(QJsonObject& o, const Rewrite& rewrite, int depth=0) {
     if(depth>128) return; // project/animation parsers already impose smaller limits
     const QString type=o.value("type").toString();
-    if(type=="graphics_overlay" && o.value("data").isObject() && !o.value("data").toObject().isEmpty()) { auto data=o.value("data").toObject(); scene(data,rewrite); o["data"]=data; }
+    if(graphics::isScene(type) && o.value("data").isObject() && !o.value("data").toObject().isEmpty()) { auto data=o.value("data").toObject(); scene(data,rewrite); o["data"]=data; }
     slot(o,"source_path",Role::Asset,rewrite);
     if(o.value("params").isObject()) {
         auto params=o.value("params").toObject();

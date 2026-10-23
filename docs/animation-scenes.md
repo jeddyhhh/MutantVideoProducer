@@ -1,10 +1,10 @@
 # Animation scenes
 
-Mutant Video Producer's graphics composer now has a general 2D animation engine. Existing version-1 graphics retain their original renderer and appearance. New animation presets use version 2. Animation, audio analysis and reusable definitions are embedded in the project and use the same renderer in preview, CPU/GPU composition and export.
+Animation is its own clip type, with a general 2D animation engine; Graphics Overlay keeps to text and graphics. Overlays are version-1 scenes and keep their original renderer and appearance; animations are version 2. Projects from before keep working: an overlay holding a version-2 scene opens as an Animation. Animation, audio analysis and reusable definitions are embedded in the project and use the same renderer in preview, CPU/GPU composition and export.
 
 ## Using the composer
 
-Drag an **Animation** preset, or **Blank Graphics Canvas**, from the Generators / Graphics category onto the timeline. Select it and choose **Compose Graphics…** in Properties. The [animated short tutorial](tutorials/17-animated-short.md) builds a talking character from scratch.
+Choose **Insert > Animation**, or drag a preset from the Generators / Animation category (**Blank Animation** or an example) onto the timeline. Select it and choose **Compose Animation…** in Properties. The [animated short tutorial](tutorials/17-animated-short.md) builds a talking character from scratch.
 
 - **Layout** edits text, colour and geometry. Select several layers to group them. Parent groups move, rotate and scale their children; their anchors can serve as pivots for articulated objects. **Make reusable object** turns a layer/group into a definition with editable instances.
 - **Motion** edits parent groups, path following, scale/anchors, path reveal, typography, masks, gradients, shadows, glow, trails, motion blur, particles/repeaters, charts and the scene camera. Add a Path, enable **Edit curve points on canvas**, then drag endpoints/control handles. The path buttons append, curve and close segments.

@@ -122,6 +122,7 @@
 #include <QUndoStack>
 #include <QUrl>
 #include <QVBoxLayout>
+#include <QWidgetAction>
 #include <atomic>
 #include <thread>
 
@@ -581,19 +582,22 @@ void MainWindow::createActions()
     insert->addAction(act(tr("&Solid Color"), QKeySequence(), [insertGenerated] { insertGenerated("solid_black"); }));
     insert->addSeparator();
     insert->addAction(act(tr("Graphics Overlay"), QKeySequence(), [insertGenerated] { insertGenerated("graphics_broadcast"); }));
+    insert->addAction(act(tr("Animation"), QKeySequence(), [insertGenerated] { insertGenerated("animation_blank"); }));
     insert->addAction(act(tr("Audio Waveform Graphic"), QKeySequence(), [insertGenerated] { insertGenerated("audio_waveform"); }));
 
-    // Tools
+    // Tools, grouped under headings (labels, not actions)
     QMenu* tools = menuBar()->addMenu(tr("&Tools"));
-#ifdef _WIN32
-    auto* aiAction = act(tr("AI Components..."), QKeySequence(), [this] { aiComponents(); });
-    aiAction->setObjectName(QStringLiteral("aiComponents"));
-    tools->addAction(aiAction);
-#endif
-    tools->addAction(act(tr("Detect &Beats (Markers)..."), QKeySequence(QStringLiteral("Ctrl+B")), [this] {
-        if (editorActive())
-            detectBeats();
-    }));
+    auto heading = [](QMenu* menu, const QString& text) {
+        auto* label = new QLabel(text.toUpper());
+        label->setObjectName(QStringLiteral("menuHeading"));
+        label->setStyleSheet(QStringLiteral("QLabel { color: %1; font-size: 8pt; font-weight: bold; padding: 7px 12px 3px 12px; }")
+                                 .arg(theme::c().dim.name()));
+        auto* action = new QWidgetAction(menu);
+        action->setDefaultWidget(label);
+        action->setEnabled(false); // (skipped by the mouse and the keyboard)
+        menu->addAction(action);
+    };
+    heading(tools, tr("Editing"));
     tools->addAction(act(tr("&Split Selected Events at Markers"), QKeySequence(), [this] {
         if (editorActive())
             splitAtMarkers();
@@ -601,10 +605,6 @@ void MainWindow::createActions()
     tools->addAction(act(tr("Split Selected Events at Scene &Changes..."), QKeySequence(), [this] {
         if (editorActive())
             splitAtSceneChanges();
-    }));
-    tools->addAction(act(tr("Auto Re&frame for Vertical..."), QKeySequence(), [this] {
-        if (editorActive())
-            autoReframe();
     }));
     tools->addAction(act(tr("&Remove Silences..."), QKeySequence(), [this] {
         if (editorActive())
@@ -614,18 +614,22 @@ void MainWindow::createActions()
         if (editorActive())
             editByTranscript();
     }));
+    tools->addAction(act(tr("Auto Re&frame for Vertical..."), QKeySequence(), [this] {
+        if (editorActive())
+            autoReframe();
+    }));
+    tools->addAction(act(tr("Director's Dice..."),QKeySequence(),[this]{if(editorActive())directorsDice();}));
+    heading(tools, tr("Music and beats"));
+    tools->addAction(act(tr("Detect &Beats (Markers)..."), QKeySequence(QStringLiteral("Ctrl+B")), [this] {
+        if (editorActive())
+            detectBeats();
+    }));
     tools->addAction(act(tr("Make Beat &Montage..."), QKeySequence(), [this] {
         if (editorActive())
             beatMontage();
     }));
+    heading(tools, tr("Voices and captions"));
     tools->addAction(act(tr("Narration Studio..."),QKeySequence(),[this]{if(editorActive())narrationStudio();}));
-    QMenu* youtube = tools->addMenu(tr("&YouTube"));
-    youtube->addAction(act(tr("&Chapters for the Description..."), QKeySequence(), [this] { if (editorActive()) youtubeChapters(); }));
-    youtube->addAction(act(tr("&Thumbnail from the Cursor Frame..."), QKeySequence(), [this] { if (editorActive()) youtubeThumbnail(); }));
-    tools->addAction(act(tr("Director's Dice..."),QKeySequence(),[this]{if(editorActive())directorsDice();}));
-    tools->addAction(act(tr("Create Compound Sequence..."),QKeySequence("Ctrl+Shift+G"),[this]{if(editorActive())createCompound();}));
-    tools->addAction(act(tr("Edit Compound Sequence..."),QKeySequence(),[this]{if(editorActive())editCompound();}));
-    tools->addAction(act(tr("Unpack Compound Sequence"),QKeySequence(),[this]{if(editorActive())unpackCompound();}));
     QMenu* captionsMenu = tools->addMenu(tr("&Captions"));
     captionsMenu->addAction(act(tr("&Auto Captions (Speech to Text)..."), QKeySequence(QStringLiteral("Ctrl+Shift+T")), [this] {
         if (editorActive())
@@ -639,12 +643,20 @@ void MainWindow::createActions()
     auto* dialogueAction = act(tr("Generate &Dialogue from a Script..."), QKeySequence(), [this] { if (editorActive()) generateDialogue(); });
     dialogueAction->setObjectName(QStringLiteral("generateDialogue"));
     captionsMenu->addAction(dialogueAction);
-    tools->addSeparator();
+    heading(tools, tr("Sequences"));
+    tools->addAction(act(tr("Create Compound Sequence..."),QKeySequence("Ctrl+Shift+G"),[this]{if(editorActive())createCompound();}));
+    tools->addAction(act(tr("Edit Compound Sequence..."),QKeySequence(),[this]{if(editorActive())editCompound();}));
+    tools->addAction(act(tr("Unpack Compound Sequence"),QKeySequence(),[this]{if(editorActive())unpackCompound();}));
+    heading(tools, tr("Finishing and publishing"));
     auto* finishingAction = act(tr("Audio &Finishing…"), QKeySequence(), [this] {
         if (editorActive()) { stopPlayback(false); showAudioFinishing(this, m_project); }
     });
     finishingAction->setObjectName(QStringLiteral("audioFinishing"));
     tools->addAction(finishingAction);
+    QMenu* youtube = tools->addMenu(tr("&YouTube"));
+    youtube->addAction(act(tr("&Chapters for the Description..."), QKeySequence(), [this] { if (editorActive()) youtubeChapters(); }));
+    youtube->addAction(act(tr("&Thumbnail from the Cursor Frame..."), QKeySequence(), [this] { if (editorActive()) youtubeThumbnail(); }));
+    heading(tools, tr("Proxies"));
     tools->addAction(act(tr("Create &Proxies for Heavy Files"), QKeySequence(), [this] {
         QList<int> all;
         for (const auto& [id, m] : m_project->media())
@@ -678,6 +690,12 @@ void MainWindow::createActions()
         m_bin->refreshIcons();
         refreshPreview();
     }));
+#ifdef _WIN32
+    heading(tools, tr("AI"));
+    auto* aiAction = act(tr("AI Components..."), QKeySequence(), [this] { aiComponents(); });
+    aiAction->setObjectName(QStringLiteral("aiComponents"));
+    tools->addAction(aiAction);
+#endif
 
     // Options
     QMenu* options = menuBar()->addMenu(tr("&Options"));

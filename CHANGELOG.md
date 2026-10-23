@@ -6,6 +6,12 @@ What changed in each version of Mutant Video Producer. The newest is first.
 
 ### Added
 
+- **Animation**, a clip type of its own (**Insert > Animation**, the Generators' Animation category): characters, sets,
+  props, moves, cameras and the rest of the animation engine, edited in **Compose Animation...**. Graphics Overlay keeps
+  to text and graphics, and its composer shows only those tools. Overlays holding an animation in earlier projects open
+  as Animation clips. AI control: `graphics_overlay` works on both; a motion preset or version 2 scene makes an Animation.
+- The Tools menu is grouped under headings: Editing, Music and beats, Voices and captions, Sequences, Finishing and
+  publishing, Proxies and AI.
 - Compose Graphics, **Add prop...**: a library of props (phone, megaphone, shovel, lunchbox, mitten, clapperboard, mug,
   sign) held in a character's hand, moving with the arm. AI control: `graphics_overlay` `props`, `add_prop`.
 - Moves: walk in, walk out, float, fall, get up, sit and stand.

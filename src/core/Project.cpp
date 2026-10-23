@@ -843,6 +843,8 @@ Clip clipFromJson(const QJsonObject& o)
     c.generator = generatorFromJson(o[QStringLiteral("generator")].toObject());
     if (c.generator.isEmpty())
         c.generator = {}; // settings without a type are never saved
+    if (c.generator.type == QLatin1String("graphics_overlay") && c.generator.data.value(QStringLiteral("version")).toInt() == 2)
+        c.generator.type = QStringLiteral("animation"); // (animated scenes from before Animation was its own clip type)
     c.panCrop = paramsFromJson(o[QStringLiteral("panCrop")].toObject());
     c.speed = std::clamp(o[QStringLiteral("speed")].toDouble(1.0), 0.01, 100.0);
     c.reverse = o[QStringLiteral("reverse")].toBool(false);

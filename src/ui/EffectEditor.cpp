@@ -2,6 +2,7 @@
 
 #include "ui/Theme.h"
 #include "ui/GraphicsEditor.h"
+#include "core/Graphics.h"
 
 #include "core/FrameConverter.h"
 #include "core/PanCrop.h"
@@ -814,7 +815,7 @@ void EffectEditor::rebuildParams()
 
     if(isGenerator())if(const Clip* c=m_project->timeline().findClip(m_target.id)) {
         const int id=c->id;
-        if(c->generator.type=="graphics_overlay") {auto* button=new QPushButton(tr("Compose Graphics…"));button->setObjectName("composeGraphicsButton");form->addRow(button);connect(button,&QPushButton::clicked,this,[this,id]{composeGraphics(this,m_project,id);});}
+        if(graphics::isScene(c->generator.type)) {auto* button=new QPushButton((c->generator.type=="animation"||graphics::sceneType(c->generator.data)=="animation")?tr("Compose Animation…"):tr("Compose Graphics…"));button->setObjectName("composeGraphicsButton");form->addRow(button);connect(button,&QPushButton::clicked,this,[this,id]{composeGraphics(this,m_project,id);});}
         if(c->generator.type=="audio_waveform") {auto* button=new QPushButton(tr("Choose Audio Source / Rebuild Waveform…"));button->setObjectName("waveformSourceButton");form->addRow(button);connect(button,&QPushButton::clicked,this,[this,id]{chooseWaveformAudio(this,m_project,id);});}
     }
 

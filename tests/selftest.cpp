@@ -915,7 +915,7 @@ int cmdGenerators(const QString& outDir)
 
     auto fixture = [](const GeneratorPreset& preset) {
         auto spec = makeGenerator(preset);
-        if (spec.type == QLatin1String("audio_waveform") || preset.id == QLatin1String("graphics_motion_audio")) {
+        if (spec.type == QLatin1String("audio_waveform") || preset.id == QLatin1String("animation_audio")) {
             QJsonArray peaks;
             for (int i=0;i<64;++i) peaks.append(.2+.7*std::abs(std::sin(i*.3)));
             QJsonObject envelope{{"version",1},{"duration",10},{"left",peaks},{"right",peaks}};
@@ -941,7 +941,7 @@ int cmdGenerators(const QString& outDir)
         QPainter(&tile).drawImage(0, 0, mid);
         sheet.push_back(tile);
         const double cov = coverage(mid);
-        const bool blank = preset.id == QLatin1String("graphics_blank");
+        const bool blank = preset.id == QLatin1String("graphics_blank") || preset.id == QLatin1String("animation_blank");
         check(!mid.isNull() && (blank ? cov == 0 : cov > 0.002), QStringLiteral("generator preset %1  (%2% of frame drawn, %3 ms at 720p)")
                                .arg(preset.name)
                                .arg(cov * 100, 0, 'f', 1)

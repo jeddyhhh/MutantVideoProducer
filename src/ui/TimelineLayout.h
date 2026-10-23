@@ -76,7 +76,7 @@ inline ClipKind clipKind(const Clip& c)
     const QString& g = c.generator.type;
     if (g == QLatin1String("text") || g == QLatin1String("kinetic_text"))
         return ClipKind::Text;
-    if (g == QLatin1String("graphics_overlay") || g == QLatin1String("audio_waveform"))
+    if (g == QLatin1String("graphics_overlay") || g == QLatin1String("animation") || g == QLatin1String("audio_waveform"))
         return ClipKind::Graphics;
     return ClipKind::Plain;
 }

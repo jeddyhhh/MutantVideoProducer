@@ -23,7 +23,8 @@ can be [keyframed](effects.md#keyframes).
 
 The **Graphics** category contains **Broadcast Frame**, **Broadcast Lower Third**, **Information Card**,
 **History Timeline** and **Blank Graphics Canvas**. These are editable compositions, not flattened images.
-Drag a preset onto the timeline, select it, and click **Compose Graphics…** in Properties.
+Drag a preset onto the timeline, select it, and click **Compose Graphics…** in Properties. Characters, sets,
+cameras and the rest of the animation tools are in the separate [Animation](animation-scenes.md) clip type.
 
 The composer has a preview with safe-area guides and a layer list ordered bottom to top. Add text,
 rectangles, ellipses, lines or an image. Drag a layer to move it; drag its corner to resize it. Edit text,
