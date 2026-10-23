@@ -783,6 +783,11 @@ QString DeliverView::baseName() const
 QString DeliverView::settingsKey(const QString& what) const
 {
     const QString file = m_project->filePath();
+    if (file.isEmpty() && m_untitledSession.lock() != m_project->session()) {
+        // (choices kept for an earlier unsaved project: this one starts without them)
+        QSettings().remove(QStringLiteral("deliver/untitled"));
+        m_untitledSession = m_project->session();
+    }
     const QString id = file.isEmpty() ? QStringLiteral("untitled")
                                       : QString::fromLatin1(QCryptographicHash::hash(QDir::cleanPath(file).toLower().toUtf8(),
                                                                                      QCryptographicHash::Md5).toHex());
@@ -798,12 +803,16 @@ void DeliverView::showEvent(QShowEvent* e)
 void DeliverView::refresh()
 {
     QSettings settings;
-    // What was chosen before the project had a file (kept as "untitled") goes with it when it's first saved.
-    if (!m_project->filePath().isEmpty() && !settings.contains(settingsKey(QStringLiteral("outputs")))
-        && settings.contains(QStringLiteral("deliver/untitled/outputs")))
-        for (const char* key : {"outputs", "off", "folder", "title", "description", "tags", "target"})
-            if (settings.contains(QStringLiteral("deliver/untitled/") + QLatin1String(key)))
-                settings.setValue(settingsKey(QLatin1String(key)), settings.value(QStringLiteral("deliver/untitled/") + QLatin1String(key)));
+    // What was chosen before the project had a file (kept as "untitled") goes with it when it's first saved, and only
+    // with it: the choices are used up, and they belong to this project only if they were made while it was open.
+    if (!m_project->filePath().isEmpty() && m_untitledSession.lock() == m_project->session()) {
+        if (!settings.contains(settingsKey(QStringLiteral("outputs"))) && settings.contains(QStringLiteral("deliver/untitled/outputs")))
+            for (const char* key : {"outputs", "off", "folder", "title", "description", "tags", "target"})
+                if (settings.contains(QStringLiteral("deliver/untitled/") + QLatin1String(key)))
+                    settings.setValue(settingsKey(QLatin1String(key)), settings.value(QStringLiteral("deliver/untitled/") + QLatin1String(key)));
+        settings.remove(QStringLiteral("deliver/untitled"));
+        m_untitledSession.reset();
+    }
     m_shownPath = m_project->filePath();
     QString folder = settings.value(settingsKey(QStringLiteral("folder"))).toString();
     if (folder.isEmpty())

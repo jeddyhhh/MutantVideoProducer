@@ -18,7 +18,7 @@ Presets: curved route with reusable scene objects, animated typography, data cha
 ## Characters
 
 **Add character...** (under the layer list) puts a ready-made cut-out character into the scene: kids (with a pompom
-hat, long hair, ear flaps or a hood), a man with a cap and beard, a teacher, a woman and a bear. Give them a name, such
+hat, long hair, ear flaps or a hood), a man with a cap and beard, a teacher, a woman, a bear and Terry the towel. Give them a name, such
 as `Gus`:
 
 - Their layers' ids start with their name (`gus`, `gus_head`, `gus_mouth_O`...), so several can share a scene; a

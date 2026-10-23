@@ -349,6 +349,8 @@ public:
     std::shared_ptr<const ProjectSnapshot> snapshot() const;
 
     const QString& filePath() const { return m_filePath; }
+    // Changes when the project is cleared or another is loaded (so state kept for "this project" can tell).
+    const std::shared_ptr<const int>& session() const { return m_session; }
     bool isModified() const { return !m_undo.isClean() || m_dirtyExtra; }
     void clear(const ProjectSettings& settings = {}); // an empty, unmodified project of that size and rate
     bool save(const QString& path, QString* error);

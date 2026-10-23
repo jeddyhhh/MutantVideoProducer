@@ -1456,6 +1456,22 @@ int MainWindow::runEditorTest(QStringList& log)
                   && QFileInfo(m_deliver->outputPath(*first)).fileName().startsWith(QStringLiteral("project - ")),
               QStringLiteral("Deliver outputs chosen while untitled carry over on the first save (%1)")
                   .arg(first ? QFileInfo(m_deliver->outputPath(*first)).fileName() : QStringLiteral("none")));
+        // ...and only to it: an unsaved project's choices left over (from a project never saved) don't go to the next.
+        const QString key = QStringLiteral("deliver/")
+                            + QString::fromLatin1(QCryptographicHash::hash(QDir::cleanPath(projectPath).toLower().toUtf8(), QCryptographicHash::Md5).toHex());
+        const bool usedUp = !QSettings().contains(QStringLiteral("deliver/untitled/outputs"));
+        QSettings().setValue(QStringLiteral("deliver/untitled/outputs"), untitledOutputs);
+        QSettings().setValue(QStringLiteral("deliver/untitled/title"), QStringLiteral("Somebody else's video"));
+        const QVariant outputs = QSettings().value(key + QStringLiteral("/outputs"));
+        QSettings().remove(key + QStringLiteral("/outputs"));
+        QSettings().remove(key + QStringLiteral("/title"));
+        m_deliver->refresh();
+        const auto* title = m_deliver->findChild<QLineEdit*>(QStringLiteral("deliverTitle"));
+        check(usedUp && title && title->text() != QStringLiteral("Somebody else's video"),
+              QStringLiteral("a left-over unsaved project's Deliver title doesn't go to a saved project (%1)").arg(title ? title->text() : QString()));
+        QSettings().remove(QStringLiteral("deliver/untitled"));
+        QSettings().setValue(key + QStringLiteral("/outputs"), outputs);
+        m_deliver->refresh();
     }
     m_timeline->addMarker(kUsPerSecond, QStringLiteral("autosaved"));
     autosave();

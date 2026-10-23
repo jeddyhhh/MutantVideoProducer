@@ -8,6 +8,7 @@ KW, KH = 0.14, 0.38
 AW, AH = 0.15, 0.58
 RW, RH = 0.30, 0.42
 BW, BH = 0.26, 0.56
+TW, TH = 0.15, 0.44
 OL, OW = "#1d1a1a", 0.0016
 rng = random.Random(12)
 
@@ -572,6 +573,47 @@ def bear(cid, c, x, y_home, motion, look):
     return L
 
 
+def towel(cid, c, x, y_home, motion, look):
+    """Terry: a striped bath towel with stubby arms and legs, a hanging loop on top, sleepy half-shut eyes and a big lazy mouth."""
+    global rng
+    saved, rng = rng, random.Random(7)  # (his own blinks: the characters made before him keep theirs)
+    b = f"{cid}_b"
+    cloth, stripe = c["towel"], c["stripe"]
+    L = [{**G(cid, None, 0, 0, TW, TH, anchor_y=1.0), **motion.root(y_home)},
+         E(f"{cid}_shadow", 0.08, 0.95, 0.84, 0.06, "#000000", opacity=0.16, parent=cid),
+         G(b, cid, 0, talk(cid, 0, -0.04), 1, 1, anchor_y=1.0, rotation=talk(cid, 0, 3))]
+    add = lambda layer: L.append({**layer, "parent": layer.get("parent", b)})  # noqa
+    ex_l, ex_r = motion.arms(150, -150)
+    for side, lx in (("L", 0.24), ("R", 0.6)):  # stubby legs with little feet
+        add(P(f"{cid}_leg{side}", [["M", lx, 0.84], ["L", lx + 0.14, 0.84], ["L", lx + 0.15, 0.95], ["Q", lx + 0.07, 0.975, lx - 0.01, 0.95], ["Z"]],
+              cloth, **stroke()))
+        add(E(f"{cid}_foot{side}", lx - 0.03, 0.93, 0.21, 0.06, shade(cloth, 0.15), **stroke()))
+    L += arm(cid, "L", b, -0.08, 0.38, 0.19, 0.32, cloth, shade(cloth, 0.08), ex_l, talk(cid, 14, 28))
+    L += arm(cid, "R", b, 0.89, 0.38, 0.19, 0.32, cloth, shade(cloth, 0.08), ex_r, talk(cid, -14, -28))
+    add(P(f"{cid}_loop", [["M", 0.44, 0.06], ["C", 0.42, -0.04, 0.58, -0.04, 0.56, 0.06]], "#00000000", stroke=shade(cloth, 0.3), stroke_width=0.0035))
+    # the towel: a soft rectangle, its top folded over, the bottom edge a little wavy
+    add(P(f"{cid}_body", [["M", 0.16, 0.05], ["Q", 0.5, 0.02, 0.84, 0.05], ["Q", 0.9, 0.06, 0.9, 0.12], ["L", 0.91, 0.84], ["Q", 0.9, 0.9, 0.84, 0.9],
+                          ["Q", 0.67, 0.92, 0.5, 0.895], ["Q", 0.33, 0.87, 0.16, 0.9], ["Q", 0.1, 0.9, 0.09, 0.84], ["L", 0.1, 0.12], ["Q", 0.1, 0.06, 0.16, 0.05],
+                          ["Z"]], cloth, **stroke()))
+    add(P(f"{cid}_fold", [["M", 0.12, 0.13], ["Q", 0.5, 0.17, 0.88, 0.13], ["L", 0.88, 0.07], ["Q", 0.5, 0.03, 0.12, 0.07], ["Z"]], shade(cloth, 0.12),
+          **stroke()))
+    add(P(f"{cid}_bodyshade", [["M", 0.74, 0.16], ["Q", 0.86, 0.2, 0.87, 0.4], ["L", 0.88, 0.84], ["Q", 0.86, 0.88, 0.76, 0.885], ["Q", 0.8, 0.6, 0.74, 0.16],
+                               ["Z"]], shade(cloth, 0.18), opacity=0.6))
+    for i, y in enumerate((0.66, 0.735)):  # the stripes, and a hem
+        add(P(f"{cid}_stripe{i}", [["M", 0.095, y], ["Q", 0.5, y + 0.015, 0.905, y], ["L", 0.905, y + 0.035], ["Q", 0.5, y + 0.05, 0.095, y + 0.035], ["Z"]],
+              stripe))
+    add(P(f"{cid}_hem", [["M", 0.12, 0.84], ["Q", 0.33, 0.815, 0.5, 0.845], ["Q", 0.67, 0.865, 0.88, 0.84]], "#00000000", stroke=shade(cloth, 0.3),
+          stroke_width=0.0014))
+    add(P(f"{cid}_fluff", [["M", 0.2, 0.3], ["L", 0.22, 0.31], ["M", 0.7, 0.55], ["L", 0.72, 0.54], ["M", 0.3, 0.58], ["L", 0.315, 0.592], ["M", 0.78, 0.28],
+                           ["L", 0.76, 0.29]], "#00000000", stroke=shade(cloth, -0.35), stroke_width=0.0012))
+    # a sleepy face: heavy lids (half shut), a little pink in the eyes
+    L += eyes(cid, b, 0.19, 0.2, 0.62, 0.17, look, white="#fff0f3", lids=shade(cloth, 0.06))
+    L += expressions(cid, b, 0.19, 0.2, 0.62, 0.17, cloth)
+    L += mouth(cid, b, 0.37, 0.43, 0.26, 0.1, lips=shade(cloth, 0.6), big=1.15)
+    rng = saved
+    return L
+
+
 def clean_prop(keys):
     keys = clean(keys)
     return keys[0][1] if len(keys) == 1 else {"keyframes": keys}
@@ -603,6 +645,8 @@ def prop(kind, cid, show=1):
 def person(cid, c, x, ground, motion, look, **kw):
     if c["kind"] == "bear":
         return bear(cid, c, x, ground - BH, motion, look)
+    if c["kind"] == "towel":
+        return towel(cid, c, x, ground - TH, motion, look)
     if c["kind"] == "kid":
         return kid(cid, c, x, ground - KH, motion, look, **kw)
     if c["kind"] == "adult":
@@ -611,4 +655,4 @@ def person(cid, c, x, ground, motion, look, **kw):
 
 
 def width_of(kind):
-    return {"kid": KW, "adult": AW, "robot": RW, "bear": BW}[kind]
+    return {"kid": KW, "adult": AW, "robot": RW, "bear": BW, "towel": TW}[kind]

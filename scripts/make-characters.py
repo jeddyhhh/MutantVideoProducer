@@ -8,7 +8,8 @@ import character_rig as r
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUT = os.path.join(ROOT, "data", "characters")
-COLOURS = ("hat", "band", "pom", "jacket", "mitten", "skin", "hair", "fringe", "suit", "shirt", "tie", "pants", "cap", "fur", "belly")
+COLOURS = ("hat", "band", "pom", "jacket", "mitten", "skin", "hair", "fringe", "suit", "shirt", "tie", "pants", "cap", "fur", "belly", "towel",
+           "stripe")
 SHADED = {"head", "jacket", "hat", "torso", "body", "belly", "head_face"}
 
 LIBRARY = {
@@ -27,6 +28,7 @@ LIBRARY = {
     "woman": ("Woman", dict(kind="adult", suit="#c9184a", shirt="#ffe5ec", tie=None, hair="#e9c46a", style="bouffant", skin="#f1c27d",
                             pants="#590d22", lipstick=True)),
     "bear": ("Bear", dict(kind="bear", fur="#7f4f24", belly="#c89f72")),
+    "towel": ("Terry the towel", dict(kind="towel", towel="#4ea8de", stripe="#ffffff")),
 }
 
 
@@ -71,7 +73,7 @@ def rename_mood(value, to):
 
 def character(name, c):
     cid = "Voice"  # (its binding is then "voice"; the ids lose the prefix below)
-    layers = build(cid, c, 0.0, r.KH if c["kind"] == "kid" else r.AH if c["kind"] == "adult" else r.BH)
+    layers = build(cid, c, 0.0, r.KH if c["kind"] == "kid" else r.AH if c["kind"] == "adult" else r.TH if c["kind"] == "towel" else r.BH)
     variables = colour_variables(layers, cid, c)
     variables["mood"] = "neutral"  # (expressions: neutral, angry, sad, surprised, smug)
     layers = rename_mood(layers, "mood")

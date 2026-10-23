@@ -74,7 +74,17 @@ int main(int argc, char **argv) {
   {
     const auto library = graphics::characterLibrary();
     const auto kid = std::find_if(library.begin(), library.end(), [](const graphics::CharacterFile &f) { return f.path.endsWith("kid.json"); });
-    check(library.size() >= 8 && kid != library.end() && kid->builtIn, QStringLiteral("the character library comes with the program (%1)").arg(library.size()));
+    check(library.size() >= 9 && kid != library.end() && kid->builtIn, QStringLiteral("the character library comes with the program (%1)").arg(library.size()));
+    const auto towel = std::find_if(library.begin(), library.end(), [](const graphics::CharacterFile &f) { return f.path.endsWith("towel.json"); });
+    if (towel != library.end()) {
+      QString error;
+      const QJsonObject terry = motion::withCharacter(QJsonObject{{"version", 2}, {"layers", QJsonArray{}}}, towel->character, "Terry", .4, .9, &error);
+      check(error.isEmpty() && motion::validate(terry).isEmpty() && terry["variables"].toObject().contains("terry_towel")
+                && terry["variables"].toObject().contains("terry_mood"),
+            QStringLiteral("Terry the towel joins a scene with his colours and expressions %1").arg(error));
+    } else {
+      check(false, "Terry the towel is in the character library");
+    }
     if (kid != library.end()) {
       QString error;
       QJsonObject scene{{"version", 2}, {"layers", QJsonArray{QJsonObject{{"type", "rect"}, {"id", "bg"}, {"x", 0}, {"y", 0}, {"width", 1}, {"height", 1},
