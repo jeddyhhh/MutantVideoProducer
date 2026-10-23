@@ -2,9 +2,13 @@
 #include <QImage>
 #include <QHash>
 #include <QJsonObject>
+#include <QOpenGLPaintDevice>
 #include <QPainterPath>
 #include <QVector>
 class QPainter;
+struct EffectDef;
+class Params;
+struct RenderContext;
 
 namespace motion {
 // Scene v2: normalized coordinates, event-local seconds, deterministic seeking.
@@ -42,6 +46,43 @@ QJsonObject withSet(const QJsonObject &scene, const QJsonObject &set, QString *e
 QJsonObject characterFrom(const QJsonObject &scene, const QString &groupId, const QString &title, QString *error);
 // Preview quality for this thread's renders (fewer motion blur moments, faster video frames). Returns the previous one.
 bool setDraft(bool draft);
+// The GPU's help while a scene paints through OpenGL: the scene's own pictures (a motion blur moment, a layer to soften
+// or give effects, a group seen through as one) kept as framebuffers instead of QImages. The GPU compositor sets it
+// for its thread around a generator's paint; without it (or painting into a QImage) the pictures are made on the CPU.
+class GpuPictures {
+public:
+  struct Picture {
+    unsigned fbo = 0, tex = 0;
+    QSize size;
+    int handle = -1;
+    explicit operator bool() const { return handle >= 0; }
+  };
+  virtual ~GpuPictures() = default;
+  // A cleared picture (with a stencil: QPainter clips with it); precise: float, for sums.
+  virtual Picture acquire(QSize size, bool precise) = 0;
+  virtual void release(const Picture &picture) = 0;
+  // The part with anything in it (empty: nothing drawn), found in blocks of `block` pixels (read back small).
+  virtual QRect drawnBounds(const Picture &picture, int block) = 0;
+  // A new picture of that part of it.
+  virtual Picture crop(const Picture &picture, const QRect &region) = 0;
+  // A soft blur of `radius` pixels (as on the CPU).
+  virtual void blur(Picture &picture, double radius) = 0;
+  // One of a layer's own effects.
+  virtual void effect(Picture &picture, const EffectDef &def, const Params &params, const RenderContext &context) = 0;
+};
+void setGpuPictures(GpuPictures *pictures);
+// A framebuffer as a paint device (row 0 at the top) that binds its framebuffer again whenever its painter goes on after
+// another painted: a scene paints its pictures in between.
+class FramebufferPaintDevice : public QOpenGLPaintDevice {
+public:
+  FramebufferPaintDevice(QSize size, unsigned fbo);
+  void ensureActiveTarget() override;
+
+private:
+  unsigned m_fbo;
+};
+// Pictures this thread made on the CPU while painting through OpenGL with GpuPictures set (0: all on the GPU).
+int cpuPictures();
 QStringList moves();
 // A character's expression from `time` on (their <id>_mood variable, held): neutral, angry, sad, surprised, smug.
 QStringList expressions();

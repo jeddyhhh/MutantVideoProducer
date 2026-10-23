@@ -4,8 +4,17 @@ What changed in each version of Mutant Video Producer. The newest is first.
 
 ## Unreleased
 
+### Changed
+
+- Animation scenes on the GPU: motion blur, soft layers (blur and depth of field), a layer's own effects and groups seen
+  through as one no longer draw CPU pictures when rendering with GPU compositing, and the preview paints scenes on the
+  GPU instead of drawing ahead on the CPU. An episode scene with motion blur: 235 ms a frame to 68 ms (export), 80 ms to
+  35 ms (preview).
+
 ### Added
 
+- Character library: **Terry the towel**, a striped bath towel with sleepy eyes (his towel and stripe colours are
+  settings).
 - **Animation**, a clip type of its own (**Insert > Animation**, the Generators' Animation category): characters, sets,
   props, moves, cameras and the rest of the animation engine, edited in **Compose Animation...**. Graphics Overlay keeps
   to text and graphics, and its composer shows only those tools. Overlays holding an animation in earlier projects open
@@ -72,6 +81,8 @@ What changed in each version of Mutant Video Producer. The newest is first.
 
 ### Fixed
 
+- Deliver showed another project's title, description and tags: the choices made while a project was unsaved went to
+  every project saved after it. They now go only to that project, on its first save.
 - The speaker camera cut to the wide shot for a moment at a short pause in a line, or between two lines; it now
   holds the close-up when someone speaks again within 1.2 seconds (the speaker camera's `hold`).
 - The Limiter let loud high-frequency material (clicks, cymbals, noise) swing past its ceiling between samples (a -3 dB

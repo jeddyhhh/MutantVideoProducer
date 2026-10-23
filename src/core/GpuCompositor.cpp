@@ -10,6 +10,7 @@
 #include "core/Compositor.h"
 #include "core/FrameConverter.h"
 #include "core/Hardware.h"
+#include "core/MotionGraphics.h"
 #include "core/PanCrop.h"
 #include "core/EffectMask.h"
 #include "core/Proxy.h"
@@ -199,6 +200,26 @@ void main() {
         ws += 2.0 * w;
     }
     fragColor = acc / ws;
+}
+)";
+
+// Where each uBlock x uBlock block has anything drawn: the first and last such columns and rows in it (r, g: first;
+// b, a: last), r = 255 where nothing is (a scene's drawn bounds, exact, read back small).
+const char* kFragMaxAlpha = R"(
+uniform sampler2D uTex;
+uniform int uBlock;
+void main() {
+    ivec2 size = textureSize(uTex, 0), base = ivec2(gl_FragCoord.xy) * uBlock;
+    ivec2 lo = ivec2(255), hi = ivec2(0);
+    for (int y = 0; y < uBlock; ++y)
+        for (int x = 0; x < uBlock; ++x) {
+            ivec2 at = base + ivec2(x, y);
+            if (at.x < size.x && at.y < size.y && texelFetch(uTex, at, 0).a > 0.0) {
+                lo = min(lo, ivec2(x, y));
+                hi = max(hi, ivec2(x, y));
+            }
+        }
+    fragColor = vec4(vec2(lo), vec2(hi)) / 255.0;
 }
 )";
 
@@ -731,7 +752,7 @@ struct GpuCompositor::Impl : protected QOpenGLExtraFunctions {
     QSize uploadSize;
     std::unique_ptr<QOpenGLShaderProgram> progTex, progSolid, progYuv, progLut, progMatrix, progBlur, progSharpen,
         progBright, progScreen, progVignette, progKey, progNoise, progPixelate, progTransition, progTransitionFx, progRackBlend, progWarp,
-        progChroma, progRadialPass, progCrt, progPsy, progFx, progDiffuse, progConsole, progVgMesh, progLut3D, progEncodeYuv;
+        progChroma, progRadialPass, progCrt, progPsy, progFx, progDiffuse, progConsole, progVgMesh, progLut3D, progEncodeYuv, progMaxAlpha;
     // .cube LUTs as 3D textures, by the loaded table (kept while it is in the file cache).
     std::map<const CubeLut*, std::pair<std::shared_ptr<const CubeLut>, GLuint>> lut3dTextures;
     GLuint meshVao = 0, meshVbo = 0;
@@ -845,7 +866,7 @@ struct GpuCompositor::Impl : protected QOpenGLExtraFunctions {
                         {&progPixelate, kFragPixelate}, {&progTransition, kFragTransition}, {&progTransitionFx, tfx::kGlsl},
                         {&progRackBlend, kFragRackBlend}, {&progWarp, kFragWarp}, {&progChroma, kFragChroma},
                         {&progRadialPass, kFragRadialPass}, {&progCrt, kFragCrt}, {&progPsy, kFragPsy},
-                        {&progFx, gpufx::kFragFx}, {&progLut3D, kFragLut3D}};
+                        {&progFx, gpufx::kFragFx}, {&progLut3D, kFragLut3D}, {&progMaxAlpha, kFragMaxAlpha}};
         for (auto& p : programs) {
             auto prog = std::make_unique<QOpenGLShaderProgram>();
             if (!prog->addShaderFromSourceCode(QOpenGLShader::Vertex, kVertex)
@@ -1377,28 +1398,24 @@ struct GpuCompositor::Impl : protected QOpenGLExtraFunctions {
             bool painted = false;
             if (def->paint && !qEnvironmentVariableIsSet("MVP_CPU_GENERATORS")) {
                 Target& target = cache.target;
+                ensureStencil(target);
                 glBindFramebuffer(GL_FRAMEBUFFER, target.fbo);
-                // Qt's OpenGL paint engine uses stencil for path clipping.
-                if (!target.stencil) {
-                    glGenRenderbuffers(1, &target.stencil);
-                    glBindRenderbuffer(GL_RENDERBUFFER, target.stencil);
-                    glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH24_STENCIL8, target.w, target.h);
-                    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT,
-                                              GL_RENDERBUFFER, target.stencil);
-                }
                 if (glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE) {
                     clear(target, 0, 0, 0, 0);
                     glStencilMask(0xffffffffu);
                     glClearStencil(0);
                     glClear(GL_STENCIL_BUFFER_BIT);
-                    QOpenGLPaintDevice device(target.size());
-                    // Mutant Video Producer's texture origin is at GL row zero (logical top).
-                    device.setPaintFlipped(true);
+                    // (Mutant Video Producer's texture origin is at GL row zero, the logical top. The device binds its
+                    // framebuffer again after a scene paints pictures of its own, which stay on the GPU meanwhile.)
+                    motion::FramebufferPaintDevice device(target.size(), target.fbo);
+                    ScenePictures pictures(*this);
+                    motion::setGpuPictures(&pictures);
                     QPainter painter(&device);
                     painter.scale(paintScale,paintScale);
                     if (painter.isActive())
                         painted = def->paint(painter, QSize(dst.w,dst.h), params, ctx);
                     painter.end();
+                    motion::setGpuPictures(nullptr);
                 }
                 glDisable(GL_SCISSOR_TEST);
                 glDisable(GL_STENCIL_TEST);
@@ -1600,6 +1617,100 @@ struct GpuCompositor::Impl : protected QOpenGLExtraFunctions {
             layer = std::move(work);
         }
     }
+
+    // Qt's OpenGL paint engine uses stencil for path clipping: a target QPainter paints into needs one.
+    void ensureStencil(Target& target)
+    {
+        if (target.stencil)
+            return;
+        glBindFramebuffer(GL_FRAMEBUFFER, target.fbo);
+        glGenRenderbuffers(1, &target.stencil);
+        glBindRenderbuffer(GL_RENDERBUFFER, target.stencil);
+        glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH24_STENCIL8, target.w, target.h);
+        glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_RENDERBUFFER, target.stencil);
+    }
+
+    // The part of a target with anything in it (as motion's drawnBounds on the CPU), from each block's own extent.
+    QRect drawnBounds(const Target& t, int block)
+    {
+        Layer small = acquire(QSize((t.w + block - 1) / block, (t.h + block - 1) / block), false);
+        progMaxAlpha->bind();
+        bindTexture(0, t.tex);
+        progMaxAlpha->setUniformValue("uTex", 0);
+        progMaxAlpha->setUniformValue("uBlock", block);
+        fullscreen(*progMaxAlpha, *small);
+        const QImage alpha = download(*small);
+        int top = t.h, bottom = -1, left = t.w, right = -1;
+        for (int y = 0; y < alpha.height(); ++y) {
+            const auto* row = reinterpret_cast<const QRgb*>(alpha.constScanLine(y));
+            for (int x = 0; x < alpha.width(); ++x)
+                if (qRed(row[x]) < block) {
+                    left = std::min(left, x * block + qRed(row[x]));
+                    top = std::min(top, y * block + qGreen(row[x]));
+                    right = std::max(right, x * block + qBlue(row[x]));
+                    bottom = std::max(bottom, y * block + qAlpha(row[x]));
+                }
+        }
+        return bottom < 0 ? QRect() : QRect(QPoint(left, top), QPoint(right, bottom));
+    }
+
+    // A scene's own pictures while it paints through OpenGL (motion::GpuPictures): motion blur moments summed, soft
+    // layers blurred and given their effects, groups seen through as one, all in this compositor's targets.
+    struct ScenePictures : motion::GpuPictures {
+        Impl& d;
+        std::map<int, Layer> held;
+        int next = 0;
+        explicit ScenePictures(Impl& d) : d(d) {}
+        Picture keep(Layer layer)
+        {
+            Picture picture;
+            picture.fbo = layer->fbo;
+            picture.tex = layer->tex;
+            picture.size = layer->size();
+            picture.handle = next++;
+            held.emplace(picture.handle, std::move(layer));
+            return picture;
+        }
+        void refresh(Picture& picture)
+        {
+            const Target& t = *held.at(picture.handle);
+            picture.fbo = t.fbo;
+            picture.tex = t.tex;
+            picture.size = t.size();
+        }
+        Picture acquire(QSize size, bool precise) override
+        {
+            Layer layer = d.acquire(size, true, precise ? GL_RGBA32F : GL_RGBA8);
+            d.ensureStencil(*layer);
+            return keep(std::move(layer));
+        }
+        void release(const Picture& picture) override { held.erase(picture.handle); }
+        QRect drawnBounds(const Picture& picture, int block) override { return d.drawnBounds(*held.at(picture.handle), block); }
+        Picture crop(const Picture& picture, const QRect& region) override
+        {
+            const Target& src = *held.at(picture.handle);
+            Layer out = d.acquire(region.size(), false);
+            d.drawTexture(*out, src.tex, QSizeF(src.w, src.h), QTransform::fromTranslate(-region.x(), -region.y()), 1.0, QRectF(0, 0, 1, 1), false);
+            return keep(std::move(out));
+        }
+        void blur(Picture& picture, double radius) override
+        {
+            if (radius < .5)
+                return;
+            // The CPU's soft blur (shrunk, three box blurs each way, grown back) as one Gaussian of the same spread.
+            const double shrink = std::max(1., radius / 3);
+            const int r = std::max(1, int(std::lround(radius / shrink / 1.7)));
+            const double sigma = shrink * std::sqrt(double(r) * (r + 1));
+            d.blur(held.at(picture.handle), sigma, sigma);
+            refresh(picture);
+        }
+        void effect(Picture& picture, const EffectDef& def, const Params& params, const RenderContext& context) override
+        {
+            std::unique_ptr<EffectState> state; // (each frame fresh, as on the CPU)
+            d.applyEffect(def, params, held.at(picture.handle), context, state);
+            refresh(picture);
+        }
+    };
 
     // Remove Background (as its CPU version in Segmentation.cpp): the picture is
     // shrunk to the model's size here and read back (small), the model runs on

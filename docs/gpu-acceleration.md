@@ -9,8 +9,16 @@ own fallback; a GPU compositor does not imply every stage uses the GPU.
 Editable graphics scenes (versions 1 and 2), waveforms, titles, captions, credits
 and timecode can paint directly into OpenGL textures. Paths, text outlines,
 gradients, masks, particles, trails and shadow/glow strokes use GPU rasterization.
-Scene evaluation, font shaping and path preparation still use the CPU. Isolated
-groups, sampled motion blur and blurred title shadows currently use CPU images.
+Scene evaluation, font shaping and path preparation still use the CPU. A scene's
+own pictures stay on the GPU too: motion blur moments (the scene's and a layer's)
+are summed in a float framebuffer, soft layers (blur, depth of field) are blurred
+and given their own effects by the GPU effects, and groups seen through as one
+(opacity or a blend) are drawn into framebuffers. Blurred title shadows still
+use CPU images. The preview paints scenes on the GPU frame by frame; without GPU
+compositing, a look-ahead draws the next frames on the CPU's other cores.
+A 348-layer episode scene with motion blur measured 235 ms per 1080p frame on
+the CPU and 68 ms on the GPU (preview at 960x540: 80 ms with the CPU look-ahead,
+35 ms on the GPU).
 Compound timelines render recursively into GPU textures with separate decoder,
 generator and effect caches per instance, avoiding intermediate image readbacks.
 Effects without a GPU implementation retain their CPU path.
@@ -49,7 +57,8 @@ MCP `generate_voice` accepts `device: auto|gpu|cpu` (default auto). The RVC obje
 also accepts its own `device`. Both auto and gpu prefer GPU with CPU fallback.
 `MVP_AI_DEVICE=cpu` forces CPU workers when no explicit request overrides it.
 For diagnostics, `MVP_CPU_GENERATORS=1` retains the previous CPU generator
-path and `MVP_CPU_COLOR=1` retains swscale conversion. These switches do not
+path, `MVP_CPU_LOOKAHEAD=1` keeps the preview's CPU look-ahead for scenes, and
+`MVP_CPU_COLOR=1` retains swscale conversion. These switches do not
 disable the rest of GPU compositing.
 
 ## Packaging

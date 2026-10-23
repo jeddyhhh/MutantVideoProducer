@@ -81,6 +81,7 @@
 #include <QGuiApplication>
 #include <QJsonArray>
 #include <QJsonDocument>
+#include "core/MotionGraphics.h"
 #include <QJsonObject>
 #include <QOffscreenSurface>
 #include <QDir>
@@ -1641,6 +1642,51 @@ int cmdGpu(const QString& mediaDir, const QString& outDir)
         ops::insertGenerated(s.timeline, *findGeneratorPreset(QStringLiteral("lower_third")), 0, 0, fps);
         compare(QStringLiteral("generator_lower_third"), s, 2 * kUsPerSecond, 1.5);
     }
+    // Animation scenes: motion blur (the scene's and a layer's), soft layers (blur, depth of field), a layer's own effects
+    // and groups seen through as one, all painted on the GPU (no picture of theirs made on the CPU).
+    {
+        const char* bg = R"({"type": "rect", "id": "bg", "x": 0, "y": 0, "width": 1, "height": 1, "fill": "#204060"})";
+        const struct {
+            const char* name;
+            QByteArray scene;
+        } scenes[] = {
+            {"scene_motion_blur", QByteArray(R"({"version": 2, "motion_blur": {"samples": 6, "shutter": 0.1}, "layers": [)") + bg
+                                      + R"(, {"type": "ellipse", "id": "ball", "x": {"keyframes": [[0, 0], [2, 0.8]]}, "y": 0.3, "width": 0.2,
+                                             "height": 0.35, "fill": "#ffd60a"}]})"},
+            {"scene_layer_motion_blur", QByteArray(R"({"version": 2, "layers": [)") + bg
+                                            + R"(, {"type": "rect", "id": "box", "x": {"keyframes": [[0, 0.1], [2, 0.7]]}, "y": 0.4, "width": 0.2,
+                                                   "height": 0.2, "fill": "#ff006e", "motion_blur": {"samples": 5, "shutter": 0.12}}]})"},
+            {"scene_soft_layers", QByteArray(R"({"version": 2, "camera": {"x": 0.5, "y": 0.5, "zoom": 1.5, "depth_of_field": 3}, "layers": [)") + bg
+                                      + R"(, {"type": "rect", "id": "far", "x": 0.15, "y": 0.2, "width": 0.3, "height": 0.4, "fill": "#ff006e", "depth": 1},
+                                             {"type": "ellipse", "id": "soft", "x": 0.55, "y": 0.3, "width": 0.25, "height": 0.4, "fill": "#06d6a0",
+                                              "blur": 0.01}]})"},
+            {"scene_layer_effects", QByteArray(R"({"version": 2, "layers": [)") + bg
+                                        + R"(, {"type": "rect", "id": "tv", "x": 0.2, "y": 0.2, "width": 0.5, "height": 0.5, "fill": "#06d6a0",
+                                               "effects": [{"type": "vignette", "params": {"amount": 0.8}}, {"type": "crt"}]}]})"},
+            {"scene_groups", QByteArray(R"({"version": 2, "layers": [)") + bg
+                                 + R"(, {"type": "group", "id": "g", "x": 0, "y": 0, "width": 1, "height": 1, "opacity": 0.5},
+                                        {"type": "rect", "id": "a", "parent": "g", "x": 0.1, "y": 0.2, "width": 0.4, "height": 0.4, "fill": "#ffd60a"},
+                                        {"type": "rect", "id": "b", "parent": "g", "x": 0.3, "y": 0.3, "width": 0.4, "height": 0.4, "fill": "#ff006e"},
+                                        {"type": "group", "id": "m", "x": 0, "y": 0, "width": 1, "height": 1, "blend": "multiply"},
+                                        {"type": "ellipse", "id": "c", "parent": "m", "x": 0.55, "y": 0.1, "width": 0.3, "height": 0.5,
+                                         "fill": "#8ecae6"}]})"},
+        };
+        for (const auto& sc : scenes) {
+            QJsonParseError parsed;
+            const QJsonObject scene = QJsonDocument::fromJson(sc.scene, &parsed).object();
+            ProjectSnapshot s = withBackground(baseSnap(main));
+            s.timeline.tracks[0].clips.clear();
+            const int id = ops::insertGenerated(s.timeline, *findGeneratorPreset(QStringLiteral("animation_blank")), 0, 0, fps);
+            if (Clip* c = s.timeline.findClip(id))
+                c->generator.data = scene;
+            const QString name = QString::fromLatin1(sc.name);
+            check(parsed.error == QJsonParseError::NoError && motion::validate(scene).isEmpty(),
+                  QStringLiteral("%1 is a valid scene %2").arg(name, motion::validate(scene)));
+            const int before = motion::cpuPictures();
+            compare(name, s, kUsPerSecond, 2.0);
+            check(motion::cpuPictures() == before, QStringLiteral("%1: its pictures stay on the GPU (%2 made on the CPU)").arg(name).arg(motion::cpuPictures() - before));
+        }
+    }
     {
         ProjectSnapshot s = withBackground(baseSnap(main));
         s.timeline.tracks[0].clips[0].gain = 0.6f;
@@ -1725,6 +1771,35 @@ int cmdGpu(const QString& mediaDir, const QString& outDir)
         for (const char* fx : {"gaussian_blur", "hsl", "vignette"})
             c.effects.push_back(makeEffect(*findEffect(QString::fromLatin1(fx)), s.timeline.allocId()));
         bench(QStringLiteral("1080p, 2 tracks, PiP + blur + colour + vignette"), s, QSize(1920, 1080), 60);
+    }
+    {
+        ProjectSnapshot s = baseSnap(main);
+        s.timeline.tracks[0].clips.clear();
+        const int id = ops::insertGenerated(s.timeline, *findGeneratorPreset(QStringLiteral("animation_characters")), 0, 0, fps);
+        if (Clip* c = s.timeline.findClip(id)) {
+            c->generator.data[QStringLiteral("motion_blur")] = QJsonObject{{QStringLiteral("samples"), 4}, {QStringLiteral("shutter"), 0.025}};
+            c->generator.data[QStringLiteral("camera")] = QJsonObject{{QStringLiteral("x"), 0.5}, {QStringLiteral("y"), 0.5}, {QStringLiteral("zoom"), 1.3},
+                                                                       {QStringLiteral("depth_of_field"), 2}};
+            // (MVP_BENCH_SCENE: a scene file of one's own instead, such as one from a real project)
+            if (QFile f(qEnvironmentVariable("MVP_BENCH_SCENE")); f.open(QIODevice::ReadOnly))
+                c->generator.data = QJsonDocument::fromJson(f.readAll()).object();
+        }
+        bench(QStringLiteral("1080p animation: two characters, motion blur, depth of field"), s, QSize(1920, 1080), 30);
+        // The preview (draft quality, frames in a row): the GPU painting each frame, or the CPU's look-ahead.
+        for (const bool ahead : {false, true}) {
+            if (ahead)
+                qputenv("MVP_CPU_LOOKAHEAD", "1");
+            auto preview = GpuCompositor::create(surface.get(), false, &err);
+            preview->render(s, 0, QSize(960, 540));
+            QElapsedTimer timer;
+            timer.start();
+            for (int i = 1; i <= 48; ++i)
+                preview->render(s, fps.timeOf(i), QSize(960, 540));
+            print(QStringLiteral("BENCH preview of the animation at 960x540: %1 ms/frame (%2)")
+                      .arg(timer.elapsed() / 48.0, 0, 'f', 1)
+                      .arg(ahead ? QStringLiteral("CPU look-ahead") : QStringLiteral("GPU painting")));
+        }
+        qunsetenv("MVP_CPU_LOOKAHEAD");
     }
     // The preview recreates its GPU renderer on its own thread (GPU Acceleration,
     // Hardware Decoding): titles must still draw with each new context.

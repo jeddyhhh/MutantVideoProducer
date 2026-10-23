@@ -154,6 +154,8 @@ add_library(mvp_core STATIC
 )
 target_include_directories(mvp_core PUBLIC "${CMAKE_SOURCE_DIR}/src")
 target_link_libraries(mvp_core PUBLIC Qt6::Core Qt6::Gui Qt6::OpenGL mvp_ffmpeg)
+# (the OpenGL paint engine draws a scene's GPU pictures as textures: MotionGraphics.cpp)
+target_link_libraries(mvp_core PRIVATE Qt6::OpenGLPrivate)
 if(WIN32)
     target_link_libraries(mvp_core PUBLIC dwmapi ole32 winmm d3d11 dxgi) # live capture: window list, desktop audio (WASAPI), MIDI; Spout
 endif()

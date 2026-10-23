@@ -12,6 +12,9 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QLinearGradient>
+#include <QOpenGLContext>
+#include <QOpenGLFunctions>
+#include <QOpenGLPaintDevice>
 #include <QMap>
 #include <QPainter>
 #include <QPainterPathStroker>
@@ -25,6 +28,7 @@
 #include <cmath>
 #include <functional>
 #include <map>
+#include <private/qopenglpaintengine_p.h>
 
 namespace motion {
 namespace {
@@ -785,8 +789,10 @@ QImage videoFrame(const QString &file, double seconds, bool loop, QSize want) {
   const AVFrame *frame = s.decoder->frameAt(TimeUs(std::clamp(seconds, 0., 86400.) * kUsPerSecond));
   return frame ? s.converter.convert(frame, want, !draftRender) : QImage();
 }
-// A layer's own video effects ([{"type": id, "params": {setting: value}}]) on its picture.
-void layerEffects(QImage &image, const QJsonArray &effects, double t, double scale) {
+// A layer's own video effects ([{"type": id, "params": {setting: value}}]), each with its settings, for a picture of
+// `picture` pixels.
+void eachLayerEffect(const QJsonArray &effects, double t, double scale, QSize picture,
+                     const std::function<void(const EffectDef &, const Params &, const RenderContext &)> &apply) {
   for (const auto &v : effects) {
     const QJsonObject e = v.toObject();
     const EffectDef *def = findEffect(e.value("type").toString());
@@ -814,11 +820,17 @@ void layerEffects(QImage &image, const QJsonArray &effects, double t, double sca
     ctx.timelineTime = ctx.time;
     ctx.scale = scale;
     ctx.highQuality = !draftRender;
-    ctx.contentRect = QRectF(QPointF(), image.size());
+    ctx.contentRect = QRectF(QPointF(), QSizeF(picture));
+    apply(*def, resolveParams(def->params, values, ctx.time), ctx);
+  }
+}
+// ...on a picture on the CPU.
+void layerEffects(QImage &image, const QJsonArray &effects, double t, double scale) {
+  eachLayerEffect(effects, t, scale, image.size(), [&](const EffectDef &def, const Params &params, const RenderContext &ctx) {
     std::unique_ptr<EffectState> state; // (each frame fresh: effects that remember earlier frames start over)
     image.bits();
-    def->apply(image, resolveParams(def->params, values, ctx.time), ctx, state);
-  }
+    def.apply(image, params, ctx, state);
+  });
 }
 // One box blur pass of `r` pixels along rows (or columns) of a premultiplied image.
 void boxPass(QImage &image, int r, bool rows) {
@@ -923,6 +935,66 @@ void applyBlend(QPainter &p, const QString &mode) {
     p.setCompositionMode(QPainter::CompositionMode_Screen);
   else if (mode == "multiply")
     p.setCompositionMode(QPainter::CompositionMode_Multiply);
+}
+// ---- The scene's own pictures on the GPU (GpuPictures) -----------------------------------------------------------
+thread_local GpuPictures *gpuPictures = nullptr;
+thread_local int cpuPictureCount = 0;
+// The GPU's pictures for a painter: only while it paints through OpenGL (a QImage's painter makes QImages).
+GpuPictures *gpuFor(QPainter &p) {
+  if (!gpuPictures || !p.paintEngine() || p.paintEngine()->type() != QPaintEngine::OpenGL2 || !QOpenGLContext::currentContext())
+    return nullptr;
+  return gpuPictures;
+}
+// A picture made on the CPU where the GPU could have (counted for cpuPictures()).
+void cpuPicture(QPainter &p) {
+  if (gpuPictures && p.paintEngine() && p.paintEngine()->type() == QPaintEngine::OpenGL2)
+    ++cpuPictureCount;
+}
+// GL work between a painter's own drawing (the painter takes up its state again after).
+struct Native {
+  QPainter &p;
+  explicit Native(QPainter &p) : p(p) { p.beginNativePainting(); }
+  ~Native() { p.endNativePainting(); }
+};
+// Paints into a picture with `p`'s render hints (row 0 at the top, as the GPU compositor's textures).
+void paintInto(const GpuPictures::Picture &picture, QPainter &p, const std::function<void(QPainter &)> &draw) {
+  FramebufferPaintDevice device(picture.size, picture.fbo);
+  QPainter q(&device);
+  q.setRenderHints(p.renderHints());
+  draw(q);
+}
+// A picture drawn by `p` with its top left at `at` (the picture's pixels: no world transform), with p's opacity,
+// blend and clip.
+void drawPicture(QPainter &p, const GpuPictures::Picture &picture, QPoint at = {}) {
+  p.save();
+  p.resetTransform();
+  const QSize s = picture.size;
+  static_cast<QOpenGL2PaintEngineEx *>(p.paintEngine())->drawTexture(QRectF(at, QSizeF(s)), picture.tex, s, QRectF(0, s.height(), s.width(), -s.height()));
+  p.restore();
+}
+// The exact average of `samples` pictures drawn by `draw` (motion blur's moments), summed in a float picture.
+GpuPictures::Picture average(GpuPictures &gpu, QPainter &p, QSize pixels, int samples, const std::function<void(QPainter &, int)> &draw) {
+  GpuPictures::Picture sum;
+  {
+    Native n(p);
+    sum = gpu.acquire(pixels, true);
+  }
+  FramebufferPaintDevice device(sum.size, sum.fbo);
+  QPainter add(&device);
+  add.setCompositionMode(QPainter::CompositionMode_Plus);
+  add.setOpacity(1. / samples);
+  for (int j = 0; j < samples; ++j) {
+    GpuPictures::Picture moment;
+    {
+      Native n(add);
+      moment = gpu.acquire(pixels, false);
+    }
+    paintInto(moment, p, [&](QPainter &mp) { draw(mp, j); });
+    drawPicture(add, moment);
+    Native n(add);
+    gpu.release(moment);
+  }
+  return sum;
 }
 class Graph {
 public:
@@ -1500,6 +1572,20 @@ public:
             std::clamp(number(blur, "shutter", .03, t, scene), 0., .2);
         // Each moment drawn on its own, then averaged (drawing them all with
         // Plus also added a layer's overlapping parts together).
+        if (GpuPictures *gpu = gpuFor(p)) {
+          const GpuPictures::Picture sum = average(*gpu, p, size.toSize(), samples, [&](QPainter &mp, int j) {
+            draw(i, mp, std::max(0., t + shutter * (double(j) / std::max(1, samples - 1) - .5)), camera, 1, depth + 1, true);
+          });
+          p.save();
+          p.setOpacity(opacity);
+          applyBlend(p, o["blend"].toString());
+          drawPicture(p, sum);
+          p.restore();
+          Native n(p);
+          gpu->release(sum);
+          return;
+        }
+        cpuPicture(p);
         Average moments;
         QImage moment(size.toSize(), QImage::Format_ARGB32_Premultiplied);
         for (int j = 0; j < samples; ++j) {
@@ -1539,7 +1625,51 @@ public:
                     std::max(0., number(lens, "zoom", 1, t, scene) - 1) *
                     .01 * size.height();
       const QJsonArray effects = o["effects"].toArray();
+      if ((softness >= .5 || !effects.isEmpty()) && gpuFor(p)) {
+        GpuPictures &gpu = *gpuFor(p);
+        GpuPictures::Picture layer;
+        {
+          Native n(p);
+          layer = gpu.acquire(size.toSize(), false);
+        }
+        paintInto(layer, p, [&](QPainter &lp) {
+          const int was = unblurred;
+          unblurred = i;
+          draw(i, lp, t, camera, 1, depth + 1, true);
+          unblurred = was;
+        });
+        // (as on the CPU below: only the part it covers, with its own box for its effects)
+        QRect region;
+        GpuPictures::Picture part;
+        {
+          Native n(p);
+          region = gpu.drawnBounds(layer, 8);
+          if (!effects.isEmpty()) {
+            const auto at = pose(i, t);
+            region |= (at.world * camera).mapRect(at.box).toAlignedRect();
+          }
+          const int spread = int(std::ceil(3 * softness)) + 2;
+          region = region.adjusted(-spread, -spread, spread, spread).intersected(QRect(QPoint(), layer.size));
+          if (!region.isEmpty()) {
+            part = gpu.crop(layer, region);
+            gpu.blur(part, softness);
+            eachLayerEffect(effects, t, size.height() / 1080., part.size,
+                            [&](const EffectDef &def, const Params &params, const RenderContext &ctx) { gpu.effect(part, def, params, ctx); });
+          }
+          gpu.release(layer);
+        }
+        if (part) {
+          p.save();
+          p.setOpacity(opacity);
+          drawPicture(p, part, region.topLeft());
+          p.restore();
+          Native n(p);
+          gpu.release(part);
+        }
+        return;
+      }
       if (softness >= .5 || !effects.isEmpty()) {
+        cpuPicture(p);
         QImage layer(size.toSize(), QImage::Format_ARGB32_Premultiplied);
         layer.fill(Qt::transparent);
         {
@@ -1577,6 +1707,23 @@ public:
     double alpha = std::clamp(number(o, "opacity", 1, t, scene), 0., 1.);
     if (isolate && (alpha < 1 || !o["blend"].toString().isEmpty()) &&
         (type == "group" || type == "instance" || type == "repeater")) {
+      if (GpuPictures *gpu = gpuFor(p)) {
+        GpuPictures::Picture group;
+        {
+          Native n(p);
+          group = gpu->acquire(size.toSize(), false);
+        }
+        paintInto(group, p, [&](QPainter &gp) { draw(i, gp, t, camera, 1, depth + 1, true, false); });
+        p.save();
+        p.setOpacity(opacity * alpha);
+        applyBlend(p, o["blend"].toString());
+        drawPicture(p, group);
+        p.restore();
+        Native n(p);
+        gpu->release(group);
+        return;
+      }
+      cpuPicture(p);
       QImage group(size.toSize(), QImage::Format_ARGB32_Premultiplied);
       group.fill(Qt::transparent);
       {
@@ -1828,6 +1975,19 @@ void paint(QPainter &p, QSizeF size, const QJsonObject &scene, double time) {
     const auto b = blur.toObject();
     const int samples = std::clamp(b["samples"].toInt(5), 2, draftRender ? 2 : 8);
     const double shutter = std::clamp(b["shutter"].toDouble(.02), 0., .2);
+    if (GpuPictures *gpu = gpuFor(p)) {
+      const GpuPictures::Picture sum = average(*gpu, p, size.toSize(), samples, [&](QPainter &fp, int j) {
+        int each = 32768;
+        Graph graph(scene, size, each);
+        graph.speakerTime = time;
+        graph.drawRoots(fp, std::max(0., time + shutter * (double(j) / (samples - 1) - .5)));
+      });
+      drawPicture(p, sum);
+      Native n(p);
+      gpu->release(sum);
+      return;
+    }
+    cpuPicture(p);
     Average frames;
     QImage frame(size.toSize(), QImage::Format_ARGB32_Premultiplied);
     for (int j = 0; j < samples; ++j) {
@@ -2597,6 +2757,10 @@ bool setDraft(bool draft) {
   draftRender = draft;
   return was;
 }
+void setGpuPictures(GpuPictures *pictures) { gpuPictures = pictures; }
+int cpuPictures() { return cpuPictureCount; }
+FramebufferPaintDevice::FramebufferPaintDevice(QSize size, unsigned fbo) : QOpenGLPaintDevice(size), m_fbo(fbo) { setPaintFlipped(true); }
+void FramebufferPaintDevice::ensureActiveTarget() { QOpenGLContext::currentContext()->functions()->glBindFramebuffer(GL_FRAMEBUFFER, m_fbo); }
 QStringList moves() {
   return {"hop", "jump", "shake", "nod", "wave", "spin", "walk", "walk in", "walk out", "pop", "squash", "blink", "float", "fall",
           "get up", "sit", "stand", "point", "arms up", "shrug"};

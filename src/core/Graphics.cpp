@@ -899,7 +899,10 @@ void addGenerators(std::vector<GeneratorDef> &list) {
   d.paint = [](QPainter &painter, QSize size, const Params &p, const GeneratorContext &c) {
     painter.setOpacity(p.num("opacity"));
     const QJsonObject &s = c.data && !c.data->isEmpty() ? *c.data : scene("broadcast");
-    if (!c.highQuality && s["version"].toInt() == 2)
+    // (Painting through OpenGL, the GPU draws each frame faster than the look-ahead draws them on the CPU's cores;
+    // MVP_CPU_LOOKAHEAD keeps the look-ahead there too.)
+    const bool cpuAhead = qEnvironmentVariableIsSet("MVP_CPU_LOOKAHEAD");
+    if (!c.highQuality && s["version"].toInt() == 2 && (cpuAhead || painter.paintEngine()->type() != QPaintEngine::OpenGL2))
       if (auto ahead = lookahead().take(s, size, c)) {
         painter.drawImage(QRect(QPoint(), size), *ahead);
         return true;
