@@ -258,6 +258,20 @@ int main(int argc, char **argv) {
     const QImage close = drawn(talk, 1);
     check(qAlpha(wide.pixel(160, 90)) == 0 && qBlue(close.pixel(160, 90)) > 200 && qGreen(close.pixel(160, 90)) < 60,
           "the speaker camera frames whoever is talking");
+    // A pause in a line keeps the close-up; after the last line, the wide shot.
+    QJsonArray paused, ended;
+    for (int i = 0; i < 64; ++i) {
+      paused.append(i < 29 || i >= 52 ? 1 : 0); // (talking to 0.9 s, again from 1.6 s)
+      ended.append(i < 29 ? 1 : 0);
+    }
+    QJsonObject pause = talk;
+    pause["audio"] = QJsonObject{{"ann", envelope(quiet)}, {"bob", envelope(paused)}};
+    const QImage held = drawn(pause, 1.55);
+    pause["audio"] = QJsonObject{{"ann", envelope(quiet)}, {"bob", envelope(ended)}};
+    const QImage after = drawn(pause, 1.55);
+    check(qBlue(held.pixel(160, 90)) > 200 && qAlpha(after.pixel(160, 90)) == 0,
+          QStringLiteral("the speaker camera holds its close-up through a pause, and goes wide after the last line (%1, %2)")
+              .arg(held.pixel(160, 90), 0, 16).arg(after.pixel(160, 90), 0, 16));
     // Under motion blur the speaker camera still cuts: every moment of a frame frames the same speaker.
     QJsonArray first, second;
     for (int i = 0; i < 64; ++i) {

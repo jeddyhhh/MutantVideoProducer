@@ -1059,13 +1059,37 @@ public:
           sum += audioLevel(b, scene, std::max(0., to - (to - from) * k / std::max(1, samples - 1))) / samples;
         return sum;
       };
-      double best = speaker["quiet"].toDouble(.06);
+      const double quiet = speaker["quiet"].toDouble(.06);
+      double best = quiet;
       QString who;
       for (const auto &[id, binding] : cast)
         if (const double l = level(binding, now - window, now, 6); l > best) {
           best = l;
           who = id;
         }
+      // A pause in a line, or between lines: the shot holds on whoever spoke last when someone speaks again within
+      // `hold` seconds, instead of a glimpse of the wide shot.
+      if (const double hold = std::clamp(speaker["hold"].toDouble(1.2), 0., 5.); who.isEmpty() && hold > 0) {
+        auto peak = [&](const QString &binding, double from, double to) {
+          const QJsonObject b{{"audio", binding}, {"attack", .02}, {"release", .1}};
+          double most = 0;
+          for (int k = 0; k <= 12; ++k)
+            most = std::max(most, audioLevel(b, scene, std::max(0., from + (to - from) * k / 12)));
+          return most;
+        };
+        QString before;
+        double loudest = quiet;
+        bool again = false;
+        for (const auto &[id, binding] : cast) {
+          if (const double l = peak(binding, now - hold, now); l > loudest) {
+            loudest = l;
+            before = id;
+          }
+          again = again || peak(binding, now, now + hold) > quiet;
+        }
+        if (again)
+          who = before;
+      }
       QString other; // the listener: who spoke most in the seconds before the speaker's moment
       if (kind == "listener" || kind == "two") {
         double most = speaker["quiet"].toDouble(.06) * .5;

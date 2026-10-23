@@ -121,8 +121,10 @@ blur, layer motion blur and layer effects are lighter), and renders always draw 
 
 **Camera frames whoever is talking** (Look box) cuts the camera to the character who is talking: the one whose voice
 binding has been loudest over the last half second, framed head and shoulders at the **Close-up zoom**. A character is a
-layer (their group) whose id is their binding's name, as added by Add character. Nobody talking, the camera does what
-it is keyed to do. In Scene data it is the camera's `speaker`: `{"zoom": 1.7, "window": 0.5, "quiet": 0.06}`. Its `shots`
+layer (their group) whose id is their binding's name, as added by Add character. A pause, in a line or between lines,
+keeps the shot on whoever spoke last when someone speaks again within `hold` seconds; nobody talking for longer, the
+camera does what it is keyed to do. In Scene data it is the camera's `speaker`:
+`{"zoom": 1.7, "window": 0.5, "quiet": 0.06, "hold": 1.2}` (`hold` 0 cuts wide at every pause). Its `shots`
 change that for a while: `[[from, to, "listener"], [from, to, "two"], [from, to, "wide"]]` (event-local seconds) give a
 reaction shot of whoever spoke last before the speaker, a two-shot of both, or the keyed wide shot.
 
