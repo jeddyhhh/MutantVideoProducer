@@ -81,6 +81,9 @@ What changed in each version of Mutant Video Producer. The newest is first.
 
 ### Fixed
 
+- A move on a character (pop, squash, the dance's squashes) repeated with its breathing: the move's keys went into the
+  breathing loop. A move now stops the loop on what it moves. A move on a property the layer didn't have also no longer
+  starts from an empty key.
 - Closing the program could hang (the window gone, the program still running) after animation scenes with video layers
   had played: their decoders were freed as render threads ended, where FFmpeg's threads can't finish.
 - A two-shot or reaction shot from the speaker camera could zoom in and out for a few seconds: the two people it framed

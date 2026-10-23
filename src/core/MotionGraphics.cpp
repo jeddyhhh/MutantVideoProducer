@@ -2403,13 +2403,13 @@ QJsonObject withKeyframe(const QJsonObject &scene, const QString &layerId,
       o[key] = set(o[key].toObject(), depth + 1);
       return o;
     }
-    auto old = o[key];
+    const QJsonValue old = o.value(key); // (not o[key]: that adds the key, null, and a null first key followed)
     auto spec = old.isObject() && old.toObject().contains("keyframes")
                     ? old.toObject()
                     : QJsonObject{};
     auto ks = spec["keyframes"].toArray();
     if (ks.isEmpty() && time > 0) {
-      QJsonValue initial = old.isUndefined() ? value : evaluate(old, 0, scene);
+      QJsonValue initial = old.isUndefined() || old.isNull() ? value : evaluate(old, 0, scene);
       ks.append(QJsonArray{0, initial, "linear"});
     }
     QJsonArray out;
@@ -2873,9 +2873,29 @@ QJsonObject withMove(const QJsonObject &scene, const QString &layerId,
   };
   QJsonObject result = scene;
   QString e;
+  // A move happens once: on a property that loops (a character's breathing), its keys would repeat with the loop, so
+  // the loop stops there. (ponytail: the breathing stops for the rest of the scene; unroll its cycles around the move
+  // if that ever shows.)
+  QSet<QString> unlooped;
   auto key = [&](const char *property, double at, double v, const char *easing = "ease_in_out") {
     if (result.isEmpty())
       return;
+    if (!unlooped.contains(property) && layer.value(property).toObject().contains("loop")) {
+      unlooped.insert(property);
+      QJsonArray layers = result["layers"].toArray();
+      for (int k = 0; k < layers.size(); ++k) {
+        QJsonObject o = layers[k].toObject();
+        if (o.value("id") != layerId)
+          continue;
+        QJsonObject spec = o.value(property).toObject();
+        spec.remove("loop");
+        spec.remove("ping_pong");
+        o[property] = spec;
+        layers[k] = o;
+        break;
+      }
+      result["layers"] = layers;
+    }
     result = withKeyframe(result, layerId, property, std::max(0., time + at), v, easing, &e);
   };
   if (move == "hop" || move == "jump") {

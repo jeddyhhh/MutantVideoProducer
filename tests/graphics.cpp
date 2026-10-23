@@ -156,6 +156,23 @@ int main(int argc, char **argv) {
           xEnd = motion::evaluate(v.toObject()["x"], 2, walk).toDouble();
       check(std::abs(xEnd - .7) < 1e-6 && motion::withMove(scene, "gus", "moonwalk", 0, 0, 1, NAN, &error).isEmpty(),
             "a walk ends where it was sent; an unknown move is refused");
+      // A pop on a character whose scale breathes in a loop: it happens once (the loop stops for it), and no key is null.
+      const QJsonObject popped = motion::withMove(scene, "gus", "pop", 1.15, 0, 1, NAN, &error);
+      auto gus = [](const QJsonObject &s) {
+        for (auto v : s["layers"].toArray())
+          if (v.toObject()["id"] == "gus")
+            return v.toObject();
+        return QJsonObject{};
+      };
+      auto scaleY = [&](double t) { return motion::evaluate(gus(popped)["scale_y"], t, popped).toDouble(-1); };
+      bool nulls = false;
+      for (const char *p : {"scale_x", "scale_y"})
+        for (auto k : gus(popped)[p].toObject()["keyframes"].toArray())
+          nulls = nulls || k.toArray()[1].isNull();
+      check(!popped.isEmpty() && gus(scene)["scale_y"].toObject().contains("loop") && scaleY(1.17) < .5 && std::abs(scaleY(5) - scaleY(9)) < 1e-6
+                && scaleY(9) > .9 && !nulls,
+            QStringLiteral("a pop on a breathing character happens once, with no empty keys (%1 at 1.17 s, %2 and %3 later)")
+                .arg(scaleY(1.17)).arg(scaleY(5)).arg(scaleY(9)));
     }
   }
   // The look: shading, blur, depth of field, contact shadows and the scene's motion blur.
