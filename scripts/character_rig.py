@@ -642,15 +642,28 @@ def prop(kind, cid, show=1):
     return []
 
 
+def arms_in_front(cid, layers):
+    """The arms (and whatever is in their hands) moved in front of the body, behind the head: before the neck (adults),
+    the hood or the head. (Drawn first, the body hid them and anything held.)"""
+    ids = [l["id"] for l in layers]
+    anchor = next((f"{cid}_{part}" for part in ("neck", "hood", "head") if f"{cid}_{part}" in ids), None)
+    if anchor is None:
+        return layers
+    arm = [l for l in layers if l["id"].startswith((f"{cid}_armL", f"{cid}_armR"))]
+    rest = [l for l in layers if not l["id"].startswith((f"{cid}_armL", f"{cid}_armR"))]
+    at = next(i for i, l in enumerate(rest) if l["id"] == anchor)
+    return rest[:at] + arm + rest[at:]
+
+
 def person(cid, c, x, ground, motion, look, **kw):
     if c["kind"] == "bear":
-        return bear(cid, c, x, ground - BH, motion, look)
+        return arms_in_front(cid, bear(cid, c, x, ground - BH, motion, look))
     if c["kind"] == "towel":
         return towel(cid, c, x, ground - TH, motion, look)
     if c["kind"] == "kid":
-        return kid(cid, c, x, ground - KH, motion, look, **kw)
+        return arms_in_front(cid, kid(cid, c, x, ground - KH, motion, look, **kw))
     if c["kind"] == "adult":
-        return adult(cid, c, x, ground - AH, motion, look)
+        return arms_in_front(cid, adult(cid, c, x, ground - AH, motion, look))
     return robot(x, ground - RH, motion, look, **kw)
 
 

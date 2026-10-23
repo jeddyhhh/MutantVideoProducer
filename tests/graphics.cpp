@@ -75,6 +75,21 @@ int main(int argc, char **argv) {
     const auto library = graphics::characterLibrary();
     const auto kid = std::find_if(library.begin(), library.end(), [](const graphics::CharacterFile &f) { return f.path.endsWith("kid.json"); });
     check(library.size() >= 9 && kid != library.end() && kid->builtIn, QStringLiteral("the character library comes with the program (%1)").arg(library.size()));
+    // Arms (and what is in their hands) in front of the body. (Terry's stick out at his sides.)
+    for (const auto &c : library) {
+      if (!c.builtIn || c.character["kind"] == "towel")
+        continue;
+      int arm = -1, body = -1, i = 0;
+      for (auto v : c.character["layers"].toArray()) {
+        const QString id = v.toObject()["id"].toString();
+        if (id == "armR")
+          arm = i;
+        if (id == "jacket" || id == "torso" || id == "body")
+          body = i;
+        ++i;
+      }
+      check(arm > body, QStringLiteral("%1 holds its arms in front of its body").arg(c.character["name"].toString()));
+    }
     const auto towel = std::find_if(library.begin(), library.end(), [](const graphics::CharacterFile &f) { return f.path.endsWith("towel.json"); });
     if (towel != library.end()) {
       QString error;
@@ -304,6 +319,29 @@ int main(int argc, char **argv) {
     const QImage reaction = drawn(shots, 1.5), stillWide = drawn(shots, 1.8), onBob = drawn(shots, 1.3);
     check(qGreen(reaction.pixel(160, 90)) > 200 && qAlpha(stillWide.pixel(160, 90)) == 0 && qBlue(onBob.pixel(160, 90)) > 200,
           "the speaker camera's shots: a reaction of the listener, then the wide shot, then the speaker again");
+    // A two-shot keeps the same two people for its whole length: two people who spoke by turns before it (so either
+    // could be the listener at a given moment) and a pause in the speaker's line don't move the camera.
+    {
+      QJsonArray ann, bob, cy;
+      for (int i = 0; i < 64; ++i) {
+        ann.append(i < 48 && i % 2 == 0 ? 1 : 0);
+        bob.append(i < 48 && i % 2 == 1 ? 1 : 0);
+        cy.append(i >= 48 && (i < 54 || i > 57) ? 1 : 0);
+      }
+      auto four = [](const QJsonArray &a) {
+        return QJsonObject{{"version", 1}, {"duration", 4}, {"left", a}, {"right", a}, {"rate", 1}, {"offset", 0}};
+      };
+      QJsonObject two{{"version", 2},
+                      {"layers", QJsonArray{rect("Ann", .02, .3, .2, .5, "#00ff00"), rect("Bob", .38, .3, .2, .5, "#0000ff"),
+                                            rect("Cy", .74, .3, .2, .5, "#ff0000")}},
+                      {"audio", QJsonObject{{"ann", four(ann)}, {"bob", four(bob)}, {"cy", four(cy)}}},
+                      {"camera", QJsonObject{{"speaker", QJsonObject{{"zoom", 2}, {"shots", QJsonArray() << QJsonArray{3.0, 4.0, "two"}}}}}}};
+      const QImage first = drawn(two, 3.1);
+      int moved = 0;
+      for (double t = 3.1; t < 3.9; t += 1. / 24)
+        moved += drawn(two, t) != first;
+      check(moved == 0 && first != drawn(two, 2.0), QStringLiteral("a two-shot holds its framing for the whole shot (%1 frames moved)").arg(moved));
+    }
     // A library character's expression and gestures.
     const auto library = graphics::characterLibrary();
     const auto kid = std::find_if(library.begin(), library.end(), [](const graphics::CharacterFile &f) { return f.path.endsWith("kid.json"); });

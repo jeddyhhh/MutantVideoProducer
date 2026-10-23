@@ -81,6 +81,13 @@ What changed in each version of Mutant Video Producer. The newest is first.
 
 ### Fixed
 
+- Closing the program could hang (the window gone, the program still running) after animation scenes with video layers
+  had played: their decoders were freed as render threads ended, where FFmpeg's threads can't finish.
+- A two-shot or reaction shot from the speaker camera could zoom in and out for a few seconds: the two people it framed
+  were chosen again on every frame (the listener swapping between people who had spoken, the speaker dropping out at a
+  pause). They are now chosen once for the whole shot.
+- Library characters held their arms behind their bodies, hiding their hands and the props in them. Their arms are now in
+  front of the body (behind the head).
 - Deliver showed another project's title, description and tags: the choices made while a project was unsaved went to
   every project saved after it. They now go only to that project, on its first save.
 - The speaker camera cut to the wide shot for a moment at a short pause in a line, or between two lines; it now

@@ -28,6 +28,7 @@
 #include <cmath>
 #include <functional>
 #include <map>
+#include <mutex>
 #include <private/qopenglpaintengine_p.h>
 
 namespace motion {
@@ -761,7 +762,9 @@ struct Average {
 // Draft rendering (the editor's preview): motion blur takes fewer moments. Set per render thread by the graphics
 // generator from its context's quality.
 thread_local bool draftRender = false;
-// A video layer's picture at `seconds` into its file: a decoder per file and render thread, kept between frames.
+// A video layer's picture at `seconds` into its file. Decoders are kept between frames in one pool that the render
+// threads borrow from (not one per thread: a thread's own were freed as it ended, inside Windows' loader lock, where
+// FFmpeg's decoding threads can't finish, and closing the program hung).
 QImage videoFrame(const QString &file, double seconds, bool loop, QSize want) {
   struct Source {
     std::unique_ptr<VideoDecoder> decoder;
@@ -769,25 +772,49 @@ QImage videoFrame(const QString &file, double seconds, bool loop, QSize want) {
     double duration = 0;
     bool failed = false;
   };
-  thread_local std::map<QString, Source> sources;
-  if (sources.size() > 12 && !sources.count(file))
-    sources.clear(); // (a few files at a time; the rest open again when needed)
-  Source &s = sources[file];
-  if (!s.decoder && !s.failed) {
-    const MediaInfo info = probeMedia(file);
-    s.decoder = std::make_unique<VideoDecoder>();
-    if (info.video.empty() || !s.decoder->open(file, info.video.front().index, nullptr, false)) {
-      s.decoder.reset();
-      s.failed = true;
-    } else
-      s.duration = double(info.duration) / kUsPerSecond;
+  struct Pool {
+    std::mutex mutex;
+    std::multimap<QString, std::unique_ptr<Source>> idle;
+  };
+  static Pool *pool = new Pool; // (never destroyed: the program's end frees it)
+  std::unique_ptr<Source> s;
+  {
+    std::lock_guard lock(pool->mutex);
+    if (auto it = pool->idle.find(file); it != pool->idle.end()) {
+      s = std::move(it->second);
+      pool->idle.erase(it);
+    }
   }
-  if (!s.decoder)
-    return {};
-  if (loop && s.duration > 0)
-    seconds = std::fmod(std::max(0., seconds), s.duration);
-  const AVFrame *frame = s.decoder->frameAt(TimeUs(std::clamp(seconds, 0., 86400.) * kUsPerSecond));
-  return frame ? s.converter.convert(frame, want, !draftRender) : QImage();
+  if (!s) {
+    s = std::make_unique<Source>();
+    const MediaInfo info = probeMedia(file);
+    s->decoder = std::make_unique<VideoDecoder>();
+    if (info.video.empty() || !s->decoder->open(file, info.video.front().index, nullptr, false)) {
+      s->decoder.reset();
+      s->failed = true;
+    } else
+      s->duration = double(info.duration) / kUsPerSecond;
+  }
+  QImage picture;
+  if (s->decoder) {
+    if (loop && s->duration > 0)
+      seconds = std::fmod(std::max(0., seconds), s->duration);
+    if (const AVFrame *frame = s->decoder->frameAt(TimeUs(std::clamp(seconds, 0., 86400.) * kUsPerSecond)))
+      picture = s->converter.convert(frame, want, !draftRender);
+  }
+  std::unique_ptr<Source> spare; // (freed outside the lock)
+  {
+    std::lock_guard lock(pool->mutex);
+    pool->idle.emplace(file, std::move(s));
+    if (pool->idle.size() > 16) { // (a few files at a time; the rest open again when needed)
+      auto other = std::find_if(pool->idle.begin(), pool->idle.end(), [&](const auto &e) { return e.first != file; });
+      if (other == pool->idle.end())
+        other = pool->idle.begin();
+      spare = std::move(other->second);
+      pool->idle.erase(other);
+    }
+  }
+  return picture;
 }
 // A layer's own video effects ([{"type": id, "params": {setting: value}}]), each with its settings, for a picture of
 // `picture` pixels.
@@ -1113,10 +1140,14 @@ public:
       const double window = std::clamp(speaker["window"].toDouble(.5), .05, 3.);
       const double now = std::isfinite(speakerTime) ? speakerTime : t;
       QString kind = "speaker";
+      double shotFrom = 0, shotTo = 0;
       for (auto v : speaker["shots"].toArray()) {
         const QJsonArray shot = v.toArray();
-        if (now >= shot[0].toDouble() && now < shot[1].toDouble())
+        if (now >= shot[0].toDouble() && now < shot[1].toDouble()) {
           kind = shot[2].toString("speaker");
+          shotFrom = shot[0].toDouble();
+          shotTo = shot[1].toDouble();
+        }
       }
       const QJsonObject audio = scene["audio"].toObject();
       QVector<QPair<QString, QString>> cast; // (layer id, binding)
@@ -1162,12 +1193,24 @@ public:
         if (again)
           who = before;
       }
-      QString other; // the listener: who spoke most in the seconds before the speaker's moment
+      QString other; // the listener: who spoke most in the seconds before the shot
       if (kind == "listener" || kind == "two") {
-        double most = speaker["quiet"].toDouble(.06) * .5;
+        // Both chosen once for the whole shot: frame by frame, the speaker dropped out at a pause and the listener
+        // swapped between the people who had spoken, and the camera jumped between them.
+        const int samples = std::clamp(int((shotTo - shotFrom) * 12), 6, 96);
+        double loudest = quiet;
+        QString talker;
+        for (const auto &[id, binding] : cast)
+          if (const double l = level(binding, shotFrom, shotTo, samples); l > loudest) {
+            loudest = l;
+            talker = id;
+          }
+        if (!talker.isEmpty())
+          who = talker;
+        double most = quiet * .5;
         for (const auto &[id, binding] : cast)
           if (id != who)
-            if (const double l = level(binding, now - 8, now - window, 24); l > most) {
+            if (const double l = level(binding, shotFrom - 8, shotFrom, 96); l > most) {
               most = l;
               other = id;
             }
