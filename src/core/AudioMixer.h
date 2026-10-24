@@ -87,6 +87,8 @@ private:
         std::unique_ptr<AudioProcessor> proc;
         int64_t expected = -1;
         uint64_t lastUsed = 0;
+        int64_t quiet = 0; // samples nothing has gone in or come out for
+        bool passed = false; // silence is passing it by
     };
     void processChain(const EffectChain& chain, float* buf, int frames, int64_t timelinePos, TimeUs keyTime,
                       bool forceReset = false);

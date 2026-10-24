@@ -6,6 +6,10 @@ What changed in each version of Mutant Video Producer. The newest is first.
 
 ### Changed
 
+- Faster renders of animation episodes (Four Score at 320x240: 30 s of picture in 16 s, was 39 s): the audio mix runs on
+  its own thread beside the pictures, audio effects pass silent stretches by (a voice track's pitch shift and echo cost
+  nothing between its lines), and scenes are drawn with less work (their layer tree built once and kept, poses worked out
+  once a moment, only a layer's changing settings evaluated, no readback for a soft layer without effects of its own).
 - Animation scenes on the GPU: motion blur, soft layers (blur and depth of field), a layer's own effects and groups seen
   through as one no longer draw CPU pictures when rendering with GPU compositing, and the preview paints scenes on the
   GPU instead of drawing ahead on the CPU. An episode scene with motion blur: 235 ms a frame to 68 ms (export), 80 ms to

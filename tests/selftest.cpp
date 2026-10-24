@@ -2107,6 +2107,22 @@ int cmdAudioFx(const QString& mediaDir, const QString& outDir)
         }
     }
     {
+        // Track FX pass silence by once their output has died away, and start afresh when sound comes back: a line after
+        // a long gap sounds as the same line at the start (and the gap costs nothing).
+        ProjectSnapshot first = snapFor(sine, kUsPerSecond);
+        // (a filter: the same sound wherever it starts; a pitch shift's output also depends on where its frames fall)
+        audioTrack(first).effects.push_back(makeEffectOfType(QStringLiteral("a_filter"), 910));
+        ProjectSnapshot later = first;
+        audioClip(later).start = 8 * kUsPerSecond;
+        const std::vector<float> a = mixRange(first, 0, 2.5), all = mixRange(later, 0, 10.5);
+        double worst = 0, peak = 0;
+        for (size_t i = 0; i < a.size(); ++i) {
+            worst = std::max(worst, double(std::abs(a[i] - all[size_t(8 * rate) * 2 + i])));
+            peak = std::max(peak, double(std::abs(a[i])));
+        }
+        check(peak > 0.01 && worst < 1e-4, QStringLiteral("track FX after a long silence sound as at the start (difference %1)").arg(worst, 0, 'g', 3));
+    }
+    {
         // Track reverb / delay ring on after a 1 s event ends; event FX don't.
         for (const char* fx : {"a_reverb", "a_delay"}) {
             ProjectSnapshot s = snapFor(sine, kUsPerSecond);

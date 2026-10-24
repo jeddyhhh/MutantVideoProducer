@@ -4,6 +4,7 @@
 #include "core/FrameConverter.h"
 #include "core/MediaInfo.h"
 #include "core/VideoDecoder.h"
+#include <QLatin1StringView>
 #include <QColor>
 #include <QFont>
 #include <QFontMetricsF>
@@ -29,7 +30,10 @@
 #include <functional>
 #include <map>
 #include <mutex>
+#include <optional>
 #include <private/qopenglpaintengine_p.h>
+
+using namespace Qt::StringLiterals;
 
 namespace motion {
 namespace {
@@ -46,7 +50,7 @@ int maximumCount(QJsonValue v, int fallback, int cap) {
   auto o = v.toObject();
   if (o.contains("keyframes")) {
     int maximum = 0;
-    for (auto k : o["keyframes"].toArray())
+    for (auto k : o["keyframes"_L1].toArray())
       maximum = std::max(maximum, int(k.toArray()[1].toDouble()));
     return std::clamp(maximum, 0, cap);
   }
@@ -85,21 +89,21 @@ QJsonValue interpolate(const QJsonValue &a, const QJsonValue &b, double u) {
 double audioLevel(const QJsonObject &binding, const QJsonObject &scene,
                   double time) {
   auto audio =
-      scene["audio"].toObject()[binding["audio"].toString()].toObject();
-  double at = time * audio["rate"].toDouble(1) + audio["offset"].toDouble();
-  if (const QString wanted = binding["viseme"].toString(); !wanted.isEmpty()) {
+      scene["audio"_L1].toObject()[binding["audio"_L1].toString()].toObject();
+  double at = time * audio["rate"_L1].toDouble(1) + audio["offset"_L1].toDouble();
+  if (const QString wanted = binding["viseme"_L1].toString(); !wanted.isEmpty()) {
     // The mouth shape being spoken: 1 for the layer of that shape, 0 for the
     // others. Quiet is "rest"; with sound, the shape from the words (a track
     // binding's "visemes", [[seconds, shape], ...]), or "A" without them.
     QJsonObject loud = binding;
     loud.remove("viseme");
-    loud["channel"] = "peak";
-    loud["attack"] = .02;
-    loud["release"] = .05;
-    QString now = audioLevel(loud, scene, time) < binding["quiet"].toDouble(.05)
+    loud["channel"_L1] = "peak";
+    loud["attack"_L1] = .02;
+    loud["release"_L1] = .05;
+    QString now = audioLevel(loud, scene, time) < binding["quiet"_L1].toDouble(.05)
                       ? QStringLiteral("rest")
                       : QStringLiteral("A");
-    const auto shapes = audio["visemes"].toArray();
+    const auto shapes = audio["visemes"_L1].toArray();
     if (now != "rest" && !shapes.isEmpty()) {
       auto after = std::upper_bound(shapes.begin(), shapes.end(), at,
                                     [](double x, const QJsonValue &v) {
@@ -111,21 +115,21 @@ double audioLevel(const QJsonObject &binding, const QJsonObject &scene,
     }
     return now == wanted ? 1 : 0;
   }
-  const auto mode = binding["channel"].toString("peak");
+  const auto mode = binding["channel"_L1].toString("peak");
   if (mode == "beat") {
-    double level = 0, release = std::max(.001, binding["release"].toDouble(.2));
-    for (auto beat : audio["beats"].toArray())
+    double level = 0, release = std::max(.001, binding["release"_L1].toDouble(.2));
+    for (auto beat : audio["beats"_L1].toArray())
       if (at >= beat.toDouble())
         level = std::max(level, std::exp(-(at - beat.toDouble()) / release));
     return level;
   }
   auto left = audio[mode == "right" ? "right" : "left"].toArray(),
-       right = audio["right"].toArray();
-  const double duration = audio["duration"].toDouble();
+       right = audio["right"_L1].toArray();
+  const double duration = audio["duration"_L1].toDouble();
   if (left.isEmpty() || duration <= 0 || at < 0 || at >= duration)
     return 0;
-  const double attack = std::max(.001, binding["attack"].toDouble(.03)),
-               release = std::max(.001, binding["release"].toDouble(.12));
+  const double attack = std::max(.001, binding["attack"_L1].toDouble(.03)),
+               release = std::max(.001, binding["release"_L1].toDouble(.12));
   double peak = 0;
   // A bounded, time-based envelope; no state to drift on seek/export.
   for (int k = 0; k < 24; ++k) {
@@ -162,15 +166,15 @@ QString checkValue(const QJsonValue &v, int depth = 0) {
     auto o = v.toObject();
     if (o.contains("easing")) {
       QJsonArray keys;
-      keys.append(QJsonArray{0, 0, o["easing"]});
+      keys.append(QJsonArray{0, 0, o["easing"_L1]});
       auto spec = QJsonObject{{"keyframes", keys}};
       if (auto error = checkValue(spec, depth + 1); !error.isEmpty())
         return error;
     }
     if (o.contains("keyframes")) {
-      auto ks = o["keyframes"].toArray();
+      auto ks = o["keyframes"_L1].toArray();
       double previous = -1;
-      if (!o["keyframes"].isArray() || ks.isEmpty() || ks.size() > 256)
+      if (!o["keyframes"_L1].isArray() || ks.isEmpty() || ks.size() > 256)
         return "Use 1–256 keyframes.";
       for (auto k : ks) {
         auto a = k.toArray();
@@ -200,8 +204,8 @@ QString checkValue(const QJsonValue &v, int depth = 0) {
         }
       }
       if (o.contains("loop") &&
-          (!finite(o["loop"]) || o["loop"].toDouble() <= 0 ||
-           o["loop"].toDouble() > 3600))
+          (!finite(o["loop"_L1]) || o["loop"_L1].toDouble() <= 0 ||
+           o["loop"_L1].toDouble() > 3600))
         return "Loop duration must be 0–3600 seconds.";
     }
     for (auto it = o.begin(); it != o.end(); ++it)
@@ -215,7 +219,7 @@ QString checkCommands(const QJsonValue &v) {
     if (!v.toObject().contains("keyframes"))
       return "Paths need commands or keyframed commands.";
     QJsonArray signature;
-    for (auto key : v.toObject()["keyframes"].toArray()) {
+    for (auto key : v.toObject()["keyframes"_L1].toArray()) {
       auto a = key.toArray();
       if (auto e = checkCommands(a[1]); !e.isEmpty())
         return e;
@@ -323,7 +327,7 @@ QJsonValue evaluate(const QJsonValue &v, double time,
     auto o = v.toObject();
     if (o.contains("subtitle")) { // the words of the line playing on that binding's track (or none)
       const double hold = o.value("hold").toDouble(0.3);
-      for (auto line : scene["audio"].toObject()[o["subtitle"].toString()].toObject()["lines"].toArray()) {
+      for (auto line : scene["audio"_L1].toObject()[o["subtitle"_L1].toString()].toObject()["lines"_L1].toArray()) {
         const QJsonArray l = line.toArray();
         if (time >= l[0].toDouble() && time < l[1].toDouble() + hold)
           return o.value("upper").toBool() ? l[2].toString().toUpper() : l[2].toString();
@@ -331,24 +335,24 @@ QJsonValue evaluate(const QJsonValue &v, double time,
       return QString();
     }
     if (o.contains("audio"))
-      return o["base"].toDouble() +
-             o["amount"].toDouble(1) * audioLevel(o, scene, time);
+      return o["base"_L1].toDouble() +
+             o["amount"_L1].toDouble(1) * audioLevel(o, scene, time);
     if (o.contains("variable") && o.contains("equals")) // 1 while a variable (a character's mood) has that value, else 0
-      return evaluate(scene["variables"].toObject()[o["variable"].toString()], time, scene) == o["equals"] ? 1 : 0;
+      return evaluate(scene["variables"_L1].toObject()[o["variable"_L1].toString()], time, scene) == o["equals"_L1] ? 1 : 0;
     if (o.contains("variable")) {
       auto value = evaluate(
-          scene["variables"].toObject()[o["variable"].toString()], time, scene);
+          scene["variables"_L1].toObject()[o["variable"_L1].toString()], time, scene);
       return value.isDouble()
-                 ? QJsonValue(value.toDouble() + o["offset"].toDouble())
+                 ? QJsonValue(value.toDouble() + o["offset"_L1].toDouble())
                  : value;
     }
     if (o.contains("keyframes")) {
-      auto ks = o["keyframes"].toArray();
+      auto ks = o["keyframes"_L1].toArray();
       if (ks.isEmpty())
         return {};
-      double loop = o["loop"].toDouble();
+      double loop = o["loop"_L1].toDouble();
       if (loop > 0 && time >= 0) {
-        double t = std::fmod(time, loop * (o["ping_pong"].toBool() ? 2 : 1));
+        double t = std::fmod(time, loop * (o["ping_pong"_L1].toBool() ? 2 : 1));
         time = t > loop ? loop * 2 - t : t;
       }
       auto first = ks.first().toArray();
@@ -361,7 +365,7 @@ QJsonValue evaluate(const QJsonValue &v, double time,
               a[1], b[1],
               ease((time - a[0].toDouble()) /
                        std::max(1e-8, b[0].toDouble() - a[0].toDouble()),
-                   a.size() > 2 ? a[2] : o["easing"]));
+                   a.size() > 2 ? a[2] : o["easing"_L1]));
       }
       return ks.last().toArray()[1];
     }
@@ -384,7 +388,7 @@ bool animating(const QJsonValue &v) {
     if (o.contains("keyframes") || o.contains("audio") || o.contains("subtitle") ||
         o.contains("variable") || o.contains("in") || o.contains("out") ||
         o.contains("follow") || o.contains("text_animation") ||
-        o["type"] == "particles" || o["type"] == "repeater")
+        o["type"_L1] == "particles" || o["type"_L1] == "repeater")
       return true;
     for (auto it = o.begin(); it != o.end(); ++it)
       if (animating(it.value()))
@@ -416,7 +420,7 @@ QPainterPath path(const QJsonArray &commands) {
   return p;
 }
 QString validate(const QJsonObject &s) {
-  if (s["version"].toInt() != 2 || !s["layers"].isArray())
+  if (s["version"_L1].toInt() != 2 || !s["layers"_L1].isArray())
     return "Animation scenes need version: 2 and layers.";
   if (QJsonDocument(s).toJson(QJsonDocument::Compact).size() > 4 * 1024 * 1024)
     return "Scene limit: 4 MB.";
@@ -426,7 +430,7 @@ QString validate(const QJsonObject &s) {
   QSet<QString> symbols;
   int count = 0;
   QVector<QMap<QString, QJsonObject>> prototypeScopes;
-  auto definitions = s["symbols"].toObject();
+  auto definitions = s["symbols"_L1].toObject();
   for (auto it = definitions.begin(); it != definitions.end(); ++it)
     symbols.insert(it.key());
   std::function<QString(QJsonArray, int, QString)> layers =
@@ -437,12 +441,12 @@ QString validate(const QJsonObject &s) {
       if (!v.isObject() || ++count > kMaxLayers)
         return QStringLiteral("Scene limit: %1 layers (including reusable definitions).").arg(kMaxLayers);
       auto o = v.toObject();
-      auto type = o["type"].toString();
+      auto type = o["type"_L1].toString();
       if (!QStringList{"rect", "ellipse", "line", "text", "image", "video", "path",
                        "group", "instance", "repeater", "particles", "chart", "noise", "flash"}
                .contains(type))
         return "Unknown animation layer type.";
-      auto id = o["id"].toString();
+      auto id = o["id"_L1].toString();
       if (id.startsWith('$'))
         return "Layer IDs beginning with $ are reserved.";
       if (id.isEmpty())
@@ -450,38 +454,38 @@ QString validate(const QJsonObject &s) {
       if (ids.contains(id))
         return "Layer IDs must be unique across the scene.";
       if (!o.contains("parent") && !inherited.isEmpty())
-        o["parent"] = inherited;
+        o["parent"_L1] = inherited;
       ids[id] = o;
       if (type == "path")
-        if (auto e = checkCommands(o["commands"]); !e.isEmpty())
+        if (auto e = checkCommands(o["commands"_L1]); !e.isEmpty())
           return e;
       if (type == "chart") { // (the renderer drew an unknown dataset as nothing and cut rows after 128 silently)
-        if (!o["data"].isArray() && o.contains("dataset") &&
-            !s["datasets"].toObject().contains(o["dataset"].toString()))
-          return "Chart dataset \"" + o["dataset"].toString() + "\" isn't in the scene's datasets.";
-        const auto rows = o["data"].isArray() ? o["data"].toArray()
-                                              : s["datasets"].toObject()[o["dataset"].toString()].toArray();
+        if (!o["data"_L1].isArray() && o.contains("dataset") &&
+            !s["datasets"_L1].toObject().contains(o["dataset"_L1].toString()))
+          return "Chart dataset \"" + o["dataset"_L1].toString() + "\" isn't in the scene's datasets.";
+        const auto rows = o["data"_L1].isArray() ? o["data"_L1].toArray()
+                                              : s["datasets"_L1].toObject()[o["dataset"_L1].toString()].toArray();
         if (rows.size() > 128)
           return "Charts: up to 128 rows.";
       }
-      if (o.contains("children") && !o["children"].isArray())
+      if (o.contains("children") && !o["children"_L1].isArray())
         return "children must be a layer array.";
       if (o.contains("children")) {
-        if (o["type"] == "group") {
-          if (auto e = layers(o["children"].toArray(), depth + 1, id);
+        if (o["type"_L1] == "group") {
+          if (auto e = layers(o["children"_L1].toArray(), depth + 1, id);
               !e.isEmpty())
             return e;
         } else {
           auto outer = ids;
           ids.clear();
-          if (auto e = layers(o["children"].toArray(), depth + 1, {});
+          if (auto e = layers(o["children"_L1].toArray(), depth + 1, {});
               !e.isEmpty())
             return e;
           prototypeScopes.append(ids);
           ids = outer;
         }
       }
-      if (type == "instance" && !symbols.contains(o["symbol"].toString()))
+      if (type == "instance" && !symbols.contains(o["symbol"_L1].toString()))
         return "Instance references an unknown reusable symbol.";
       if (type == "repeater" || type == "particles") {
         auto n = o.value("count");
@@ -496,7 +500,7 @@ QString validate(const QJsonObject &s) {
           } else if (n.isObject()) {
             auto spec = n.toObject();
             if (spec.contains("keyframes")) {
-              for (auto k : spec["keyframes"].toArray())
+              for (auto k : spec["keyframes"_L1].toArray())
                 if (!valid(k.toArray()[1]))
                   return "Animated counts exceed the supported range.";
             } else if (!spec.contains("audio") && !spec.contains("variable"))
@@ -506,11 +510,11 @@ QString validate(const QJsonObject &s) {
         }
       }
       if (o.contains("commands") && type != "path")
-        if (auto e = checkCommands(o["commands"]); !e.isEmpty())
+        if (auto e = checkCommands(o["commands"_L1]); !e.isEmpty())
           return e;
-      if (auto mask = o["mask"];
-          mask.isObject() && mask.toObject()["type"] == "path")
-        if (auto e = checkCommands(mask.toObject()["commands"]); !e.isEmpty())
+      if (auto mask = o["mask"_L1];
+          mask.isObject() && mask.toObject()["type"_L1] == "path")
+        if (auto e = checkCommands(mask.toObject()["commands"_L1]); !e.isEmpty())
           return e;
       for (auto property : {"fill", "stroke"})
         if (o.contains(property)) {
@@ -518,14 +522,14 @@ QString validate(const QJsonObject &s) {
           if (c.isString() && !QColor(c.toString()).isValid())
             return "Use valid fill/stroke colours.";
           if (c.isObject() && c.toObject().contains("keyframes"))
-            for (auto k : c.toObject()["keyframes"].toArray())
+            for (auto k : c.toObject()["keyframes"_L1].toArray())
               if (!QColor(k.toArray()[1].toString()).isValid())
                 return "Animated colours must be valid colours.";
         }
     }
     return {};
   };
-  if (auto e = layers(s["layers"].toArray(), 0, {}); !e.isEmpty())
+  if (auto e = layers(s["layers"_L1].toArray(), 0, {}); !e.isEmpty())
     return e;
   // Definitions may contain local IDs; do not mix their namespaces with the
   // main scene.
@@ -533,9 +537,9 @@ QString validate(const QJsonObject &s) {
   QVector<QMap<QString, QJsonObject>> scopes{mainIds};
   for (auto it = definitions.begin(); it != definitions.end(); ++it) {
     ids.clear();
-    if (!it.value().isObject() || !it.value().toObject()["layers"].isArray())
+    if (!it.value().isObject() || !it.value().toObject()["layers"_L1].isArray())
       return "Symbols need a layers array.";
-    if (auto e = layers(it.value().toObject()["layers"].toArray(), 0, {});
+    if (auto e = layers(it.value().toObject()["layers"_L1].toArray(), 0, {});
         !e.isEmpty())
       return e;
     scopes.append(ids);
@@ -544,13 +548,13 @@ QString validate(const QJsonObject &s) {
   for (auto scope : scopes) {
     ids = scope;
     for (auto it = ids.begin(); it != ids.end(); ++it) {
-      auto parent = it.value()["parent"].toString();
+      auto parent = it.value()["parent"_L1].toString();
       if (!parent.isEmpty() &&
-          (!ids.contains(parent) || ids[parent]["type"] != "group"))
+          (!ids.contains(parent) || ids[parent]["type"_L1] != "group"))
         return "Parent must reference a group layer ID.";
-      auto follow = it.value()["follow"].toObject()["path"].toString();
+      auto follow = it.value()["follow"_L1].toObject()["path"_L1].toString();
       if (!follow.isEmpty() &&
-          (!ids.contains(follow) || ids[follow]["type"] != "path"))
+          (!ids.contains(follow) || ids[follow]["type"_L1] != "path"))
         return "Path following must reference a path layer ID.";
     }
     QSet<QString> visiting, done;
@@ -562,7 +566,7 @@ QString validate(const QJsonObject &s) {
       visiting.insert(id);
       auto o = ids[id];
       for (auto next :
-           {o["parent"].toString(), o["follow"].toObject()["path"].toString()})
+           {o["parent"_L1].toString(), o["follow"_L1].toObject()["path"_L1].toString()})
         if (!next.isEmpty() && cycle(next))
           return true;
       visiting.remove(id);
@@ -573,7 +577,7 @@ QString validate(const QJsonObject &s) {
       if (cycle(it.key()))
         return "Parent/path references must not form a cycle.";
   }
-  auto camera = s["camera"].toObject()["follow"].toString();
+  auto camera = s["camera"_L1].toObject()["follow"_L1].toString();
   if (!camera.isEmpty() && !mainIds.contains(camera))
     return "Camera follows an unknown layer ID.";
   // Bound expanded symbol/repeater work and reject recursive symbols before
@@ -587,19 +591,19 @@ QString validate(const QJsonObject &s) {
     for (auto v : a) {
       auto o = v.toObject();
       int repeats =
-          o["type"] == "repeater" ? maximumCount(o.value("count"), 8, 128) : 1;
+          o["type"_L1] == "repeater" ? maximumCount(o.value("count"), 8, 128) : 1;
       for (int i = 0; i < repeats; ++i) {
         if (++expanded > 4096)
           return false;
-        if (!expansion(o["children"].toArray(), depth + 1))
+        if (!expansion(o["children"_L1].toArray(), depth + 1))
           return false;
-        auto symbol = o["symbol"].toString();
+        auto symbol = o["symbol"_L1].toString();
         if (!symbol.isEmpty()) {
           if (stack.contains(symbol) || !definitions.contains(symbol))
             return false;
           stack.insert(symbol);
           bool ok = expansion(
-              definitions[symbol].toObject()["layers"].toArray(), depth + 1);
+              definitions[symbol].toObject()["layers"_L1].toArray(), depth + 1);
           stack.remove(symbol);
           if (!ok)
             return false;
@@ -608,15 +612,15 @@ QString validate(const QJsonObject &s) {
     }
     return true;
   };
-  if (!expansion(s["layers"].toArray(), 0))
+  if (!expansion(s["layers"_L1].toArray(), 0))
     return "Recursive symbols or too much expanded work (4096 layers / depth "
            "16).";
   for (auto it = definitions.begin(); it != definitions.end(); ++it) {
     stack = {it.key()};
-    if (!expansion(it.value().toObject()["layers"].toArray(), 0))
+    if (!expansion(it.value().toObject()["layers"_L1].toArray(), 0))
       return "Recursive or excessively expanded symbol.";
   }
-  auto audio = s["audio"].toObject();
+  auto audio = s["audio"_L1].toObject();
   for (auto it = audio.begin(); it != audio.end(); ++it)
     if (auto e = graphics::validateWaveform(it.value().toObject());
         !e.isEmpty())
@@ -626,7 +630,7 @@ QString validate(const QJsonObject &s) {
 namespace {
 double number(const QJsonObject &o, const char *key, double fallback, double t,
               const QJsonObject &s) {
-  auto v = evaluate(o[key], t, s);
+  auto v = evaluate(o.value(QLatin1StringView(key)), t, s); // (a view: no QString made for the key, on every lookup)
   return std::clamp(v.toDouble(fallback), -1e7, 1e7);
 }
 QColor colour(const QJsonValue &v, double t, const QJsonObject &s,
@@ -643,11 +647,11 @@ QPainterPath inBox(const QPainterPath &p, const QRectF &b) {
 QPainterPath shape(const QJsonObject &o, const QRectF &b, double t,
                    const QJsonObject &s) {
   QPainterPath p;
-  QString type = o["type"].toString();
+  QString type = o["type"_L1].toString();
   if (type == "ellipse")
     p.addEllipse(b);
   else if (type == "path")
-    p = inBox(path(evaluate(o["commands"], t, s).toArray()), b);
+    p = inBox(path(evaluate(o["commands"_L1], t, s).toArray()), b);
   else if (type == "line") {
     p.moveTo(b.topLeft());
     p.lineTo(b.bottomRight());
@@ -658,27 +662,27 @@ QPainterPath shape(const QJsonObject &o, const QRectF &b, double t,
 }
 QBrush brush(const QJsonObject &o, const QRectF &b, double t,
              const QJsonObject &s) {
-  auto g = evaluate(o["gradient"], t, s).toObject();
+  auto g = evaluate(o["gradient"_L1], t, s).toObject();
   if (g.isEmpty())
-    return colour(o["fill"], t, s);
+    return colour(o["fill"_L1], t, s);
   QGradientStops stops;
-  for (auto v : g["stops"].toArray()) {
+  for (auto v : g["stops"_L1].toArray()) {
     auto a = v.toArray();
     if (a.size() == 2)
       stops.append(
           {std::clamp(a[0].toDouble(), 0., 1.), QColor(a[1].toString())});
   }
-  if (g["type"] == "radial") {
-    QRadialGradient grad(QPointF(b.x() + b.width() * g["x1"].toDouble(.5),
-                                 b.y() + b.height() * g["y1"].toDouble(.5)),
-                         std::max(1., b.width() * g["radius"].toDouble(.6)));
+  if (g["type"_L1] == "radial") {
+    QRadialGradient grad(QPointF(b.x() + b.width() * g["x1"_L1].toDouble(.5),
+                                 b.y() + b.height() * g["y1"_L1].toDouble(.5)),
+                         std::max(1., b.width() * g["radius"_L1].toDouble(.6)));
     grad.setStops(stops);
     return grad;
   }
-  QLinearGradient grad(b.x() + b.width() * g["x1"].toDouble(),
-                       b.y() + b.height() * g["y1"].toDouble(),
-                       b.x() + b.width() * g["x2"].toDouble(1),
-                       b.y() + b.height() * g["y2"].toDouble(1));
+  QLinearGradient grad(b.x() + b.width() * g["x1"_L1].toDouble(),
+                       b.y() + b.height() * g["y1"_L1].toDouble(),
+                       b.x() + b.width() * g["x2"_L1].toDouble(1),
+                       b.y() + b.height() * g["y2"_L1].toDouble(1));
   grad.setStops(stops);
   return grad;
 }
@@ -703,12 +707,12 @@ void decoration(QPainter &p, const QPainterPath &body, const QJsonObject &style,
   if (style.isEmpty())
     return;
   auto o = evaluate(style, t, s).toObject();
-  QColor c(o["color"].toString(glow ? "#53e3d0" : "#000000"));
+  QColor c(o["color"_L1].toString(glow ? "#53e3d0" : "#000000"));
   p.save();
-  p.translate(o["x"].toDouble() * size.width(),
-              o["y"].toDouble() * size.height());
-  double blur = std::clamp(o["blur"].toDouble(.008), 0., .08) * size.height(),
-         opacity = std::clamp(o["opacity"].toDouble(.4), 0., 1.);
+  p.translate(o["x"_L1].toDouble() * size.width(),
+              o["y"_L1].toDouble() * size.height());
+  double blur = std::clamp(o["blur"_L1].toDouble(.008), 0., .08) * size.height(),
+         opacity = std::clamp(o["opacity"_L1].toDouble(.4), 0., 1.);
   if (blur > 0)
     for (int i = 8; i >= 1; --i) {
       QColor soft = c;
@@ -937,7 +941,7 @@ QString substitute(QString words, const QJsonObject &s, double t) {
   while (matches.hasNext())
     found.prepend(matches.next());
   for (auto m : found) {
-    auto v = evaluate(s["variables"].toObject()[m.captured(1)], t, s);
+    auto v = evaluate(s["variables"_L1].toObject()[m.captured(1)], t, s);
     QString value = v.isString()   ? v.toString()
                     : v.isDouble() ? QString::number(v.toDouble(), 'g', 8)
                     : v.isBool()   ? (v.toBool() ? "true" : "false")
@@ -954,7 +958,65 @@ struct Node {
   QJsonObject o;
   QString id, parent;
   QVector<int> children;
+  QStringList dynamic; // its properties that change with time (keyframes, audio, variables, subtitles inside)
 };
+// Whether a value changes with time: anything keyed, bound to audio or a variable, or a subtitle, anywhere inside it.
+bool changes(const QJsonValue &v) {
+  if (v.isObject()) {
+    const QJsonObject o = v.toObject();
+    if (o.contains("keyframes") || o.contains("audio") || o.contains("variable") || o.contains("subtitle"))
+      return true;
+    return std::any_of(o.begin(), o.end(), [](const QJsonValueConstRef &x) { return changes(x); });
+  }
+  if (v.isArray()) {
+    const QJsonArray a = v.toArray();
+    return std::any_of(a.begin(), a.end(), [](const QJsonValueConstRef &x) { return changes(x); });
+  }
+  return false;
+}
+// A scene's layers as a tree (built once for a scene and kept: motion blur's moments and the frames after use it again).
+struct Structure {
+  QVector<Node> nodes;
+  QMap<QString, int> ids;
+  QVector<int> roots;
+};
+void collect(Structure &s, const QJsonArray &a, const QString &inherited) {
+  for (auto v : a) {
+    Node n;
+    n.o = v.toObject();
+    n.id = n.o["id"_L1].toString();
+    if (n.id.isEmpty())
+      n.id = "$" + QString::number(s.nodes.size());
+    n.parent = n.o["parent"_L1].toString(inherited);
+    for (auto it = n.o.constBegin(); it != n.o.constEnd(); ++it)
+      if (it.key() != "children" && it.key() != "type" && it.key() != "parent" && it.key() != "id" && changes(it.value()))
+        n.dynamic << it.key();
+    int i = s.nodes.size();
+    s.nodes.append(n);
+    s.ids[n.id] = i;
+    if (n.o["type"_L1] == "group")
+      collect(s, n.o["children"_L1].toArray(), n.id);
+  }
+}
+std::shared_ptr<const Structure> structure(const QJsonArray &layers) {
+  thread_local std::vector<std::pair<QJsonArray, std::shared_ptr<const Structure>>> kept; // (the last few scenes)
+  for (const auto &[a, st] : kept)
+    if (a == layers)
+      return st;
+  auto st = std::make_shared<Structure>();
+  collect(*st, layers, {});
+  for (int i = 0; i < st->nodes.size(); ++i) {
+    const QString &parent = st->nodes[i].parent;
+    if (parent.isEmpty() || !st->ids.contains(parent))
+      st->roots.append(i);
+    else
+      st->nodes[st->ids[parent]].children.append(i);
+  }
+  if (kept.size() >= 8)
+    kept.erase(kept.begin());
+  kept.emplace_back(layers, st);
+  return st;
+}
 void applyBlend(QPainter &p, const QString &mode) {
   if (mode == "add")
     p.setCompositionMode(QPainter::CompositionMode_Plus);
@@ -1027,38 +1089,19 @@ class Graph {
 public:
   QJsonObject scene;
   QSizeF size;
-  QVector<Node> nodes;
-  QMap<QString, int> ids;
-  QVector<int> roots;
+  std::shared_ptr<const Structure> tree;
+  const QVector<Node> &nodes;
+  const QMap<QString, int> &ids;
+  const QVector<int> &roots;
   int &budget;
+  // Poses worked out at one moment (a layer's parents are asked for by every child; a frame asks for each many times).
+  mutable double poseTime = NAN;
+  mutable std::vector<std::optional<std::pair<QRectF, QTransform>>> poses;
   int unblurred = -1; // the layer being drawn into its blur's own picture
   double speakerTime = NAN; // the frame's own time while motion blur draws its moments (the speaker camera cuts once)
   Graph(QJsonObject scene, QSizeF size, int &budget)
-      : scene(std::move(scene)), size(size), budget(budget) {
-    collect(this->scene["layers"].toArray(), {});
-    for (int i = 0; i < nodes.size(); ++i) {
-      auto parent = nodes[i].parent;
-      if (parent.isEmpty() || !ids.contains(parent))
-        roots.append(i);
-      else
-        nodes[ids[parent]].children.append(i);
-    }
-  }
-  void collect(QJsonArray a, QString inherited) {
-    for (auto v : a) {
-      Node n;
-      n.o = v.toObject();
-      n.id = n.o["id"].toString();
-      if (n.id.isEmpty())
-        n.id = "$" + QString::number(nodes.size());
-      n.parent = n.o["parent"].toString(inherited);
-      int i = nodes.size();
-      nodes.append(n);
-      ids[n.id] = i;
-      if (n.o["type"] == "group")
-        collect(n.o["children"].toArray(), n.id);
-    }
-  }
+      : scene(std::move(scene)), size(size), tree(structure(this->scene["layers"_L1].toArray())), nodes(tree->nodes), ids(tree->ids),
+        roots(tree->roots), budget(budget) {}
   QTransform childSpace(const Pose &pose) const {
     QTransform local;
     local.translate(pose.box.x(), pose.box.y());
@@ -1069,8 +1112,19 @@ public:
   Pose pose(int i, double t, int depth = 0) const {
     if (depth > 16 || i < 0 || i >= nodes.size())
       return {};
+    if (!(t == poseTime)) {
+      poseTime = t;
+      poses.assign(size_t(nodes.size()), std::nullopt);
+    }
+    if (const auto &known = poses[size_t(i)])
+      return {known->first, known->second};
+    const Pose worked = workPose(i, t, depth);
+    poses[size_t(i)] = std::pair{worked.box, worked.world};
+    return worked;
+  }
+  Pose workPose(int i, double t, int depth) const {
     const auto &o = nodes[i].o;
-    bool group = o["type"] == "group";
+    bool group = o["type"_L1] == "group";
     QRectF b(number(o, "x", 0, t, scene) * size.width(),
              number(o, "y", 0, t, scene) * size.height(),
              std::clamp(number(o, "width", group ? 1 : .3, t, scene), 0., 4.) *
@@ -1080,15 +1134,15 @@ public:
     QTransform parent;
     if (ids.contains(nodes[i].parent))
       parent = childSpace(pose(ids[nodes[i].parent], t, depth + 1));
-    auto follow = o["follow"].toObject();
+    auto follow = o["follow"_L1].toObject();
     double angle = number(o, "rotation", 0, t, scene);
-    auto ref = follow["path"].toString();
+    auto ref = follow["path"_L1].toString();
     if (!ref.isEmpty() && ids.contains(ref)) {
       auto target = pose(ids[ref], t, depth + 1);
       auto route =
           target.world.map(shape(nodes[ids[ref]].o, target.box, t, scene));
       double progress = number(follow, "progress", 0, t, scene);
-      progress = follow["loop"].toBool() ? progress - std::floor(progress)
+      progress = follow["loop"_L1].toBool() ? progress - std::floor(progress)
                                          : std::clamp(progress, 0., 1.);
       double u = route.percentAtLength(route.length() * progress);
       QPointF at = parent.inverted().map(route.pointAtPercent(u));
@@ -1096,7 +1150,7 @@ public:
           at +
           QPointF(number(follow, "offset_x", 0, t, scene) * size.width(),
                   number(follow, "offset_y", 0, t, scene) * size.height()));
-      if (follow["orient"].toBool(true)) {
+      if (follow["orient"_L1].toBool(true)) {
         double du = progress >= .999 ? -1e-4 : 1e-4;
         QPointF next =
             parent.inverted().map(route.pointAtPercent(route.percentAtLength(
@@ -1117,12 +1171,12 @@ public:
     return {b, local * parent};
   }
   QTransform camera(double t, const QTransform &base) const {
-    auto c = scene["camera"].toObject();
+    auto c = scene["camera"_L1].toObject();
     if (c.isEmpty())
       return base;
     QPointF center(number(c, "x", .5, t, scene) * size.width(),
                    number(c, "y", .5, t, scene) * size.height());
-    auto follow = c["follow"].toString();
+    auto follow = c["follow"_L1].toString();
     if (ids.contains(follow)) {
       auto target = pose(ids[follow], t);
       center = target.world.map(target.box.center());
@@ -1130,18 +1184,18 @@ public:
                         number(c, "offset_y", 0, t, scene) * size.height());
     }
     double zoom = number(c, "zoom", 1, t, scene);
-    if (auto speaker = c["speaker"].toObject(); !speaker.isEmpty()) {
+    if (auto speaker = c["speaker"_L1].toObject(); !speaker.isEmpty()) {
       // Speaker camera: the layer whose id is a voice binding's name (any
       // case: a character's group) and that has been loudest over the last
       // moment is framed head and shoulders; nobody talking, the keyed shot.
       // Its shots [[from, to, kind]] change that for a while: "wide" (the
       // keyed shot), "listener" (whoever spoke last before the speaker: a
       // reaction), "two" (speaker and listener together), "speaker".
-      const double window = std::clamp(speaker["window"].toDouble(.5), .05, 3.);
+      const double window = std::clamp(speaker["window"_L1].toDouble(.5), .05, 3.);
       const double now = std::isfinite(speakerTime) ? speakerTime : t;
       QString kind = "speaker";
       double shotFrom = 0, shotTo = 0;
-      for (auto v : speaker["shots"].toArray()) {
+      for (auto v : speaker["shots"_L1].toArray()) {
         const QJsonArray shot = v.toArray();
         if (now >= shot[0].toDouble() && now < shot[1].toDouble()) {
           kind = shot[2].toString("speaker");
@@ -1149,7 +1203,7 @@ public:
           shotTo = shot[1].toDouble();
         }
       }
-      const QJsonObject audio = scene["audio"].toObject();
+      const QJsonObject audio = scene["audio"_L1].toObject();
       QVector<QPair<QString, QString>> cast; // (layer id, binding)
       for (auto it = audio.begin(); it != audio.end(); ++it)
         for (auto k = ids.constBegin(); k != ids.constEnd(); ++k)
@@ -1162,7 +1216,7 @@ public:
           sum += audioLevel(b, scene, std::max(0., to - (to - from) * k / std::max(1, samples - 1))) / samples;
         return sum;
       };
-      const double quiet = speaker["quiet"].toDouble(.06);
+      const double quiet = speaker["quiet"_L1].toDouble(.06);
       double best = quiet;
       QString who;
       for (const auto &[id, binding] : cast)
@@ -1172,7 +1226,7 @@ public:
         }
       // A pause in a line, or between lines: the shot holds on whoever spoke last when someone speaks again within
       // `hold` seconds, instead of a glimpse of the wide shot.
-      if (const double hold = std::clamp(speaker["hold"].toDouble(1.2), 0., 5.); who.isEmpty() && hold > 0) {
+      if (const double hold = std::clamp(speaker["hold"_L1].toDouble(1.2), 0., 5.); who.isEmpty() && hold > 0) {
         auto peak = [&](const QString &binding, double from, double to) {
           const QJsonObject b{{"audio", binding}, {"attack", .02}, {"release", .1}};
           double most = 0;
@@ -1221,7 +1275,7 @@ public:
       };
       const QString framed = kind == "listener" ? (other.isEmpty() ? who : other) : kind == "wide" ? QString() : who;
       if (!framed.isEmpty()) {
-        zoom = std::clamp(speaker["zoom"].toDouble(1.7), 1., 6.);
+        zoom = std::clamp(speaker["zoom"_L1].toDouble(1.7), 1., 6.);
         center = head(framed);
         if (kind == "two" && !other.isEmpty()) { // both heads, with room around them
           const QPointF a = head(who), b = head(other);
@@ -1243,7 +1297,7 @@ public:
     return m * base;
   }
   void mask(QPainter &p, const QJsonObject &o, const Pose &at, double t) const {
-    auto m = o["mask"];
+    auto m = o["mask"_L1];
     if (m.isString() && ids.contains(m.toString())) {
       auto target = pose(ids[m.toString()], t);
       QPainterPath clip = at.world.inverted().map(target.world.map(
@@ -1251,12 +1305,12 @@ public:
       p.setClipPath(clip, Qt::IntersectClip);
     } else if (m.isObject()) {
       auto v = evaluate(m, t, scene).toObject();
-      QRectF b(at.box.x() + at.box.width() * v["x"].toDouble(),
-               at.box.y() + at.box.height() * v["y"].toDouble(),
-               at.box.width() * v["width"].toDouble(1),
-               at.box.height() * v["height"].toDouble(1));
+      QRectF b(at.box.x() + at.box.width() * v["x"_L1].toDouble(),
+               at.box.y() + at.box.height() * v["y"_L1].toDouble(),
+               at.box.width() * v["width"_L1].toDouble(1),
+               at.box.height() * v["height"_L1].toDouble(1));
       auto clip = shape(v, b, t, scene);
-      if (v["invert"].toBool()) {
+      if (v["invert"_L1].toBool()) {
         QPainterPath all;
         all.addRect(QRectF(QPointF(), size));
         clip = all.subtracted(clip);
@@ -1266,20 +1320,20 @@ public:
   }
   void drawText(QPainter &p, const QJsonObject &o, const QRectF &b, double t) {
     QString words =
-        substitute(evaluate(o["text"], t, scene).toString(), scene, t);
+        substitute(evaluate(o["text"_L1], t, scene).toString(), scene, t);
     if (words.isEmpty())
       return;
     words.replace('\n', QChar(0x2028));
-    QFont font(evaluate(o["font"], t, scene).toString("Segoe UI"));
+    QFont font(evaluate(o["font"_L1], t, scene).toString("Segoe UI"));
     font.setPixelSize(std::clamp(
         int(number(o, "font_size", .035, t, scene) * size.height()), 1, 4096));
-    font.setBold(evaluate(o["bold"], t, scene).toBool());
+    font.setBold(evaluate(o["bold"_L1], t, scene).toBool());
     font.setLetterSpacing(QFont::AbsoluteSpacing,
                           number(o, "tracking", 0, t, scene) * size.height());
     QTextLayout layout(words, font);
     QTextOption option;
     option.setWrapMode(QTextOption::WrapAtWordBoundaryOrAnywhere);
-    auto align = evaluate(o["align"], t, scene).toString();
+    auto align = evaluate(o["align"_L1], t, scene).toString();
     option.setAlignment(align == "center"  ? Qt::AlignHCenter
                         : align == "right" ? Qt::AlignRight
                                            : Qt::AlignLeft);
@@ -1300,12 +1354,12 @@ public:
     p.save();
     p.setClipRect(b, Qt::IntersectClip);
     double top = b.y() + std::max(0., (b.height() - y) / 2);
-    const auto anim = o["text_animation"].toObject();
+    const auto anim = o["text_animation"_L1].toObject();
     QVector<QPair<int, int>> units;
-    if (anim["unit"] == "line")
+    if (anim["unit"_L1] == "line")
       for (auto l : lines)
         units.append({l.textStart(), l.textLength()});
-    else if (anim["unit"] == "word") {
+    else if (anim["unit"_L1] == "word") {
       QRegularExpression re("\\S+");
       auto matches = re.globalMatch(words);
       while (matches.hasNext() && units.size() < 2048) {
@@ -1338,8 +1392,8 @@ public:
       QPainterPath all;
       for (auto line : lines)
         glyphs(all, line, line.textStart(), line.textLength());
-      decoration(p, all, o["shadow"].toObject(), size, t, scene, false);
-      decoration(p, all, o["glow"].toObject(), size, t, scene, true);
+      decoration(p, all, o["shadow"_L1].toObject(), size, t, scene, false);
+      decoration(p, all, o["glow"_L1].toObject(), size, t, scene, true);
       p.setPen(Qt::NoPen);
       p.setBrush(fill);
       p.drawPath(all);
@@ -1353,14 +1407,14 @@ public:
                      j * number(anim, "stagger", .05, t, scene),
                duration =
                    std::max(.001, number(anim, "duration", .3, t, scene));
-        if (anim["loop"].toDouble() > 0 && age >= 0)
-          age = std::fmod(age, anim["loop"].toDouble());
-        double u = ease(age / duration, anim["easing"].isUndefined()
+        if (anim["loop"_L1].toDouble() > 0 && age >= 0)
+          age = std::fmod(age, anim["loop"_L1].toDouble());
+        double u = ease(age / duration, anim["easing"_L1].isUndefined()
                                             ? QJsonValue("ease_out")
-                                            : anim["easing"]);
+                                            : anim["easing"_L1]);
         if (age < 0)
           continue;
-        auto style = anim["style"].toString("fade");
+        auto style = anim["style"_L1].toString("fade");
         QPointF at(b.x() + line.cursorToX(start),
                    top + line.y() + line.ascent());
         QPainterPath glyph;
@@ -1398,10 +1452,10 @@ public:
       h = (h ^ (h >> 13)) * 1274126177u;
       return (h ^ (h >> 16)) / double(0xffffffffu);
     };
-    const QString style = o["style"].toString("static");
-    const uint32_t seed = uint32_t(o["seed"].toInt(1));
+    const QString style = o["style"_L1].toString("static");
+    const uint32_t seed = uint32_t(o["seed"_L1].toInt(1));
     const double amount = std::clamp(number(o, "amount", style == "static" ? 1 : .5, t, scene), 0., 1.);
-    QColor tint = o.contains("fill") ? colour(o["fill"], t, scene) : QColor(Qt::white);
+    QColor tint = o.contains("fill") ? colour(o["fill"_L1], t, scene) : QColor(Qt::white);
     if (b.width() < 1 || b.height() < 1 || amount <= 0)
       return;
     QImage cells;
@@ -1451,9 +1505,9 @@ public:
   }
   void drawChart(QPainter &p, const QJsonObject &o, const QRectF &b, double t) {
     auto data =
-        o["data"].isArray()
-            ? o["data"].toArray()
-            : scene["datasets"].toObject()[o["dataset"].toString()].toArray();
+        o["data"_L1].isArray()
+            ? o["data"_L1].toArray()
+            : scene["datasets"_L1].toObject()[o["dataset"_L1].toString()].toArray();
     if (data.isEmpty())
       return;
     int count = std::min(128, int(data.size()));
@@ -1467,7 +1521,7 @@ public:
     }
     maximum = std::max(1e-8, number(o, "maximum", maximum, t, scene));
     double progress = std::clamp(number(o, "progress", 1, t, scene), 0., 1.);
-    QString style = o["style"].toString("bar");
+    QString style = o["style"_L1].toString("bar");
     auto font = p.font();
     font.setPixelSize(std::clamp(
         int(number(o, "font_size", .022, t, scene) * size.height()), 1, 512));
@@ -1482,7 +1536,7 @@ public:
         QPainterPath segment;
         segment.arcMoveTo(circle, angle);
         segment.arcTo(circle, angle, -span);
-        QColor c = colour(data[i].toObject()["color"], t, scene,
+        QColor c = colour(data[i].toObject()["color"_L1], t, scene,
                           i % 2 ? "#ffb35c" : "#53e3d0");
         p.setPen(QPen(c, std::max(1., circle.width() * .12), Qt::SolidLine,
                       Qt::FlatCap));
@@ -1499,7 +1553,7 @@ public:
         double h = std::clamp(values[i] / maximum, 0., 1.) * plot * progress;
         double x = b.x() + cell * i;
         QColor c =
-            colour(item["color"], t, scene, i % 2 ? "#679fff" : "#53e3d0");
+            colour(item["color"_L1], t, scene, i % 2 ? "#679fff" : "#53e3d0");
         p.setPen(Qt::NoPen);
         p.setBrush(c);
         if (style == "line") {
@@ -1512,14 +1566,14 @@ public:
         } else
           p.drawRoundedRect(
               QRectF(x + cell * .1, b.y() + plot - h, cell * .8, h), 3, 3);
-        p.setPen(colour(o["text_color"], t, scene));
+        p.setPen(colour(o["text_color"_L1], t, scene));
         p.drawText(QRectF(x, b.y() + plot + 4, cell, b.height() - plot - 4),
                    Qt::AlignHCenter | Qt::AlignTop | Qt::TextWordWrap,
-                   substitute(item["label"].toString(), scene, t));
+                   substitute(item["label"_L1].toString(), scene, t));
         --budget;
       }
       if (style == "line") {
-        p.setPen(QPen(colour(o["fill"], t, scene, "#53e3d0"),
+        p.setPen(QPen(colour(o["fill"_L1], t, scene, "#53e3d0"),
                       std::max(1., number(o, "stroke_width", .003, t, scene) *
                                        size.height())));
         p.setBrush(Qt::NoBrush);
@@ -1540,14 +1594,14 @@ public:
     quint32 seed = quint32(number(o, "seed", 1, t, scene));
     double lifetime =
         std::clamp(number(o, "lifetime", 4, t, scene), .01, 3600.);
-    auto colors = o["colors"].toArray();
+    auto colors = o["colors"_L1].toArray();
     for (int i = 0; i < count && budget > 0; ++i) {
-      double born = o["emission"] == "burst" ? number(o, "delay", 0, t, scene)
+      double born = o["emission"_L1] == "burst" ? number(o, "delay", 0, t, scene)
                                              : random(seed, i * 7) * lifetime;
       if (t < born)
         continue;
       double age = t - born;
-      if (o["emission"] == "burst" && age > lifetime)
+      if (o["emission"_L1] == "burst" && age > lifetime)
         continue;
       age = std::fmod(age, lifetime);
       double direction = number(o, "direction", 90, t, scene) * pi / 180 +
@@ -1563,7 +1617,7 @@ public:
       double radius = std::clamp(number(o, "size", .008, t, scene), .0001, .2) *
                       size.height() * (.5 + random(seed, i * 7 + 4));
       QColor c = colors.isEmpty()
-                     ? colour(o["fill"], t, scene, "#53e3d0")
+                     ? colour(o["fill"_L1], t, scene, "#53e3d0")
                      : QColor(colors[i % colors.size()].toString());
       p.save();
       p.setOpacity(p.opacity() * std::clamp(1 - age / lifetime, 0., 1.));
@@ -1572,7 +1626,7 @@ public:
                age * number(o, "spin", 90, t, scene));
       p.setPen(Qt::NoPen);
       p.setBrush(c);
-      if (o["shape"] == "rect")
+      if (o["shape"_L1] == "rect")
         p.drawRect(QRectF(-radius, -radius / 2, radius * 2, radius));
       else
         p.drawEllipse(QPointF(), radius, radius);
@@ -1585,17 +1639,16 @@ public:
             bool isolate = true) {
     if (depth > 16 || budget-- <= 0)
       return;
-    auto o = nodes[i].o;
-    for (auto it = o.begin(); it != o.end(); ++it)
-      if (it.key() != "children" && it.key() != "type" &&
-          it.key() != "parent" && it.key() != "id")
-        it.value() = evaluate(it.value(), t, scene);
-    if (!evaluate(o["visible"], t, scene).toBool(true) ||
+    QJsonObject evaluated = nodes[i].o;
+    for (const QString &key : nodes[i].dynamic) // (the rest are as they are: no copy, nothing evaluated)
+      evaluated[key] = evaluate(evaluated.value(key), t, scene);
+    const QJsonObject o = std::move(evaluated); // (read only: a lookup of a missing key adds nothing)
+    if (!evaluate(o["visible"_L1], t, scene).toBool(true) ||
         t < number(o, "in", 0, t, scene) ||
         t >= number(o, "out", 1e7, t, scene))
       return;
     if (!noTrail) {
-      auto trail = o["trail"].toObject(), blur = o["motion_blur"].toObject();
+      auto trail = o["trail"_L1].toObject(), blur = o["motion_blur"_L1].toObject();
       if (!trail.isEmpty()) {
         int samples =
             std::clamp(int(number(trail, "samples", 8, t, scene)), 1, 16);
@@ -1621,7 +1674,7 @@ public:
           });
           p.save();
           p.setOpacity(opacity);
-          applyBlend(p, o["blend"].toString());
+          applyBlend(p, o["blend"_L1].toString());
           drawPicture(p, sum);
           p.restore();
           Native n(p);
@@ -1644,7 +1697,7 @@ public:
         p.save();
         p.setWorldTransform({});
         p.setOpacity(opacity);
-        applyBlend(p, o["blend"].toString());
+        applyBlend(p, o["blend"_L1].toString());
         p.drawImage(0, 0, accumulated);
         p.restore();
         return;
@@ -1654,20 +1707,20 @@ public:
     // character's hidden mouth shapes and expressions cost nothing).
     if (isolate && number(o, "opacity", 1, t, scene) <= 0)
       return;
-    QString type = o["type"].toString();
+    QString type = o["type"_L1].toString();
     // Softness: the layer's own blur, plus depth of field: with the camera's
     // depth_of_field, a layer's depth (0 the subject, 1 far away) blurs it
     // as the camera zooms in.
     if (i != unblurred) {
       double softness =
           std::clamp(number(o, "blur", 0, t, scene), 0., .2) * size.height();
-      auto lens = scene["camera"].toObject();
+      auto lens = scene["camera"_L1].toObject();
       if (o.contains("depth") && lens.contains("depth_of_field"))
         softness += std::clamp(number(lens, "depth_of_field", 0, t, scene), 0., 10.) *
                     std::clamp(number(o, "depth", 0, t, scene), 0., 1.) *
                     std::max(0., number(lens, "zoom", 1, t, scene) - 1) *
                     .01 * size.height();
-      const QJsonArray effects = o["effects"].toArray();
+      const QJsonArray effects = o["effects"_L1].toArray();
       if ((softness >= .5 || !effects.isEmpty()) && gpuFor(p)) {
         GpuPictures &gpu = *gpuFor(p);
         GpuPictures::Picture layer;
@@ -1686,7 +1739,7 @@ public:
         GpuPictures::Picture part;
         {
           Native n(p);
-          region = gpu.drawnBounds(layer, 8);
+          region = effects.isEmpty() ? QRect(QPoint(), layer.size) : gpu.drawnBounds(layer, 8);
           if (!effects.isEmpty()) {
             const auto at = pose(i, t);
             region |= (at.world * camera).mapRect(at.box).toAlignedRect();
@@ -1748,7 +1801,7 @@ public:
       }
     }
     double alpha = std::clamp(number(o, "opacity", 1, t, scene), 0., 1.);
-    if (isolate && (alpha < 1 || !o["blend"].toString().isEmpty()) &&
+    if (isolate && (alpha < 1 || !o["blend"_L1].toString().isEmpty()) &&
         (type == "group" || type == "instance" || type == "repeater")) {
       if (GpuPictures *gpu = gpuFor(p)) {
         GpuPictures::Picture group;
@@ -1759,7 +1812,7 @@ public:
         paintInto(group, p, [&](QPainter &gp) { draw(i, gp, t, camera, 1, depth + 1, true, false); });
         p.save();
         p.setOpacity(opacity * alpha);
-        applyBlend(p, o["blend"].toString());
+        applyBlend(p, o["blend"_L1].toString());
         drawPicture(p, group);
         p.restore();
         Native n(p);
@@ -1777,7 +1830,7 @@ public:
       p.save();
       p.setWorldTransform({});
       p.setOpacity(opacity * alpha);
-      applyBlend(p, o["blend"].toString());
+      applyBlend(p, o["blend"_L1].toString());
       p.drawImage(0, 0, group);
       p.restore();
       return;
@@ -1787,7 +1840,7 @@ public:
     p.setWorldTransform(at.world * camera);
     p.setOpacity(std::clamp(opacity * (isolate ? alpha : 1), 0., 1.));
     if (isolate)
-      applyBlend(p, o["blend"].toString());
+      applyBlend(p, o["blend"_L1].toString());
     mask(p, o, at, t);
     if (const double shadow = std::clamp(number(o, "contact_shadow", 0, t, scene), 0., 1.); shadow > 0) {
       // A soft shadow where the layer meets the ground (the bottom of its box).
@@ -1810,11 +1863,11 @@ public:
       for (int child : nodes[i].children)
         draw(child, p, t, camera, p.opacity(), depth + 1);
     } else if (type == "instance" || type == "repeater") {
-      auto definitions = scene["symbols"].toObject();
-      auto symbol = definitions[o["symbol"].toString()].toObject();
-      QJsonArray children = o["children"].toArray();
+      auto definitions = scene["symbols"_L1].toObject();
+      auto symbol = definitions[o["symbol"_L1].toString()].toObject();
+      QJsonArray children = o["children"_L1].toArray();
       if (children.isEmpty())
-        children = symbol["layers"].toArray();
+        children = symbol["layers"_L1].toArray();
       int count = type == "repeater"
                       ? std::clamp(int(number(o, "count", 8, t, scene)), 0, 128)
                       : 1;
@@ -1822,17 +1875,17 @@ public:
           std::clamp(int(number(o, "columns", count, t, scene)), 1, 128);
       for (int j = 0; j < count && budget > 0; ++j) {
         QJsonObject sub = scene;
-        sub["layers"] = children;
+        sub["layers"_L1] = children;
         sub.remove("camera");
-        auto vars = scene["variables"].toObject();
-        auto defaults = symbol["variables"].toObject(),
-             overrides = o["variables"].toObject();
+        auto vars = scene["variables"_L1].toObject();
+        auto defaults = symbol["variables"_L1].toObject(),
+             overrides = o["variables"_L1].toObject();
         for (auto it = defaults.begin(); it != defaults.end(); ++it)
           vars[it.key()] = it.value();
         for (auto it = overrides.begin(); it != overrides.end(); ++it)
           vars[it.key()] = it.value();
-        vars["index"] = j;
-        sub["variables"] = vars;
+        vars["index"_L1] = j;
+        sub["variables"_L1] = vars;
         QTransform transform;
         transform.translate(
             (j % columns) *
@@ -1861,17 +1914,17 @@ public:
         if (t >= at)
           level = std::max(level, std::exp(-3 * (t - at) / decay));
       };
-      for (auto v : o["times"].toArray())
+      for (auto v : o["times"_L1].toArray())
         hit(v.toDouble());
       if (o.contains("beats")) {
-        const QJsonObject audio = scene["audio"].toObject()[o["beats"].toString()].toObject();
-        const double rate = audio["rate"].toDouble(1), offset = audio["offset"].toDouble();
-        for (auto v : audio["beats"].toArray())
+        const QJsonObject audio = scene["audio"_L1].toObject()[o["beats"_L1].toString()].toObject();
+        const double rate = audio["rate"_L1].toDouble(1), offset = audio["offset"_L1].toDouble();
+        for (auto v : audio["beats"_L1].toArray())
           hit((v.toDouble() - offset) / std::max(1e-6, rate));
       }
       level *= std::clamp(number(o, "strength", 1, t, scene), 0., 1.);
       if (level > .003) {
-        QColor c = o.contains("fill") ? colour(o["fill"], t, scene) : QColor(Qt::white);
+        QColor c = o.contains("fill") ? colour(o["fill"_L1], t, scene) : QColor(Qt::white);
         c.setAlphaF(c.alphaF() * level);
         p.fillRect(at.box, c);
       }
@@ -1887,18 +1940,18 @@ public:
       // (source_time, keyframed, remaps it: a TV that slows, rewinds or pauses)
       const double clipTime = o.contains("source_time") ? number(o, "source_time", 0, t, scene)
                                                           : number(o, "source_in", 0, t, scene) + t * number(o, "speed", 1, t, scene);
-      const QImage frame = videoFrame(evaluate(o["path"], t, scene).toString(), clipTime,
-                                      evaluate(o["loop"], t, scene).toBool(), want.boundedTo(QSize(3840, 2160)));
+      const QImage frame = videoFrame(evaluate(o["path"_L1], t, scene).toString(), clipTime,
+                                      evaluate(o["loop"_L1], t, scene).toBool(), want.boundedTo(QSize(3840, 2160)));
       if (!frame.isNull()) {
         QSizeF fit = frame.size();
-        fit.scale(at.box.size(), o["fit"].toString() == "contain" ? Qt::KeepAspectRatio : Qt::KeepAspectRatioByExpanding);
+        fit.scale(at.box.size(), o["fit"_L1].toString() == "contain" ? Qt::KeepAspectRatio : Qt::KeepAspectRatioByExpanding);
         p.save();
         p.setClipRect(at.box, Qt::IntersectClip);
         p.drawImage(QRectF(at.box.center() - QPointF(fit.width() / 2, fit.height() / 2), fit), frame);
         p.restore();
       }
     } else if (type == "image") {
-      QImageReader reader(evaluate(o["path"], t, scene).toString());
+      QImageReader reader(evaluate(o["path"_L1], t, scene).toString());
       reader.setAutoTransform(true);
       if (reader.size().width() > 8192 || reader.size().height() > 8192)
         reader.setScaledSize(
@@ -1917,12 +1970,12 @@ public:
       double stroke =
           std::clamp(number(o, "stroke_width", 0, t, scene), 0., .2) *
           size.height();
-      QPen pen(type == "line" ? colour(o["fill"], t, scene)
-                              : colour(o["stroke"], t, scene),
+      QPen pen(type == "line" ? colour(o["fill"_L1], t, scene)
+                              : colour(o["stroke"_L1], t, scene),
                std::max(1., stroke), Qt::SolidLine, Qt::RoundCap,
                Qt::RoundJoin);
       QList<qreal> dashes;
-      for (auto d : evaluate(o["stroke_dash"], t, scene).toArray())
+      for (auto d : evaluate(o["stroke_dash"_L1], t, scene).toArray())
         dashes.append(std::max(.01, d.toDouble()));
       if (!dashes.isEmpty())
         pen.setDashPattern(dashes);
@@ -1934,11 +1987,11 @@ public:
                                    number(o, "trim_end", 1, t, scene))
                          : body;
       // The outline a shadow or glow follows (only then: uniting paths is slow).
-      const QJsonObject shadow = o["shadow"].toObject(), glow = o["glow"].toObject();
+      const QJsonObject shadow = o["shadow"_L1].toObject(), glow = o["glow"_L1].toObject();
       QPainterPath silhouette;
       if (!shadow.isEmpty() || !glow.isEmpty()) {
         if (type != "line" && !trimmed &&
-            (o.contains("gradient") || colour(o["fill"], t, scene).alpha() > 0))
+            (o.contains("gradient") || colour(o["fill"_L1], t, scene).alpha() > 0))
           silhouette = body;
         if (stroke > 0 || type == "line") {
           QPainterPathStroker stroker;
@@ -1957,7 +2010,7 @@ public:
       p.drawPath(painted);
       const double shade = std::clamp(number(o, "shading", 0, t, scene), 0., 1.);
       if (shade > 0 && type != "line" && !trimmed &&
-          (o.contains("gradient") || colour(o["fill"], t, scene).alpha() > 0)) {
+          (o.contains("gradient") || colour(o["fill"_L1], t, scene).alpha() > 0)) {
         // Soft light: a highlight on the side the light comes from (shading_angle,
         // degrees on the screen: 225 the top left, 270 above) fading into a
         // shadow on the other.
@@ -2007,22 +2060,23 @@ void paint(QPainter &p, QSizeF size, const QJsonObject &scene, double time) {
     return;
   // The scene's own clock: "time" keyed against the event's time plays it backwards, holds it (a freeze) or slows it.
   if (scene.contains("time"))
-    time = std::clamp(evaluate(scene["time"], time, scene).toDouble(time), 0., 3600.);
+    time = std::clamp(evaluate(scene["time"_L1], time, scene).toDouble(time), 0., 3600.);
   p.setRenderHint(QPainter::Antialiasing);
   p.setRenderHint(QPainter::SmoothPixmapTransform);
   int budget = 32768;
-  const auto blur = scene["motion_blur"];
+  const auto blur = scene["motion_blur"_L1];
   if (blur.isObject() || blur.toBool()) {
     // The whole picture, camera included, averaged over a shutter (seconds)
     // around the time: fast moves, crash zooms and whip pans smear.
     const auto b = blur.toObject();
-    const int samples = std::clamp(b["samples"].toInt(5), 2, draftRender ? 2 : 8);
-    const double shutter = std::clamp(b["shutter"].toDouble(.02), 0., .2);
+    const int samples = std::clamp(b["samples"_L1].toInt(5), 2, draftRender ? 2 : 8);
+    const double shutter = std::clamp(b["shutter"_L1].toDouble(.02), 0., .2);
     if (GpuPictures *gpu = gpuFor(p)) {
+      int each = 32768;
+      Graph graph(scene, size, each);
+      graph.speakerTime = time;
       const GpuPictures::Picture sum = average(*gpu, p, size.toSize(), samples, [&](QPainter &fp, int j) {
-        int each = 32768;
-        Graph graph(scene, size, each);
-        graph.speakerTime = time;
+        each = 32768;
         graph.drawRoots(fp, std::max(0., time + shutter * (double(j) / (samples - 1) - .5)));
       });
       drawPicture(p, sum);
@@ -2075,7 +2129,7 @@ QVector<PathHandle> handles(const QJsonObject &scene, const QString &id,
     return out;
   int i = g.ids[id];
   auto pose = g.pose(i, time);
-  auto commands = evaluate(g.nodes[i].o["commands"], time, scene).toArray();
+  auto commands = evaluate(g.nodes[i].o["commands"_L1], time, scene).toArray();
   QTransform unit;
   unit.translate(pose.box.x(), pose.box.y());
   unit.scale(pose.box.width(), pose.box.height());
@@ -2121,9 +2175,9 @@ QJsonObject item(QString type, QString id, double x, double y, double w,
 }
 QJsonObject title(QString words, double y = .05) {
   auto o = item("text", "title", .05, y, .90, .09, "#eff7fc");
-  o["text"] = words;
-  o["font_size"] = .048;
-  o["bold"] = true;
+  o["text"_L1] = words;
+  o["font_size"_L1] = .048;
+  o["bold"_L1] = true;
   return o;
 }
 QJsonObject key(std::initializer_list<QJsonArray> entries,
@@ -2135,7 +2189,7 @@ QJsonObject key(std::initializer_list<QJsonArray> entries,
 }
 QJsonObject background() {
   auto o = item("rect", "background", 0, 0, 1, 1, "#08131f");
-  o["gradient"] = QJsonObject{{"type", "linear"},
+  o["gradient"_L1] = QJsonObject{{"type", "linear"},
                               {"stops", QJsonArray{QJsonArray{0, "#07131f"},
                                                    QJsonArray{1, "#244964"}}}};
   return o;
@@ -2153,7 +2207,7 @@ QJsonObject preset(const QString &name) {
   QJsonObject s{{"version", 2}, {"layers", layers}};
   if (name == "motion_race") {
     layers.append(title("{{headline}}"));
-    s["variables"] = QJsonObject{{"headline", "RACE CONTROL / CURVED PATHS"}};
+    s["variables"_L1] = QJsonObject{{"headline", "RACE CONTROL / CURVED PATHS"}};
     QJsonArray commands{QJsonArray{"M", .1, .55},
                         QJsonArray{"C", -.05, .15, .25, .03, .42, .23},
                         QJsonArray{"C", .60, .43, .61, .08, .85, .20},
@@ -2161,125 +2215,125 @@ QJsonObject preset(const QString &name) {
                         QJsonArray{"C", .43, .80, .34, 1.02, .1, .55},
                         QJsonArray{"Z"}};
     auto edge = item("path", "track", .08, .20, .84, .68, "#00000000");
-    edge["commands"] = commands;
-    edge["stroke"] = "#ffb35c";
-    edge["stroke_width"] = .09;
-    edge["shadow"] = QJsonObject{{"blur", .015}, {"y", .012}, {"opacity", .4}};
+    edge["commands"_L1] = commands;
+    edge["stroke"_L1] = "#ffb35c";
+    edge["stroke_width"_L1] = .09;
+    edge["shadow"_L1] = QJsonObject{{"blur", .015}, {"y", .012}, {"opacity", .4}};
     layers.append(edge);
     auto road = edge;
-    road["id"] = "road";
-    road["name"] = "Asphalt";
-    road["stroke"] = "#31475a";
-    road["stroke_width"] = .075;
+    road["id"_L1] = "road";
+    road["name"_L1] = "Asphalt";
+    road["stroke"_L1] = "#31475a";
+    road["stroke_width"_L1] = .075;
     road.remove("shadow");
     layers.append(road);
     auto markings = road;
-    markings["id"] = "markings";
-    markings["stroke"] = "#abc3ce";
-    markings["stroke_width"] = .002;
-    markings["stroke_dash"] = QJsonArray{6, 6};
+    markings["id"_L1] = "markings";
+    markings["stroke"_L1] = "#abc3ce";
+    markings["stroke_width"_L1] = .002;
+    markings["stroke_dash"_L1] = QJsonArray{6, 6};
     layers.append(markings);
     QJsonArray car;
     car.append(item("rect", "rear-wheels", .08, .1, .21, .8, "#050a10"));
     car.append(item("rect", "front-wheels", .72, .1, .20, .8, "#050a10"));
     auto body = item("rect", "body", .12, .22, .78, .56, "#53e3d0");
-    body["fill"] = QJsonObject{{"variable", "paint"}};
-    body["radius"] = .25;
+    body["fill"_L1] = QJsonObject{{"variable", "paint"}};
+    body["radius"_L1] = .25;
     car.append(body);
     car.append(item("rect", "cockpit", .40, .34, .26, .32, "#08131f"));
     car.append(item("rect", "nose", .83, .40, .17, .20, "#eff7fc"));
-    s["symbols"] = QJsonObject{
+    s["symbols"_L1] = QJsonObject{
         {"car", QJsonObject{{"layers", car},
                             {"variables", QJsonObject{{"paint", "#53e3d0"}}}}}};
     for (int i = 0; i < 3; ++i) {
       auto o = item("instance", QString("car-%1").arg(i), 0, 0, .055, .045,
                     "#ffffff");
-      o["symbol"] = "car";
-      o["variables"] = QJsonObject{
+      o["symbol"_L1] = "car";
+      o["variables"_L1] = QJsonObject{
           {"paint", QStringList{"#53e3d0", "#ffb35c", "#679fff"}[i]}};
       auto progress = key({{0, i * .08}, {8, 1 + i * .08}}, "linear");
-      progress["loop"] = 8;
-      o["follow"] = QJsonObject{{"path", "track"},
+      progress["loop"_L1] = 8;
+      o["follow"_L1] = QJsonObject{{"path", "track"},
                                 {"progress", progress},
                                 {"orient", true},
                                 {"loop", true}};
-      o["trail"] =
+      o["trail"_L1] =
           QJsonObject{{"samples", 6}, {"duration", .18}, {"opacity", .3}};
       layers.append(o);
     }
     auto caption =
         title("Editable cars • curved racing lines • automatic steering", .88);
-    caption["id"] = "caption";
-    caption["font_size"] = .025;
+    caption["id"_L1] = "caption";
+    caption["font_size"_L1] = .025;
     layers.append(caption);
   } else if (name == "motion_titles") {
     auto panel = item("group", "panel", .08, .25, .84, .48, "#ffffff");
-    panel["mask"] =
+    panel["mask"_L1] =
         QJsonObject{{"type", "rect"}, {"width", key({{0, 0}, {1, 1}})}};
     auto backdrop = item("rect", "panel-fill", 0, 0, 1, 1, "#183750");
     auto t = title("{{headline}}", .15);
-    t["id"] = "headline";
-    t["x"] = .04;
-    t["width"] = .92;
-    t["height"] = .7;
-    t["font_size"] = .072;
-    t["text_animation"] = QJsonObject{{"unit", "word"},
+    t["id"_L1] = "headline";
+    t["x"_L1] = .04;
+    t["width"_L1] = .92;
+    t["height"_L1] = .7;
+    t["font_size"_L1] = .072;
+    t["text_animation"_L1] = QJsonObject{{"unit", "word"},
                                       {"style", "rise"},
                                       {"stagger", .12},
                                       {"duration", .6},
                                       {"delay", .6}};
-    panel["children"] = QJsonArray{backdrop, t};
+    panel["children"_L1] = QJsonArray{backdrop, t};
     layers.append(panel);
-    s["variables"] = QJsonObject{{"headline", "YOUR STORY STARTS HERE"}};
+    s["variables"_L1] = QJsonObject{{"headline", "YOUR STORY STARTS HERE"}};
     auto sub = title("Masks, grouped layers and animated typography", .79);
-    sub["id"] = "subtitle";
-    sub["font_size"] = .028;
-    sub["opacity"] = key({{0, 0}, {1.2, 0}, {2, 1}});
+    sub["id"_L1] = "subtitle";
+    sub["font_size"_L1] = .028;
+    sub["opacity"_L1] = key({{0, 0}, {1.2, 0}, {2, 1}});
     layers.append(sub);
   } else if (name == "motion_chart") {
-    s["datasets"] = QJsonObject{
+    s["datasets"_L1] = QJsonObject{
         {"results", QJsonArray{QJsonObject{{"label", "A"}, {"value", 64}},
                                QJsonObject{{"label", "B"}, {"value", 88}},
                                QJsonObject{{"label", "C"}, {"value", 100}},
                                QJsonObject{{"label", "D"}, {"value", 72}}}}};
     layers.append(title("{{headline}}"));
-    s["variables"] = QJsonObject{{"headline", "DATA THAT TELLS A STORY"}};
+    s["variables"_L1] = QJsonObject{{"headline", "DATA THAT TELLS A STORY"}};
     auto chart = item("chart", "chart", .08, .25, .84, .58, "#53e3d0");
-    chart["dataset"] = "results";
-    chart["style"] = "bar";
-    chart["progress"] = key({{0, 0}, {2, 1}});
+    chart["dataset"_L1] = "results";
+    chart["style"_L1] = "bar";
+    chart["progress"_L1] = key({{0, 0}, {2, 1}});
     layers.append(chart);
   } else if (name == "motion_route") {
     layers.append(title("ANIMATED ROUTE / DRAW, REVEAL, FOLLOW"));
     auto route = item("path", "route", .12, .25, .76, .57, "#00000000");
-    route["commands"] = QJsonArray{QJsonArray{"M", 0, .8},
+    route["commands"_L1] = QJsonArray{QJsonArray{"M", 0, .8},
                                    QJsonArray{"C", .25, .9, .20, 0, .5, .25},
                                    QJsonArray{"C", .65, .6, .70, .03, 1, .18}};
-    route["stroke"] = "#53e3d0";
-    route["stroke_width"] = .014;
-    route["trim_end"] = key({{0, 0}, {6, 1}}, "linear");
-    route["glow"] = QJsonObject{{"blur", .015}, {"opacity", .3}};
+    route["stroke"_L1] = "#53e3d0";
+    route["stroke_width"_L1] = .014;
+    route["trim_end"_L1] = key({{0, 0}, {6, 1}}, "linear");
+    route["glow"_L1] = QJsonObject{{"blur", .015}, {"opacity", .3}};
     layers.append(route);
     auto marker = item("ellipse", "marker", 0, 0, .025, .045, "#ffb35c");
-    marker["follow"] =
+    marker["follow"_L1] =
         QJsonObject{{"path", "route"},
                     {"progress", key({{0, 0}, {6, 1}}, "linear")},
                     {"orient", false}};
     layers.append(marker);
   } else if (name == "motion_particles") {
     auto particles = item("particles", "confetti", 0, 0, 1, 1, "#53e3d0");
-    particles["count"] = 180;
-    particles["seed"] = 47;
-    particles["lifetime"] = 5;
-    particles["speed"] = .25;
-    particles["gravity"] = .06;
-    particles["spread"] = 80;
-    particles["shape"] = "rect";
-    particles["colors"] =
+    particles["count"_L1] = 180;
+    particles["seed"_L1] = 47;
+    particles["lifetime"_L1] = 5;
+    particles["speed"_L1] = .25;
+    particles["gravity"_L1] = .06;
+    particles["spread"_L1] = 80;
+    particles["shape"_L1] = "rect";
+    particles["colors"_L1] =
         QJsonArray{"#53e3d0", "#ffb35c", "#679fff", "#ffffff"};
     layers.append(particles);
     auto t = title("DETERMINISTIC PARTICLES", .43);
-    t["align"] = "center";
+    t["align"_L1] = "center";
     layers.append(t);
   } else if (name == "motion_morph") {
     layers.append(title("ONE PATH / DIFFERENT SHAPES"));
@@ -2297,55 +2351,55 @@ QJsonObject preset(const QString &name) {
                  QJsonArray{"Z"}};
     auto morph = item("path", "morph", .35, .25, .30, .53, "#53e3d0");
     auto k = key({{0, a}, {3, b}});
-    k["loop"] = 3;
-    k["ping_pong"] = true;
-    morph["commands"] = k;
-    morph["fill"] = key({{0, "#53e3d0"}, {3, "#ffb35c"}});
-    morph["shadow"] = QJsonObject{{"blur", .018}, {"y", .015}, {"opacity", .5}};
+    k["loop"_L1] = 3;
+    k["ping_pong"_L1] = true;
+    morph["commands"_L1] = k;
+    morph["fill"_L1] = key({{0, "#53e3d0"}, {3, "#ffb35c"}});
+    morph["shadow"_L1] = QJsonObject{{"blur", .018}, {"y", .015}, {"opacity", .5}};
     layers.append(morph);
   } else if (name == "motion_audio") {
     layers.append(title("AUDIO REACTIVE / BIND AN AUDIO SOURCE"));
     auto pulse = item("ellipse", "pulse", .40, .30, .20, .355, "#53e3d0");
-    pulse["scale_x"] =
+    pulse["scale_x"_L1] =
         QJsonObject{{"audio", "source"}, {"base", .8}, {"amount", .6}};
-    pulse["scale_y"] = pulse["scale_x"];
-    pulse["glow"] = QJsonObject{{"blur", .02}, {"opacity", .6}};
+    pulse["scale_y"_L1] = pulse["scale_x"_L1];
+    pulse["glow"_L1] = QJsonObject{{"blur", .02}, {"opacity", .6}};
     layers.append(pulse);
     auto repeats = item("repeater", "bars", .08, .80, .025, .08, "#53e3d0");
-    repeats["count"] = 24;
-    repeats["columns"] = 24;
-    repeats["spacing_x"] = .035;
-    repeats["stagger"] = .015;
+    repeats["count"_L1] = 24;
+    repeats["columns"_L1] = 24;
+    repeats["spacing_x"_L1] = .035;
+    repeats["stagger"_L1] = .015;
     auto bar = item("rect", "bar", 0, 0, 1, 1, "#ffb35c");
-    bar["scale_y"] =
+    bar["scale_y"_L1] =
         QJsonObject{{"audio", "source"}, {"base", .2}, {"amount", 2}};
-    bar["anchor_y"] = 1;
-    repeats["children"] = QJsonArray{bar};
+    bar["anchor_y"_L1] = 1;
+    repeats["children"_L1] = QJsonArray{bar};
     layers.append(repeats);
   } else if (name == "motion_reusable") {
     layers.append(title("REUSABLE COMPOSITIONS / EDIT THE VARIABLES"));
     auto panel = item("rect", "panel", 0, 0, 1, 1, "#19364d");
     auto t = title("{{label}}", .3);
-    t["id"] = "label";
-    t["x"] = .05;
-    t["height"] = .4;
-    t["font_size"] = .16;
-    t["align"] = "center";
-    s["symbols"] = QJsonObject{
+    t["id"_L1] = "label";
+    t["x"_L1] = .05;
+    t["height"_L1] = .4;
+    t["font_size"_L1] = .16;
+    t["align"_L1] = "center";
+    s["symbols"_L1] = QJsonObject{
         {"card", QJsonObject{{"layers", QJsonArray{panel, t}},
                              {"variables",
                               QJsonObject{{"label", "A reusable card"}}}}}};
     for (int i = 0; i < 3; ++i) {
       auto card = item("instance", QString("card-%1").arg(i), .07 + i * .30,
                        .32, .26, .28, "#ffffff");
-      card["symbol"] = "card";
-      card["variables"] = QJsonObject{
+      card["symbol"_L1] = "card";
+      card["variables"_L1] = QJsonObject{
           {"label", QStringList{"HEADLINE", "LOCATION", "RESULT"}[i]}};
-      card["opacity"] = key({{0, 0}, {i * .2 + .6, 1}});
+      card["opacity"_L1] = key({{0, 0}, {i * .2 + .6, 1}});
       layers.append(card);
     }
   }
-  s["layers"] = layers;
+  s["layers"_L1] = layers;
   return s;
 }
 QJsonObject capabilities() {
@@ -2393,7 +2447,7 @@ QJsonObject withKeyframe(const QJsonObject &scene, const QString &layerId,
           property.split('.').first()))
     return fail("Structural layer properties cannot be keyframed.");
   auto result = scene;
-  result["version"] = 2;
+  result["version"_L1] = 2;
   bool found = false;
   QStringList parts = property.split('.');
   std::function<QJsonObject(QJsonObject, int)> set = [&](QJsonObject o,
@@ -2407,7 +2461,7 @@ QJsonObject withKeyframe(const QJsonObject &scene, const QString &layerId,
     auto spec = old.isObject() && old.toObject().contains("keyframes")
                     ? old.toObject()
                     : QJsonObject{};
-    auto ks = spec["keyframes"].toArray();
+    auto ks = spec["keyframes"_L1].toArray();
     if (ks.isEmpty() && time > 0) {
       QJsonValue initial = old.isUndefined() || old.isNull() ? value : evaluate(old, 0, scene);
       ks.append(QJsonArray{0, initial, "linear"});
@@ -2427,31 +2481,31 @@ QJsonObject withKeyframe(const QJsonObject &scene, const QString &layerId,
     }
     if (!added)
       out.append(QJsonArray{time, value, easing});
-    spec["keyframes"] = out;
+    spec["keyframes"_L1] = out;
     o[key] = spec;
     return o;
   };
   if (layerId == "$camera") {
-    result["camera"] = set(result["camera"].toObject(), 0);
+    result["camera"_L1] = set(result["camera"_L1].toObject(), 0);
     found = true;
   } else if (layerId == "$variables") {
-    result["variables"] = set(result["variables"].toObject(), 0);
+    result["variables"_L1] = set(result["variables"_L1].toObject(), 0);
     found = true;
   } else {
     std::function<QJsonArray(QJsonArray)> visit = [&](QJsonArray a) {
       for (int i = 0; i < a.size(); ++i) {
         auto o = a[i].toObject();
-        if (o["id"] == layerId) {
+        if (o["id"_L1] == layerId) {
           o = set(o, 0);
           found = true;
         }
         if (o.contains("children"))
-          o["children"] = visit(o["children"].toArray());
+          o["children"_L1] = visit(o["children"_L1].toArray());
         a[i] = o;
       }
       return a;
     };
-    result["layers"] = visit(result["layers"].toArray());
+    result["layers"_L1] = visit(result["layers"_L1].toArray());
   }
   if (!found)
     return fail("Choose an existing layer ID, $camera or $variables.");
@@ -2471,7 +2525,7 @@ QJsonObject withPatch(const QJsonObject &scene, const QJsonArray &operations, QS
     return {};
   }
   QJsonObject result = scene;
-  result["version"] = 2;
+  result["version"_L1] = 2;
   for (int i = 0; i < operations.size(); ++i) {
     const QJsonObject op = operations[i].toObject();
     const QString layerId = op.value("layer_id").toString(), property = op.value("property").toString();
@@ -2511,12 +2565,12 @@ QJsonObject withPatch(const QJsonObject &scene, const QJsonArray &operations, QS
             found = true;
           }
           if (o.contains("children"))
-            o["children"] = visit(o.value("children").toArray());
+            o["children"_L1] = visit(o.value("children").toArray());
           a[k] = o;
         }
         return a;
       };
-      result["layers"] = visit(result.value("layers").toArray());
+      result["layers"_L1] = visit(result.value("layers").toArray());
     }
     if (!found)
       return fail(i, QStringLiteral("No layer %1 (or $camera, $variables, $scene).").arg(layerId));
@@ -2545,9 +2599,9 @@ QJsonValue renamed(const QJsonValue &v, const std::function<QString(const QStrin
     it.value() = renamed(it.value(), variable, audio);
   // (value(): a missing key read with [] would be added, as null)
   if (o.value("variable").isString())
-    o["variable"] = variable(o.value("variable").toString());
+    o["variable"_L1] = variable(o.value("variable").toString());
   if (o.value("audio").isString())
-    o["audio"] = audio(o.value("audio").toString());
+    o["audio"_L1] = audio(o.value("audio").toString());
   return o;
 }
 QString characterKey(const QString &name) {
@@ -2569,51 +2623,51 @@ QJsonObject withCharacter(const QJsonObject &scene, const QJsonObject &character
       *error = e;
     return QJsonObject{};
   };
-  const QJsonArray parts = character["layers"].toArray();
-  if (parts.isEmpty() || parts[0].toObject()["type"] != "group")
+  const QJsonArray parts = character["layers"_L1].toArray();
+  if (parts.isEmpty() || parts[0].toObject()["type"_L1] != "group")
     return fail("A character is a group of layers.");
   QSet<QString> taken;
   std::function<void(const QJsonArray &)> collect = [&](const QJsonArray &a) {
     for (auto v : a) {
-      taken.insert(v.toObject()["id"].toString());
-      collect(v.toObject()["children"].toArray());
+      taken.insert(v.toObject()["id"_L1].toString());
+      collect(v.toObject()["children"_L1].toArray());
     }
   };
-  collect(scene["layers"].toArray());
+  collect(scene["layers"_L1].toArray());
   QString key = characterKey(name);
   for (int n = 2; taken.contains(key) || std::any_of(taken.begin(), taken.end(), [&](const QString &id) { return id.startsWith(key + "_"); }); ++n)
     key = characterKey(name) + "_" + QString::number(n);
-  const QJsonObject colours = character["variables"].toObject();
-  const QString voice = character["binding"].toString("voice");
+  const QJsonObject colours = character["variables"_L1].toObject();
+  const QString voice = character["binding"_L1].toString("voice");
   auto id = [&](const QString &i) { return i == "root" ? key : key + "_" + i; };
   QJsonObject result = scene;
-  result["version"] = 2;
-  QJsonArray layers = result["layers"].toArray();
+  result["version"_L1] = 2;
+  QJsonArray layers = result["layers"_L1].toArray();
   for (int i = 0; i < parts.size(); ++i) {
     QJsonObject o = renamed(parts[i], [&](const QString &v) { return colours.contains(v) ? key + "_" + v : v; },
                             [&](const QString &a) { return a == voice ? key : a; })
                         .toObject();
-    o["id"] = id(o.value("id").toString());
+    o["id"_L1] = id(o.value("id").toString());
     if (o.contains("parent"))
-      o["parent"] = id(o.value("parent").toString());
+      o["parent"_L1] = id(o.value("parent").toString());
     if (i == 0) {
-      o["name"] = name.trimmed().isEmpty() ? character["name"].toString(key) : name.trimmed();
-      o["x"] = std::isfinite(x) ? x : .5 - o.value("width").toDouble(.14) / 2;
-      o["y"] = (std::isfinite(ground) ? ground : .9) - o.value("height").toDouble(.38);
+      o["name"_L1] = name.trimmed().isEmpty() ? character["name"_L1].toString(key) : name.trimmed();
+      o["x"_L1] = std::isfinite(x) ? x : .5 - o.value("width").toDouble(.14) / 2;
+      o["y"_L1] = (std::isfinite(ground) ? ground : .9) - o.value("height").toDouble(.38);
     }
     layers.append(o);
   }
-  result["layers"] = layers;
-  QJsonObject variables = result["variables"].toObject();
+  result["layers"_L1] = layers;
+  QJsonObject variables = result["variables"_L1].toObject();
   for (auto it = colours.begin(); it != colours.end(); ++it)
     variables[key + "_" + it.key()] = it.value();
-  result["variables"] = variables;
+  result["variables"_L1] = variables;
   if (auto e = validate(result); !e.isEmpty())
     return fail(e);
   return result;
 }
 QJsonObject withSet(const QJsonObject &scene, const QJsonObject &set, QString *error) {
-  const QJsonArray back = set["layers"].toArray(), front = set["front"].toArray();
+  const QJsonArray back = set["layers"_L1].toArray(), front = set["front"_L1].toArray();
   if (back.isEmpty()) {
     if (error)
       *error = "A set is a list of layers.";
@@ -2621,7 +2675,7 @@ QJsonObject withSet(const QJsonObject &scene, const QJsonObject &set, QString *e
   }
   // The set added before goes (a scene has one set).
   QJsonArray kept;
-  for (auto v : scene["layers"].toArray()) {
+  for (auto v : scene["layers"_L1].toArray()) {
     const QString id = v.toObject().value("id").toString();
     if (id != "set" && id != "set_front" && !id.startsWith("set_") && !id.startsWith("setf_"))
       kept.append(v);
@@ -2631,7 +2685,7 @@ QJsonObject withSet(const QJsonObject &scene, const QJsonObject &set, QString *e
   auto part = [&signs](const QJsonArray &layers, const QString &group, const QString &prefix, const QString &name, double depth) {
     QJsonObject g{{"type", "group"}, {"id", group}, {"name", name}, {"x", 0}, {"y", 0}, {"width", 1}, {"height", 1}};
     if (depth > 0)
-      g["depth"] = depth;
+      g["depth"_L1] = depth;
     QJsonArray out{g};
     for (auto v : layers) {
       QJsonObject o = v.toObject();
@@ -2641,25 +2695,25 @@ QJsonObject withSet(const QJsonObject &scene, const QJsonObject &set, QString *e
           key.chop(2);
         key = "set_" + key;
         signs[key] = o.value("text");
-        o["text"] = QJsonObject{{"variable", key}};
+        o["text"_L1] = QJsonObject{{"variable", key}};
       }
-      o["id"] = prefix + o.value("id").toString();
-      o["parent"] = o.contains("parent") ? prefix + o.value("parent").toString() : group;
+      o["id"_L1] = prefix + o.value("id").toString();
+      o["parent"_L1] = o.contains("parent") ? prefix + o.value("parent").toString() : group;
       if (o.value("mask").isString())
-        o["mask"] = prefix + o.value("mask").toString();
+        o["mask"_L1] = prefix + o.value("mask").toString();
       out.append(o);
     }
     return out;
   };
-  QJsonArray layers = part(back, "set", "set_", "Set: " + set["name"].toString(), 1);
+  QJsonArray layers = part(back, "set", "set_", "Set: " + set["name"_L1].toString(), 1);
   for (auto v : kept)
     layers.append(v);
   if (!front.isEmpty())
-    for (auto v : part(front, "set_front", "setf_", "Set front: " + set["name"].toString(), 0))
+    for (auto v : part(front, "set_front", "setf_", "Set front: " + set["name"_L1].toString(), 0))
       layers.append(v);
   QJsonObject result = scene;
-  result["version"] = 2;
-  result["layers"] = layers;
+  result["version"_L1] = 2;
+  result["layers"_L1] = layers;
   QJsonObject variables = scene.value("variables").toObject();
   for (const QString &k : variables.keys()) // (the signs of the set before)
     if (k.startsWith("set_"))
@@ -2667,7 +2721,7 @@ QJsonObject withSet(const QJsonObject &scene, const QJsonObject &set, QString *e
   for (auto it = signs.begin(); it != signs.end(); ++it)
     variables[it.key()] = it.value();
   if (!variables.isEmpty())
-    result["variables"] = variables;
+    result["variables"_L1] = variables;
   if (auto e = validate(result); !e.isEmpty()) {
     if (error)
       *error = e;
@@ -2681,11 +2735,11 @@ QJsonObject withProp(const QJsonObject &scene, const QJsonObject &prop, const QS
       *error = e;
     return QJsonObject{};
   };
-  const QJsonArray parts = prop["layers"].toArray();
-  if (parts.isEmpty() || parts[0].toObject()["type"] != "group")
+  const QJsonArray parts = prop["layers"_L1].toArray();
+  if (parts.isEmpty() || parts[0].toObject()["type"_L1] != "group")
     return fail("A prop is a group of layers.");
   const QString arm = characterId + (hand.compare("L", Qt::CaseInsensitive) == 0 ? "_armL" : "_armR"), holder = arm + "_t";
-  QJsonArray layers = scene["layers"].toArray();
+  QJsonArray layers = scene["layers"_L1].toArray();
   int last = -1;
   QSet<QString> taken;
   for (int i = 0; i < layers.size(); ++i) {
@@ -2702,33 +2756,33 @@ QJsonObject withProp(const QJsonObject &scene, const QJsonObject &prop, const QS
   const QRectF box = bounds(still, arm, 0, QSizeF(1, 1));
   if (box.width() <= 0 || box.height() <= 0)
     return fail("The arm has no size.");
-  const double w = prop["width"].toDouble(.05) / box.width(), h = prop["height"].toDouble(.05) / box.height();
-  const QJsonArray grip = prop["grip"].toArray();
+  const double w = prop["width"_L1].toDouble(.05) / box.width(), h = prop["height"_L1].toDouble(.05) / box.height();
+  const QJsonArray grip = prop["grip"_L1].toArray();
   const double gx = grip.size() == 2 ? grip[0].toDouble(.5) : .5, gy = grip.size() == 2 ? grip[1].toDouble(.5) : .5;
-  QString key = characterId + "_" + characterKey(prop["name"].toString("prop"));
+  QString key = characterId + "_" + characterKey(prop["name"_L1].toString("prop"));
   for (int n = 2; taken.contains(key); ++n)
-    key = characterId + "_" + characterKey(prop["name"].toString("prop")) + "_" + QString::number(n);
+    key = characterId + "_" + characterKey(prop["name"_L1].toString("prop")) + "_" + QString::number(n);
   auto id = [&](const QString &i) { return i == "root" ? key : key + "_" + i; };
   QJsonArray made;
   for (int i = 0; i < parts.size(); ++i) {
     QJsonObject o = parts[i].toObject();
     if (i == 0) { // held at the hand (the middle of the hand, near the bottom of the arm)
-      o["x"] = .5 - gx * w;
-      o["y"] = .83 - gy * h;
-      o["width"] = w;
-      o["height"] = h;
-      o["parent"] = holder;
-      o["name"] = prop["name"].toString("Prop") + " (" + characterId + ")";
+      o["x"_L1] = .5 - gx * w;
+      o["y"_L1] = .83 - gy * h;
+      o["width"_L1] = w;
+      o["height"_L1] = h;
+      o["parent"_L1] = holder;
+      o["name"_L1] = prop["name"_L1].toString("Prop") + " (" + characterId + ")";
     } else if (o.contains("parent"))
-      o["parent"] = id(o["parent"].toString());
-    o["id"] = id(o.value("id").toString());
+      o["parent"_L1] = id(o["parent"_L1].toString());
+    o["id"_L1] = id(o.value("id").toString());
     made.append(o);
   }
   for (int i = 0; i < made.size(); ++i)
     layers.insert(last + 1 + i, made[i]);
   QJsonObject result = scene;
-  result["version"] = 2;
-  result["layers"] = layers;
+  result["version"_L1] = 2;
+  result["layers"_L1] = layers;
   if (auto e = validate(result); !e.isEmpty())
     return fail(e);
   return result;
@@ -2739,15 +2793,15 @@ QJsonObject characterFrom(const QJsonObject &scene, const QString &groupId, cons
       *error = e;
     return QJsonObject{};
   };
-  const QJsonArray all = scene["layers"].toArray();
+  const QJsonArray all = scene["layers"_L1].toArray();
   QJsonArray mine;
   QSet<QString> inside{groupId};
   for (auto v : all) // (flat layers name their parent: a parent comes before its children)
-    if (const auto o = v.toObject(); o.value("id") == groupId || inside.contains(o["parent"].toString())) {
-      inside.insert(o["id"].toString());
+    if (const auto o = v.toObject(); o.value("id") == groupId || inside.contains(o["parent"_L1].toString())) {
+      inside.insert(o["id"_L1].toString());
       mine.append(o);
     }
-  if (mine.isEmpty() || mine[0].toObject()["type"] != "group")
+  if (mine.isEmpty() || mine[0].toObject()["type"_L1] != "group")
     return fail("Choose a group: a character is a group and the layers in it.");
   auto local = [&](const QString &i) {
     return i == groupId ? QStringLiteral("root") : i.startsWith(groupId + "_") ? i.mid(groupId.size() + 1) : i;
@@ -2756,7 +2810,7 @@ QJsonObject characterFrom(const QJsonObject &scene, const QString &groupId, cons
   QJsonObject colours;
   QMap<QString, QString> byColour;
   QMap<QString, int> bindings;
-  const QJsonObject sceneVariables = scene["variables"].toObject();
+  const QJsonObject sceneVariables = scene["variables"_L1].toObject();
   QJsonArray out;
   for (int i = 0; i < mine.size(); ++i) {
     QJsonObject o = renamed(mine[i], [&](const QString &v) {
@@ -2764,22 +2818,22 @@ QJsonObject characterFrom(const QJsonObject &scene, const QString &groupId, cons
       colours[name] = sceneVariables.value(v);
       return name;
     }, [&](const QString &a) { ++bindings[a]; return a; }).toObject();
-    o["id"] = local(o.value("id").toString());
+    o["id"_L1] = local(o.value("id").toString());
     if (o.contains("parent"))
-      o["parent"] = local(o.value("parent").toString());
+      o["parent"_L1] = local(o.value("parent").toString());
     if (const QString fill = o.value("fill").toString(); QColor::isValidColorName(fill) && fill.startsWith('#') && QColor(fill).alpha() > 0) {
       if (!byColour.contains(fill)) {
-        QString name = characterKey(o["id"].toString());
+        QString name = characterKey(o["id"_L1].toString());
         while (colours.contains(name))
           name += "_2";
         byColour[fill] = name;
         colours[name] = fill;
       }
-      o["fill"] = QJsonObject{{"variable", byColour[fill]}};
+      o["fill"_L1] = QJsonObject{{"variable", byColour[fill]}};
     }
     if (i == 0) {
-      o["x"] = 0;
-      o["y"] = 0;
+      o["x"_L1] = 0;
+      o["y"_L1] = 0;
       o.remove("parent");
     }
     out.append(o);
@@ -2792,8 +2846,8 @@ QJsonObject characterFrom(const QJsonObject &scene, const QString &groupId, cons
       voice = it.key();
     }
   const QJsonObject root = out[0].toObject();
-  return {{"version", 1}, {"name", title.trimmed().isEmpty() ? root["name"].toString(groupId) : title.trimmed()}, {"binding", voice},
-          {"width", root["width"]}, {"height", root["height"]}, {"variables", colours}, {"layers", out}};
+  return {{"version", 1}, {"name", title.trimmed().isEmpty() ? root["name"_L1].toString(groupId) : title.trimmed()}, {"binding", voice},
+          {"width", root["width"_L1]}, {"height", root["height"_L1]}, {"variables", colours}, {"layers", out}};
 }
 bool setDraft(bool draft) {
   const bool was = draftRender;
@@ -2811,7 +2865,7 @@ QStringList moves() {
 QStringList expressions() { return {"neutral", "angry", "sad", "surprised", "smug"}; }
 QJsonObject withExpression(const QJsonObject &scene, const QString &characterId, const QString &mood, double time, QString *error) {
   const QString key = characterId.toLower() + "_mood";
-  if (!expressions().contains(mood) || !scene["variables"].toObject().contains(key)) {
+  if (!expressions().contains(mood) || !scene["variables"_L1].toObject().contains(key)) {
     if (error)
       *error = expressions().contains(mood) ? QStringLiteral("%1 has no expressions (a library character's group has them).").arg(characterId)
                                             : "Expressions: " + expressions().join(", ") + ".";
@@ -2852,13 +2906,13 @@ QJsonObject withMove(const QJsonObject &scene, const QString &layerId,
   std::function<void(const QJsonArray &)> find = [&](const QJsonArray &a) {
     for (auto v : a) {
       const auto o = v.toObject();
-      if (o["id"] == layerId)
+      if (o["id"_L1] == layerId)
         layer = o;
       else if (o.contains("children"))
-        find(o["children"].toArray());
+        find(o["children"_L1].toArray());
     }
   };
-  find(scene["layers"].toArray());
+  find(scene["layers"_L1].toArray());
   if (layer.isEmpty())
     return fail("Choose an existing layer ID.");
   static const QMap<QString, double> natural{{"hop", .5}, {"jump", .8}, {"shake", .6}, {"nod", .5}, {"wave", 1.2},
@@ -2882,7 +2936,7 @@ QJsonObject withMove(const QJsonObject &scene, const QString &layerId,
       return;
     if (!unlooped.contains(property) && layer.value(property).toObject().contains("loop")) {
       unlooped.insert(property);
-      QJsonArray layers = result["layers"].toArray();
+      QJsonArray layers = result["layers"_L1].toArray();
       for (int k = 0; k < layers.size(); ++k) {
         QJsonObject o = layers[k].toObject();
         if (o.value("id") != layerId)
@@ -2894,7 +2948,7 @@ QJsonObject withMove(const QJsonObject &scene, const QString &layerId,
         layers[k] = o;
         break;
       }
-      result["layers"] = layers;
+      result["layers"_L1] = layers;
     }
     result = withKeyframe(result, layerId, property, std::max(0., time + at), v, easing, &e);
   };

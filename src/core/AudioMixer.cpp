@@ -281,11 +281,30 @@ void AudioMixer::processChain(const EffectChain& chain, float* buf, int frames, 
         if (!def)
             continue;
         FxState& st = fxState(e, *def);
-        if (forceReset || (st.expected != timelinePos && st.expected != -2))
-            st.proc->reset(m_rate); // a jump: clear tails and envelopes
-        st.proc->process(buf, frames, resolveParams(def->params, e.params, keyTime));
+        auto silent = [&](float limit) {
+            return std::all_of(buf, buf + size_t(frames) * 2, [limit](float v) { return std::abs(v) < limit; });
+        };
+        const Params params = resolveParams(def->params, e.params, keyTime);
+        // Silence in, silence out: once nothing has gone in or come out for the effect's own latency and a second more
+        // (what it still held has come out and died away), silent blocks pass it by, and it starts afresh when sound
+        // comes back (a voice track's pitch shift or echo costs nothing between its lines, where it was most of a
+        // render's audio time).
+        const bool silentIn = silent(1e-9f);
+        const bool jump = forceReset || (st.expected != timelinePos && st.expected != -2);
+        if (jump)
+            st.quiet = 0; // (counted again from here, as a fresh mixer would)
+        if (!jump && silentIn && st.quiet >= int64_t(m_rate) + st.proc->latency(params)) {
+            st.passed = true;
+            st.expected = timelinePos + frames;
+            continue;
+        }
+        if (jump || st.passed)
+            st.proc->reset(m_rate); // a jump (or sound after silence passed by): clear tails and envelopes
+        st.passed = false;
+        st.proc->process(buf, frames, params);
         if (scrub(buf, size_t(frames) * 2))
             st.proc->reset(m_rate);
+        st.quiet = silentIn && silent(1e-6f) ? st.quiet + frames : 0; // (-120 dB out, and nothing in)
         st.expected = timelinePos + frames;
     }
 }

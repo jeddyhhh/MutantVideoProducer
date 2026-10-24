@@ -10,9 +10,15 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QPainter>
+#include <QScopeGuard>
 #include <algorithm>
+#include <atomic>
 #include <cmath>
+#include <condition_variable>
 #include <cstring>
+#include <deque>
+#include <mutex>
+#include <thread>
 
 // ---------------------------------------------------------------------------
 // Presets
@@ -606,6 +612,40 @@ bool Exporter::run(const ProjectSnapshot& snap, const ExportSettings& s, const P
     int64_t audioPts = 0;
     std::unique_ptr<AudioMixer> mixer = aenc ? std::make_unique<AudioMixer>(rate) : nullptr;
     std::vector<float> mixBuf;
+    // The mix is made on a thread of its own, a little ahead of the pictures (with voice effects on many tracks, mixing
+    // took as long as drawing), and taken from it block by block here.
+    std::mutex mixMutex;
+    std::condition_variable mixReady, mixRoom;
+    std::deque<std::vector<float>> mixed;
+    bool mixEnded = false;
+    std::atomic<bool> mixStop{false};
+    std::atomic<int64_t> mixNanoseconds{0};
+    std::thread mixThread;
+    if (aenc)
+        mixThread = std::thread([&] {
+            for (int64_t at = 0; at < totalSamples && !mixStop;) {
+                const int n = int(std::min<int64_t>(4096, totalSamples - at));
+                std::vector<float> block(size_t(n) * 2);
+                QElapsedTimer mixTimer;
+                mixTimer.start();
+                mixer->mix(snap, rangeStartSample + at, n, block.data());
+                mixNanoseconds += mixTimer.nsecsElapsed();
+                at += n;
+                std::unique_lock lock(mixMutex);
+                mixRoom.wait(lock, [&] { return mixed.size() < 64 || mixStop; }); // (about five seconds ahead at most)
+                mixed.push_back(std::move(block));
+                mixReady.notify_one();
+            }
+            std::lock_guard lock(mixMutex);
+            mixEnded = true;
+            mixReady.notify_all();
+        });
+    const auto stopMixing = qScopeGuard([&] {
+        mixStop = true;
+        mixRoom.notify_all();
+        if (mixThread.joinable())
+            mixThread.join();
+    });
 
     auto encodeAudioFrame = [&](int nb) -> int {
         ff::FramePtr f = ff::makeFrame();
@@ -640,14 +680,20 @@ bool Exporter::run(const ProjectSnapshot& snap, const ExportSettings& s, const P
         return 0;
     };
 
-    // Mixes and encodes audio until `upTo` samples have been produced.
+    // Encodes the mix until at least `upTo` samples have been produced (a block at a time).
     auto pumpAudio = [&](int64_t upTo) -> int {
         while (samplesMixed < upTo) {
-            const int n = int(std::min<int64_t>(4096, upTo - samplesMixed));
-            mixBuf.resize(size_t(n) * 2);
-            QElapsedTimer mixTimer; mixTimer.start();
-            mixer->mix(snap, rangeStartSample + samplesMixed, n, mixBuf.data());
-            info.audioSeconds += mixTimer.nsecsElapsed() / 1e9;
+            {
+                std::unique_lock lock(mixMutex);
+                mixReady.wait(lock, [&] { return !mixed.empty() || mixEnded; });
+                if (mixed.empty())
+                    return AVERROR_BUG; // (the mix ended short)
+                mixBuf = std::move(mixed.front());
+                mixed.pop_front();
+                mixRoom.notify_one();
+            }
+            const int n = int(mixBuf.size() / 2);
+            info.audioSeconds = mixNanoseconds / 1e9;
             samplesMixed += n;
             info.samples = samplesMixed;
             if (int r = pushToFifo(mixBuf.data(), n); r < 0)
