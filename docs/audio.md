@@ -93,6 +93,10 @@ Every mixer and the render play the plugin the same way.
 The master output has a meter too. The transport bar also shows a master peak meter during
 playback; click it to reset the clip lights. Each audio track's header has a level meter while playing.
 
+The white line across the transport bar's meter is the **master volume**: drag it left to turn the
+whole mix down (all the way left is silence), and double-click it to go back to 0 dB. It comes after
+Master FX, is saved with the project, goes into exports and can be undone.
+
 ## Auto ducking
 
 Auto ducking turns music down while someone speaks.

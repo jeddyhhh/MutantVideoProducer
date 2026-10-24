@@ -47,6 +47,7 @@ void AudioMixer::reset()
     m_racks.clear();
     m_trackFx.clear();
     m_masterFx = {};
+    m_masterLevel = -1;
     m_duck.clear();
     m_trackPeaks.clear();
     m_session.reset();
@@ -678,6 +679,16 @@ void AudioMixer::mix(const ProjectSnapshot& snap, int64_t pos, int frames, float
         m_masterFx.inputPos += frames;
         m_masterFx.expected = pos + frames;
     }
+    // Master volume: ramped across the block, so dragging it doesn't click.
+    const float level = snap.timeline.audioMasterLevel;
+    const float from = m_masterLevel < 0 ? level : m_masterLevel;
+    if (from != 1.0f || level != 1.0f)
+        for (int i = 0; i < frames; ++i) {
+            const float g = from + (level - from) * float(i + 1) / float(frames);
+            out[i * 2] *= g;
+            out[i * 2 + 1] *= g;
+        }
+    m_masterLevel = level;
     scrub(out, size_t(frames) * 2);
 
     if (m_tick % 64 == 0) {

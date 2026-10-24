@@ -118,6 +118,7 @@ private:
     // `latency` samples ahead of the output position.
     std::map<int, ClipFxState> m_trackFx; // by track id
     ClipFxState m_masterFx;
+    float m_masterLevel = -1; // the master volume last applied (-1: none yet, so the first block starts at the target)
     std::vector<float> m_prime, m_trackPrime, m_masterPrime;
     // Sums every audio track (after its FX, envelopes, level and pan) for
     // timeline samples [pos, pos + frames) into out (overwritten).

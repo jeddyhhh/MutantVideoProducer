@@ -244,6 +244,7 @@ struct Timeline {
     std::vector<Marker> markers; // sorted by time
     EffectChain outputEffects; // video output FX, applied to the final picture
     EffectChain audioMasterEffects; // audio master bus FX
+    float audioMasterLevel = 1.0f; // master volume (linear, 0..1), after the master FX
     EffectChain liveEffects; // Live tab FX, applied to the captured picture
     LivePads livePads; // Live tab pads, applied after liveEffects
     EffectChain liveLayerEffects; // Live tab: FX on the second source (the layer) before it is laid over

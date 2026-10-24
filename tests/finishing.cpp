@@ -198,6 +198,20 @@ int main(int argc, char** argv)
     check(std::abs(final.integrated + 16) < .3 && final.truePeak <= -1.5, "offline scan and gain use the actual post-master mixer");
     project.undoStack()->undo();
     check(project.timeline() == timeline, "finishing gain can be undone exactly");
+    {
+        // The master volume (the line on the Editor's meter) turns the whole mix down, and is saved with the project.
+        auto quieter = project.timeline();
+        quieter.audioMasterLevel = 0.5f;
+        project.applyEdit(quieter, "Master Volume");
+        const auto down = finishing::analyze(*project.snapshot());
+        const QString path = tmp.filePath("master.mvp");
+        Project again;
+        QString saveError;
+        check(std::abs(down.integrated - (measured.integrated - 6.02)) < .1 && project.save(path, &saveError) && again.load(path, &saveError)
+                  && again.timeline().audioMasterLevel == 0.5f,
+              QStringLiteral("the master volume turns the mix down (%1 to %2 LUFS) and is saved").arg(measured.integrated, 0, 'f', 2).arg(down.integrated, 0, 'f', 2));
+        project.undoStack()->undo();
+    }
     auto snapshot = *project.snapshot();
     auto offline = std::make_shared<MediaItem>(*snapshot.media.at(media));
     offline->id = 9999;

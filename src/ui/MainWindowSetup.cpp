@@ -963,6 +963,20 @@ void MainWindow::createActions()
     m_meter = new AudioMeter;
     m_meter->setFixedWidth(240);
     transport->addWidget(m_meter);
+    m_meter->setVolume(m_project->timeline().audioMasterLevel);
+    connect(m_meter, &AudioMeter::volumeChanged, this, [this, before = std::make_shared<std::optional<Timeline>>()](float level, bool dragging) {
+        Timeline tl = m_project->timeline();
+        if (!*before)
+            *before = tl;
+        tl.audioMasterLevel = level;
+        m_project->setTimelineLive(tl);
+        if (!dragging) {
+            const Timeline from = std::move(**before);
+            before->reset();
+            if (!(from == m_project->timeline()))
+                m_project->commitEdit(from, tr("Master Volume"));
+        }
+    });
     QAction* mixer = transport->addAction(tr("Mixer"));
     mixer->setToolTip(tr("Audio Mixer (Ctrl+Shift+M): levels, faders, pan, solo / mute and auto ducking per track"));
     connect(mixer, &QAction::triggered, this, &MainWindow::showMixer);
@@ -1033,6 +1047,7 @@ void MainWindow::connectSignals()
             help::setPage(w, QString::fromLatin1(page));
     connect(m_project, &Project::changed, this, [this] {
         m_engine->setSnapshot(m_project->snapshot());
+        m_meter->setVolume(m_project->timeline().audioMasterLevel);
         if (!m_engine->isPlaying())
             m_engine->requestFrame(m_timeline->cursorTime());
         updateTitle();

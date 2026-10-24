@@ -21,6 +21,7 @@
 #include "core/Project.h"
 #include "engine/MediaCache.h"
 #include "engine/PlaybackEngine.h"
+#include "ui/AudioLevels.h"
 #include "ui/AudioMeter.h"
 #include "ui/AudioFinishingWindow.h"
 #include "ui/DeviceChainView.h"
@@ -1252,6 +1253,35 @@ int MainWindow::runEditorTest(QStringList& log)
                              "connects and says why; with AI Control off nothing answers")
                   .arg(through.size()));
         QSettings().remove(QStringLiteral("mcp/port"));
+    }
+
+    {
+        // The master volume line on the transport meter: dragged to half way (-30 dB) in one undo step; double-click back to 0 dB.
+        auto mouse = [&](QEvent::Type type, double x) {
+            const QPointF pos(x, m_meter->height() / 2.0);
+            QMouseEvent ev(type, pos, m_meter->mapToGlobal(pos), Qt::LeftButton,
+                           type == QEvent::MouseButtonRelease ? Qt::NoButton : Qt::MouseButtons(Qt::LeftButton), Qt::NoModifier);
+            QApplication::sendEvent(m_meter, &ev);
+        };
+        const double left = 12, right = m_meter->width() - 12; // (the meter's scale, between the L/R labels and the clip lights)
+        const int undoBefore = m_project->undoStack()->index();
+        const float before = m_project->timeline().audioMasterLevel;
+        mouse(QEvent::MouseButtonPress, right - 2);
+        mouse(QEvent::MouseMove, right - 40);
+        mouse(QEvent::MouseMove, (left + right) / 2);
+        const bool live = std::abs(m_project->timeline().audioMasterLevel - std::pow(10.0f, -1.5f)) < 1e-3f
+                          && m_project->undoStack()->index() == undoBefore;
+        mouse(QEvent::MouseButtonRelease, (left + right) / 2);
+        const float dragged = m_project->timeline().audioMasterLevel;
+        const bool oneStep = m_project->undoStack()->index() == undoBefore + 1;
+        mouse(QEvent::MouseButtonDblClick, (left + right) / 2);
+        const float reset = m_project->timeline().audioMasterLevel;
+        m_project->undoStack()->undo();
+        m_project->undoStack()->undo();
+        check(before == 1.0f && live && oneStep && std::abs(dragged - std::pow(10.0f, -1.5f)) < 1e-3f && reset == 1.0f
+                  && m_project->timeline().audioMasterLevel == 1.0f,
+              QStringLiteral("master volume line: dragged to %1 live, one undo step, double-click back to 0 dB")
+                  .arg(levels::volumeText(dragged)));
     }
 
     // ---- Properties: transitions and generated media in the bottom section, handles on the preview ----

@@ -1109,6 +1109,8 @@ QByteArray Project::toJson(const QString& baseDir, const QString& backupOf, bool
     }
     root[QStringLiteral("outputEffects")] = chainToJson(m_timeline.outputEffects);
     root[QStringLiteral("audioMasterEffects")] = chainToJson(m_timeline.audioMasterEffects);
+    if (m_timeline.audioMasterLevel != 1.0f)
+        root[QStringLiteral("audioMasterLevel")] = m_timeline.audioMasterLevel;
     if (!m_timeline.liveEffects.empty())
         root[QStringLiteral("liveEffects")] = chainToJson(m_timeline.liveEffects);
     if (std::any_of(m_timeline.livePads.begin(), m_timeline.livePads.end(), [](const LivePad& p) { return !p.isEmpty(); }))
@@ -1343,6 +1345,7 @@ bool Project::loadFile(const QString& path, QString* error, QStringList* missing
     timeline.sortMarkers();
     timeline.outputEffects = chainFromJson(root[QStringLiteral("outputEffects")]);
     timeline.audioMasterEffects = chainFromJson(root[QStringLiteral("audioMasterEffects")]);
+    timeline.audioMasterLevel = float(std::clamp(root[QStringLiteral("audioMasterLevel")].toDouble(1.0), 0.0, 1.0));
     timeline.liveEffects = chainFromJson(root[QStringLiteral("liveEffects")]);
     timeline.livePads = livePadsFromJson(root[QStringLiteral("livePads")].toArray());
     timeline.liveLayerEffects = chainFromJson(root[QStringLiteral("liveLayerEffects")]);
@@ -1468,6 +1471,8 @@ QJsonObject nestedTimelineToJson(const Timeline& timeline)
     root["nextId"] = timeline.nextId;
     root["outputEffects"] = chainToJson(timeline.outputEffects);
     root["audioMasterEffects"] = chainToJson(timeline.audioMasterEffects);
+    if (timeline.audioMasterLevel != 1.0f)
+        root["audioMasterLevel"] = timeline.audioMasterLevel;
     root["chapters"] = timeline.chapters;
     root["narrationSettings"] = timeline.narrationSettings;
     return root;
@@ -1504,6 +1509,7 @@ Timeline nestedTimelineFromJson(const QJsonObject& root)
     timeline.nextId = root["nextId"].toInt(1);
     timeline.outputEffects = chainFromJson(root["outputEffects"]);
     timeline.audioMasterEffects = chainFromJson(root["audioMasterEffects"]);
+    timeline.audioMasterLevel = float(std::clamp(root["audioMasterLevel"].toDouble(1.0), 0.0, 1.0));
     timeline.chapters = root["chapters"].toArray();
     timeline.narrationSettings = root["narrationSettings"].toObject();
     repairTimeline(timeline); timeline.sortClips();
