@@ -1099,6 +1099,8 @@ public:
   mutable std::vector<std::optional<std::pair<QRectF, QTransform>>> poses;
   int unblurred = -1; // the layer being drawn into its blur's own picture
   double speakerTime = NAN; // the frame's own time while motion blur draws its moments (the speaker camera cuts once)
+  mutable double chosenAt = NAN; // who the speaker camera chose for the moment chosenAt
+  mutable QString chosenKind, chosenWho, chosenOther;
   Graph(QJsonObject scene, QSizeF size, int &budget)
       : scene(std::move(scene)), size(size), tree(structure(this->scene["layers"_L1].toArray())), nodes(tree->nodes), ids(tree->ids),
         roots(tree->roots), budget(budget) {}
@@ -1193,16 +1195,6 @@ public:
       // reaction), "two" (speaker and listener together), "speaker".
       const double window = std::clamp(speaker["window"_L1].toDouble(.5), .05, 3.);
       const double now = std::isfinite(speakerTime) ? speakerTime : t;
-      QString kind = "speaker";
-      double shotFrom = 0, shotTo = 0;
-      for (auto v : speaker["shots"_L1].toArray()) {
-        const QJsonArray shot = v.toArray();
-        if (now >= shot[0].toDouble() && now < shot[1].toDouble()) {
-          kind = shot[2].toString("speaker");
-          shotFrom = shot[0].toDouble();
-          shotTo = shot[1].toDouble();
-        }
-      }
       const QJsonObject audio = scene["audio"_L1].toObject();
       QVector<QPair<QString, QString>> cast; // (layer id, binding)
       for (auto it = audio.begin(); it != audio.end(); ++it)
@@ -1217,58 +1209,115 @@ public:
         return sum;
       };
       const double quiet = speaker["quiet"_L1].toDouble(.06);
-      double best = quiet;
-      QString who;
-      for (const auto &[id, binding] : cast)
-        if (const double l = level(binding, now - window, now, 6); l > best) {
-          best = l;
-          who = id;
+      struct Choice {
+        QString kind, who, other;
+        QString framed() const { return kind == "listener" ? (other.isEmpty() ? who : other) : kind == "wide" ? QString() : who; }
+        bool operator==(const Choice &o) const { // (what is on screen: a reaction of someone is a close-up of them)
+          return framed() == o.framed() && (kind == "two") == (o.kind == "two") && (kind != "two" || other == o.other);
         }
-      // A pause in a line, or between lines: the shot holds on whoever spoke last when someone speaks again within
-      // `hold` seconds, instead of a glimpse of the wide shot.
-      if (const double hold = std::clamp(speaker["hold"_L1].toDouble(1.2), 0., 5.); who.isEmpty() && hold > 0) {
-        auto peak = [&](const QString &binding, double from, double to) {
-          const QJsonObject b{{"audio", binding}, {"attack", .02}, {"release", .1}};
-          double most = 0;
-          for (int k = 0; k <= 12; ++k)
-            most = std::max(most, audioLevel(b, scene, std::max(0., from + (to - from) * k / 12)));
-          return most;
-        };
-        QString before;
-        double loudest = quiet;
-        bool again = false;
-        for (const auto &[id, binding] : cast) {
-          if (const double l = peak(binding, now - hold, now); l > loudest) {
-            loudest = l;
-            before = id;
+      };
+      // Who the camera frames at a moment.
+      auto choose = [&](double now) {
+        QString kind = "speaker";
+        double shotFrom = 0, shotTo = 0;
+        for (auto v : speaker["shots"_L1].toArray()) {
+          const QJsonArray shot = v.toArray();
+          if (now >= shot[0].toDouble() && now < shot[1].toDouble()) {
+            kind = shot[2].toString("speaker");
+            shotFrom = shot[0].toDouble();
+            shotTo = shot[1].toDouble();
           }
-          again = again || peak(binding, now, now + hold) > quiet;
         }
-        if (again)
-          who = before;
-      }
-      QString other; // the listener: who spoke most in the seconds before the shot
-      if (kind == "listener" || kind == "two") {
-        // Both chosen once for the whole shot: frame by frame, the speaker dropped out at a pause and the listener
-        // swapped between the people who had spoken, and the camera jumped between them.
-        const int samples = std::clamp(int((shotTo - shotFrom) * 12), 6, 96);
-        double loudest = quiet;
-        QString talker;
+          double best = quiet;
+        QString who;
         for (const auto &[id, binding] : cast)
-          if (const double l = level(binding, shotFrom, shotTo, samples); l > loudest) {
-            loudest = l;
-            talker = id;
+          if (const double l = level(binding, now - window, now, 6); l > best) {
+            best = l;
+            who = id;
           }
-        if (!talker.isEmpty())
-          who = talker;
-        double most = quiet * .5;
-        for (const auto &[id, binding] : cast)
-          if (id != who)
-            if (const double l = level(binding, shotFrom - 8, shotFrom, 96); l > most) {
-              most = l;
-              other = id;
+        // A pause in a line, or between lines, of up to `hold` seconds (from the last sound to the next): the shot holds
+        // on whoever was heard last, instead of a glimpse of the wide shot. (Last, not loudest: at a hand-over the end of
+        // one line and the start of the next were as loud, and the camera flicked between the two speakers.)
+        if (const double hold = std::clamp(speaker["hold"_L1].toDouble(2.4), 0., 10.); who.isEmpty() && hold > 0) {
+          // The last (or first) moment heard, or NaN: looked for on the scene's own twentieths of a second, not ones
+          // counted from this frame (those moved with every frame, and a pause near `hold` was held and not held by
+          // turns: the camera flicked between the close-up and the wide shot).
+          auto heard = [&](const QString &binding, double from, double to, bool latest) {
+            const QJsonObject b{{"audio", binding}, {"attack", .02}, {"release", .1}};
+            constexpr double step = .05;
+            const double first = std::ceil(from / step), last = std::floor(to / step);
+            for (int k = 0; k <= int(last - first) && k <= 400; ++k) {
+              const double at = (latest ? last - k : first + k) * step;
+              if (audioLevel(b, scene, std::max(0., at)) > quiet)
+                return at;
             }
+            return double(NAN);
+          };
+          QString before;
+          double last = -1e9, next = 1e9;
+          for (const auto &[id, binding] : cast) {
+            if (const double at = heard(binding, now - hold, now, true); at > last) {
+              last = at;
+              before = id;
+            }
+            if (const double at = heard(binding, now, now + hold, false); at < next)
+              next = at;
+          }
+          if (!before.isEmpty() && next - last <= hold)
+            who = before;
+        }
+        QString other; // the listener: who spoke most in the seconds before the shot
+        if (kind == "listener" || kind == "two") {
+          // Both chosen once for the whole shot: frame by frame, the speaker dropped out at a pause and the listener
+          // swapped between the people who had spoken, and the camera jumped between them.
+          const int samples = std::clamp(int((shotTo - shotFrom) * 12), 6, 96);
+          double loudest = quiet;
+          QString talker;
+          for (const auto &[id, binding] : cast)
+            if (const double l = level(binding, shotFrom, shotTo, samples); l > loudest) {
+              loudest = l;
+              talker = id;
+            }
+          if (!talker.isEmpty())
+            who = talker;
+          double most = quiet * .5;
+          for (const auto &[id, binding] : cast)
+            if (id != who)
+              if (const double l = level(binding, shotFrom - 8, shotFrom, 96); l > most) {
+                most = l;
+                other = id;
+              }
+        }
+        return Choice{kind, who, other};
+      };
+      // No glimpses: a framing that lasts less than `glimpse` seconds (half a second) gives way to what follows it (at the
+      // end of a reaction shot the speaker detection still heard the line just finished and cut to its speaker for a frame
+      // or two; between lines, a frame of the wide shot, or of the one who spoke before).
+      if (!(now == chosenAt)) { // (once a frame: motion blur's moments share it)
+        chosenAt = now;
+        Choice chosen = choose(now);
+        if (const double g = std::clamp(speaker["glimpse"_L1].toDouble(.5), 0., 3.); g > 0) {
+          const double dt = 1. / 24;
+          double back = 0, ahead = 0;
+          while (back < g && choose(now - back - dt) == chosen)
+            back += dt;
+          if (back < g) { // (only near a change: how long this framing lasts, and what follows it)
+            Choice next = chosen;
+            while (back + ahead < g) {
+              next = choose(now + ahead + dt);
+              if (!(next == chosen))
+                break;
+              ahead += dt;
+            }
+            if (back + ahead < g)
+              chosen = next;
+          }
+        }
+        chosenKind = chosen.kind;
+        chosenWho = chosen.who;
+        chosenOther = chosen.other;
       }
+      const QString &kind = chosenKind, &who = chosenWho, &other = chosenOther;
       auto head = [&](const QString &id) {
         const auto target = pose(ids[id], t);
         return target.world.map(QPointF(target.box.center().x(), target.box.top() + target.box.height() * .3));

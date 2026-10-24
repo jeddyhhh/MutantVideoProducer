@@ -98,7 +98,11 @@ What changed in each version of Mutant Video Producer. The newest is first.
 - Deliver showed another project's title, description and tags: the choices made while a project was unsaved went to
   every project saved after it. They now go only to that project, on its first save.
 - The speaker camera cut to the wide shot for a moment at a short pause in a line, or between two lines; it now
-  holds the close-up when someone speaks again within 1.2 seconds (the speaker camera's `hold`).
+  holds the close-up through pauses of up to 2.4 seconds (the speaker camera's `hold`).
+- The speaker camera could flick between two people for a frame or two: at a hand-over (it held on whoever was loudest,
+  and the end of one line and the start of the next were as loud: it now holds on whoever was heard last), and as a
+  reaction shot ended (it went back to the speaker who had just finished). A framing that would last less than half a
+  second now gives way to the one after it (the camera's `glimpse`).
 - The Limiter let loud high-frequency material (clicks, cymbals, noise) swing past its ceiling between samples (a -3 dB
   ceiling measured -0.9 dBTP); its true-peak estimate now matches the loudness meter's.
 - The Limiter caught sample peaks only, so a mix limited at -1.5 dB still measured above -1.5 dBTP; it now holds its ceiling as a true peak (between samples, oversampled four times).

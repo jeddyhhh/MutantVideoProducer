@@ -330,12 +330,64 @@ int main(int argc, char **argv) {
     turnsBlurred["motion_blur"] = QJsonObject{{"samples", 6}, {"shutter", .1}};
     check(cut > 0 && drawn(turnsBlurred, cut) == drawn(turns, cut) && drawn(turnsBlurred, cut - .02) == drawn(turns, cut - .02),
           QStringLiteral("the speaker camera cuts cleanly under motion blur (cut at %1 s)").arg(cut));
-    // Its shots: a reaction (the listener), or the keyed wide shot, for a while.
+    // Its shots: a reaction (the listener), or the keyed wide shot, for a while. (Ann talks for a second, then Bob for
+    // three: long enough that no framing is a glimpse.)
     QJsonObject shots = turns;
-    shots["camera"] = QJsonObject{{"speaker", QJsonObject{{"zoom", 2}, {"shots", QJsonArray{QJsonArray{1.4, 1.7, "listener"}, QJsonArray{1.7, 2, "wide"}}}}}};
-    const QImage reaction = drawn(shots, 1.5), stillWide = drawn(shots, 1.8), onBob = drawn(shots, 1.3);
-    check(qGreen(reaction.pixel(160, 90)) > 200 && qAlpha(stillWide.pixel(160, 90)) == 0 && qBlue(onBob.pixel(160, 90)) > 200,
+    {
+      QJsonArray first, second;
+      for (int i = 0; i < 64; ++i) {
+        first.append(i < 16 ? 1 : 0);
+        second.append(i < 16 ? 0 : 1);
+      }
+      auto four = [](const QJsonArray &a) {
+        return QJsonObject{{"version", 1}, {"duration", 4}, {"left", a}, {"right", a}, {"rate", 1}, {"offset", 0}};
+      };
+      shots["audio"] = QJsonObject{{"ann", four(first)}, {"bob", four(second)}};
+    }
+    shots["camera"] = QJsonObject{{"speaker", QJsonObject{{"zoom", 2}, {"shots", QJsonArray{QJsonArray{2.0, 2.6, "listener"}, QJsonArray{2.6, 3.2, "wide"}}}}}};
+    const QImage onBob = drawn(shots, 1.7), reaction = drawn(shots, 2.3), stillWide = drawn(shots, 2.9), bobAgain = drawn(shots, 3.6);
+    check(qBlue(onBob.pixel(160, 90)) > 200 && qGreen(reaction.pixel(160, 90)) > 200 && qAlpha(stillWide.pixel(160, 90)) == 0
+              && qBlue(bobAgain.pixel(160, 90)) > 200,
           "the speaker camera's shots: a reaction of the listener, then the wide shot, then the speaker again");
+    // A hand-over: in the gap between two lines the shot stays on whoever was heard last, so the next speaker's first
+    // syllables (louder, then quieter than the end of the line before) don't flick the camera back and forth.
+    {
+      QJsonArray ann, bob;
+      for (int i = 0; i < 64; ++i) {
+        ann.append(i < 16 ? .12 : 0);                     // a soft end of a line at 0.5 s (64 bins over 2 s)
+        bob.append(i == 26 ? .2 : i >= 40 ? 1. : 0);      // a short sound at 0.8 s, then the next line at 1.25 s
+      }
+      QJsonObject handover = talk;
+      handover["audio"] = QJsonObject{{"ann", envelope(ann)}, {"bob", envelope(bob)}};
+      QString seen;
+      for (double t = .3; t < 1.95; t += 1. / 24) {
+        const QRgb c = drawn(handover, t).pixel(160, 90);
+        const QChar who = qBlue(c) > 200 && qGreen(c) < 60 ? 'B' : qGreen(c) > 200 ? 'A' : '-';
+        if (seen.isEmpty() || seen.back() != who)
+          seen += who;
+      }
+      check(seen == "AB", QStringLiteral("at a hand-over the speaker camera cuts once (%1)").arg(seen));
+    }
+    // No glimpses: as a reaction shot of Bob ends, Ann's line has just finished and Bob speaks next; the camera stays on
+    // Bob instead of cutting to Ann for a frame or two.
+    {
+      QJsonArray ann, bob;
+      for (int i = 0; i < 64; ++i) {
+        bob.append(i <= 12 || i >= 46 ? 1 : 0); // 0 to 0.4 s, and from 1.45 s
+        ann.append(i >= 16 && i <= 35 ? 1 : 0); // 0.5 to 1.1 s
+      }
+      QJsonObject reaction = talk;
+      reaction["audio"] = QJsonObject{{"ann", envelope(ann)}, {"bob", envelope(bob)}};
+      reaction["camera"] = QJsonObject{{"speaker", QJsonObject{{"zoom", 2}, {"shots", QJsonArray() << QJsonArray{0.5, 1.3, "listener"}}}}};
+      QString seen;
+      for (double t = .6; t < 1.95; t += 1. / 24) {
+        const QRgb c = drawn(reaction, t).pixel(160, 90);
+        const QChar who = qBlue(c) > 200 && qGreen(c) < 60 ? 'B' : qGreen(c) > 200 ? 'A' : '-';
+        if (seen.isEmpty() || seen.back() != who)
+          seen += who;
+      }
+      check(seen == "B", QStringLiteral("no glimpse of the last speaker as a reaction shot ends (%1)").arg(seen));
+    }
     // A two-shot keeps the same two people for its whole length: two people who spoke by turns before it (so either
     // could be the listener at a given moment) and a pause in the speaker's line don't move the camera.
     {
