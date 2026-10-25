@@ -2,7 +2,7 @@
 
 What changed in each version of Mutant Video Producer. The newest is first.
 
-## Unreleased
+## 0.8.0 (2026-10-25)
 
 ### Changed
 
@@ -17,6 +17,14 @@ What changed in each version of Mutant Video Producer. The newest is first.
 
 ### Added
 
+- **Tools > Record Voice-Over...**: records a microphone while the edit plays from the cursor, and puts each take on a
+  **Voice-over** audio track where it started (one undo step; an overlapping take gets its own track). Takes are WAV
+  files beside the project.
+- **Master volume** on the Editor: a white line across the transport bar's meter. Drag it to turn the whole mix down
+  (all the way left is silence), double-click it for 0 dB. It comes after Master FX, is saved with the project, goes into
+  exports and can be undone.
+- Animation scenes: **fixed** layers ignore the camera (**Ignores the camera** in the composer, `"fixed": true`), so lyrics,
+  captions and logos stay put through close-ups, pans and the speaker camera. On a group it holds all its children.
 - Character library: **Terry the towel**, a striped bath towel with sleepy eyes (his towel and stripe colours are
   settings).
 - **Animation**, a clip type of its own (**Insert > Animation**, the Generators' Animation category): characters, sets,
