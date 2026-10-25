@@ -209,6 +209,23 @@ int main(int argc, char **argv) {
       softNear += qAlpha(nearImage.pixel(x, 90)) > 0 && qAlpha(nearImage.pixel(x, 90)) < 250;
     }
     check(softFar > softNear + 4, QStringLiteral("depth of field blurs a far layer as the camera zooms in (%1 soft pixels, near %2)").arg(softFar).arg(softNear));
+    {
+      // A fixed layer (or a fixed group's child) ignores the camera: the zoomed picture shows it where it would be without one.
+      QJsonObject zoomed = box({{"fixed", true}});
+      zoomed["camera"] = QJsonObject{{"zoom", 2}, {"x", .3}, {"y", .3}};
+      QJsonObject moved = zoomed, inGroup = zoomed;
+      auto l = moved["layers"].toArray();
+      auto b = l[0].toObject();
+      b.remove("fixed");
+      l[0] = b;
+      moved["layers"] = l;
+      b["parent"] = "g";
+      inGroup["layers"] = QJsonArray{QJsonObject{{"type", "group"}, {"id", "g"}, {"x", 0}, {"y", 0}, {"width", 1}, {"height", 1}, {"fixed", true}}, b};
+      const QRectF still = motion::bounds(box(), "box", 0, {320, 180});
+      check(drawn(zoomed) == flat && drawn(moved) != flat && motion::bounds(zoomed, "box", 0, {320, 180}) == still
+                && motion::bounds(inGroup, "box", 0, {320, 180}) == still && motion::bounds(moved, "box", 0, {320, 180}) != still,
+            "a fixed layer, and a fixed group's children, ignore the camera");
+    }
     const QImage grounded = drawn(box({{"contact_shadow", 1}, {"fill", "#00000000"}, {"stroke", "#000000"}, {"stroke_width", .002}}));
     check(qAlpha(grounded.pixel(160, 128)) > 20 && qAlpha(grounded.pixel(160, 90)) == 0, "a contact shadow sits under the layer's box");
     QJsonObject moving = box({{"x", QJsonObject{{"keyframes", QJsonArray{QJsonArray{0, 0}, QJsonArray{1, .6}}}}}});

@@ -176,6 +176,8 @@ MCP `graphics_overlay` adds `layout`, `lock` and `brand` actions. `get` returns 
 
 Layers are bottom-to-top. Types: `rect`, `ellipse`, `line`, `text`, `image`, `path`, `group`, `instance`, `repeater`, `particles`, `chart`. Stable IDs identify parents, paths, masks and camera targets. IDs beginning with `$` are reserved for MCP editing targets. A child uses fractions of its group's bounds; roots use canvas fractions. Font size and stroke width use canvas height. Version-2 rounded-corner radius uses the layer's height. Rotation is degrees. `anchor_x/anchor_y` default to 0.5; `scale_x/scale_y` default to 1. `in/out` control event-local visibility, `opacity` is 0–1. Optional `blend` is `add`, `screen` or `multiply`.
 
+`"fixed": true` keeps a layer still on the picture when the camera zooms, pans, follows or cuts to a speaker: lyrics, captions, a logo or a score in a scene stay where they are through close-ups. On a group it holds all its children. In the composer it is **Ignores the camera** under Visible.
+
 Groups can contain `children`, or children can identify a flat `parent` group. The composer presents nested groups as parented layers. A group's opacity applies to its composed children once, including overlaps.
 
 ## Keyframes and bindings

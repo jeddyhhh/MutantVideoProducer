@@ -343,7 +343,7 @@ public:
     QLineEdit *name, *path;
     QPlainTextEdit* words;
     QFontComboBox* font;
-    QCheckBox *bold, *visible;
+    QCheckBox *bold, *visible, *fixed;
     QComboBox* align;
     QPushButton *fill, *stroke;
     std::map<QString, QDoubleSpinBox*> spins;
@@ -584,6 +584,9 @@ public:
                 [this](QString role) { change("brand_role", role == "None" ? QString() : role); });
         visible = new QCheckBox(tr("Visible"));
         form->addRow(visible);
+        fixed = new QCheckBox(tr("Ignores the camera"));
+        fixed->setToolTip(tr("Stays where it is on the picture when the camera zooms, pans or cuts to a speaker (lyrics, captions, logos)"));
+        form->addRow(fixed);
         words = new QPlainTextEdit;
         words->setMaximumHeight(105);
         words->setObjectName("graphicsLayerText");
@@ -655,6 +658,7 @@ public:
         connect(font, &QFontComboBox::currentFontChanged, this, [this](QFont f) { change("font", f.family()); });
         connect(bold, &QCheckBox::toggled, this, [this](bool b) { change("bold", b); });
         connect(visible, &QCheckBox::toggled, this, [this](bool b) { change("visible", b); });
+        connect(fixed, &QCheckBox::toggled, this, [this](bool b) { change("fixed", b); });
         connect(align, &QComboBox::currentTextChanged, this, [this](QString a) { change("align", a); });
         connect(list, &QListWidget::currentRowChanged, this, [this] { load(); });
         canvas->select = [this](int i) {
@@ -2370,6 +2374,7 @@ public:
         font->setCurrentFont(QFont(motion::evaluate(o["font"], currentTime, data).toString("Segoe UI")));
         bold->setChecked(motion::evaluate(o["bold"], currentTime, data).toBool());
         visible->setChecked(motion::evaluate(o["visible"], currentTime, data).toBool(true));
+        fixed->setChecked(o["fixed"].toBool());
         align->setCurrentText(motion::evaluate(o["align"], currentTime, data).toString("left"));
         path->setText(motion::evaluate(o["path"], currentTime, data).toString());
         for (auto [key, spin] : spins) {

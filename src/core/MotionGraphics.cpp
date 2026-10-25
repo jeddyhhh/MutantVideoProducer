@@ -1172,6 +1172,17 @@ public:
     local.translate(-pivot.x(), -pivot.y());
     return {b, local * parent};
   }
+  // A "fixed" layer (or one inside a fixed group) ignores the camera: lyrics, captions and logos stay put through
+  // close-ups and pans.
+  bool fixed(int i) const {
+    for (int depth = 0; i >= 0 && depth < 32; ++depth) {
+      if (nodes[i].o["fixed"_L1].toBool())
+        return true;
+      i = ids.value(nodes[i].parent, -1);
+    }
+    return false;
+  }
+  QTransform view(int i, double t, const QTransform &base = {}) const { return fixed(i) ? base : camera(t, base); }
   QTransform camera(double t, const QTransform &base) const {
     auto c = scene["camera"_L1].toObject();
     if (c.isEmpty())
@@ -1764,7 +1775,7 @@ public:
       double softness =
           std::clamp(number(o, "blur", 0, t, scene), 0., .2) * size.height();
       auto lens = scene["camera"_L1].toObject();
-      if (o.contains("depth") && lens.contains("depth_of_field"))
+      if (o.contains("depth") && lens.contains("depth_of_field") && !fixed(i))
         softness += std::clamp(number(lens, "depth_of_field", 0, t, scene), 0., 10.) *
                     std::clamp(number(o, "depth", 0, t, scene), 0., 1.) *
                     std::max(0., number(lens, "zoom", 1, t, scene) - 1) *
@@ -2083,9 +2094,9 @@ public:
   }
   void drawRoots(QPainter &p, double t, const QTransform &base = {},
                  double opacity = 1, int depth = 0) {
-    auto view = camera(t, base);
+    const auto view = camera(t, base);
     for (int i : roots)
-      draw(i, p, t, view, opacity, depth);
+      draw(i, p, t, nodes[i].o["fixed"_L1].toBool() ? base : view, opacity, depth);
   }
 };
 } // namespace
@@ -2161,12 +2172,11 @@ QRectF bounds(const QJsonObject &scene, const QString &id, double time,
   if (!g.ids.contains(id))
     return {};
   auto pose = g.pose(g.ids[id], time);
-  return (pose.world * g.camera(time, {})).mapRect(pose.box);
+  return (pose.world * g.view(g.ids[id], time)).mapRect(pose.box);
 }
 QHash<QString,QRectF> allBounds(const QJsonObject& scene, double time, QSizeF size) {
   int budget=0;Graph graph(scene,size,budget);QHash<QString,QRectF> result;
-  auto camera=graph.camera(time,{});
-  for(auto it=graph.ids.constBegin();it!=graph.ids.constEnd();++it){auto pose=graph.pose(it.value(),time);result.insert(it.key(),(pose.world*camera).mapRect(pose.box));}
+  for(auto it=graph.ids.constBegin();it!=graph.ids.constEnd();++it){auto pose=graph.pose(it.value(),time);result.insert(it.key(),(pose.world*graph.view(it.value(),time)).mapRect(pose.box));}
   return result;
 }
 QVector<PathHandle> handles(const QJsonObject &scene, const QString &id,
@@ -2182,7 +2192,7 @@ QVector<PathHandle> handles(const QJsonObject &scene, const QString &id,
   QTransform unit;
   unit.translate(pose.box.x(), pose.box.y());
   unit.scale(pose.box.width(), pose.box.height());
-  auto transform = unit * pose.world * g.camera(time, {});
+  auto transform = unit * pose.world * g.view(i, time);
   for (int j = 0; j < commands.size(); ++j) {
     auto a = commands[j].toArray();
     for (int k = 1; k + 1 < a.size(); k += 2)
@@ -2206,7 +2216,7 @@ QPointF editDelta(const QJsonObject &scene, const QString &id, double time,
     transform = transform * pose.world;
   } else if (g.ids.contains(g.nodes[i].parent))
     transform = g.childSpace(g.pose(g.ids[g.nodes[i].parent], time));
-  transform = transform * g.camera(time, {});
+  transform = transform * g.view(i, time);
   bool invertible = false;
   auto inv = transform.inverted(&invertible);
   if (!invertible)

@@ -855,7 +855,7 @@ QJsonArray McpServer::toolList()
         "preserved. v1 scenes retain their appearance; v2 adds paths (M/L/Q/C/Z commands), parented groups, symbols/instances, particles, "
         "repeaters, charts, camera, masks, gradients, shadows/glow, trails/motion_blur and character/word/line text_animation. Layer "
         "shading (0-1, light from shading_angle, default 225 = top left), contact_shadow (0-1), blur (fraction of height) and depth (0-1, "
-        "blurred by camera.depth_of_field as the camera zooms in); scene motion_blur {samples, shutter seconds}. A track binding's "
+        "blurred by camera.depth_of_field as the camera zooms in); fixed: true keeps a layer (and a group's children) still on the picture when the camera moves (lyrics, captions, logos); scene motion_blur {samples, shutter seconds}. A track binding's "
         "visemes give mouth shapes: {audio:binding, viseme:A|E|O|L|F|M|rest} is 1 while speaking that shape. Characters "
         "(action characters / add_character) come with such mouths; source_track bindings follow later edits of the track. Their "
         "expression (action expression: neutral, angry, sad, surprised, smug) is the scene variable <id>_mood. Sets (action sets / "
