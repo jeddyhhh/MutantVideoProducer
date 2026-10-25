@@ -595,6 +595,7 @@ void Project::clear(const ProjectSettings& settings)
     m_timeline = defaultTimeline();
     m_filePath.clear();
     m_portablePaths = false;
+    m_deliver = {};
     m_dirtyExtra = false;
     m_snapshot.reset();
     emit mediaChanged();
@@ -1091,6 +1092,8 @@ QByteArray Project::toJson(const QString& baseDir, const QString& backupOf, bool
     root[QStringLiteral("tracks")] = tracks;
     root["chapters"] = m_timeline.chapters;
     root["narrationSettings"] = m_timeline.narrationSettings;
+    if (!m_deliver.isEmpty())
+        root[QStringLiteral("deliver")] = m_deliver;
     if (!m_timeline.markers.empty()) {
         QJsonArray markers;
         for (const Marker& m : m_timeline.markers) {
@@ -1159,6 +1162,14 @@ bool writeFile(const QString& path, const QByteArray& data, QString* error)
     return true;
 }
 } // namespace
+
+void Project::setDeliver(const QJsonObject& deliver, bool modified)
+{
+    if (deliver == m_deliver)
+        return;
+    m_deliver = deliver;
+    m_dirtyExtra |= modified;
+}
 
 bool Project::save(const QString& path, QString* error)
 {
@@ -1365,6 +1376,7 @@ bool Project::loadFile(const QString& path, QString* error, QStringList* missing
     m_timeline = std::move(timeline);
     m_filePath = path;
     m_portablePaths = root["collection"].toObject()["relativeAssets"].toBool();
+    m_deliver = root[QStringLiteral("deliver")].toObject();
     m_dirtyExtra = false;
     m_snapshot.reset();
     emit mediaChanged();

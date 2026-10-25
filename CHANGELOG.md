@@ -2,6 +2,14 @@
 
 What changed in each version of Mutant Video Producer. The newest is first.
 
+## Unreleased
+
+### Changed
+
+- The Deliver tab's choices (outputs, ticks, folder, loudness target, and the publish pack's title, description and
+  tags) are saved in the project file instead of this computer's settings, so they go with the project. Older projects
+  bring theirs in the first time Deliver opens them.
+
 ## 0.8.0 (2026-10-25)
 
 ### Changed

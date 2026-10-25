@@ -91,7 +91,9 @@ private:
     void pollQueue();
     void rebuildStrip();
     QString baseName() const;
-    QString settingsKey(const QString& what) const;
+    // This project's Deliver choices (kept in the project: see Project::deliver).
+    void setChoice(const QString& key, const QJsonValue& value);
+    QStringList storedList(const QString& key, const QStringList& fallback = {}) const;
     TimeUs limitFor(const ExportPreset& p) const; // the trim a check set for a template, or 0
 
     Project* m_project;
@@ -104,7 +106,6 @@ private:
     double m_totalBytes = 0, m_freeBytes = -1;
     bool m_totalExact = true;
     QString m_shownPath; // the project file the outputs were named for
-    mutable std::weak_ptr<const int> m_untitledSession; // the project the "untitled" choices belong to
 
     // Header
     QLabel *m_projectName, *m_projectInfo, *m_readiness, *m_renderStatus;

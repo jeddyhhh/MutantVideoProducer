@@ -507,7 +507,7 @@ DeliverView::DeliverView(Project* project, Hooks hooks, QWidget* parent) : QWidg
         runChecks();
     });
     connect(m_target, &QComboBox::currentIndexChanged, this, [this](int i) {
-        QSettings().setValue(settingsKey(QStringLiteral("target")), i);
+        setChoice(QStringLiteral("target"), i);
         runChecks();
     });
 
@@ -582,7 +582,7 @@ DeliverView::DeliverView(Project* project, Hooks hooks, QWidget* parent) : QWidg
         }
     });
     connect(m_folder, &QLineEdit::editingFinished, this, [this] {
-        QSettings().setValue(settingsKey(QStringLiteral("folder")), QDir::fromNativeSeparators(m_folder->text()));
+        setChoice(QStringLiteral("folder"), QDir::fromNativeSeparators(m_folder->text()));
         fillOutputs();
     });
 
@@ -664,7 +664,7 @@ DeliverView::DeliverView(Project* project, Hooks hooks, QWidget* parent) : QWidg
                                                : QStringLiteral("color: @dim; background: transparent; border: none;"));
     };
     connect(m_title, &QLineEdit::textEdited, this, [this, counts] {
-        QSettings().setValue(settingsKey(QStringLiteral("title")), m_title->text());
+        setChoice(QStringLiteral("title"), m_title->text());
         if (!m_thumbFrame.isNull()) {
             m_thumb = upload::thumbnail(m_thumbFrame, m_title->text());
             m_thumbLabel->setPixmap(QPixmap::fromImage(m_thumb.scaled(m_thumbLabel->size(), Qt::KeepAspectRatio, Qt::SmoothTransformation)));
@@ -672,12 +672,12 @@ DeliverView::DeliverView(Project* project, Hooks hooks, QWidget* parent) : QWidg
         counts();
     });
     connect(m_tags, &QLineEdit::textEdited, this, [this, counts] {
-        QSettings().setValue(settingsKey(QStringLiteral("tags")), m_tags->text());
+        setChoice(QStringLiteral("tags"), m_tags->text());
         counts();
     });
     connect(m_description, &QPlainTextEdit::textChanged, this, [this, counts] {
         if (!m_filling)
-            QSettings().setValue(settingsKey(QStringLiteral("description")), m_description->toPlainText());
+            setChoice(QStringLiteral("description"), m_description->toPlainText());
         counts();
     });
     connect(fromCursor, &QPushButton::clicked, this, [this] { pickThumbnail(m_hooks.cursor ? m_hooks.cursor() : 0); });
@@ -780,18 +780,19 @@ QString DeliverView::baseName() const
     return m_project->filePath().isEmpty() ? tr("Untitled") : QFileInfo(m_project->filePath()).completeBaseName();
 }
 
-QString DeliverView::settingsKey(const QString& what) const
+void DeliverView::setChoice(const QString& key, const QJsonValue& value)
 {
-    const QString file = m_project->filePath();
-    if (file.isEmpty() && m_untitledSession.lock() != m_project->session()) {
-        // (choices kept for an earlier unsaved project: this one starts without them)
-        QSettings().remove(QStringLiteral("deliver/untitled"));
-        m_untitledSession = m_project->session();
-    }
-    const QString id = file.isEmpty() ? QStringLiteral("untitled")
-                                      : QString::fromLatin1(QCryptographicHash::hash(QDir::cleanPath(file).toLower().toUtf8(),
-                                                                                     QCryptographicHash::Md5).toHex());
-    return QStringLiteral("deliver/%1/%2").arg(id, what);
+    QJsonObject d = m_project->deliver();
+    if (!d.contains(key) && (value == QJsonValue(QString()) || value == QJsonValue(QJsonArray()))) // (nothing chosen yet)
+        return;
+    d[key] = value;
+    m_project->setDeliver(d);
+}
+
+QStringList DeliverView::storedList(const QString& key, const QStringList& fallback) const
+{
+    const QJsonValue v = m_project->deliver().value(key);
+    return v.isArray() ? v.toVariant().toStringList() : fallback;
 }
 
 void DeliverView::showEvent(QShowEvent* e)
@@ -802,32 +803,44 @@ void DeliverView::showEvent(QShowEvent* e)
 
 void DeliverView::refresh()
 {
-    QSettings settings;
-    // What was chosen before the project had a file (kept as "untitled") goes with it when it's first saved, and only
-    // with it: the choices are used up, and they belong to this project only if they were made while it was open.
-    if (!m_project->filePath().isEmpty() && m_untitledSession.lock() == m_project->session()) {
-        if (!settings.contains(settingsKey(QStringLiteral("outputs"))) && settings.contains(QStringLiteral("deliver/untitled/outputs")))
-            for (const char* key : {"outputs", "off", "folder", "title", "description", "tags", "target"})
-                if (settings.contains(QStringLiteral("deliver/untitled/") + QLatin1String(key)))
-                    settings.setValue(settingsKey(QLatin1String(key)), settings.value(QStringLiteral("deliver/untitled/") + QLatin1String(key)));
-        settings.remove(QStringLiteral("deliver/untitled"));
-        m_untitledSession.reset();
+    // Projects from before 0.8.0 kept these in this computer's settings: they come into the project (and its file, on
+    // the next save).
+    if (m_project->deliver().isEmpty() && !m_project->filePath().isEmpty()) {
+        QSettings settings;
+        settings.beginGroup(QStringLiteral("deliver/")
+                            + QString::fromLatin1(QCryptographicHash::hash(QDir::cleanPath(m_project->filePath()).toLower().toUtf8(),
+                                                                           QCryptographicHash::Md5).toHex()));
+        QJsonObject old;
+        for (const QString& key : settings.childKeys())
+            old[key] = key == QLatin1String("outputs") || key == QLatin1String("off") ? QJsonValue(QJsonArray::fromStringList(settings.value(key).toStringList()))
+                       : key == QLatin1String("target") ? QJsonValue(settings.value(key).toInt())
+                                                         : QJsonValue(settings.value(key).toString());
+        m_project->setDeliver(old, false);
     }
+    const QJsonObject stored = m_project->deliver();
     m_shownPath = m_project->filePath();
-    QString folder = settings.value(settingsKey(QStringLiteral("folder"))).toString();
+    QString folder = stored.value(QStringLiteral("folder")).toString();
+    // (a folder on a drive this computer doesn't have: the project came from another one. A folder not made yet is
+    // made by the render.)
+    for (QString up = folder; !folder.isEmpty() && !QFileInfo(up).isDir();) {
+        const QString parent = QFileInfo(up).absolutePath();
+        if (parent == up)
+            folder.clear();
+        up = parent;
+    }
     if (folder.isEmpty())
         folder = m_project->filePath().isEmpty() ? Profiles::instance().folder(QStringLiteral("Exports")) : QFileInfo(m_project->filePath()).absolutePath();
     if (folder.isEmpty())
         folder = QDir::homePath();
     m_folder->setText(QDir::toNativeSeparators(folder));
-    m_title->setText(settings.value(settingsKey(QStringLiteral("title")), baseName()).toString());
-    m_tags->setText(settings.value(settingsKey(QStringLiteral("tags"))).toString());
+    m_title->setText(stored.value(QStringLiteral("title")).toString(baseName()));
+    m_tags->setText(stored.value(QStringLiteral("tags")).toString());
     {
         const QSignalBlocker block(m_target);
-        m_target->setCurrentIndex(std::clamp(settings.value(settingsKey(QStringLiteral("target")), 0).toInt(), 0, m_target->count() - 1));
+        m_target->setCurrentIndex(std::clamp(stored.value(QStringLiteral("target")).toInt(0), 0, m_target->count() - 1));
     }
     m_filling = true;
-    m_description->setPlainText(settings.value(settingsKey(QStringLiteral("description"))).toString());
+    m_description->setPlainText(stored.value(QStringLiteral("description")).toString());
     m_filling = false;
     emit m_tags->textEdited(m_tags->text()); // the counters
     m_listingTrack->clear();
@@ -873,7 +886,7 @@ QStringList DeliverView::outputs() const
 
 void DeliverView::setOutputs(const QStringList& templateNames)
 {
-    QSettings().setValue(settingsKey(QStringLiteral("outputs")), templateNames);
+    setChoice(QStringLiteral("outputs"), QJsonArray::fromStringList(templateNames));
     fillOutputs();
     runChecks();
     updateHeader();
@@ -886,7 +899,7 @@ QString DeliverView::outputPath(const ExportPreset& p) const
     static const QRegularExpression illegal(QStringLiteral("[\\\\/:*?\"<>|]"));
     auto shortLabel = [](const QString& name) { return name.section(QStringLiteral(" - "), 0, 0).section(QStringLiteral(" ("), 0, 0).trimmed(); };
     QString label = shortLabel(p.name);
-    const QStringList listed = QSettings().value(settingsKey(QStringLiteral("outputs")), QStringList{QStringLiteral("YouTube 1080p")}).toStringList();
+    const QStringList listed = storedList(QStringLiteral("outputs"), {QStringLiteral("YouTube 1080p")});
     for (const QString& other : listed)
         if (other != p.name && shortLabel(other).compare(label, Qt::CaseInsensitive) == 0) {
             label = QString(p.name).replace(QStringLiteral(" - "), QStringLiteral(" "));
@@ -948,9 +961,8 @@ double DeliverView::estimateBytes(const ExportPreset& p, int width, int height, 
 
 void DeliverView::fillOutputs()
 {
-    QSettings settings;
-    const QStringList names = settings.value(settingsKey(QStringLiteral("outputs")), QStringList{QStringLiteral("YouTube 1080p")}).toStringList();
-    const QStringList off = settings.value(settingsKey(QStringLiteral("off"))).toStringList();
+    const QStringList names = storedList(QStringLiteral("outputs"), {QStringLiteral("YouTube 1080p")});
+    const QStringList off = storedList(QStringLiteral("off"));
     for (auto& row : m_rows)
         delete row->widget;
     m_rows.clear();
@@ -1015,7 +1027,7 @@ void DeliverView::fillOutputs()
             for (const auto& r : m_rows)
                 if (!r->tick->isChecked())
                     offNow << r->templateName;
-            QSettings().setValue(settingsKey(QStringLiteral("off")), offNow);
+            setChoice(QStringLiteral("off"), QJsonArray::fromStringList(offNow));
             runChecks();
             updateTotals();
             updateHeader();

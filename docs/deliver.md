@@ -49,7 +49,10 @@ and the template's short name, such as `Trip - YouTube 1080p.mp4` or `Trip - MP3
 - Under the list: how many outputs, about how big they'll be together, and the free space where they
   go (in red when they might not fit).
 
-The outputs, the ticks, the folder and the loudness target are remembered for each project file.
+The outputs, the ticks, the folder, the loudness target and the publish pack's title, description and tags are saved in
+the project file, so they go with the project to another computer (a folder that isn't there falls back to the
+project's own folder). Projects from before 0.8.0 bring them in from this computer's settings the first time Deliver
+opens them.
 The folder starts as the project's own folder.
 
 ## Publish pack

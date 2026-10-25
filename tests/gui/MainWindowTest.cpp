@@ -1518,36 +1518,44 @@ int MainWindow::runEditorTest(QStringList& log)
 
     // ---- Autosave ----
     const QString projectPath = work.filePath(QStringLiteral("project.mvp"));
-    QSettings().remove(QStringLiteral("deliver/") // (an earlier run's Deliver settings for this file)
-                       + QString::fromLatin1(QCryptographicHash::hash(QDir::cleanPath(projectPath).toLower().toUtf8(), QCryptographicHash::Md5).toHex()));
     const QStringList untitledOutputs = m_deliver->outputs();
+    m_deliver->setPackText(std::nullopt, std::nullopt, QStringLiteral("snowbank, deliver test"));
     m_project->save(projectPath, nullptr);
     {
-        // Saved for the first time: the Deliver outputs chosen while untitled go with it, named after it.
+        // The Deliver choices are part of the project: saved in its file (with the outputs chosen while it was untitled,
+        // named after it), back when it is opened, and not in a new project.
         m_deliver->refresh();
         const ExportPreset* first = nullptr;
         for (const auto& p : exportPresets())
             if (!m_deliver->outputs().isEmpty() && p.name == m_deliver->outputs().front())
                 first = &p;
+        Project reopened;
+        const bool loaded = reopened.load(projectPath, nullptr);
+        const QJsonObject saved = reopened.deliver();
+        reopened.clear();
         check(!untitledOutputs.isEmpty() && m_deliver->outputs() == untitledOutputs && first
-                  && QFileInfo(m_deliver->outputPath(*first)).fileName().startsWith(QStringLiteral("project - ")),
-              QStringLiteral("Deliver outputs chosen while untitled carry over on the first save (%1)")
-                  .arg(first ? QFileInfo(m_deliver->outputPath(*first)).fileName() : QStringLiteral("none")));
-        // ...and only to it: an unsaved project's choices left over (from a project never saved) don't go to the next.
-        const QString key = QStringLiteral("deliver/")
+                  && QFileInfo(m_deliver->outputPath(*first)).fileName().startsWith(QStringLiteral("project - ")) && loaded
+                  && saved[QStringLiteral("tags")].toString() == QStringLiteral("snowbank, deliver test")
+                  && saved[QStringLiteral("outputs")].toVariant().toStringList() == untitledOutputs && reopened.deliver().isEmpty()
+                  && !m_project->isModified(),
+              QStringLiteral("Deliver choices are saved in the project file (%1, tags \"%2\") and a new project starts without them")
+                  .arg(first ? QFileInfo(m_deliver->outputPath(*first)).fileName() : QStringLiteral("none"), saved[QStringLiteral("tags")].toString()));
+        m_deliver->setPackText(std::nullopt, std::nullopt, QString());
+        m_project->save(projectPath, nullptr);
+        // A project from before 0.8.0 (its choices in this computer's settings) brings them in, without asking to save.
+        const QJsonObject kept = m_project->deliver();
+        const QString old = QStringLiteral("deliver/")
                             + QString::fromLatin1(QCryptographicHash::hash(QDir::cleanPath(projectPath).toLower().toUtf8(), QCryptographicHash::Md5).toHex());
-        const bool usedUp = !QSettings().contains(QStringLiteral("deliver/untitled/outputs"));
-        QSettings().setValue(QStringLiteral("deliver/untitled/outputs"), untitledOutputs);
-        QSettings().setValue(QStringLiteral("deliver/untitled/title"), QStringLiteral("Somebody else's video"));
-        const QVariant outputs = QSettings().value(key + QStringLiteral("/outputs"));
-        QSettings().remove(key + QStringLiteral("/outputs"));
-        QSettings().remove(key + QStringLiteral("/title"));
+        QSettings().setValue(old + QStringLiteral("/title"), QStringLiteral("An older pack"));
+        QSettings().setValue(old + QStringLiteral("/outputs"), QStringList{QStringLiteral("YouTube 720p")});
+        m_project->setDeliver({}, false);
         m_deliver->refresh();
         const auto* title = m_deliver->findChild<QLineEdit*>(QStringLiteral("deliverTitle"));
-        check(usedUp && title && title->text() != QStringLiteral("Somebody else's video"),
-              QStringLiteral("a left-over unsaved project's Deliver title doesn't go to a saved project (%1)").arg(title ? title->text() : QString()));
-        QSettings().remove(QStringLiteral("deliver/untitled"));
-        QSettings().setValue(key + QStringLiteral("/outputs"), outputs);
+        check(title && title->text() == QStringLiteral("An older pack") && m_deliver->outputs() == QStringList{QStringLiteral("YouTube 720p")}
+                  && !m_project->isModified(),
+              QStringLiteral("an older project's Deliver choices come in from this computer's settings (%1)").arg(title ? title->text() : QString()));
+        QSettings().remove(old);
+        m_project->setDeliver(kept, false);
         m_deliver->refresh();
     }
     m_timeline->addMarker(kUsPerSecond, QStringLiteral("autosaved"));

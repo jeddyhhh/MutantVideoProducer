@@ -353,6 +353,11 @@ public:
     // Changes when the project is cleared or another is loaded (so state kept for "this project" can tell).
     const std::shared_ptr<const int>& session() const { return m_session; }
     bool isModified() const { return !m_undo.isClean() || m_dirtyExtra; }
+    // The Deliver tab's choices for this project (outputs, folder, title, description, tags, loudness target): saved in
+    // the project file, so they go wherever it goes, but not part of the undo history. `modified` false: a value brought
+    // in from elsewhere (it is saved with the next save, but doesn't by itself ask to save).
+    const QJsonObject& deliver() const { return m_deliver; }
+    void setDeliver(const QJsonObject& deliver, bool modified = true);
     void clear(const ProjectSettings& settings = {}); // an empty, unmodified project of that size and rate
     bool save(const QString& path, QString* error);
     QJsonObject collectionDocument() const;
@@ -388,6 +393,7 @@ private:
     QString m_filePath;
     bool m_dirtyExtra = false;
     bool m_portablePaths = false;
+    QJsonObject m_deliver;
     mutable std::shared_ptr<const ProjectSnapshot> m_snapshot;
     std::shared_ptr<const PackedTimeline> m_packed; // the last state put in the undo history (to share with)
 };
