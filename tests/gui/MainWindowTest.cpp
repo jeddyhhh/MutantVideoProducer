@@ -717,6 +717,19 @@ int MainWindow::runEditorTest(QStringList& log)
                   .arg(foreignStatus)
                   .arg(listStatus));
 
+        {
+            // The User Guide through AI control: the page list, a page, nothing outside the guide; the instructions point to it.
+            const QJsonArray pages = content(call("user_guide", {}))["pages"].toArray();
+            const bool listed = std::any_of(pages.begin(), pages.end(), [](const QJsonValue& v) { return v.toObject()["page"].toString() == "ai-workflow.md"; });
+            const QString page = call("user_guide", {{"page", "ai-workflow.md"}})["content"].toArray()[0].toObject()["text"].toString();
+            const bool outside = failed(call("user_guide", {{"page", "../CMakeLists.txt"}})) && failed(call("user_guide", {{"page", "../../README.md"}}));
+            const QString instructions = init["result"].toObject()["instructions"].toString();
+            check(listed && page.startsWith("# Making a whole video") && outside && instructions.contains("ai-workflow.md"),
+                  QStringLiteral("AI control: user_guide lists %1 pages and reads ai-workflow.md (%2 characters), nothing outside the guide, "
+                                 "and the instructions point to it")
+                      .arg(pages.size())
+                      .arg(page.size()));
+        }
         // A generated event that can't use the track asked for says where it went (and that indices moved).
         {
             const int undoIndex = m_project->undoStack()->index();

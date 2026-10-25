@@ -4,6 +4,13 @@ What changed in each version of Mutant Video Producer. The newest is first.
 
 ## Unreleased
 
+### Added
+
+- AI control: a `user_guide` tool reads the User Guide and tutorials, and a new page,
+  [Making a whole video through AI control](docs/ai-workflow.md), gives an assistant the workflow for an animated
+  episode or documentary (sound first, a scene per shot, titles, checks, finishing). The server's instructions point
+  to it, so a newly connected assistant starts from the workflow instead of trial and error.
+
 ### Changed
 
 - The Deliver tab's choices (outputs, ticks, folder, loudness target, and the publish pack's title, description and

@@ -468,7 +468,11 @@ QJsonObject paramDefJson(const ParamDef& d)
     return o;
 }
 
-const char* kInstructions = "Mutant Video Producer is a video editor with a Live tab for real-time effects. Times are in seconds. "
+const char* kInstructions = "Mutant Video Producer is a video editor with an animation studio (cartoon characters with lip sync, "
+                            "sets, a speaker camera), voices, captions, audio finishing, a Deliver tab and a Live tab for real-time "
+                            "effects. Times are in seconds. To make a whole video (an animated episode, a documentary, a music video), "
+                            "first read user_guide page ai-workflow.md: the order of the work, the tools for each step and the checks; "
+                            "user_guide lists every other page (animation-scenes.md for scenes). "
                             "Start with get_project to see the media, tracks, events (clips) and markers. "
                             "Event ids, effect ids and media ids come from get_project. Effects are found with list_effects "
                             "(video, audio, transition and generator types and their settings). Every change can be undone "
@@ -871,7 +875,7 @@ QJsonArray McpServer::toolList()
         "opacity for see-through). bind_audio embeds real source envelopes and native detected beats (source_track: "
         "every audio event on a track during the scene, e.g. one binding per character's voice track for lip sync); property "
         "{audio:binding,base,amount,channel:peak|left|right|beat} reacts without adding sound. Read capabilities and "
-        "docs/animation-scenes.md for limits and examples. All edits are saved and undoable.",
+        "user_guide page animation-scenes.md for limits and examples. All edits are saved and undoable.",
         {{"action",
           prop("string",
                "capabilities, presets, validate, create, get, update, keyframe, bind_audio, export_template, import_template, layout, "
@@ -1124,6 +1128,12 @@ QJsonArray McpServer::toolList()
         def["inputSchema"] = schema;
         t[i] = def;
     }
+    t.append(tool("user_guide",
+                  "Mutant Video Producer's User Guide and tutorials (Markdown), the same pages as Help > User Guide. Without page: the "
+                  "list of pages with their titles. Read ai-workflow.md first to make a whole video (an animated episode, a "
+                  "documentary, a music video): the order of the work, the tools for each step and the checks.",
+                  {{QStringLiteral("page"), prop("string", "A page from the list, e.g. ai-workflow.md, animation-scenes.md, tutorials/17-animated-short.md")}},
+                  {}, true));
     t.append(tool("list_sound_effects",
                   "The built-in sound effects library (whooshes, booms, dings, comedy stings...), all CC0: category, name and file path "
                   "for import_media or add_media_to_timeline.",
@@ -1470,6 +1480,7 @@ struct McpServer::ToolCall {
     QJsonObject tool_generate_voice();
     QJsonObject tool_generate_dialogue();
     QJsonObject tool_list_sound_effects();
+    QJsonObject tool_user_guide();
     QJsonObject tool_list_vst3_plugins();
     QJsonObject tool_set_project_settings();
     QJsonObject tool_live_status();
@@ -2889,6 +2900,35 @@ QJsonObject McpServer::ToolCall::tool_voice_status()
     return jsonResult(status);
 }
 
+QJsonObject McpServer::ToolCall::tool_user_guide()
+{
+    const QDir root(MainWindow::docsPath({}));
+    if (!has("page")) {
+        QJsonArray pages;
+        QDirIterator it(root.path(), {QStringLiteral("*.md")}, QDir::Files, QDirIterator::Subdirectories);
+        while (it.hasNext()) {
+            const QString path = it.next();
+            const QString page = root.relativeFilePath(path);
+            if (page.startsWith(QLatin1String("developer/")))
+                continue;
+            QFile f(path);
+            QString title;
+            if (f.open(QIODevice::ReadOnly | QIODevice::Text))
+                title = QString::fromUtf8(f.readLine()).remove(QLatin1Char('#')).trimmed();
+            pages.append(QJsonObject{{"page", page}, {"title", title}});
+        }
+        return jsonResult({{QStringLiteral("pages"), pages}});
+    }
+    // (only pages inside the guide's folder)
+    const QString page = QDir::cleanPath(str("page"));
+    const QString path = root.absoluteFilePath(page);
+    QFile f(path);
+    if (page.startsWith(QLatin1String("..")) || QDir::isAbsolutePath(page) || !page.endsWith(QLatin1String(".md")) || !path.startsWith(root.absolutePath())
+        || !f.open(QIODevice::ReadOnly | QIODevice::Text))
+        return errorResult(QStringLiteral("No page %1: call user_guide without page for the list.").arg(str("page")));
+    return textResult(QString::fromUtf8(f.readAll()));
+}
+
 QJsonObject McpServer::ToolCall::tool_list_sound_effects()
 {
     QJsonArray sounds;
@@ -3758,6 +3798,7 @@ QJsonObject McpServer::callTool(const QString& name, const QJsonObject& a)
         {QStringLiteral("generate_voice"), {&ToolCall::tool_generate_voice, false}},
         {QStringLiteral("generate_dialogue"), {&ToolCall::tool_generate_dialogue, false}},
         {QStringLiteral("list_sound_effects"), {&ToolCall::tool_list_sound_effects, false}},
+        {QStringLiteral("user_guide"), {&ToolCall::tool_user_guide, false}},
         {QStringLiteral("list_vst3_plugins"), {&ToolCall::tool_list_vst3_plugins, false}},
         {QStringLiteral("set_project_settings"), {&ToolCall::tool_set_project_settings, false}},
         {QStringLiteral("live_status"), {&ToolCall::tool_live_status, true}},

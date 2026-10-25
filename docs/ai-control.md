@@ -25,6 +25,12 @@ The status bar shows each tool it uses.
 
 `collect_project` takes `destination` (a new folder), `include_unused_media` and `include_voice_models` (both default true). It includes unsaved edits without changing the open project and returns `project`, `report`, `copied_files`, `copied_bytes`, `missing` and `warnings`. Its copying progress window appears even for MCP calls and can cancel the operation.
 
+## Making a whole video
+
+The assistant is told to read [Making a whole video through AI control](ai-workflow.md) (through `user_guide`) before
+it makes a whole video: the order of the work (sound first, a scene per shot, titles, checks, finishing), the tools
+for each step and the checks that catch mistakes. It is how the *Snowbank* episodes were made.
+
 ## What it can do
 
 **The Editor**
@@ -32,6 +38,7 @@ The status bar shows each tool it uses.
 | Tool | What it does |
 |---|---|
 | get_project | Reads the media, tracks, events, effects and their settings, markers. |
+| user_guide | Reads this User Guide and the tutorials: the list of pages, or one page. |
 | graphics_overlay | Compose native layered text, shapes and images; create/read/update broadcast presets or custom scenes. `bind_audio` with `source_track` (a track index) and `binding` (a name) binds every sound on that track during the scene, for lip sync from each character's voice track (it follows later edits of the track, and its `visemes` drive mouth shapes). `characters` lists the character library, `add_character` adds one (`character`, `name`, `x`, `colours`), `save_character` saves a group; `expression` sets a character's face (`layer_id`, `mood`, `time`); `move` adds a ready-made move or gesture (`move`, `layer_id`, `time`, `duration`, `amount`, `to`); `sets` lists the set library and `add_set` (`set`) puts one behind the scene; `patch` changes properties by path (`operations`), `batch` runs many move/expression/keyframe/patch steps as one undo step, `dance` keys moves on the music's beats (`dancers`, `moves`, `every`), and `props` / `add_prop` put a prop in a character's hand. `freeze_frame` `in_place` holds a frame over the following time without moving anything later. Layers can be `video` (`path`, `source_in`, `speed`, `loop`, `fit`) and carry their own `effects`; the camera's `speaker` frames whoever is talking. Colours are `#RRGGBB`, or `#AARRGGBB` with the alpha first. |
 | waveform_graphic | Build and style native graphics from real source audio, with embedded peaks, stereo and playback progress. |
 | import_media, add_media_to_timeline | Imports files and places them. |

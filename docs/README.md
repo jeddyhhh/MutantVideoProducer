@@ -55,6 +55,7 @@ guide, and **Help > Tutorials** to open the step-by-step tutorials and their exa
 - [Options](options.md): every setting in the Options menu.
 - [GPU Acceleration](gpu-acceleration.md): which parts of preview, effects and rendering use the graphics card.
 - [AI Control (MCP)](ai-control.md): letting an AI assistant on your computer edit with you.
+- [Making a whole video through AI control](ai-workflow.md): the workflow an assistant follows for an animated episode or a documentary.
 
 ## For developers
 
