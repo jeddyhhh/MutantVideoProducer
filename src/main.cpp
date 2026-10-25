@@ -88,11 +88,14 @@ int main(int argc, char** argv)
     const QStringList grabs = takeAll(QStringLiteral("--grab"));
     const QStringList delays = takeAll(QStringLiteral("--delay"));
     const QStringList themeId = takeAll(QStringLiteral("--theme")); // a theme by id, e.g. for screenshots of it
+    const QStringList modeTab = takeAll(QStringLiteral("--mode"));   // --mode <n>: the workspace tab (0 Editor, 1 Live, 2 Deliver)
+    const QStringList eventId = takeAll(QStringLiteral("--event"));  // --event <id>: the event --fx-editor shows (default: the first)
     if (!screenshot.isEmpty()) {
         // Its own fresh settings: not the user's sources (a screen), layouts or recent files.
         QApplication::setApplicationName(QStringLiteral("MvpScreenshot"));
         QSettings().clear();
         if (!liveVideo.isEmpty()) {
+            qputenv("MVP_NO_DEVICES", "1"); // only the video: never this computer's screens or cameras in a screenshot
             const QString path = QFileInfo(liveVideo.front()).absoluteFilePath();
             QSettings().setValue(QStringLiteral("live/playlists"), QVariantList{QStringList{path}});
             QSettings().setValue(QStringLiteral("live/source"), QStringLiteral("Video: %1").arg(QFileInfo(path).fileName()));
@@ -294,8 +297,8 @@ int main(int argc, char** argv)
         // Developer option: show the first event's effects (or title / pan-crop editor).
         if (auto* project = window.findChild<Project*>())
             for (const Track& t : project->timeline().tracks)
-                if (!t.clips.empty()) {
-                    const Clip& c = t.clips.front();
+                if (!t.clips.empty() && (eventId.isEmpty() || project->timeline().findClip(eventId.front().toInt()))) {
+                    const Clip& c = eventId.isEmpty() ? t.clips.front() : *project->timeline().findClip(eventId.front().toInt());
                     if (panCropEditor || c.isGenerated())
                         window.findChild<EffectEditor*>()->setTarget(
                             {panCropEditor ? FxTarget::Kind::PanCrop : FxTarget::Kind::Generator, c.id});
@@ -371,9 +374,9 @@ int main(int argc, char** argv)
             app.exit(failures);
         });
     }
-    if (liveTab || !liveTest.isEmpty())
+    if (liveTab || !liveTest.isEmpty() || !modeTab.isEmpty())
         if (auto* modes = window.findChild<QTabWidget*>(QStringLiteral("modeTabs")))
-            modes->setCurrentIndex(1);
+            modes->setCurrentIndex(modeTab.isEmpty() ? 1 : modeTab.front().toInt());
     if (!liveTest.isEmpty()) {
         QTimer::singleShot(1000, &window, [&] {
             QStringList log;
@@ -396,10 +399,18 @@ int main(int argc, char** argv)
     }
     for (const QString& name : triggers)
         QTimer::singleShot(800, &window, [&window, name] {
+            // (by object name, or a menu command by its words: "Record Voice-Over")
+            auto words = [](QString t) { return t.remove(QLatin1Char('&')).remove(QStringLiteral("...")).remove(QChar(0x2026)).trimmed(); };
+            QAction* byText = nullptr;
+            for (QAction* a : window.findChildren<QAction*>())
+                if (!byText && words(a->text()).compare(name, Qt::CaseInsensitive) == 0)
+                    byText = a;
             if (auto* action = window.findChild<QAction*>(name))
                 action->trigger();
             else if (auto* button = window.findChild<QAbstractButton*>(name))
                 button->click();
+            else if (byText)
+                byText->trigger();
         });
     if (!screenshot.isEmpty() && !liveVideo.isEmpty()) {
         if (auto* modes = window.findChild<QTabWidget*>(QStringLiteral("modeTabs")))
@@ -410,11 +421,15 @@ int main(int argc, char** argv)
     }
     if (!screenshot.isEmpty()) {
         window.resize(1600, 1000);
-        // Keep the picture legible and all demo tracks visible in documentation captures.
-        if (auto* split = window.findChild<QSplitter*>(QStringLiteral("editorMainSplit")))
-            split->setSizes({480, 350, 120});
-        if (auto* split = window.findChild<QSplitter*>(QStringLiteral("editorTopSplit")))
-            split->setSizes({360, 1240, 0});
+        // Keep the picture legible and all demo tracks visible in documentation captures (once the window has its
+        // size: earlier, the splitters share out their old sizes again).
+        // (the effects section only when it is the subject)
+        QTimer::singleShot(300, &window, [&window, bottom = fxEditor || panCropEditor || keyframesTab] {
+            if (auto* split = window.findChild<QSplitter*>(QStringLiteral("editorMainSplit")))
+                split->setSizes(bottom ? QList<int>{420, 250, 330} : QList<int>{440, 560, 0});
+            if (auto* split = window.findChild<QSplitter*>(QStringLiteral("editorTopSplit")))
+                split->setSizes({360, 1240, 0});
+        });
         QTimer::singleShot(delays.isEmpty() ? 4000 : delays.front().toInt(), &window, [&] {
             window.grab().save(screenshot);
             for (const QString& name : grabs)

@@ -3,24 +3,29 @@
 Run from the repository root after building the Windows application:
 
 ```powershell
-./scripts/update-readme-screenshots.ps1
+./scripts/update-readme-screenshots.ps1 -Episodes "<folder of the Snowbank episodes>"
 ```
 
-The recipe builds three editable `.mvp` projects in the ignored
-`creative-test/readme-showcase` folder, using `scripts/readme-showcase.py`:
+It writes the README's pictures to `docs/screenshots/readme`, working in the ignored
+`creative-test/readme-screenshots` folder. The Editor, Animation, Mixer, Deliver, Render As and theme pictures,
+and the six preview frames, come from the Snowbank episodes (*Four Score*, *Whiteout Part 1* and *Get Dry*), a
+cartoon series made in Mutant Video Producer; the effects and keyframes pictures use the bundled
+`data/examples/effects-and-keyframes.mvp`. The Live picture plays a clip made from the six frames through the first
+pad of `data/examples/live-set.mvp`.
 
-- Orbital Report: native broadcast graphics, a path-following satellite, telemetry chart and captions.
-- Night Circuit: native curved paths, reusable car symbols and motion trails.
-- Signal Studio: stereo peaks decoded from the bundled tutorial music and styled with the waveform generator.
+Screenshots come from the real application's isolated `--screenshot` mode: fresh settings instead of the user's,
+the window kept off the screen, and with `--live-video` only that video as a source (never the computer's screens or
+cameras). Its options:
 
-Screenshots come from the real application's isolated `--screenshot` mode, which
-uses fresh settings instead of the user's project, layouts or media library. The
-composer capture opens the selected event's actual graphics editor. FFmpeg creates
-the four-theme comparison sheet and encodes an editor preview into a short local
-video for the Live input. No external artwork or downloaded footage is used.
+- `--seek <s>`, `--theme <id>`, `--delay <ms>` (before the grab), `--tab <n>` (the media / FX browser tab),
+  `--browse <folder>`, `--mode <n>` (0 Editor, 1 Live, 2 Deliver).
+- `--fx-editor` shows an event's effects (`--event <id>`, else the first event); `--keyframes` / `--keyframes-graph`
+  the Keyframes tab; `--mixer` the Audio Mixer (saved as `<shot>_mixer.png`); `--export-dialog[=search]` Render As
+  (`<shot>_export.png`).
+- `--trigger <name>` clicks a button or runs an action by object name, or runs a menu command by its words
+  (`--trigger "Record Voice-Over"`); `--grab <name>` also saves one widget or dialog by object or class name
+  (`<shot>_<name>.png`).
 
-Review each capture before committing it. Keep the preview capture
-`editor-window_PreviewWidget.png` in the working folder only; the README uses the full editor view.
-The existing transition and generator reference sheets are produced by the native
-self-test commands documented in [Testing](testing.md); the README now focuses
-on complete editing workspaces and the newer native graphics tools.
+Review each capture before committing it. The pictures in `docs/screenshots` itself (used by the User Guide) and the
+transition and generator reference sheets come from the native self-test commands documented in
+[Testing](testing.md).
