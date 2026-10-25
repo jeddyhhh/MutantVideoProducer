@@ -118,6 +118,9 @@ void ungroupClips(Timeline& tl, const std::set<int>& ids);
 
 // Inserts a new track; index -1 appends. Returns the new track's index.
 int addTrack(Timeline& tl, TrackType type, int index = -1);
+// A recorded voice-over starting at `at`: on the first audio track named "Voice-over..." with room for it, otherwise on a
+// new "Voice-over" track above the other audio tracks. Returns the new event's id (0: the media has no audio).
+int placeVoiceOver(Timeline& tl, const MediaItem& media, TimeUs at, const FrameRate& fps);
 void removeTrack(Timeline& tl, int index);
 // Moves a track so that it ends up at index `to`.
 void moveTrack(Timeline& tl, int from, int to);

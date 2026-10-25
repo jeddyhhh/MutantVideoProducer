@@ -23,6 +23,7 @@
 #include "engine/PlaybackEngine.h"
 #include "ui/AudioLevels.h"
 #include "ui/AudioMeter.h"
+#include "ui/VoiceOverDialog.h"
 #include "ui/AudioFinishingWindow.h"
 #include "ui/DeviceChainView.h"
 #include "ui/EffectEditor.h"
@@ -286,6 +287,36 @@ int MainWindow::runEditorTest(QStringList& log)
         });
         narrationStudio();
         m_project->setTimelineLive(initial);
+        {
+            // Record Voice-Over: a take (a test tone, throttled to real time) lands on a new Voice-over track where the cursor
+            // was, as one undo step, and the edit stops playing and goes back there.
+            m_timeline->setCursorTime(2 * kUsPerSecond);
+            auto* recorder = recordVoiceOver();
+            recorder->setSource({"Test tone", "lavfi", "sine=frequency=440:sample_rate=48000,arealtime"});
+            const int undoBefore = m_project->undoStack()->index();
+            recorder->startTake();
+            const bool playing = m_engine->isPlaying() == recorder->playsEdit();
+            wait(1200);
+            recorder->stopTake();
+            const Track* track = nullptr;
+            for (const auto& t : m_project->timeline().tracks)
+                if (t.name == "Voice-over")
+                    track = &t;
+            const Clip* take = track && track->clips.size() == 1 ? &track->clips.front() : nullptr;
+            check(take && take->start == 2 * kUsPerSecond && take->length > 800000 && take->length < 1700000 && playing
+                      && m_project->undoStack()->index() == undoBefore + 1 && !m_engine->isPlaying()
+                      && m_timeline->cursorTime() == 2 * kUsPerSecond,
+                  QStringLiteral("Record Voice-Over: a %1 s take on the Voice-over track at the cursor, one undo step")
+                      .arg(take ? double(take->length) / kUsPerSecond : 0.0, 0, 'f', 2));
+            const auto media = take ? m_project->mediaItem(take->mediaId) : nullptr;
+            const QString file = media ? media->path : QString();
+            recorder->close();
+            m_project->undoStack()->undo();
+            m_project->setTimelineLive(initial);
+            if (media)
+                m_project->removeMedia(media->id);
+            QFile::remove(file); // (an unsaved project's takes go to the Documents folder)
+        }
         check(findChild<QWidget*>("storyPanel") != nullptr, "Story panel is available in editor");
         if (auto* panel = findChild<QWidget*>("storyPanel")) {
             Timeline storyTimeline = initial;

@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(MutantVideoProducer VERSION 0.7.0 DESCRIPTION "Non-linear video editor" LANGUAGES CXX)
+project(MutantVideoProducer VERSION 0.8.0 DESCRIPTION "Non-linear video editor" LANGUAGES CXX)
 # A release build takes its version from the tag (the workflow sets MVP_VERSION).
 set(MVP_VERSION "$ENV{MVP_VERSION}")
 if(NOT MVP_VERSION)
@@ -243,6 +243,7 @@ add_executable(mvp WIN32
     tests/gui/MainWindowTest.cpp tests/gui/TimelineWidgetTest.cpp tests/gui/LiveViewTest.cpp
     src/ui/MainWindowStory.cpp
     src/ui/VoiceJob.h            src/ui/VoiceJob.cpp
+    src/ui/VoiceOverDialog.h     src/ui/VoiceOverDialog.cpp
     src/ui/MainWindowYouTube.cpp
     src/ui/MainWindowSetup.cpp src/ui/MainWindowTools.cpp src/ui/MainWindowCuts.cpp
     src/ui/RenderQueue.h src/ui/RenderQueue.cpp

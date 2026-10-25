@@ -3,6 +3,9 @@
 #include "ui/TimelineWidget.h"
 
 #include "ui/VoiceJob.h"
+#include "ui/VoiceOverDialog.h"
+#include "core/Brand.h"
+#include "core/Profiles.h"
 
 #include "core/Voice.h"
 
@@ -466,4 +469,36 @@ void MainWindow::narrationStudio(const std::vector<Caption>& supplied, const QJs
 
     dialog.exec();
     player->stop();
+}
+
+VoiceOverDialog* MainWindow::recordVoiceOver()
+{
+    // Takes go beside the project (or into the profile's Voice folder until it is saved).
+    const QString file = m_project->filePath();
+    QString folder = !file.isEmpty() ? QFileInfo(file).dir().filePath(QFileInfo(file).completeBaseName() + QStringLiteral("-voiceover"))
+                                     : Profiles::instance().folder(QStringLiteral("Voice"));
+    if (folder.isEmpty())
+        folder = brand::userFolder(QStandardPaths::DocumentsLocation, QStringLiteral("Voice"));
+    auto* dialog = new VoiceOverDialog(folder, this);
+    dialog->setAttribute(Qt::WA_DeleteOnClose);
+    auto start = std::make_shared<TimeUs>(0);
+    dialog->onStart = [this, start](bool playEdit) {
+        *start = m_timeline->cursorTime();
+        if (playEdit)
+            play(false);
+    };
+    dialog->onStop = [this] { stopPlayback(true); };
+    connect(dialog, &VoiceOverDialog::recorded, this, [this, start](const QString& path) {
+        const MediaInfo info = probeMedia(path);
+        if (!info.ok()) {
+            QMessageBox::warning(this, tr("Record Voice-Over"), tr("The take could not be read: %1").arg(info.error));
+            return;
+        }
+        Timeline tl = m_project->timeline();
+        const int id = m_project->addMedia(info);
+        if (const auto media = m_project->mediaItem(id); media && ops::placeVoiceOver(tl, *media, *start, m_project->settings().fps))
+            m_project->applyEdit(tl, tr("Record Voice-Over"));
+    });
+    dialog->show();
+    return dialog;
 }

@@ -97,6 +97,21 @@ The white line across the transport bar's meter is the **master volume**: drag i
 whole mix down (all the way left is silence), and double-click it to go back to 0 dB. It comes after
 Master FX, is saved with the project, goes into exports and can be undone.
 
+## Recording a voice-over
+
+**Tools > Record Voice-Over...** records your microphone over the edit:
+
+1. Put the cursor where the voice-over starts and open **Record Voice-Over**.
+2. Choose the **Microphone** (any audio input the Live tab can use) and check its **Level** as you talk.
+3. Click **Record**. With **Play the edit while recording** ticked, the edit plays from the cursor so you can talk over the
+   picture; wear headphones, or the speakers are recorded too.
+4. Click **Stop**. The take goes onto a **Voice-over** audio track (made above the other audio tracks) where the cursor was,
+   in one undo step, and the cursor goes back there for another take. A take that would overlap one already there gets a
+   **Voice-over 2** track, so nothing is recorded over.
+
+Takes are WAV files in a `<project name>-voiceover` folder beside the project (before the project is saved, in the
+profile's Voice folder). Auto ducking under the Voice-over track turns the music down while you talk.
+
 ## Auto ducking
 
 Auto ducking turns music down while someone speaks.

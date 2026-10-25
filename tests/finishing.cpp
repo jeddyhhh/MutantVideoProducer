@@ -13,6 +13,7 @@
 #include <QDir>
 #include <QTemporaryDir>
 #include <QTextStream>
+#include <algorithm>
 #include <cmath>
 #include <limits>
 
@@ -376,6 +377,26 @@ int main(int argc, char** argv)
         check(plain.size() == QSize(1280, 720) && plain.pixelColor(640, 360) == QColor(30, 90, 200) && plain.pixelColor(5, 5) == QColor(30, 90, 200)
                   && white > 400 && titled.pixelColor(640, 100) == QColor(30, 90, 200),
               QString("thumbnail is 1280x720, filled by the frame, with the title in white along the bottom (%1 white samples)").arg(white));
+    }
+    {
+        // Recorded voice-overs: onto a "Voice-over" track above the other audio; an overlapping take gets its own track,
+        // a later one goes back on the first.
+        Timeline tl = defaultTimeline();
+        MediaItem take;
+        take.id = 7;
+        take.info.duration = 3 * kUsPerSecond;
+        take.info.audio.push_back({});
+        const FrameRate fps{30, 1};
+        const int a = ops::placeVoiceOver(tl, take, 2 * kUsPerSecond, fps), b = ops::placeVoiceOver(tl, take, 4 * kUsPerSecond, fps),
+                  c = ops::placeVoiceOver(tl, take, 6 * kUsPerSecond, fps);
+        auto on = [&](int clip) { int t = -1; tl.findClip(clip, &t); return t >= 0 ? tl.tracks[size_t(t)].name : QString(); };
+        const auto firstAudio = std::find_if(tl.tracks.begin(), tl.tracks.end(), [](const Track& t) { return t.type == TrackType::Audio; });
+        MediaItem silent = take;
+        silent.info.audio.clear();
+        check(a && b && c && on(a) == "Voice-over" && on(b) == "Voice-over 2" && on(c) == "Voice-over" && firstAudio->name.startsWith("Voice-over")
+                  && tl.findClip(a)->start == 2 * kUsPerSecond && tl.findClip(a)->length == 3 * kUsPerSecond
+                  && !ops::placeVoiceOver(tl, silent, 0, fps) && timelineProblem(tl).isEmpty(),
+              QStringLiteral("voice-over takes find room on Voice-over tracks (%1, %2, %3)").arg(on(a), on(b), on(c)));
     }
     return failures;
 }

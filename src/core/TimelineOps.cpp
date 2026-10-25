@@ -233,6 +233,37 @@ int addTrack(Timeline& tl, TrackType type, int index)
     return index;
 }
 
+int placeVoiceOver(Timeline& tl, const MediaItem& media, TimeUs at, const FrameRate& fps)
+{
+    if (media.info.audio.empty() || media.info.duration <= 0)
+        return 0;
+    Clip c;
+    c.id = tl.allocId();
+    c.mediaId = media.id;
+    c.streamIndex = media.info.audio.front().index;
+    c.start = std::max<TimeUs>(0, at);
+    c.length = std::max(fps.frameDuration(), media.info.duration);
+    c.name = QStringLiteral("Voice-over");
+    const QString name = QStringLiteral("Voice-over");
+    auto fits = [&](const Track& t) {
+        return t.type == TrackType::Audio && t.name.startsWith(name) && !t.locked
+               && std::none_of(t.clips.begin(), t.clips.end(), [&](const Clip& o) { return o.start < c.end() && c.start < o.end(); });
+    };
+    auto track = std::find_if(tl.tracks.begin(), tl.tracks.end(), fits);
+    if (track == tl.tracks.end()) {
+        QString trackName = name;
+        for (int n = 2; std::any_of(tl.tracks.begin(), tl.tracks.end(), [&](const Track& t) { return t.name == trackName; }); ++n)
+            trackName = QStringLiteral("%1 %2").arg(name).arg(n);
+        const auto firstAudio = std::find_if(tl.tracks.begin(), tl.tracks.end(), [](const Track& t) { return t.type == TrackType::Audio; });
+        const int index = addTrack(tl, TrackType::Audio, int(firstAudio - tl.tracks.begin()));
+        track = tl.tracks.begin() + index;
+        track->name = trackName;
+    }
+    track->clips.push_back(c);
+    std::sort(track->clips.begin(), track->clips.end(), [](const Clip& a, const Clip& b) { return a.start < b.start; });
+    return c.id;
+}
+
 void removeTrack(Timeline& tl, int index)
 {
     if (index >= 0 && index < int(tl.tracks.size()))

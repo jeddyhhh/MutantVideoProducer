@@ -630,6 +630,10 @@ void MainWindow::createActions()
     }));
     heading(tools, tr("Voices and captions"));
     tools->addAction(act(tr("Narration Studio..."),QKeySequence(),[this]{if(editorActive())narrationStudio();}));
+    tools->addAction(act(tr("Record &Voice-Over..."), QKeySequence(), [this] {
+        if (editorActive())
+            recordVoiceOver();
+    }));
     QMenu* captionsMenu = tools->addMenu(tr("&Captions"));
     captionsMenu->addAction(act(tr("&Auto Captions (Speech to Text)..."), QKeySequence(QStringLiteral("Ctrl+Shift+T")), [this] {
         if (editorActive())

@@ -88,6 +88,7 @@ private:
     bool installAiComponent(const QString& id, const QString& device, QString* error);
     bool m_aiInstallBusy = false;
     void narrationStudio(const std::vector<Caption>& supplied = {}, const QJsonObject& suppliedOptions = {});
+    class VoiceOverDialog* recordVoiceOver(); // Tools > Record Voice-Over (returned for the tests)
     void createCompound();
     void editCompound(int id = 0);
     void unpackCompound();
