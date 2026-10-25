@@ -24,6 +24,7 @@
 #include "ui/AudioLevels.h"
 #include "ui/AudioMeter.h"
 #include "ui/VoiceOverDialog.h"
+#include "ui/RegisteredTo.h"
 #include "ui/AudioFinishingWindow.h"
 #include "ui/DeviceChainView.h"
 #include "ui/EffectEditor.h"
@@ -1286,6 +1287,21 @@ int MainWindow::runEditorTest(QStringList& log)
         QSettings().remove(QStringLiteral("mcp/port"));
     }
 
+    {
+        // Help > About: "registered" to a prank caller from the list.
+        QString text;
+        QTimer::singleShot(200, this, [&] {
+            if (auto* box = qobject_cast<QMessageBox*>(QApplication::activeModalWidget())) {
+                text = box->text();
+                box->accept();
+            }
+        });
+        about();
+        const QString name = text.section(QStringLiteral("Registered to: <i>"), 1).section(QStringLiteral("</i>"), 0, 0);
+        check(std::find_if(std::begin(kRegisteredTo), std::end(kRegisteredTo), [&](const char* n) { return QString::fromUtf8(n).toHtmlEscaped() == name; })
+                  != std::end(kRegisteredTo) && std::size(kRegisteredTo) > 100,
+              QStringLiteral("About is registered to %1 (one of %2 names)").arg(name).arg(std::size(kRegisteredTo)));
+    }
     {
         // The master volume line on the transport meter: dragged to half way (-30 dB) in one undo step; double-click back to 0 dB.
         auto mouse = [&](QEvent::Type type, double x) {

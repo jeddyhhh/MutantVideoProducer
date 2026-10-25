@@ -244,6 +244,7 @@ add_executable(mvp WIN32
     src/ui/MainWindowStory.cpp
     src/ui/VoiceJob.h            src/ui/VoiceJob.cpp
     src/ui/VoiceOverDialog.h     src/ui/VoiceOverDialog.cpp
+    src/ui/RegisteredTo.h
     src/ui/MainWindowYouTube.cpp
     src/ui/MainWindowSetup.cpp src/ui/MainWindowTools.cpp src/ui/MainWindowCuts.cpp
     src/ui/RenderQueue.h src/ui/RenderQueue.cpp

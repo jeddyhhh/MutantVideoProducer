@@ -5,6 +5,7 @@
 #include "core/LiveRecorder.h"
 #include <QUuid>
 #include "ui/MainWindow.h"
+#include "ui/RegisteredTo.h"
 #include "ui/RenderQueue.h"
 #include "ui/DeliverView.h"
 
@@ -72,6 +73,7 @@
 #include <QOffscreenSurface>
 #include <QMenuBar>
 #include <QMessageBox>
+#include <QRandomGenerator>
 #include <QPlainTextEdit>
 #include <QListWidget>
 #include <QCheckBox>
@@ -549,8 +551,10 @@ void MainWindow::showFormats()
 
 void MainWindow::about()
 {
+    const char* name = kRegisteredTo[QRandomGenerator::global()->bounded(int(std::size(kRegisteredTo)))];
     QMessageBox::about(this, tr("About Mutant Video Producer"),
                        tr("<b>Mutant Video Producer %1</b><br>A non-linear video editor.<br><br>"
+                          "Registered to: <i>%5</i><br><br>"
                           "Free software under the GNU General Public License, version 3 or later, "
                           "with no warranty. <a href=\"https://github.com/jeddyhhh/MutantVideoProducer\">Source code</a><br><br>"
                           "Media I/O by FFmpeg %2 (libavcodec %3)<br>UI by Qt %4")
@@ -559,7 +563,7 @@ void MainWindow::about()
                                     .arg(LIBAVCODEC_VERSION_MAJOR)
                                     .arg(LIBAVCODEC_VERSION_MINOR)
                                     .arg(LIBAVCODEC_VERSION_MICRO))
-                           .arg(QString::fromLatin1(qVersion())));
+                           .arg(QString::fromLatin1(qVersion()), QString::fromUtf8(name).toHtmlEscaped()));
 }
 
 void MainWindow::closeEvent(QCloseEvent* e)
