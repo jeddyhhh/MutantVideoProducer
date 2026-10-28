@@ -190,7 +190,7 @@ private:
         None, Move, TrimLeft, TrimRight, FadeIn, FadeOut, Gain, Scrub, TimeSelect,
         RegionNew, RegionStart, RegionEnd, RegionMove, TrackLevel, TrackPan, TrackResize,
         EnvelopePoint, EnvelopeSegment, MarkerMove, MarkerStart, MarkerEnd, TrackReorder, RubberBand,
-        Slip, Slide, Roll, MoodMove
+        Slip, Slide, Roll, MoodMove, RulerZoom, Pan
     };
     // A character's expression key in an animation scene, shown on the event (and dragged along it).
     struct MoodMark {
@@ -354,6 +354,12 @@ private:
     TimeUs m_markerPressTime = 0;
     TimeUs m_markerPressLength = 0;
     int m_reorderGap = -1; // where a dragged track header would go (-1: nowhere new)
+    // On the ruler: where the cursor was before the press (a drag up or down zooms instead, and puts it back), and the
+    // last y of a zoom drag. Dragging empty space: the time held under the mouse.
+    bool m_rulerPress = false;
+    TimeUs m_scrubFrom = 0;
+    int m_zoomY = 0;
+    TimeUs m_panTime = 0;
     // Rubber-band selection: where it started (time, content y) and the mouse now.
     TimeUs m_bandTime = 0;
     int m_bandY = 0;

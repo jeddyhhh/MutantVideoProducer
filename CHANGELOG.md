@@ -6,6 +6,10 @@ What changed in each version of Mutant Video Producer. The newest is first.
 
 ### Added
 
+- Timeline: drag up or down on the time ruler to zoom (around the time you grabbed; a sideways drag still scrubs), and
+  drag empty track space to move the timeline left and right. The selection box is now **Ctrl+drag** (it adds to the
+  selection); **Shift+drag** still makes a time selection.
+
 - AI control: a `user_guide` tool reads the User Guide and tutorials, and a new page,
   [Making a whole video through AI control](docs/ai-workflow.md), gives an assistant the workflow for an animated
   episode or documentary (sound first, a scene per shot, titles, checks, finishing). The server's instructions point

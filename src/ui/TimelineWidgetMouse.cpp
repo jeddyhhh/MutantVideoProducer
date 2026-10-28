@@ -98,6 +98,8 @@ void TimelineWidget::mousePressEvent(QMouseEvent* e)
             }
         }
         m_drag = Drag::Scrub;
+        m_rulerPress = overRuler(p);
+        m_scrubFrom = m_cursor;
         const TimeUs c = std::max<TimeUs>(0, quantize(xToTime(p.x())));
         setCursorTime(c, false);
         emit cursorMoved(c);
@@ -247,9 +249,9 @@ void TimelineWidget::mousePressEvent(QMouseEvent* e)
         return;
     }
 
-    // Empty space: deselect and move the cursor; dragging draws a box that
-    // selects the events it touches (Ctrl adds to the selection), Shift+drag
-    // makes a time selection.
+    // Empty space: deselect and move the cursor; dragging moves the timeline
+    // left and right, Ctrl+drag draws a box that adds the events it touches to
+    // the selection, Shift+drag makes a time selection.
     if (!ctrl)
         setSelection({});
     const TimeUs t = std::max<TimeUs>(0, quantize(xToTime(p.x())));
@@ -259,6 +261,10 @@ void TimelineWidget::mousePressEvent(QMouseEvent* e)
     m_pressTime = t;
     if (e->modifiers() & Qt::ShiftModifier) {
         m_drag = Drag::TimeSelect;
+    } else if (!ctrl) {
+        m_drag = Drag::Pan;
+        m_panTime = xToTime(p.x());
+        viewport()->setCursor(Qt::ClosedHandCursor);
     } else {
         m_drag = Drag::RubberBand;
         m_bandBase = m_selection;
@@ -354,6 +360,16 @@ void TimelineWidget::mouseMoveEvent(QMouseEvent* e)
     }
     if (!m_dragMoved && (p - m_pressPos).manhattanLength() < 3)
         return;
+    if (!m_dragMoved && m_drag == Drag::Scrub && m_rulerPress
+        && std::abs(p.y() - m_pressPos.y()) > std::abs(p.x() - m_pressPos.x())) {
+        // Up or down on the ruler zooms, around where it was grabbed (and the press doesn't move the cursor).
+        m_drag = Drag::RulerZoom;
+        m_zoomY = m_pressPos.y();
+        if (m_cursor != m_scrubFrom) {
+            setCursorTime(m_scrubFrom, false);
+            emit cursorMoved(m_scrubFrom);
+        }
+    }
     m_dragMoved = true;
     const TimeUs t = xToTime(p.x());
     switch (m_drag) {
@@ -369,6 +385,15 @@ void TimelineWidget::mouseMoveEvent(QMouseEvent* e)
     case Drag::RegionNew:
     case Drag::TimeSelect:
         setRegion(m_pressTime, std::max<TimeUs>(0, snapped(t, e->modifiers())));
+        break;
+    case Drag::RulerZoom: // up zooms in, as the wheel does over the ruler
+        zoomAround(m_pressPos.x(), std::pow(1.01, m_zoomY - p.y()));
+        m_zoomY = p.y();
+        break;
+    case Drag::Pan: // the time grabbed stays under the mouse
+        m_viewStart = std::max<TimeUs>(0, m_viewStart + m_panTime - t);
+        updateScrollBars();
+        viewport()->update();
         break;
     case Drag::RubberBand: {
         m_bandNow = p;
@@ -541,6 +566,7 @@ void TimelineWidget::mouseReleaseEvent(QMouseEvent* e)
         }
         break;
     case Drag::RubberBand: viewport()->update(); break;
+    case Drag::Pan: updateHoverCursor(e->position().toPoint()); break;
     case Drag::TrackReorder: {
         const int gap = m_reorderGap;
         m_reorderGap = -1;

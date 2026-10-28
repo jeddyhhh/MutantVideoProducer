@@ -295,6 +295,44 @@ int TimelineWidget::runEditTest(QStringList& log)
         m_pxPerSec = 100;
         updateScrollBars();
     }
+    {
+        // Up / down on the ruler zooms around the grabbed time (the cursor stays); sideways still scrubs. Dragging empty
+        // track space moves the timeline, the grabbed time staying under the mouse.
+        const Timeline was = m_project->timeline();
+        m_project->setTimelineLive(defaultTimeline());
+        m_viewStart = 10 * kUsPerSecond;
+        updateScrollBars();
+        setCursorTime(2 * kUsPerSecond, false);
+        const int rulerY = kRulerTop + kRulerH / 2, x = kHeaderWidth + 200;
+        const TimeUs grabbed = xToTime(x);
+        drag(QPoint(x, rulerY), QPoint(x, rulerY - 60));
+        const double zoomedIn = m_pxPerSec;
+        const bool held = std::llabs(xToTime(x) - grabbed) < 20000 && m_cursor == 2 * kUsPerSecond;
+        drag(QPoint(x, rulerY), QPoint(x, rulerY + 120));
+        const double zoomedOut = m_pxPerSec;
+        drag(QPoint(x, rulerY), QPoint(x + 100, rulerY));
+        const bool scrubbed = near(m_cursor, xToTime(x + 100));
+        m_pxPerSec = 100;
+        m_viewStart = 10 * kUsPerSecond;
+        updateScrollBars();
+        const int emptyY = kTopH + 20;
+        const TimeUs under = xToTime(x);
+        drag(QPoint(x, emptyY), QPoint(x - 150, emptyY));
+        const bool panned = std::llabs(xToTime(x - 150) - under) < 20000 && m_viewStart == 10 * kUsPerSecond + TimeUs(1.5 * kUsPerSecond);
+        check(zoomedIn > 100 * 1.5 && held && zoomedOut < zoomedIn / 2 && scrubbed && panned,
+              QStringLiteral("dragging up / down on the ruler zooms (%1 -> %2 -> %3 px/s, cursor kept), sideways scrubs (%4); dragging empty "
+                             "space moves the timeline (%5)")
+                  .arg(100)
+                  .arg(zoomedIn, 0, 'f', 0)
+                  .arg(zoomedOut, 0, 'f', 0)
+                  .arg(scrubbed)
+                  .arg(panned));
+        m_project->setTimelineLive(was);
+        m_viewStart = 0;
+        m_pxPerSec = 100;
+        setCursorTime(0, false);
+        updateScrollBars();
+    }
 
     // Two grouped video + audio events of 2 s, A at 0 and B at 3 s.
     Timeline base = defaultTimeline();
@@ -510,13 +548,21 @@ int TimelineWidget::runEditTest(QStringList& log)
 
     // ---- Selecting, nudging, trimming to the cursor, freeze frames ----
     {
-        // A box dragged from empty space (below the tracks) up over both events
-        // selects them and their grouped audio.
+        // A box Ctrl+dragged from empty space (below the tracks) up over both events
+        // selects them and their grouped audio (a plain drag moves the timeline).
         setSelection({});
         const QPoint emptyStart(int(timeToX(5500000)), trackTop(audioTrack) + trackHeight(m_project->timeline().tracks[size_t(audioTrack)]) + 10);
-        drag(emptyStart, QPoint(int(timeToX(kUsPerSecond / 2)), trackTop(videoTrack) + 30));
-        check(m_selection.size() == 4 && !hasRegion(),
-              QStringLiteral("dragging a box from empty space selects the events it touches, with their grouped audio (%1 selected)").arg(m_selection.size()));
+        const QPoint boxEnd(int(timeToX(kUsPerSecond / 2)), trackTop(videoTrack) + 30);
+        const TimeUs viewWas = m_viewStart;
+        for (int i = 0; i <= 5; ++i) {
+            const QPoint at = emptyStart + (boxEnd - emptyStart) * std::min(i, 4) / 4;
+            const QEvent::Type type = i == 0 ? QEvent::MouseButtonPress : i == 5 ? QEvent::MouseButtonRelease : QEvent::MouseMove;
+            QMouseEvent ev(type, QPointF(at), mapToGlobal(QPointF(at)), Qt::LeftButton,
+                           type == QEvent::MouseButtonRelease ? Qt::NoButton : Qt::MouseButtons(Qt::LeftButton), Qt::ControlModifier);
+            QApplication::sendEvent(viewport(), &ev);
+        }
+        check(m_selection.size() == 4 && !hasRegion() && m_viewStart == viewWas,
+              QStringLiteral("Ctrl+dragging a box from empty space selects the events it touches, with their grouped audio (%1 selected)").arg(m_selection.size()));
         setSelection({});
         QMouseEvent press(QEvent::MouseButtonPress, QPointF(emptyStart), mapToGlobal(QPointF(emptyStart)), Qt::LeftButton, Qt::LeftButton, Qt::ShiftModifier);
         QApplication::sendEvent(viewport(), &press);

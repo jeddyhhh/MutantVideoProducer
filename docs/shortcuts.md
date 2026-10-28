@@ -15,7 +15,7 @@ already in use can be moved to the new command. **Reset All** brings back the de
 | Ctrl+← / Ctrl+→ | Previous / next edit point |
 | Home / End | Go to the start / end |
 | [ / ] | Previous / next marker |
-| ↑ / ↓, or mouse wheel over the time ruler | Zoom in / out |
+| ↑ / ↓, the mouse wheel over the time ruler, or drag up / down on it | Zoom in / out |
 | Mouse wheel | Scroll the tracks up and down |
 | Ctrl+0 | Zoom to fit |
 | Ctrl+wheel or Shift+wheel | Scroll sideways |
@@ -53,7 +53,8 @@ already in use can be moved to the new command. **Reset All** brings back the de
 | Ctrl+Alt+drag an event | Slide it between its neighbours |
 | Ctrl+Alt+drag a cut | Roll it (trim adjacent) |
 | Shift+drag in empty track space | Time selection |
-| Drag in empty track space | Box selection (Ctrl: add to it) |
+| Drag in empty track space | Move the timeline left / right |
+| Ctrl+drag in empty track space | Box selection (adds to the selection) |
 | Alt+click a freehand mask | Add or remove a point |
 
 ## Menus and windows

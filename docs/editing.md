@@ -26,8 +26,8 @@ drawn over the ones below it. A file or generated picture placed on a track is a
 ### Selecting
 
 - Click an event to select it. **Ctrl+click** adds an event to the selection or takes it out.
-- Drag a box from empty track space to select every event it touches. **Ctrl+drag** adds them to
-  the selection.
+- **Ctrl+drag** a box from empty track space to add every event it touches to the selection (click
+  empty space first to start a new selection).
 - **Ctrl+A** selects everything.
 
 ### Moving and copying
@@ -179,10 +179,11 @@ Envelopes change a track's volume, pan or video level over time.
 | Ctrl+← / Ctrl+→ | Previous / next edit point. |
 | Home / End | Start / end. |
 | [ / ] | Previous / next marker. |
-| ↑ / ↓, or mouse wheel over the time ruler | Zoom in / out. |
+| ↑ / ↓, the mouse wheel over the time ruler, or drag up / down on it | Zoom in / out. |
 | Mouse wheel | Scroll the tracks up and down. |
 | Ctrl+0 | Zoom to fit. |
 | Ctrl+wheel or Shift+wheel | Scroll sideways. |
+| Drag empty track space | Move the timeline sideways. |
 
 - Shuttling faster than 1x, or backwards, has no sound.
 - **Clicking the timeline while it plays** jumps there and keeps playing. With **Options > Click
