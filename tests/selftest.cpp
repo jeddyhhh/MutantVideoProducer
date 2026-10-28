@@ -5479,6 +5479,27 @@ int cmdLive(const QString& outDir)
         check(bars == expected && std::abs(bpm - 125) < 0.5 && third && third->barBeat == 2,
               QStringLiteral("MIDI clock: 9 beats from 216 ticks at %1 BPM (125 sent), counted from the 1 after Start; the song position moves the bar").arg(bpm, 0, 'f', 2));
     }
+    // ---- Game controllers as MIDI: buttons are notes, triggers and stick directions are controllers (0 at rest) ----
+    {
+        GamePadState rest, pressed = rest;
+        pressed.buttons = 1u << 0;      // A
+        pressed.axes[1] = 127;          // the right trigger all the way
+        pressed.axes[4] = 64;           // the left stick half way up
+        const auto down = gamePadChanges(rest, pressed, 1.0);
+        const auto up = gamePadChanges(pressed, rest, 2.0);
+        const bool shape = down.size() == 3 && down[0].isNoteOn() && down[0].channel() == 15 && down[0].data1 == 60 && down[1].isController()
+                           && down[1].data1 == 21 && down[1].data2 == 127 && down[2].data1 == 24 && down[2].data2 == 64;
+        const bool released = up.size() == 3 && up[0].isNoteOff() && up[1].data2 == 0 && up[2].data2 == 0;
+        MidiMessage other;
+        other.status = 0x90; // a note on channel 1: a real MIDI controller's, not a game controller's
+        other.data1 = 60;
+        other.data2 = 100;
+        check(shape && released && gamePadChanges(pressed, pressed, 3.0).empty() && gamePadControlName(down[0]) == QStringLiteral("A button")
+                  && gamePadControlName(down[1]) == QStringLiteral("Right trigger") && gamePadControlName(down[2]) == QStringLiteral("Left stick up")
+                  && gamePadControlName(other).isEmpty() && isGamePad(QStringLiteral("Xbox controller 1")) && !isGamePad(QStringLiteral("nanoPAD2")),
+              QStringLiteral("an Xbox controller reads as MIDI: A is note 60 on channel 16 (on and off), the right trigger and a stick direction "
+                             "are controllers, nothing when nothing moved, and each has its name"));
+    }
     // ---- Scenes and the visualiser overlays are saved with the project ----
     {
         Timeline tl;

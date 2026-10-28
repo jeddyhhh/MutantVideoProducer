@@ -135,6 +135,8 @@ ModulationDialog::ModulationDialog(const ParamDef& def, const std::optional<Modu
         m_channel->setValue(msg.channel() + 1);
         m_cc->setValue(msg.data1);
         m_learn->setChecked(false);
+        if (isGamePad(MidiHub::instance()->current()))
+            m_help->setText(tr("The %1 sets the whole range of %2 (0 at rest).").arg(gamePadControlName(msg).toLower(), m_def.name));
     });
     connect(m_learn, &QToolButton::toggled, this, [this](bool on) {
         if (on && MidiHub::instance()->current().isEmpty())
@@ -173,6 +175,9 @@ void ModulationDialog::updateRows()
     case S::Bass: m_help->setText(tr("Follows the bass (kick drums, bass lines) of the Audio input.")); break;
     case S::Highs: m_help->setText(tr("Follows the highs (hi-hats, cymbals, \"s\" sounds) of the Audio input.")); break;
     case S::Mids: m_help->setText(tr("Follows the mids (snares, claps, voices, guitars) of the Audio input.")); break;
-    case S::Midi: m_help->setText(tr("A knob or fader on your MIDI controller sets the whole range of %1.").arg(m_def.name)); break;
+    case S::Midi:
+        m_help->setText(tr("A knob or fader on your MIDI controller (or a trigger or stick direction on an Xbox controller) sets the whole range "
+                           "of %1.").arg(m_def.name));
+        break;
     }
 }

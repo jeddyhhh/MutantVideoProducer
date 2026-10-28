@@ -6,6 +6,10 @@ What changed in each version of Mutant Video Producer. The newest is first.
 
 ### Added
 
+- Live: **Xbox controllers** (XInput on Windows, joystick devices on Linux) are in the MIDI list as Xbox controller 1-4.
+  Buttons and the D-pad map to pads, scenes and the other Learn MIDI actions; the triggers and each stick direction
+  drive effect settings through Modulate > MIDI, or press an action when pushed past half way.
+
 - Timeline: drag up or down on the time ruler to zoom (around the time you grabbed; a sideways drag still scrubs), and
   drag empty track space to move the timeline left and right. The selection box is now **Ctrl+drag** (it adds to the
   selection); **Shift+drag** still makes a time selection.

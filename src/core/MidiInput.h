@@ -3,7 +3,10 @@
 // MIDI controllers (pad grids, keyboards, knob boxes) for the Live tab: lists
 // the MIDI inputs and reads one. Windows: the multimedia MIDI API (winmm).
 // Linux: the kernel's raw MIDI devices (/dev/snd/midiC*D*), no library needed.
-// Messages arrive on a MIDI thread.
+// Game controllers are listed and opened the same way, as "Xbox controller N"
+// (Windows: XInput; Linux: /dev/input/js*): their buttons and D-pad send notes,
+// the triggers and each direction of the sticks send controllers (0 at rest,
+// 127 all the way), on channel 16. Messages arrive on a MIDI thread.
 
 #include <QString>
 #include <QStringList>
@@ -11,6 +14,7 @@
 #include <functional>
 #include <memory>
 #include <optional>
+#include <vector>
 
 struct MidiMessage {
     uint8_t status = 0, data1 = 0, data2 = 0;
@@ -50,6 +54,18 @@ private:
     int64_t m_beats = 0;   // beats since the start
     bool m_running = false;
 };
+
+// A game controller's buttons and axes (see kGamePadButtons / kGamePadAxes in MidiInput.cpp).
+struct GamePadState {
+    uint32_t buttons = 0;  // bit i: button i held
+    uint8_t axes[10] = {}; // 0..127
+    bool operator==(const GamePadState&) const = default;
+};
+// The MIDI messages that take a controller from `before` to `now`.
+std::vector<MidiMessage> gamePadChanges(const GamePadState& before, const GamePadState& now, double time);
+// "A button", "Right trigger", "Left stick up"... for a game controller's message (empty for any other).
+QString gamePadControlName(const MidiMessage& m);
+bool isGamePad(const QString& deviceName);
 
 class MidiInput {
 public:

@@ -607,8 +607,9 @@ LiveView::LiveView(Project* project, QWidget* parent) : QWidget(parent), m_proje
     m_midi = new QComboBox;
     m_midi->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
     m_midi->setMinimumContentsLength(12);
-    m_midi->setToolTip(tr("A MIDI controller: right-click a pad (or Tap, Set 1, Rec, Save Replay) > Learn MIDI to map it;\n"
-                          "knobs and faders can move effect settings (right-click a Live FX knob > Modulate > MIDI)"));
+    m_midi->setToolTip(tr("A MIDI controller or an Xbox controller: right-click a pad (or Tap, Set 1, Rec, Save Replay) > Learn MIDI to map\n"
+                          "it to a key or button; knobs, faders, triggers and sticks can move effect settings (right-click a Live FX knob >\n"
+                          "Modulate > MIDI)"));
     for (int i = 0; i < kLiveScenes; ++i) {
         auto* b = new QToolButton;
         b->setText(QString::number(i + 1));
@@ -1897,8 +1898,10 @@ void LiveView::midiMessage(const MidiMessage& m)
             it = it.value() == m_midiLearn ? m_midiMap.erase(it) : std::next(it);
         m_midiMap[key] = m_midiLearn;
         saveMidiMap();
-        m_status->setText(tr("%1 now plays %2").arg(note ? tr("MIDI note %1 (channel %2)").arg(m.data1).arg(m.channel() + 1)
-                                                         : tr("MIDI controller %1 (channel %2)").arg(m.data1).arg(m.channel() + 1),
+        const QString pad = isGamePad(MidiHub::instance()->current()) ? gamePadControlName(m) : QString();
+        m_status->setText(tr("%1 now plays %2").arg(!pad.isEmpty() ? tr("The %1").arg(pad)
+                                                    : note         ? tr("MIDI note %1 (channel %2)").arg(m.data1).arg(m.channel() + 1)
+                                                                   : tr("MIDI controller %1 (channel %2)").arg(m.data1).arg(m.channel() + 1),
                                                     m_midiLearnLabel));
         m_midiLearn.clear();
         if (m.isController())

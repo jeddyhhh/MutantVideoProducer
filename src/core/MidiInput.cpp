@@ -4,7 +4,9 @@
 #include <QFile>
 #include <QMap>
 #include <QRegularExpression>
+#include <algorithm>
 #include <atomic>
+#include <iterator>
 #include <chrono>
 #include <thread>
 #include <vector>
@@ -12,8 +14,10 @@
 #ifdef Q_OS_WIN
 #include <windows.h>
 #include <mmsystem.h>
+#include <Xinput.h>
 #else
 #include <fcntl.h>
+#include <linux/joystick.h>
 #include <poll.h>
 #include <unistd.h>
 #endif
@@ -23,7 +27,63 @@ double steadyNow()
 {
     return std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
 }
+
+// A game controller: its buttons as notes 60.., its axes as controllers 20.., on channel 16.
+constexpr uint8_t kPadChannel = 15, kPadNote = 60, kPadController = 20;
+const char* const kGamePadButtons[] = {"A button", "B button", "X button", "Y button", "Left bumper", "Right bumper", "View button",
+                                       "Menu button", "Left stick click", "Right stick click", "D-pad up", "D-pad down", "D-pad left",
+                                       "D-pad right", "Guide button"};
+const char* const kGamePadAxes[] = {"Left trigger", "Right trigger", "Left stick right", "Left stick left", "Left stick up",
+                                    "Left stick down", "Right stick right", "Right stick left", "Right stick up", "Right stick down"};
+enum PadButton { A, B, X, Y, LB, RB, View, Menu, LS, RS, Up, Down, Left, Right, Guide };
+enum PadAxis { LT, RT, LSRight, LSLeft, LSUp, LSDown, RSRight, RSLeft, RSUp, RSDown };
+const QString kPadPrefix = QStringLiteral("Xbox controller ");
+
+// A stick's axis (-32768..32767, up / right positive) as its two directions, 0..127 past the dead zone.
+void stickAxis(GamePadState& s, int positive, int negative, int v, int deadZone)
+{
+    auto scale = [&](int a) { return uint8_t(a <= deadZone ? 0 : std::min(127, (a - deadZone) * 127 / (32767 - deadZone))); };
+    s.axes[positive] = scale(v);
+    s.axes[negative] = scale(-v);
+}
+uint8_t triggerAxis(int v, int range) // 0..range, a little dead zone at rest
+{
+    const int dead = range / 10;
+    return uint8_t(v <= dead ? 0 : std::min(127, (v - dead) * 127 / (range - dead)));
+}
 } // namespace
+
+std::vector<MidiMessage> gamePadChanges(const GamePadState& before, const GamePadState& now, double time)
+{
+    std::vector<MidiMessage> out;
+    for (int i = 0; i < int(std::size(kGamePadButtons)); ++i) {
+        const bool was = before.buttons >> i & 1, is = now.buttons >> i & 1;
+        if (was != is)
+            out.push_back({uint8_t((is ? 0x90 : 0x80) | kPadChannel), uint8_t(kPadNote + i), uint8_t(is ? 127 : 0), time});
+    }
+    for (int i = 0; i < int(std::size(now.axes)); ++i)
+        if (before.axes[i] != now.axes[i])
+            out.push_back({uint8_t(0xB0 | kPadChannel), uint8_t(kPadController + i), now.axes[i], time});
+    return out;
+}
+
+QString gamePadControlName(const MidiMessage& m)
+{
+    if (m.channel() != kPadChannel)
+        return {};
+    const bool note = m.isNoteOn() || m.isNoteOff();
+    const int i = m.data1 - (note ? kPadNote : kPadController);
+    if (note)
+        return i >= 0 && i < int(std::size(kGamePadButtons)) ? QString::fromLatin1(kGamePadButtons[i]) : QString();
+    if (m.isController())
+        return i >= 0 && i < int(std::size(kGamePadAxes)) ? QString::fromLatin1(kGamePadAxes[i]) : QString();
+    return {};
+}
+
+bool isGamePad(const QString& deviceName)
+{
+    return deviceName.startsWith(kPadPrefix);
+}
 
 std::optional<MidiClock::Beat> MidiClock::feed(const MidiMessage& m)
 {
@@ -71,6 +131,118 @@ std::optional<MidiClock::Beat> MidiClock::feed(const MidiMessage& m)
 struct MidiInput::Impl {
     std::function<void(const MidiMessage&)> onMessage;
     QString name;
+    // A game controller, read on its own thread.
+    std::thread padThread;
+    std::atomic<bool> padQuit{false};
+
+    void send(const GamePadState& before, const GamePadState& now)
+    {
+        for (const MidiMessage& m : gamePadChanges(before, now, steadyNow()))
+            if (onMessage)
+                onMessage(m);
+    }
+#ifdef Q_OS_WIN
+    static std::vector<int> pads() // XInput's connected users
+    {
+        std::vector<int> out;
+        for (DWORD i = 0; i < XUSER_MAX_COUNT; ++i) {
+            XINPUT_STATE st{};
+            if (XInputGetState(i, &st) == ERROR_SUCCESS)
+                out.push_back(int(i));
+        }
+        return out;
+    }
+    void runPad(int user)
+    {
+        GamePadState last;
+        DWORD packet = DWORD(-1);
+        while (!padQuit) {
+            XINPUT_STATE st{};
+            if (XInputGetState(DWORD(user), &st) == ERROR_SUCCESS && st.dwPacketNumber != packet) {
+                packet = st.dwPacketNumber;
+                const XINPUT_GAMEPAD& g = st.Gamepad;
+                GamePadState now;
+                const std::pair<WORD, int> bits[] = {{XINPUT_GAMEPAD_A, A}, {XINPUT_GAMEPAD_B, B}, {XINPUT_GAMEPAD_X, X}, {XINPUT_GAMEPAD_Y, Y},
+                                                     {XINPUT_GAMEPAD_LEFT_SHOULDER, LB}, {XINPUT_GAMEPAD_RIGHT_SHOULDER, RB},
+                                                     {XINPUT_GAMEPAD_BACK, View}, {XINPUT_GAMEPAD_START, Menu},
+                                                     {XINPUT_GAMEPAD_LEFT_THUMB, LS}, {XINPUT_GAMEPAD_RIGHT_THUMB, RS},
+                                                     {XINPUT_GAMEPAD_DPAD_UP, Up}, {XINPUT_GAMEPAD_DPAD_DOWN, Down},
+                                                     {XINPUT_GAMEPAD_DPAD_LEFT, Left}, {XINPUT_GAMEPAD_DPAD_RIGHT, Right}};
+                for (const auto& [mask, button] : bits)
+                    if (g.wButtons & mask)
+                        now.buttons |= 1u << button;
+                now.axes[LT] = triggerAxis(g.bLeftTrigger, 255);
+                now.axes[RT] = triggerAxis(g.bRightTrigger, 255);
+                stickAxis(now, LSRight, LSLeft, g.sThumbLX, XINPUT_GAMEPAD_LEFT_THUMB_DEADZONE);
+                stickAxis(now, LSUp, LSDown, g.sThumbLY, XINPUT_GAMEPAD_LEFT_THUMB_DEADZONE);
+                stickAxis(now, RSRight, RSLeft, g.sThumbRX, XINPUT_GAMEPAD_RIGHT_THUMB_DEADZONE);
+                stickAxis(now, RSUp, RSDown, g.sThumbRY, XINPUT_GAMEPAD_RIGHT_THUMB_DEADZONE);
+                send(last, now);
+                last = now;
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(8));
+        }
+    }
+#else
+    static QStringList pads() // the kernel's joystick devices
+    {
+        QStringList out;
+        for (const QString& f : QDir(QStringLiteral("/dev/input")).entryList({QStringLiteral("js*")}, QDir::System | QDir::Files, QDir::Name))
+            out << QStringLiteral("/dev/input/") + f;
+        return out;
+    }
+    void runPad(int fd)
+    {
+        // The xpad driver's layout: buttons A B X Y LB RB View Menu Guide LS RS; axes LX LY LT RX RY RT, D-pad X Y.
+        const int buttonOf[] = {A, B, X, Y, LB, RB, View, Menu, Guide, LS, RS};
+        GamePadState last, now;
+        int lx = 0, ly = 0, rx = 0, ry = 0;
+        while (!padQuit) {
+            pollfd p{fd, POLLIN, 0};
+            if (poll(&p, 1, 100) <= 0)
+                continue;
+            js_event e{};
+            if (read(fd, &e, sizeof e) != ssize_t(sizeof e))
+                break; // unplugged
+            const int type = e.type & ~JS_EVENT_INIT;
+            if (type == JS_EVENT_BUTTON && e.number < std::size(buttonOf)) {
+                if (e.value)
+                    now.buttons |= 1u << buttonOf[e.number];
+                else
+                    now.buttons &= ~(1u << buttonOf[e.number]);
+            } else if (type == JS_EVENT_AXIS) {
+                const int v = e.value;
+                auto dpad = [&](int negative, int positive) {
+                    now.buttons &= ~((1u << negative) | (1u << positive));
+                    if (v < -16000)
+                        now.buttons |= 1u << negative;
+                    else if (v > 16000)
+                        now.buttons |= 1u << positive;
+                };
+                switch (e.number) {
+                case 0: lx = v; break;
+                case 1: ly = -v; break; // (down is positive here)
+                case 3: rx = v; break;
+                case 4: ry = -v; break;
+                case 2: now.axes[LT] = triggerAxis(v + 32767, 65534); break;
+                case 5: now.axes[RT] = triggerAxis(v + 32767, 65534); break;
+                case 6: dpad(Left, Right); break;
+                case 7: dpad(Up, Down); break;
+                default: break;
+                }
+                stickAxis(now, LSRight, LSLeft, lx, 7849);
+                stickAxis(now, LSUp, LSDown, ly, 7849);
+                stickAxis(now, RSRight, RSLeft, rx, 8689);
+                stickAxis(now, RSUp, RSDown, ry, 8689);
+            }
+            if (!(e.type & JS_EVENT_INIT) && !(now == last)) {
+                send(last, now);
+                last = now;
+            }
+        }
+        ::close(fd);
+    }
+#endif
 #ifdef Q_OS_WIN
     HMIDIIN handle = nullptr;
 
@@ -194,9 +366,13 @@ QStringList MidiInput::devices()
         if (midiInGetDevCapsW(i, &caps, sizeof caps) == MMSYSERR_NOERROR)
             out << QString::fromWCharArray(caps.szPname);
     }
+    for (int i = 0; i < int(Impl::pads().size()); ++i)
+        out << kPadPrefix + QString::number(i + 1);
 #else
     for (const auto& [path, name] : Impl::list())
         out << name;
+    for (int i = 0; i < int(Impl::pads().size()); ++i)
+        out << kPadPrefix + QString::number(i + 1);
 #endif
     return out;
 }
@@ -205,6 +381,29 @@ bool MidiInput::open(const QString& name, std::function<void(const MidiMessage&)
 {
     close();
     d->onMessage = std::move(onMessage);
+    if (isGamePad(name)) {
+        const auto pads = Impl::pads();
+        const int i = name.mid(kPadPrefix.size()).toInt() - 1;
+        if (i < 0 || i >= int(pads.size())) {
+            if (error)
+                *error = QStringLiteral("%1 is not connected").arg(name);
+            return false;
+        }
+#ifdef Q_OS_WIN
+        const int handle = pads[size_t(i)];
+#else
+        const int handle = ::open(pads[i].toLocal8Bit().constData(), O_RDONLY | O_NONBLOCK);
+        if (handle < 0) {
+            if (error)
+                *error = QStringLiteral("could not open %1 (are you in the input group?)").arg(pads[i]);
+            return false;
+        }
+#endif
+        d->padQuit = false;
+        d->name = name;
+        d->padThread = std::thread([this, handle] { d->runPad(handle); });
+        return true;
+    }
 #ifdef Q_OS_WIN
     const UINT n = midiInGetNumDevs();
     for (UINT i = 0; i < n; ++i) {
@@ -245,6 +444,9 @@ bool MidiInput::open(const QString& name, std::function<void(const MidiMessage&)
 
 void MidiInput::close()
 {
+    d->padQuit = true;
+    if (d->padThread.joinable())
+        d->padThread.join();
 #ifdef Q_OS_WIN
     if (d->handle) {
         midiInStop(d->handle);

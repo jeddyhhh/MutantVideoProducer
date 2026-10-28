@@ -236,6 +236,12 @@ Modulation is saved with the project.
 
 Pick a controller in **Setup > MIDI** (Windows multimedia MIDI; raw MIDI devices on Linux).
 
+An **Xbox controller** (or any XInput controller on Windows; a joystick device on Linux) is in the same list, as
+**Xbox controller 1** to 4. Its buttons and D-pad work like keys (Learn MIDI maps them to pads, scenes, Tap, Rec...),
+and the triggers and each direction of the two sticks (left stick up, left stick down...) work like knobs that rest at
+0: map one to an action and pushing it past half way presses it, or use it in **Modulate > MIDI** (Learn) to move an
+effect setting with it. Learn messages name the button or stick.
+
 - Right-click a pad, a switcher tile, **Tap**, **Set 1**, **Find Tempo Again**, **Lock BPM**,
   **Rec**, **Screenshot** or **Save Replay** > **Learn MIDI...**, then press a pad or key on the controller.
 - Notes and buttons that send controllers both work, held for momentary pads.
