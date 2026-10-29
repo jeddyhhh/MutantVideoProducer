@@ -283,6 +283,39 @@ int TimelineWidget::runEditTest(QStringList& log)
     };
     const int markerY = kRegionBarH + kMarkerBarH / 2;
     {
+        // The timecode: a click moves to the next style; each style draws across the corner, in the chosen colour.
+        const int style = m_clockStyle;
+        const QColor colour = m_clockColor;
+        mouse(QEvent::MouseButtonPress, QPoint(30, 20));
+        mouse(QEvent::MouseButtonRelease, QPoint(30, 20));
+        const bool next = m_clockStyle == (style + 1) % ClockStyles;
+        setClockColor(QColor(0x39ff14));
+        QStringList drawn;
+        bool all = true;
+        for (int s = 0; s < ClockStyles; ++s) {
+            setClockStyle(s);
+            const QImage img = viewport()->grab(QRect(0, 0, kHeaderWidth, kTopH)).toImage();
+            int green = 0, left = img.width(), right = 0;
+            for (int y = 0; y < img.height(); ++y)
+                for (int x = 0; x < img.width(); ++x) {
+                    const QColor c = img.pixelColor(x, y);
+                    if (c.green() > 180 && c.red() < 120 && c.blue() < 90) {
+                        ++green;
+                        left = std::min(left, x);
+                        right = std::max(right, x);
+                    }
+                }
+            const double wide = img.width() ? double(right - left) / img.width() : 0;
+            all = all && green > 300 && wide > 0.8;
+            drawn << QStringLiteral("%1 %2 px %3%").arg(clockStyleName(s)).arg(green).arg(int(wide * 100));
+        }
+        setClockStyle(style);
+        setClockColor(colour);
+        check(next && all, QStringLiteral("a click on the timecode changes its style (%1); each fills the corner in neon green (%2)")
+                               .arg(next)
+                               .arg(drawn.join(QStringLiteral(", "))));
+    }
+    {
         auto wheel = [&](QPoint pos) {
             QWheelEvent ev(QPointF(pos), mapToGlobal(QPointF(pos)), {}, QPoint(0, 120), Qt::NoButton, Qt::NoModifier, Qt::NoScrollPhase, false);
             QApplication::sendEvent(viewport(), &ev);

@@ -37,6 +37,13 @@ public:
     const std::set<int>& selection() const { return m_selection; }
     void selectClips(const std::set<int>& ids) { setSelection(ids); }
     bool snapping() const { return m_snapping; }
+    // The timecode in the top-left corner: its style (a click there moves to the next) and colour (right-click; invalid
+    // is the theme's). Both are kept in the settings.
+    enum ClockStyle { ClockStandard, ClockSegment, ClockDotMatrix, ClockMono, ClockTypewriter, ClockCondensed, ClockStyles };
+    int clockStyle() const { return m_clockStyle; }
+    void setClockStyle(int style);
+    void setClockColor(const QColor& color);
+    static QString clockStyleName(int style);
     void setSnapping(bool on) { m_snapping = on; }
     // Automatic crossfades: events overlapping on a track crossfade;
     // off, an event moved, trimmed or placed over another cuts it instead.
@@ -314,6 +321,7 @@ private:
     void paintGenerated(QPainter& p, const Clip& clip, const QRectF& body);
     void paintMoods(QPainter& p, const Clip& clip, const QRectF& body);
     void paintRuler(QPainter& p);
+    void paintClock(QPainter& p, const QRectF& box, const QString& text);
     void paintHeaders(QPainter& p);
 
     void updateScrollBars();
@@ -333,6 +341,8 @@ private:
     double m_pxPerSec = 60.0;
     int m_scrollY = 0;
     TimeUs m_cursor = 0;
+    int m_clockStyle = ClockStandard;
+    QColor m_clockColor;
     std::optional<TimeUs> m_playhead;
     TimeUs m_regionStart = 0;
     TimeUs m_regionEnd = 0;

@@ -6,6 +6,9 @@ What changed in each version of Mutant Video Producer. The newest is first.
 
 ### Added
 
+- The timeline's timecode fills its corner; click it for another font (7-segment and dot-matrix displays among
+  them), right-click it for its colour (neon green, amber, LED red...). Both are remembered.
+
 - **Adjustment layers** (Insert > Adjustment Layer): an event with no picture whose effects change everything below
   it while it lasts, with fades and opacity; the same on the CPU and the GPU.
 - **Tools > Render Selection to New Track**: renders the time selection to a ProRes file on a Rendered track on top,

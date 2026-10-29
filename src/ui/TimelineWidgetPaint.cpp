@@ -19,6 +19,7 @@
 #include <QMenu>
 #include <QMessageBox>
 #include <QMimeData>
+#include <QFontMetricsF>
 #include <QPainter>
 #include <QApplication>
 #include <QPaintEvent>
@@ -30,6 +31,7 @@
 #include <QTemporaryDir>
 #include <QScrollBar>
 #include <algorithm>
+#include <numeric>
 #include <cmath>
 #include <limits>
 #include <tuple>
@@ -334,14 +336,136 @@ void TimelineWidget::paintEvent(QPaintEvent* e)
     // Timecode display in the corner.
     const QRect corner(0, 0, kHeaderWidth, kTopH);
     p.fillRect(corner, theme::c().corner);
-    QFont f = font();
-    f.setPointSizeF(f.pointSizeF() * 1.6);
-    f.setBold(true);
-    p.setFont(f);
-    p.setPen(theme::c().timecode);
-    p.drawText(corner, Qt::AlignCenter, formatTimecode(m_playhead.value_or(m_cursor), m_project->settings().fps));
+    paintClock(p, QRectF(corner).adjusted(5, 5, -6, -5), formatTimecode(m_playhead.value_or(m_cursor), m_project->settings().fps));
     p.setPen(theme::c().deep);
     p.drawLine(kHeaderWidth - 1, 0, kHeaderWidth - 1, H);
+}
+
+namespace {
+// 7-segment: the lit segments, bits 0-6 = top, top right, bottom right, bottom, bottom left, top left, middle.
+int segmentsOf(QChar ch)
+{
+    static const int digits[] = {0x3F, 0x06, 0x5B, 0x4F, 0x66, 0x6D, 0x7D, 0x07, 0x7F, 0x6F};
+    return ch.isDigit() ? digits[ch.digitValue()] : ch == QLatin1Char('-') ? 0x40 : 0;
+}
+
+// A segment from a to b (level or upright), t thick, with pointed ends.
+QPolygonF segment(QPointF a, QPointF b, double t)
+{
+    const bool level = a.y() == b.y();
+    const QPointF along = level ? QPointF(t / 2, 0) : QPointF(0, t / 2), across = level ? QPointF(0, t / 2) : QPointF(t / 2, 0);
+    a += along * 0.25;
+    b -= along * 0.25;
+    return QPolygonF({a, a + along - across, b - along - across, b, b - along + across, a + along + across});
+}
+
+// Dot matrix: 5 x 7 dots a digit, rows top down, bit 4 the left column; ":" and ";" are one column.
+const quint8* dotRows(QChar ch)
+{
+    static const quint8 digits[10][7] = {
+        {0x0E, 0x11, 0x13, 0x15, 0x19, 0x11, 0x0E}, {0x04, 0x0C, 0x04, 0x04, 0x04, 0x04, 0x0E}, {0x0E, 0x11, 0x01, 0x02, 0x04, 0x08, 0x1F},
+        {0x1F, 0x02, 0x04, 0x02, 0x01, 0x11, 0x0E}, {0x02, 0x06, 0x0A, 0x12, 0x1F, 0x02, 0x02}, {0x1F, 0x10, 0x1E, 0x01, 0x01, 0x11, 0x0E},
+        {0x06, 0x08, 0x10, 0x1E, 0x11, 0x11, 0x0E}, {0x1F, 0x01, 0x02, 0x04, 0x08, 0x08, 0x08}, {0x0E, 0x11, 0x11, 0x0E, 0x11, 0x11, 0x0E},
+        {0x0E, 0x11, 0x11, 0x0F, 0x01, 0x02, 0x0C}};
+    static const quint8 colon[7] = {0, 0, 1, 0, 1, 0, 0}, semicolon[7] = {0, 0, 1, 0, 1, 1, 0}, minus[7] = {0, 0, 0, 0x1F, 0, 0, 0},
+                        blank[7] = {};
+    if (ch.isDigit())
+        return digits[ch.digitValue()];
+    return ch == QLatin1Char(':') ? colon : ch == QLatin1Char(';') ? semicolon : ch == QLatin1Char('-') ? minus : blank;
+}
+
+bool isSeparator(QChar ch) { return ch == QLatin1Char(':') || ch == QLatin1Char(';'); }
+} // namespace
+
+void TimelineWidget::paintClock(QPainter& p, const QRectF& box, const QString& text)
+{
+    const QColor on = m_clockColor.isValid() ? m_clockColor : theme::c().timecode;
+    QColor off = on, glow = on;
+    off.setAlphaF(0.1); // (the unlit segments and dots, faintly)
+    glow.setAlphaF(0.3);
+    p.save();
+    p.setRenderHint(QPainter::Antialiasing);
+    if (m_clockStyle == ClockSegment) {
+        // Digits 1 wide, separators 0.4, 0.25 between; slanted as on a real display.
+        const double slant = 0.08, units = std::accumulate(text.begin(), text.end(), -0.25, [](double n, QChar ch) {
+            return n + (isSeparator(ch) ? 0.4 : 1.0) + 0.25;
+        });
+        const double u = std::min((box.width() - box.height() * slant) / units, box.height() / 1.6), h = std::min(box.height(), u * 2.1),
+                     t = u * 0.2;
+        p.translate(box.center());
+        p.shear(-slant, 0);
+        double x = -units * u / 2;
+        const double top = -h / 2;
+        for (QChar ch : text) {
+            const double w = (isSeparator(ch) ? 0.4 : 1.0) * u;
+            if (isSeparator(ch)) {
+                p.setPen(Qt::NoPen);
+                p.setBrush(on);
+                p.drawRect(QRectF(x + w / 2 - t / 2, top + h * 0.3 - t / 2, t, t));
+                p.drawRect(QRectF(x + w / 2 - t / 2, top + h * 0.7 - t / 2, t, ch == QLatin1Char(';') ? t * 1.8 : t));
+            } else {
+                const double x0 = x + t / 2, x1 = x + w - t / 2, y0 = top + t / 2, ym = 0, y1 = top + h - t / 2;
+                const QPointF ends[7][2] = {{{x0, y0}, {x1, y0}}, {{x1, y0}, {x1, ym}}, {{x1, ym}, {x1, y1}}, {{x0, y1}, {x1, y1}},
+                                            {{x0, ym}, {x0, y1}}, {{x0, y0}, {x0, ym}}, {{x0, ym}, {x1, ym}}};
+                const int lit = segmentsOf(ch);
+                for (int s = 0; s < 7; ++s) {
+                    const bool l = lit & (1 << s);
+                    p.setPen(l ? QPen(glow, t * 0.4, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin) : QPen(Qt::NoPen));
+                    p.setBrush(l ? on : off);
+                    p.drawPolygon(segment(ends[s][0], ends[s][1], t));
+                }
+            }
+            x += w + 0.25 * u;
+        }
+    } else if (m_clockStyle == ClockDotMatrix) {
+        // 5 columns a digit, 1 a separator, 1 between.
+        const int columns = std::accumulate(text.begin(), text.end(), -1, [](int n, QChar ch) { return n + (isSeparator(ch) ? 1 : 5) + 1; });
+        const double pitch = std::min(box.width() / columns, box.height() / 7), r = pitch * 0.42;
+        double x = box.center().x() - columns * pitch / 2;
+        const double top = box.center().y() - 3.5 * pitch;
+        p.setPen(Qt::NoPen);
+        for (QChar ch : text) {
+            const int width = isSeparator(ch) ? 1 : 5;
+            const quint8* rows = dotRows(ch);
+            for (int row = 0; row < 7; ++row)
+                for (int col = 0; col < width; ++col) {
+                    const bool l = rows[row] & (1 << (width - 1 - col));
+                    const QPointF c(x + (col + 0.5) * pitch, top + (row + 0.5) * pitch);
+                    if (l) {
+                        p.setBrush(glow);
+                        p.drawEllipse(c, r * 1.35, r * 1.35);
+                    }
+                    p.setBrush(l ? on : off);
+                    p.drawEllipse(c, r, r);
+                }
+            x += (width + 1) * pitch;
+        }
+    } else {
+        QFont f = font();
+        f.setBold(m_clockStyle != ClockMono);
+        if (m_clockStyle == ClockMono)
+            f.setFamilies({QStringLiteral("Cascadia Mono"), QStringLiteral("Consolas"), QStringLiteral("DejaVu Sans Mono"), QStringLiteral("Menlo")});
+        else if (m_clockStyle == ClockTypewriter)
+            f.setFamilies({QStringLiteral("Courier New"), QStringLiteral("Courier"), QStringLiteral("Liberation Mono")});
+        else if (m_clockStyle == ClockCondensed)
+            f.setFamilies({QStringLiteral("Bahnschrift SemiCondensed"), QStringLiteral("Bahnschrift"), QStringLiteral("Arial Narrow"),
+                           QStringLiteral("DejaVu Sans Condensed")});
+        f.setPixelSize(100);
+        // Sized by all-8s, so it doesn't change size as the digits count; filling the box, stretched up to a third either
+        // way.
+        QString sample = text;
+        for (QChar& ch : sample)
+            if (ch.isDigit())
+                ch = QLatin1Char('8');
+        const QRectF tight = QFontMetricsF(f).tightBoundingRect(sample);
+        const double sx = box.width() / tight.width(), sy = std::min(box.height() / tight.height(), sx * 1.35);
+        p.translate(box.center());
+        p.scale(std::min(sx, sy * 1.35), sy);
+        p.setFont(f);
+        p.setPen(on);
+        p.drawText(QPointF(-tight.center().x(), -tight.center().y()), text);
+    }
+    p.restore();
 }
 
 void TimelineWidget::paintTrackClips(QPainter& p, const Track& track, int top, int height)

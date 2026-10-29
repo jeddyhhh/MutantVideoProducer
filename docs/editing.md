@@ -5,6 +5,10 @@
 The timeline has **video tracks** on top and **audio tracks** below. A video track higher up is
 drawn over the ones below it. A file or generated picture placed on a track is an **event**.
 
+The timecode in the top-left corner shows the cursor (or the playhead while playing). Click it for
+another font (Standard, 7-Segment, Dot Matrix, Monospace, Typewriter, Condensed); right-click it for
+its colour (Neon Green, Amber, LED Red and others, or a custom one).
+
 ### Tracks
 
 - **Add** a track: **Insert > Video Track** (**Ctrl+Shift+Q**) or **Insert > Audio Track** (**Ctrl+Q**).

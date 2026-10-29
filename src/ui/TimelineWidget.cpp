@@ -5,6 +5,7 @@
 #include "core/AudioMixer.h"
 #include "core/PanCrop.h"
 #include "core/Presets.h"
+#include "core/Profiles.h"
 #include "core/TimelineOps.h"
 #include "engine/MediaCache.h"
 #include "ui/EffectsBrowser.h"
@@ -27,6 +28,7 @@
 #include <QWheelEvent>
 #include <QTemporaryDir>
 #include <QScrollBar>
+#include <QSettings>
 #include <algorithm>
 #include <cmath>
 #include <limits>
@@ -48,6 +50,9 @@ TimelineWidget::TimelineWidget(Project* project, MediaCache* cache, QWidget* par
     setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
     setFrameShape(QFrame::NoFrame);
     setMinimumHeight(kTopH + 80);
+    const QSettings settings;
+    m_clockStyle = std::clamp(settings.value(Profiles::instance().settingsKey(QStringLiteral("timeline/clockStyle")), 0).toInt(), 0, ClockStyles - 1);
+    m_clockColor = QColor(settings.value(Profiles::instance().settingsKey(QStringLiteral("timeline/clockColor"))).toString());
 
     m_session = m_project->snapshot()->session;
     connect(m_project, &Project::changed, this, [this] {

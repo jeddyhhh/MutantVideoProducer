@@ -6,6 +6,7 @@
 #include "core/AudioMixer.h"
 #include "core/PanCrop.h"
 #include "core/Presets.h"
+#include "core/Profiles.h"
 #include "core/TimelineOps.h"
 #include "engine/MediaCache.h"
 #include "ui/EffectsBrowser.h"
@@ -13,6 +14,8 @@
 #include "ui/MediaBin.h"
 #include "ui/Theme.h"
 #include <QClipboard>
+#include <QColorDialog>
+#include <QSettings>
 #include <QContextMenuEvent>
 #include <QCursor>
 #include <QPixmap>
@@ -82,11 +85,67 @@ void TimelineWidget::markerMenu(QMenu& menu, QPoint p)
         });
 }
 
+QString TimelineWidget::clockStyleName(int style)
+{
+    switch (style) {
+    case ClockSegment: return tr("7-Segment");
+    case ClockDotMatrix: return tr("Dot Matrix");
+    case ClockMono: return tr("Monospace");
+    case ClockTypewriter: return tr("Typewriter");
+    case ClockCondensed: return tr("Condensed");
+    default: return tr("Standard");
+    }
+}
+
+void TimelineWidget::setClockStyle(int style)
+{
+    m_clockStyle = (style % ClockStyles + ClockStyles) % ClockStyles;
+    QSettings().setValue(Profiles::instance().settingsKey(QStringLiteral("timeline/clockStyle")), m_clockStyle);
+    viewport()->update(0, 0, kHeaderWidth, kTopH);
+}
+
+void TimelineWidget::setClockColor(const QColor& color)
+{
+    m_clockColor = color;
+    QSettings().setValue(Profiles::instance().settingsKey(QStringLiteral("timeline/clockColor")), color.isValid() ? color.name() : QString());
+    viewport()->update(0, 0, kHeaderWidth, kTopH);
+}
+
 void TimelineWidget::contextMenuEvent(QContextMenuEvent* e)
 {
     const QPoint p = e->pos();
     QMenu menu(this);
     menu.setToolTipsVisible(true);
+    if (p.x() < kHeaderWidth && p.y() < kTopH) {
+        // The timecode: its colour, and its font.
+        static const std::pair<const char*, QColor> colours[] = {
+            {QT_TR_NOOP("Theme Colour"), QColor()},     {QT_TR_NOOP("Neon Green"), QColor(0x39ff14)}, {QT_TR_NOOP("Amber"), QColor(0xffb000)},
+            {QT_TR_NOOP("LED Red"), QColor(0xff2a2a)},  {QT_TR_NOOP("Ice Blue"), QColor(0x6fd8ff)},   {QT_TR_NOOP("Hot Pink"), QColor(0xff3fbf)},
+            {QT_TR_NOOP("Tube Cyan"), QColor(0x2af5d0)}, {QT_TR_NOOP("White"), QColor(0xffffff)}};
+        bool known = false;
+        for (const auto& [name, colour] : colours) {
+            QAction* a = menu.addAction(tr(name), this, [this, colour] { setClockColor(colour); });
+            a->setCheckable(true);
+            a->setChecked(colour == m_clockColor);
+            known = known || colour == m_clockColor;
+        }
+        QAction* custom = menu.addAction(tr("Custom Colour..."), this, [this] {
+            const QColor c = QColorDialog::getColor(m_clockColor.isValid() ? m_clockColor : theme::c().timecode, this, tr("Timecode Colour"));
+            if (c.isValid())
+                setClockColor(c);
+        });
+        custom->setCheckable(true);
+        custom->setChecked(!known);
+        menu.addSeparator();
+        QMenu* fonts = menu.addMenu(tr("Font"));
+        for (int s = 0; s < ClockStyles; ++s) {
+            QAction* a = fonts->addAction(clockStyleName(s), this, [this, s] { setClockStyle(s); });
+            a->setCheckable(true);
+            a->setChecked(s == m_clockStyle);
+        }
+        menu.exec(e->globalPos());
+        return;
+    }
     if (p.x() < kHeaderWidth && p.y() >= kTopH) {
         const int ti = trackAt(p.y());
         menu.addAction(tr("Insert Video Track"), this, [this] { insertTrack(TrackType::Video); });

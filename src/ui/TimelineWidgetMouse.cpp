@@ -57,6 +57,10 @@ void TimelineWidget::mousePressEvent(QMouseEvent* e)
     if (e->button() != Qt::LeftButton)
         return;
 
+    if (p.y() < kTopH && p.x() < kHeaderWidth) { // (the timecode: the next style)
+        setClockStyle(m_clockStyle + 1);
+        return;
+    }
     if (p.y() < kTopH && p.x() >= kHeaderWidth) {
         buildSnapPoints({});
         const TimeUs t = std::max<TimeUs>(0, snapped(xToTime(p.x()), e->modifiers()));
@@ -584,6 +588,10 @@ void TimelineWidget::mouseReleaseEvent(QMouseEvent* e)
 void TimelineWidget::mouseDoubleClickEvent(QMouseEvent* e)
 {
     const QPoint p = e->position().toPoint();
+    if (p.y() < kTopH && p.x() < kHeaderWidth && e->button() == Qt::LeftButton) { // (quick clicks on the timecode)
+        setClockStyle(m_clockStyle + 1);
+        return;
+    }
     if (p.x() >= kHeaderWidth && p.y() >= kRegionBarH && p.y() < kRulerTop) {
         // Marker bar: a region selects its span, a marker gets renamed,
         // empty space gets a new marker.
@@ -1105,6 +1113,9 @@ void TimelineWidget::updateHoverCursor(QPoint p)
             if (const Clip* c = m_project->timeline().findClip(hit.clipId); c && c->groupId)
                 tip = tr("Grouped: moves, trims, fades and transitions apply to the whole group (e.g. a video file's picture "
                          "and sound). Right-click > Ungroup (U) to edit them separately.");
+    } else if (p.x() < kHeaderWidth && p.y() < kTopH) {
+        shape = Qt::PointingHandCursor;
+        tip = tr("Timecode (%1): click for the next font, right-click for its colour").arg(clockStyleName(m_clockStyle));
     } else if (p.x() < kHeaderWidth) {
         const int ti = trackAt(p.y());
         if (ti >= 0 && p.y() >= headerRect(ti).bottom() - 3) {
