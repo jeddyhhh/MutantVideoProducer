@@ -33,6 +33,26 @@ The template fills in the format and codecs. You can change any of them:
 Each template shows notes such as the platform's length and size limits. The dialog warns when the
 render is longer than the platform accepts.
 
+## Render Selection to New Track
+
+Heavy stretches (optical-flow slow motion, big animation scenes, stacked effects) can be too slow to
+play smoothly. **Tools > Render Selection to New Track** renders the time selection (or, without one,
+the selected events' stretch) to a ProRes file, picture only, and puts it on a **Rendered** track on
+top. There, playback reads just that file: everything under it is hidden and skipped. The sound
+still plays from the events.
+
+The render is of the picture as it is now, without Output FX (they still apply on top). To change
+what's under it, mute or delete the Rendered track (or its event), edit, and render again. The files
+are kept in a `<project>-rendered` folder beside the project.
+
+## Stems
+
+**File > Export Stems...** renders each audio track that has sound to its own WAV file (24-bit, 48 kHz),
+named after the project and the track, into a folder you choose: dialogue, music and effects for a
+mixer, or for a version without the music. Each stem has its track's own effects, level, pan and
+ducking, before Master FX and the master volume, so the stems add up to the mix that goes into the
+master. With a time selection, only that stretch is exported.
+
 ## Render Queue
 
 **File > Render Queue...** renders one job after another in the background while you go on

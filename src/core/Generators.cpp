@@ -448,6 +448,14 @@ std::vector<GeneratorDef> buildGenerators()
     list.push_back(d);
 
     d = {};
+    d.id = QStringLiteral("adjustment");
+    d.name = QStringLiteral("Adjustment Layer");
+    d.category = QStringLiteral("Adjustment");
+    d.description = QStringLiteral("No picture of its own: its effects change everything on the tracks below it while it lasts.");
+    d.render = [](QImage&, const Params&, const GeneratorContext&) {};
+    list.push_back(d);
+
+    d = {};
     d.id = QStringLiteral("solid");
     d.name = QStringLiteral("Solid Color");
     d.category = QStringLiteral("Backgrounds");
@@ -584,6 +592,13 @@ std::vector<GeneratorPreset> buildPresets()
     p.category = QStringLiteral("Text");
     p.generator = QStringLiteral("timecode");
     p.length = 30 * kUsPerSecond;
+    list.push_back(p);
+
+    p = {};
+    p.id = QStringLiteral("adjustment");
+    p.name = QStringLiteral("Adjustment layer");
+    p.category = QStringLiteral("Adjustment");
+    p.generator = QStringLiteral("adjustment");
     list.push_back(p);
 
     for (auto [id, name, rgb] : {std::tuple{"solid_black", "Solid black", 0x000000}, std::tuple{"solid_white", "Solid white", 0xffffff},

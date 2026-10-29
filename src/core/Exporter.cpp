@@ -611,6 +611,8 @@ bool Exporter::run(const ProjectSnapshot& snap, const ExportSettings& s, const P
     int64_t samplesMixed = 0;
     int64_t audioPts = 0;
     std::unique_ptr<AudioMixer> mixer = aenc ? std::make_unique<AudioMixer>(rate) : nullptr;
+    if (mixer)
+        mixer->setOnlyTrack(s.onlyAudioTrack);
     std::vector<float> mixBuf;
     // The mix is made on a thread of its own, a little ahead of the pictures (with voice effects on many tracks, mixing
     // took as long as drawing), and taken from it block by block here.

@@ -592,6 +592,8 @@ void AudioMixer::mixTracks(const ProjectSnapshot& snap, int64_t pos, int frames,
             else
                 applyDuck(track, nullptr, outputs[ti].data(), frames, pos); // silent voice: back up
         }
+        if (m_onlyTrack && track.id != m_onlyTrack)
+            continue;
         auto& peak = m_trackPeaks[track.id];
         const float* src = outputs[ti].data();
         for (int i = 0; i < frames; ++i) {

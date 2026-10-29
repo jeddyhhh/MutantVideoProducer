@@ -38,6 +38,7 @@ struct ExportSettings {
     QString muxerOptions;        // "key=value:key=value" for the muxer (HLS segment length...)
     double gopSeconds = 0;       // keyframe interval; 0 = 2 seconds
     std::vector<Caption> captions; // a subtitle track (timeline times), where the format has one
+    int onlyAudioTrack = 0;        // a stem: only this audio track is heard (its ducking still applied); 0 = the mix
 };
 
 struct ExportPreset {

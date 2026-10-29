@@ -79,6 +79,8 @@ private:
     QRectF drawGenerated(const ProjectSnapshot& snap, const Clip& clip, TimeUs t, QImage& target, double opacity);
     // The event as a canvas-sized layer with its FX applied (null if nothing to show).
     QImage clipLayer(const ProjectSnapshot& snap, const Clip& clip, TimeUs t, QSize size, const RenderContext& base);
+    // The track's adjustment layers at t, on the picture so far (everything below them).
+    void applyAdjustments(const Track& track, TimeUs t, QImage& canvas, const RenderContext& base);
     void applyChain(const EffectChain& chain, QImage& img, const RenderContext& ctx);
     void applyRack(const EffectInstance& rack, QImage& img, const RenderContext& ctx);
     void applyTransition(const TransitionSpec& spec, QImage& target, const QImage* from, const QImage* to, double p,

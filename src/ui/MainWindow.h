@@ -92,6 +92,8 @@ private:
     void makeMulticam();         // Tools > Multicam > Make Multicam from Selected Events
     void multicamAngle(int angle); // 1-9: cut (playing) or switch (stopped) to that angle
     void showMulticam();         // the angles window
+    void renderInPlace();        // Tools > Render Selection to New Track
+    void exportStems();          // File > Export Stems
     class VoiceOverDialog* recordVoiceOver(); // Tools > Record Voice-Over (returned for the tests)
     void createCompound();
     void editCompound(int id = 0);

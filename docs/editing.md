@@ -129,6 +129,17 @@ pull what comes after them:
 - Markers are saved with the project and are undoable.
 - [Detect Beats](audio.md#detect-beats) puts a marker on every beat or bar.
 
+## Adjustment layers
+
+**Insert > Adjustment Layer** puts an event with no picture of its own on the timeline. Its effects
+change everything on the tracks below it, for as long as it lasts:
+
+- Put it on a track above the events it should change (titles on a track above it stay as they are).
+- Add effects to it like any event (the Effects tab opens on it): a grade, black and white, a blur,
+  VHS, a glitch.
+- Trim and move it to choose the stretch; its fades fade the effects in and out, and its level
+  (opacity) mixes them with the untouched picture. Keyframes work as on any event.
+
 ## Sync by audio and multicam
 
 **Tools > Sync Selected Events by Audio** lines up recordings of the same moment: a second camera,

@@ -415,6 +415,10 @@ void MainWindow::createActions()
     file->addAction(act(tr("Export &Frame as Image..."), QKeySequence(QStringLiteral("Ctrl+Shift+F")), [this] { exportFrame(false); }));
     file->addAction(act(tr("Copy Frame to Clipboard"), QKeySequence(QStringLiteral("Ctrl+Shift+C")), [this] { exportFrame(true); }));
     file->addAction(act(tr("&Render As..."), QKeySequence(QStringLiteral("Ctrl+R")), [this] { renderAs(); }));
+    file->addAction(act(tr("Export &Stems..."), QKeySequence(), [this] {
+        if (editorActive())
+            exportStems();
+    }));
     file->addAction(act(tr("Render &Queue..."), QKeySequence(), [this] {
         renderQueue()->show();
         renderQueue()->raise();
@@ -584,6 +588,15 @@ void MainWindow::createActions()
     insert->addAction(act(tr("Graphics Overlay"), QKeySequence(), [insertGenerated] { insertGenerated("graphics_broadcast"); }));
     insert->addAction(act(tr("Animation"), QKeySequence(), [insertGenerated] { insertGenerated("animation_blank"); }));
     insert->addAction(act(tr("Audio Waveform Graphic"), QKeySequence(), [insertGenerated] { insertGenerated("audio_waveform"); }));
+    insert->addAction(act(tr("Adjustment &Layer"), QKeySequence(), [this] {
+        stopPlayback(false);
+        if (const int id = m_timeline->insertGeneratorAtCursor(QStringLiteral("adjustment"))) {
+            // (its effects are what it is: the Effects tab, with the event's chain)
+            m_devices->setTarget({FxTarget::Kind::Clip, id});
+            m_bottomTabs->setCurrentWidget(m_devices);
+            statusBar()->showMessage(tr("Adjustment layer: add effects to it (Effects tab, or drag them on); they change everything below it while it lasts."), 8000);
+        }
+    }));
 
     // Tools, grouped under headings (labels, not actions)
     QMenu* tools = menuBar()->addMenu(tr("&Tools"));
@@ -605,6 +618,10 @@ void MainWindow::createActions()
     tools->addAction(act(tr("Split Selected Events at Scene &Changes..."), QKeySequence(), [this] {
         if (editorActive())
             splitAtSceneChanges();
+    }));
+    tools->addAction(act(tr("Render Selection to &New Track"), QKeySequence(), [this] {
+        if (editorActive())
+            renderInPlace();
     }));
     tools->addAction(act(tr("S&ync Selected Events by Audio"), QKeySequence(), [this] {
         if (editorActive())

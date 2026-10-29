@@ -5,6 +5,8 @@
 #include "core/MotionGraphics.h"
 #include "core/AudioMixer.h"
 #include "core/AudioSync.h"
+#include "core/AudioDecoder.h"
+#include "core/Exporter.h"
 #include "core/Multicam.h"
 #include "core/OpticalFlow.h"
 #include <QPainter>
@@ -525,6 +527,71 @@ int main(int argc, char** argv)
         Project back;
         check(saved.save(out.filePath("mc.mvp"), &error) && back.load(out.filePath("mc.mvp"), &error) && back.timeline().multicam == tl.multicam,
               "the multicam is saved with the project");
+    }
+    {
+        // Stems: a track's own file has only its sound (a 1 kHz tone and a 440 Hz one on two tracks).
+        QTemporaryDir dir;
+        const QString low = dir.filePath("low.wav");
+        {
+            QFile f(low);
+            f.open(QIODevice::WriteOnly);
+            QDataStream st(&f);
+            st.setByteOrder(QDataStream::LittleEndian);
+            st.setFloatingPointPrecision(QDataStream::SinglePrecision);
+            f.write("RIFF", 4);
+            st << quint32(36 + frames * 8);
+            f.write("WAVEfmt ", 8);
+            st << quint32(16) << quint16(3) << quint16(2) << quint32(rate) << quint32(rate * 8) << quint16(8) << quint16(32);
+            f.write("data", 4);
+            st << quint32(frames * 8);
+            for (int i = 0; i < frames; ++i) {
+                const float x = float(0.1 * std::sin(2 * pi * 440 * i / rate));
+                st << x << x;
+            }
+        }
+        Project p;
+        const int hi = p.addMedia(probeMedia(wav)), lo = p.addMedia(probeMedia(low));
+        Timeline tl = p.timeline();
+        tl.tracks.clear();
+        int trackIds[2] = {0, 0};
+        for (int k = 0; k < 2; ++k) {
+            const int ti = ops::addTrack(tl, TrackType::Audio);
+            trackIds[k] = tl.tracks[size_t(ti)].id;
+            Clip c;
+            c.id = tl.allocId();
+            c.mediaId = k == 0 ? hi : lo;
+            c.streamIndex = p.mediaItem(c.mediaId)->info.audio.front().index;
+            c.length = 2 * kUsPerSecond;
+            tl.tracks[size_t(ti)].clips.push_back(c);
+        }
+        p.applyEdit(tl, "stems");
+        ExportSettings s;
+        s.path = dir.filePath("stem.wav");
+        s.muxer = "wav";
+        s.audioEncoder = "pcm_s24le";
+        s.rangeEnd = 2 * kUsPerSecond;
+        s.onlyAudioTrack = trackIds[1];
+        Exporter ex;
+        const bool ok = ex.run(*p.snapshot(), s);
+        // How much of each tone the stem has (a Goertzel filter at each frequency over a second).
+        AudioDecoder dec;
+        std::vector<float> got(size_t(rate) * 2);
+        const bool read = ok && dec.open(s.path, probeMedia(s.path).audio.front().index, rate);
+        if (read)
+            dec.read(rate / 2, rate, got.data());
+        auto power = [&](double hz) {
+            double s0 = 0, s1 = 0, s2 = 0;
+            const double k = 2 * std::cos(2 * pi * hz / rate);
+            for (int i = 0; i < rate; ++i) {
+                s0 = got[size_t(i) * 2] + k * s1 - s2;
+                s2 = s1;
+                s1 = s0;
+            }
+            return s1 * s1 + s2 * s2 - k * s1 * s2;
+        };
+        const double p440 = power(440), p1000 = power(1000);
+        check(read && p440 > 1000 * std::max(1e-9, p1000), QStringLiteral("a stem has only its track's sound (440 Hz %1x the other track's 1 kHz)")
+                                                             .arg(p440 / std::max(1e-9, p1000), 0, 'g', 3));
     }
     {
         // Optical flow: a square that moved 24 px right and 12 down is, halfway, one square halfway along (frame

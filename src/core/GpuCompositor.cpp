@@ -3148,6 +3148,33 @@ struct GpuCompositor::Impl : protected QOpenGLExtraFunctions {
 
     // ---- Tracks and frames ---------------------------------------------------------------
 
+    // The track's adjustment layers at t, on the picture so far (as the CPU's Compositor::applyAdjustments).
+    void applyAdjustments(const Track& track, TimeUs t, Layer& canvas, const RenderContext& base)
+    {
+        for (const Clip& c : track.clips) {
+            if (c.start > t)
+                break;
+            if (c.muted || t >= c.end() || !isAdjustment(c) || !hasActiveEffects(c.effects))
+                continue;
+            const double opacity = std::clamp(track.compositeAt(t) * c.gain * envelopeGain(c, ClipEnvelope{c.fadeIn, c.fadeOut}, t), 0.0, 1.0);
+            if (opacity <= 0.002)
+                continue;
+            Layer adjusted = acquire(canvas->size(), false);
+            drawLayerReplace(*adjusted, *canvas);
+            RenderContext ctx = base;
+            ctx.time = t - c.start;
+            ctx.contentRect = QRectF(0, 0, canvas->w, canvas->h);
+            applyChain(c.effects, adjusted, ctx);
+            if (opacity >= 0.999) {
+                canvas = std::move(adjusted);
+            } else {
+                Layer out = acquire(canvas->size(), false);
+                transitionShader(*out, &*canvas, &*adjusted, 0, opacity, {}, {}, {});
+                canvas = std::move(out);
+            }
+        }
+    }
+
     void renderTrack(const ProjectSnapshot& snap, const Track& track, TimeUs t, const Target& canvas, const RenderContext& base)
     {
         std::vector<size_t> active;
@@ -3155,7 +3182,7 @@ struct GpuCompositor::Impl : protected QOpenGLExtraFunctions {
             const Clip& c = track.clips[ci];
             if (c.start > t)
                 break;
-            if (!c.muted && t < c.end())
+            if (!c.muted && t < c.end() && !isAdjustment(c)) // (adjustment layers: applyAdjustments)
                 active.push_back(ci);
         }
         if (active.empty())
@@ -3294,11 +3321,13 @@ struct GpuCompositor::Impl : protected QOpenGLExtraFunctions {
         const auto& tracks = snap.timeline.tracks;
         const bool anySolo = std::any_of(tracks.begin(), tracks.end(),
                                          [](const Track& tr) { return isVisualTrack(tr.type) && tr.solo; });
-        for (int ti = int(tracks.size()) - 1; ti >= 0; --ti) {
+        const int covering = coveringTrack(snap, t); // (the topmost track hiding everything below it)
+        for (int ti = covering >= 0 ? covering : int(tracks.size()) - 1; ti >= 0; --ti) {
             const Track& track = tracks[ti];
             if (!isVisualTrack(track.type) || track.muted || (anySolo && !track.solo))
                 continue;
             renderTrack(snap, track, t, *canvas, base);
+            applyAdjustments(track, t, canvas, base);
         }
         if (hasActiveEffects(snap.timeline.outputEffects)) {
             applyChain(snap.timeline.outputEffects, canvas, base);

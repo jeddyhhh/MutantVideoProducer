@@ -1332,6 +1332,29 @@ int cmdGpu(const QString& mediaDir, const QString& outDir)
     };
 
     compare(QStringLiteral("plain"), baseSnap(main), kUsPerSecond, 1.5);
+    {
+        // An adjustment layer: its effect (black and white, at 60%) on everything below it, the same on the GPU.
+        ProjectSnapshot s = withBackground(baseSnap(main));
+        const int at = ops::addTrack(s.timeline, TrackType::Video, 0);
+        const int id = ops::insertGenerated(s.timeline, *findGeneratorPreset(QStringLiteral("adjustment")), 0, at, fps);
+        Clip* adj = s.timeline.findClip(id);
+        check(adj && isAdjustment(*adj), QStringLiteral("Insert > Adjustment Layer makes an adjustment event"));
+        if (adj) {
+            adj->effects.push_back(makeEffect(*findEffect(QStringLiteral("black_white")), s.timeline.allocId()));
+            adj->gain = 0.6f;
+            adj->length = 3 * kUsPerSecond;
+        }
+        compare(QStringLiteral("adjustment_layer"), s, kUsPerSecond, 1.5);
+        const QImage plainCpu = cpu.render(withBackground(baseSnap(main)), kUsPerSecond, size), adjusted = cpu.render(s, kUsPerSecond, size);
+        check(imageDifference(plainCpu, adjusted) > 2.0, QStringLiteral("the adjustment layer changes the picture below it (mean difference %1)")
+                                                            .arg(imageDifference(plainCpu, adjusted), 0, 'f', 2));
+        // The clip on top covers the frame: the compositors start there. Not while it fades.
+        ProjectSnapshot cover = withBackground(baseSnap(main));
+        const int top = coveringTrack(cover, kUsPerSecond);
+        cover.timeline.tracks[0].clips[0].fadeIn = 2 * kUsPerSecond;
+        check(top == 0 && coveringTrack(cover, kUsPerSecond) == 1, QStringLiteral("the opaque clip on top hides the tracks below (%1); fading, it doesn't")
+                                                                      .arg(top));
+    }
 
     // Every effect (tolerances cover sampling differences of blurs/pixelate).
     const std::map<QString, double> effectTolerance = {

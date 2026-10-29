@@ -272,6 +272,49 @@ QString fadeCurveName(int curve)
     return QString::fromLatin1(names[std::clamp(curve, 0, kFadeCurves - 1)]);
 }
 
+int coveringTrack(const ProjectSnapshot& snap, TimeUs t)
+{
+    const auto& tracks = snap.timeline.tracks;
+    const bool anySolo = std::any_of(tracks.begin(), tracks.end(), [](const Track& tr) { return isVisualTrack(tr.type) && tr.solo; });
+    const double shape = double(snap.settings.width) / std::max(1, snap.settings.height);
+    for (int ti = 0; ti < int(tracks.size()); ++ti) {
+        const Track& tr = tracks[size_t(ti)];
+        if (!isVisualTrack(tr.type) || tr.muted || (anySolo && !tr.solo))
+            continue;
+        const Clip* only = nullptr;
+        int count = 0;
+        for (const Clip& c : tr.clips) {
+            if (c.start > t)
+                break;
+            if (!c.muted && t < c.end()) {
+                only = &c;
+                ++count;
+            }
+        }
+        if (count != 1)
+            continue;
+        const Clip& c = *only;
+        if (isAdjustment(c) || tr.blend != 0 || tr.compositeAt(t) < 0.999 || std::any_of(tr.effects.begin(), tr.effects.end(), [](const EffectInstance& e) { return e.enabled; }))
+            continue;
+        if (c.isGenerated() || c.isSequence() || c.gain < 0.999f || !c.panCrop.empty() || c.stabilize > 0
+            || std::any_of(c.effects.begin(), c.effects.end(), [](const EffectInstance& e) { return e.enabled; })
+            || t < c.start + c.fadeIn || t >= c.end() - c.fadeOut)
+            continue;
+        const auto m = snap.media.find(c.mediaId);
+        if (m == snap.media.end() || !m->second)
+            continue;
+        const auto& video = m->second->info.video;
+        const auto v = std::find_if(video.begin(), video.end(), [&](const VideoStreamInfo& s) { return s.index == c.streamIndex; });
+        if (v == video.end() || v->hasAlpha || m->second->info.isStill)
+            continue;
+        const QSize d = v->displaySize();
+        if (d.isEmpty() || std::abs(double(d.width()) / d.height() - shape) > shape * 0.005)
+            continue;
+        return ti;
+    }
+    return -1;
+}
+
 double envelopeGain(const Clip& c, const ClipEnvelope& env, TimeUs t)
 {
     double g = 1.0;

@@ -300,6 +300,31 @@ QImage Compositor::clipLayer(const ProjectSnapshot& snap, const Clip& clip, Time
     return layer;
 }
 
+void Compositor::applyAdjustments(const Track& track, TimeUs t, QImage& canvas, const RenderContext& base)
+{
+    for (const Clip& c : track.clips) {
+        if (c.start > t)
+            break;
+        if (c.muted || t >= c.end() || !isAdjustment(c) || !hasActiveEffects(c.effects))
+            continue;
+        const double opacity = std::clamp(track.compositeAt(t) * c.gain * envelopeGain(c, ClipEnvelope{c.fadeIn, c.fadeOut}, t), 0.0, 1.0);
+        if (opacity <= 0.002)
+            continue;
+        QImage adjusted = canvas.copy(); // (everything below, through the layer's effects)
+        RenderContext ctx = base;
+        ctx.time = t - c.start;
+        ctx.contentRect = QRectF(adjusted.rect());
+        applyChain(c.effects, adjusted, ctx);
+        if (opacity >= 0.999) {
+            canvas = std::move(adjusted);
+        } else {
+            QImage out(canvas.size(), QImage::Format_ARGB32_Premultiplied);
+            imageops::mix(out, &canvas, &adjusted, float(opacity));
+            canvas = std::move(out);
+        }
+    }
+}
+
 void Compositor::applyChain(const EffectChain& chain, QImage& img, const RenderContext& ctx)
 {
     for (const EffectInstance& e : chain) {
@@ -378,7 +403,7 @@ void Compositor::renderTrack(const ProjectSnapshot& snap, const Track& track, Ti
         const Clip& c = track.clips[ci];
         if (c.start > t)
             break;
-        if (!c.muted && t < c.end())
+        if (!c.muted && t < c.end() && !isAdjustment(c)) // (adjustment layers: applyAdjustments)
             active.push_back(ci);
     }
     if (active.empty())
@@ -465,12 +490,14 @@ QImage Compositor::render(const ProjectSnapshot& snap, TimeUs t, QSize outSize)
     const auto& tracks = snap.timeline.tracks;
     const bool anySolo = std::any_of(tracks.begin(), tracks.end(),
                                      [](const Track& tr) { return isVisualTrack(tr.type) && tr.solo; });
-    // Track 0 is the top layer: composite bottom-up.
-    for (int ti = int(tracks.size()) - 1; ti >= 0; --ti) {
+    // Track 0 is the top layer: composite bottom-up, from the topmost track that hides everything below it.
+    const int covering = coveringTrack(snap, t);
+    for (int ti = covering >= 0 ? covering : int(tracks.size()) - 1; ti >= 0; --ti) {
         const Track& track = tracks[ti];
         if (!isVisualTrack(track.type) || track.muted || (anySolo && !track.solo))
             continue;
         renderTrack(snap, track, t, canvas, base);
+        applyAdjustments(track, t, canvas, base);
     }
 
     if (hasActiveEffects(snap.timeline.outputEffects)) {

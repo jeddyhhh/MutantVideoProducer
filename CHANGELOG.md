@@ -6,6 +6,15 @@ What changed in each version of Mutant Video Producer. The newest is first.
 
 ### Added
 
+- **Adjustment layers** (Insert > Adjustment Layer): an event with no picture whose effects change everything below
+  it while it lasts, with fades and opacity; the same on the CPU and the GPU.
+- **Tools > Render Selection to New Track**: renders the time selection to a ProRes file on a Rendered track on top,
+  so heavy stretches play smoothly. Both compositors now start at the topmost track whose picture covers the whole
+  frame (an opaque event from a file, no fades, effects or pan/crop), skipping what it hides, which speeds up plain
+  stacked footage too.
+- **File > Export Stems**: each audio track with sound to its own 24-bit WAV, after its effects, level, pan and
+  ducking, before Master FX.
+
 - **Tools > Sync Selected Events by Audio**: lines up a second camera or a separate sound recorder with the first by
   their sound (to the millisecond), and leaves alone a recording that isn't of the same moment.
 - **Multicam**: Tools > Multicam > Make Multicam from Selected Events puts the cameras under a Multicam track; press

@@ -291,6 +291,38 @@ int MainWindow::runEditorTest(QStringList& log)
         narrationStudio();
         m_project->setTimelineLive(initial);
         {
+            // Render Selection to New Track: the time selection becomes a file on a Rendered track on top, which then hides
+            // the tracks under it (the compositors start there).
+            m_project->setTimelineLive(initial);
+            m_timeline->setRegion(kUsPerSecond / 2, kUsPerSecond * 3 / 2);
+            const int undoBefore = m_project->undoStack()->index();
+            QTimer closer;
+            connect(&closer, &QTimer::timeout, this, [] {
+                if (auto* d = qobject_cast<QDialog*>(QApplication::activeModalWidget()))
+                    d->reject(); // (it closes once the render is done)
+            });
+            closer.start(200);
+            renderInPlace();
+            closer.stop();
+            const Timeline& after = m_project->timeline();
+            const Track* rendered = !after.tracks.empty() && after.tracks[0].name == QStringLiteral("Rendered") ? &after.tracks[0] : nullptr;
+            const Clip* c = rendered && rendered->clips.size() == 1 ? &rendered->clips[0] : nullptr;
+            const auto media = c ? m_project->mediaItem(c->mediaId) : nullptr;
+            const bool placed = c && c->start == kUsPerSecond / 2 && c->length == kUsPerSecond && media && media->info.ok()
+                                && m_project->undoStack()->index() == undoBefore + 1;
+            const bool covers = placed && coveringTrack(*m_project->snapshot(), kUsPerSecond) == 0;
+            check(placed && covers, QStringLiteral("Render Selection to New Track: a 1 s render on a Rendered track on top, hiding what's under it (%1)")
+                                        .arg(media ? QFileInfo(media->path).fileName() : QStringLiteral("nothing")));
+            const QString file = media ? media->path : QString();
+            m_project->undoStack()->undo();
+            if (media)
+                m_project->removeMedia(media->id);
+            QFile::remove(file);
+            QDir().rmdir(QFileInfo(file).path()); // (only if nothing else is in it)
+            m_timeline->setRegion(0, 0);
+            m_project->setTimelineLive(initial);
+        }
+        {
             // Multicam: two video events of the clip on two tracks become angles under a Multicam track (the angles window
             // opens); with playback stopped, pressing 2 on the timeline switches the stretch under the cursor to angle 2.
             Timeline tl = initial;

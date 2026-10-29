@@ -312,6 +312,15 @@ struct ClipEnvelope {
 ClipEnvelope effectiveEnvelope(const Track& track, size_t clipIndex);
 double envelopeGain(const Clip& clip, const ClipEnvelope& env, TimeUs t);
 
+// An adjustment layer: an event with no picture of its own, whose effects change everything on the tracks below it
+// while it lasts (mixed in by its opacity and fades).
+inline bool isAdjustment(const Clip& c) { return c.generator.type == QLatin1String("adjustment"); }
+struct ProjectSnapshot;
+// The topmost visual track whose picture covers the whole frame at t, opaque (one plain event from a file, the
+// project's shape, no alpha, no effects, fades, pan/crop or transparency on it or its track): everything below it is
+// hidden, so the compositors start there. -1: none.
+int coveringTrack(const ProjectSnapshot& snap, TimeUs t);
+
 struct PackedTimeline; // the undo history's form of a timeline (Project.cpp)
 
 class Project : public QObject {
