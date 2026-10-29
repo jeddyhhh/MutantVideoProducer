@@ -109,7 +109,11 @@ Match correlate(const std::vector<float>& a, const std::vector<float>& b)
         if (std::min(d, n - d) > apart)
             second = std::max(second, corr[i]);
     }
-    m.ok = y1 > 0.3 && sd > 0 && (y1 - mean) / sd > 8 && y1 > 1.4 * second;
+    // Two ways to be sure: a strong match that stands well out, or (real recordings: a camera's own sound under the same
+    // commentary scores lower) a very sharp one that still stands out from the next. Measured: the same launch's
+    // broadcast and onboard cameras score 0.21 at z 53, 1.4x the next; a lone onset against bursts 0.20 at z 15, ~1x.
+    const double z = sd > 0 ? (y1 - mean) / sd : 0;
+    m.ok = (y1 > 0.3 && z > 8 && y1 > 1.4 * second) || (z > 25 && y1 > 1.2 * second);
     return m;
 }
 

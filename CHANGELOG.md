@@ -11,6 +11,8 @@ What changed in each version of Mutant Video Producer. The newest is first.
 - **Multicam**: Tools > Multicam > Make Multicam from Selected Events puts the cameras under a Multicam track; press
   1-9 while the edit plays (or click an angle in the Show Angles window) to cut between them, or, stopped, to switch the
   stretch under the cursor.
+- AI control: a **multicam** tool (sync by audio, make a multicam, cut and switch angles), and `edit_event` sets
+  `frame_blend` and `optical_flow`.
 - **Make in-between frames (optical flow)** in Event Properties: slow motion that follows the motion between two frames
   and draws the frames in between, on the CPU and the GPU.
 
@@ -28,6 +30,9 @@ What changed in each version of Mutant Video Producer. The newest is first.
   to it, so a newly connected assistant starts from the workflow instead of trial and error.
 
 ### Changed
+
+- AI control: `edit_event` with `speed` now changes the event's length with it (half speed, twice as long), as its
+  description always said; it used to keep the length and show less of the file. `keep_length: true` keeps it.
 
 - The Deliver tab's choices (outputs, ticks, folder, loudness target, and the publish pack's title, description and
   tags) are saved in the project file instead of this computer's settings, so they go with the project. Older projects

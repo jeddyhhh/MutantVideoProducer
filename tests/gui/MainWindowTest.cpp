@@ -1120,11 +1120,15 @@ int MainWindow::runEditorTest(QStringList& log)
                                     vid = c.id, aud = d.id;
             bool together = false, framed = false, split = false, inside = false, lockRefused = false, diceRefused = false, filterChecked = false;
             if (vid && aud) {
+                const Clip* before = m_project->timeline().findClip(vid);
+                const TimeUs lengthBefore = before ? before->length : 0;
                 call(QStringLiteral("edit_event"), {{QStringLiteral("event_id"), vid}, {QStringLiteral("speed"), 2}});
+                const Clip* doubled = m_project->timeline().findClip(vid);
+                const bool follows = doubled && std::llabs(doubled->length - lengthBefore / 2) <= m_project->settings().fps.frameDuration();
                 call(QStringLiteral("edit_event"), {{QStringLiteral("event_id"), vid}, {QStringLiteral("length"), 1.2345}});
                 const Clip* v = m_project->timeline().findClip(vid);
                 const Clip* s = m_project->timeline().findClip(aud);
-                together = v && s && v->length == s->length && v->speed == s->speed && v->start == s->start;
+                together = follows && v && s && v->length == s->length && v->speed == s->speed && v->start == s->start;
                 framed = v && v->length == m_project->settings().fps.snap(v->length);
                 const double middle = v ? double(v->start + v->length / 2) / kUsPerSecond : 0;
                 split = content(call(QStringLiteral("split"), {{QStringLiteral("time"), middle}, {QStringLiteral("event_ids"), QJsonArray{vid}}}))

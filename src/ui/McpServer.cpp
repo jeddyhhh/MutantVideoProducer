@@ -32,6 +32,8 @@
 #include "ui/LivePadPanel.h"
 #include "ui/LiveView.h"
 #include "ui/MainWindow.h"
+#include "core/AudioSync.h"
+#include "core/Multicam.h"
 #include "core/Story.h"
 #include "core/PanCrop.h"
 #include "core/Cuts.h"
@@ -959,6 +961,9 @@ QJsonArray McpServer::toolList()
                                    "{type: a transition id from list_effects kind=transition, params: {setting: value}}")},
                    {QStringLiteral("transition_out"), prop("object", "Video: the transition at its end, as transition_in")},
                    {QStringLiteral("reverse"), prop("boolean", "Play the source span backwards")},
+                   {QStringLiteral("frame_blend"), prop("boolean", "Video slow motion: blend neighbouring frames")},
+                   {QStringLiteral("optical_flow"), prop("boolean", "Video slow motion: make in-between frames by following the motion "
+                                                                     "(the smoothest; slower to preview and render)")},
                    {QStringLiteral("loop"), prop("boolean", "Repeat the file so the event can run on past its end (false: it stops there; a "
                                                             "length past the end without loop is shortened, with a warning)")},
                    {QStringLiteral("params"), prop("object", "A generated event's settings (as add_text params)")},
@@ -972,7 +977,8 @@ QJsonArray McpServer::toolList()
                    {QStringLiteral("name"), prop("string", "Label")},
                    {QStringLiteral("muted"), prop("boolean", "Mute")},
                    {QStringLiteral("gain"), prop("number", "Opacity (video) or volume (audio), 0..1 (audio up to 4)")},
-                   {QStringLiteral("speed"), prop("number", "Playback rate 0.05..20 (the length follows)")},
+                   {QStringLiteral("speed"), prop("number", "Playback rate 0.05..20 (the length follows: half speed, twice as long)")},
+                   {QStringLiteral("keep_length"), prop("boolean", "With speed: keep the event's length and show more or less of the file instead")},
                    {QStringLiteral("fade_in"), prop("number", "Fade in, seconds")},
                    {QStringLiteral("fade_out"), prop("number", "Fade out, seconds")}},
                   {QStringLiteral("event_id")}));
@@ -1230,6 +1236,19 @@ QJsonArray McpServer::toolList()
                    {QStringLiteral("sensitivity"), prop("number", "0..1 (default 0.5): higher finds subtler cuts")},
                    {QStringLiteral("split"), prop("boolean", "Split at them (default true)")}},
                   {QStringLiteral("event_ids")}));
+    t.append(tool("multicam",
+                  "Several cameras of the same moment. sync: moves events (with their groups) so their sound lines up with the "
+                  "event on the topmost track (Tools > Sync Selected Events by Audio), and says which couldn't be matched. create: the "
+                  "video events event_ids (angle 1, 2... in that order) go under a new Multicam track on top (their tracks muted). cut: "
+                  "from time on, the Multicam track shows angle (what pressing its number does while playing). switch: the stretch "
+                  "under time shows angle. angles: the angles and the cuts. Each is one undo step.",
+                  {{QStringLiteral("action"),
+                    enumProp({QStringLiteral("sync"), QStringLiteral("create"), QStringLiteral("cut"), QStringLiteral("switch"), QStringLiteral("angles")},
+                             "What")},
+                   {QStringLiteral("event_ids"), arrayProp("integer", "sync / create: the events")},
+                   {QStringLiteral("angle"), prop("integer", "cut / switch: 1-9")},
+                   {QStringLiteral("time"), prop("number", "cut / switch: seconds")}},
+                  {QStringLiteral("action")}));
     t.append(tool("cut_time",
                   "Takes time out of the whole edit, on every unlocked track at once, closing the gaps (markers follow), or puts it in "
                   "(insert: length seconds of empty time at `at`, what follows moving later): silences "
@@ -1481,6 +1500,7 @@ struct McpServer::ToolCall {
     QJsonObject tool_generate_dialogue();
     QJsonObject tool_list_sound_effects();
     QJsonObject tool_user_guide();
+    QJsonObject tool_multicam();
     QJsonObject tool_list_vst3_plugins();
     QJsonObject tool_set_project_settings();
     QJsonObject tool_live_status();
@@ -1677,6 +1697,10 @@ QJsonObject McpServer::ToolCall::tool_get_project()
                 o[QStringLiteral("speed")] = c.speed;
             if (c.reverse)
                 o[QStringLiteral("reverse")] = true;
+            if (c.frameBlend)
+                o[QStringLiteral("frame_blend")] = true;
+            if (c.opticalFlow)
+                o[QStringLiteral("optical_flow")] = true;
             if (c.gain != 1.0f)
                 o[QStringLiteral("gain")] = double(c.gain);
             if (c.fadeIn > 0)
@@ -2294,7 +2318,8 @@ QJsonObject McpServer::ToolCall::tool_edit_event()
         if (!g)
             continue;
         if (has("speed") && !g->isGenerated())
-            ops::setClipSpeed(*g, gm.get(), std::clamp(num("speed"), 0.05, 20.0), false, ps.fps);
+            // (keepSpan: the same footage, so the length follows the speed, as the description says; it used to keep the length)
+            ops::setClipSpeed(*g, gm.get(), std::clamp(num("speed"), 0.05, 20.0), !a.value(QStringLiteral("keep_length")).toBool(), ps.fps);
         // Within the source: at least a frame of it left after source_in, and the length no longer than what is
         // left (source_in past the end made a zero-length event).
         const bool fromSource = gm && !g->isGenerated() && !gm->info.isStill && gm->info.duration > 0;
@@ -2317,6 +2342,10 @@ QJsonObject McpServer::ToolCall::tool_edit_event()
         if (has("reverse"))
             g->reverse = a.value(QStringLiteral("reverse")).toBool();
     }
+    if (has("frame_blend"))
+        c->frameBlend = a.value(QStringLiteral("frame_blend")).toBool();
+    if (has("optical_flow"))
+        c->opticalFlow = a.value(QStringLiteral("optical_flow")).toBool();
     if (has("name"))
         c->name = str("name");
     if (has("muted"))
@@ -3422,6 +3451,50 @@ QJsonObject McpServer::ToolCall::tool_scene_changes()
     return jsonResult({{QStringLiteral("cuts"), times}, {QStringLiteral("split"), !times.isEmpty()}});
 }
 
+QJsonObject McpServer::ToolCall::tool_multicam()
+{
+    const QString action = str("action");
+    std::vector<int> ids;
+    for (const QJsonValue v : a.value(QStringLiteral("event_ids")).toArray())
+        ids.push_back(v.toInt());
+    Timeline tl = project->timeline();
+    QString error;
+    if (action == QLatin1String("sync")) {
+        const audiosync::Result r = audiosync::syncByAudio(tl, project->media(), ids);
+        if (!r.error.isEmpty())
+            return errorResult(r.error);
+        if (!r.moved.empty())
+            apply(tl, QStringLiteral("Sync by Audio"));
+        QJsonObject moved;
+        for (const auto& [id, delta] : r.moved)
+            moved[QString::number(id)] = sec(delta);
+        QJsonArray unmatched;
+        for (int id : r.unmatched)
+            unmatched.append(id);
+        return jsonResult({{QStringLiteral("moved_seconds"), moved}, {QStringLiteral("unmatched"), unmatched}});
+    }
+    if (action == QLatin1String("create") || action == QLatin1String("cut") || action == QLatin1String("switch")) {
+        const bool ok = action == QLatin1String("create") ? multicam::create(tl, project->media(), ids, &error)
+                        : action == QLatin1String("cut")  ? multicam::cut(tl, project->media(), integer("angle"), us(num("time")), &error)
+                                                          : multicam::switchAngle(tl, project->media(), integer("angle"), us(num("time")), &error);
+        if (!ok)
+            return errorResult(error);
+        if (!(tl == project->timeline()))
+            apply(tl, action == QLatin1String("create") ? QStringLiteral("Make Multicam") : QStringLiteral("Multicam: Angle %1").arg(integer("angle")));
+    } else if (action != QLatin1String("angles")) {
+        return errorResult(QStringLiteral("action: sync, create, cut, switch or angles"));
+    }
+    const Timeline& now = project->timeline();
+    QJsonArray angles, cuts;
+    for (const auto& ang : multicam::angles(now, project->media()))
+        angles.append(QJsonObject{{QStringLiteral("angle"), ang.number}, {QStringLiteral("event_id"), ang.clipId}, {QStringLiteral("name"), ang.name}});
+    if (const int mi = multicam::trackIndex(now); mi >= 0)
+        for (const Clip& c : now.tracks[size_t(mi)].clips)
+            cuts.append(QJsonObject{{QStringLiteral("angle"), multicam::angleOf(c)}, {QStringLiteral("start"), sec(c.start)}, {QStringLiteral("end"), sec(c.end())},
+                                    {QStringLiteral("event_id"), c.id}});
+    return jsonResult({{QStringLiteral("track"), multicam::trackIndex(now)}, {QStringLiteral("angles"), angles}, {QStringLiteral("cuts"), cuts}});
+}
+
 QJsonObject McpServer::ToolCall::tool_cut_time()
 {
     const QString action = str("action");
@@ -3799,6 +3872,7 @@ QJsonObject McpServer::callTool(const QString& name, const QJsonObject& a)
         {QStringLiteral("generate_dialogue"), {&ToolCall::tool_generate_dialogue, false}},
         {QStringLiteral("list_sound_effects"), {&ToolCall::tool_list_sound_effects, false}},
         {QStringLiteral("user_guide"), {&ToolCall::tool_user_guide, false}},
+        {QStringLiteral("multicam"), {&ToolCall::tool_multicam, false}},
         {QStringLiteral("list_vst3_plugins"), {&ToolCall::tool_list_vst3_plugins, false}},
         {QStringLiteral("set_project_settings"), {&ToolCall::tool_set_project_settings, false}},
         {QStringLiteral("live_status"), {&ToolCall::tool_live_status, true}},
