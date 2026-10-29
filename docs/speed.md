@@ -13,6 +13,10 @@ There are three ways to change an event's speed:
   - **Keep the same footage**: the event's length changes with the speed. Off, it keeps its length
     and shows more or less of the file,
   - **Blend frames (smoother slow motion)**,
+  - **Make in-between frames (optical flow)**: the smoothest slow motion. Instead of fading one frame
+    into the next, it follows how things move between them and draws the frames in between. It takes
+    longer to preview and render, and very fast motion, or things passing in front of each other, can
+    smear a little (frame blending is the safer choice there),
   - **Preserve pitch when the speed changes** (time-stretched), or let the sound follow the speed like tape.
 
 Events at another speed show it on their title bar, for example `[200%]`. A video file's grouped

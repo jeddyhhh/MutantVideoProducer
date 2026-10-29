@@ -1,5 +1,7 @@
 #pragma once
 
+#include "core/OpticalFlow.h"
+
 #include "core/Effects.h"
 #include "core/FrameConverter.h"
 #include "core/FrameRenderer.h"
@@ -51,6 +53,10 @@ private:
         QImage nextImage;
         TimeUs nextImagePts = -1;
         QSize nextImageSize;
+        // Optical flow between the frame and the next (the same pair for every in-between frame).
+        flow::Field flow;
+        TimeUs flowPts = -1;
+        QSize flowSize;
     };
     struct GeneratorCache {
         QString type;

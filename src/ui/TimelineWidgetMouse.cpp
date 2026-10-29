@@ -16,6 +16,7 @@
 #include <QCursor>
 #include <QPixmap>
 #include <QInputDialog>
+#include <QKeyEvent>
 #include <QMenu>
 #include <QMessageBox>
 #include <QMimeData>
@@ -1140,6 +1141,16 @@ void TimelineWidget::updateHoverCursor(QPoint p)
     }
     viewport()->setCursor(overRuler(p) ? magnifierCursor() : QCursor(shape));
     viewport()->setToolTip(tip);
+}
+
+void TimelineWidget::keyPressEvent(QKeyEvent* e)
+{
+    if (e->key() >= Qt::Key_1 && e->key() <= Qt::Key_9 && !(e->modifiers() & (Qt::ControlModifier | Qt::AltModifier | Qt::ShiftModifier))) {
+        emit angleKey(e->key() - Qt::Key_0);
+        e->accept();
+        return;
+    }
+    QAbstractScrollArea::keyPressEvent(e);
 }
 
 void TimelineWidget::wheelEvent(QWheelEvent* e)

@@ -24,6 +24,8 @@
 #include "ui/AudioLevels.h"
 #include "ui/AudioMeter.h"
 #include "ui/VoiceOverDialog.h"
+#include "core/Multicam.h"
+#include "core/TimelineOps.h"
 #include "ui/RegisteredTo.h"
 #include "ui/AudioFinishingWindow.h"
 #include "ui/DeviceChainView.h"
@@ -288,6 +290,49 @@ int MainWindow::runEditorTest(QStringList& log)
         });
         narrationStudio();
         m_project->setTimelineLive(initial);
+        {
+            // Multicam: two video events of the clip on two tracks become angles under a Multicam track (the angles window
+            // opens); with playback stopped, pressing 2 on the timeline switches the stretch under the cursor to angle 2.
+            Timeline tl = initial;
+            const auto clipMedia = m_project->media().begin()->second;
+            std::vector<int> picks;
+            for (int k = 0; k < 2; ++k) {
+                const int ti = ops::addTrack(tl, TrackType::Video, 0);
+                Clip c;
+                c.id = tl.allocId();
+                c.mediaId = clipMedia->id;
+                c.streamIndex = clipMedia->info.video.front().index;
+                c.start = 0;
+                c.length = std::min<TimeUs>(clipMedia->info.duration, 3 * kUsPerSecond);
+                tl.tracks[size_t(ti)].clips.push_back(c);
+                picks.push_back(c.id);
+            }
+            m_project->setTimelineLive(tl);
+            m_timeline->setSelection({picks.begin(), picks.end()});
+            const int undoBefore = m_project->undoStack()->index();
+            makeMulticam();
+            const int mi = multicam::trackIndex(m_project->timeline());
+            auto* window = findChild<QWidget*>(QStringLiteral("multicamWindow"));
+            const bool made = mi == 0 && m_project->timeline().tracks[0].name == QStringLiteral("Multicam") && window && window->isVisible()
+                              && m_project->undoStack()->index() == undoBefore + 1;
+            m_timeline->setCursorTime(kUsPerSecond, false);
+            m_timeline->setFocus();
+            QKeyEvent two(QEvent::KeyPress, Qt::Key_2, Qt::NoModifier, QStringLiteral("2"));
+            QApplication::sendEvent(m_timeline, &two);
+            const auto& cuts = m_project->timeline().tracks[0].clips;
+            const bool switched = cuts.size() == 1 && multicam::angleOf(cuts[0]) == 2 && m_project->undoStack()->index() == undoBefore + 2;
+            QWidget* shot = window ? window : this;
+            if (window)
+                window->grab().save(work.filePath("multicam.png"));
+            check(made && switched && shot,
+                  QStringLiteral("Make Multicam: a Multicam track on top and the angles window; 2 on the timeline switches to angle 2 (%1 cut(s))")
+                      .arg(cuts.size()));
+            if (window)
+                window->close();
+            m_project->undoStack()->undo();
+            m_project->undoStack()->undo();
+            m_project->setTimelineLive(initial);
+        }
         {
             // Record Voice-Over: a take (a test tone, throttled to real time) lands on a new Voice-over track where the cursor
             // was, as one undo step, and the edit stops playing and goes back there.

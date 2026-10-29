@@ -179,8 +179,25 @@ QRectF Compositor::drawClip(const ProjectSnapshot& snap, const Clip& clip, TimeU
     if (picture.isNull())
         return {};
 
+    // Slow motion with frames made in between (optical flow): follow the motion towards the next frame.
+    if (clip.opticalFlow && !media.info.isStill)
+        if (const AVFrame* next = e->decoder->nextFrame()) {
+            const TimeUs p0 = e->decoder->currentPts(), p1 = e->decoder->nextPts();
+            const double w = p1 > p0 ? double(srcT - p0) / double(p1 - p0) : 0.0;
+            if (w > 0.02 && w < 0.98) {
+                const QImage nextPicture = convert(next, p1, e->nextImage, e->nextImagePts, e->nextImageSize);
+                if (nextPicture.size() == picture.size()) {
+                    if (e->flowPts != p0 || e->flowSize != picture.size()) {
+                        e->flow = flow::estimate(picture, nextPicture);
+                        e->flowPts = p0;
+                        e->flowSize = picture.size();
+                    }
+                    picture = flow::interpolate(picture, nextPicture, e->flow, float(w));
+                }
+            }
+        }
     // Slow motion with frame blending: mix towards the next frame.
-    if (clip.frameBlend && !media.info.isStill)
+    if (clip.frameBlend && !clip.opticalFlow && !media.info.isStill)
         if (const AVFrame* next = e->decoder->nextFrame()) {
             const TimeUs p0 = e->decoder->currentPts(), p1 = e->decoder->nextPts();
             const double w = p1 > p0 ? double(srcT - p0) / double(p1 - p0) : 0.0;

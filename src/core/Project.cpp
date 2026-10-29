@@ -687,6 +687,8 @@ QJsonObject clipToJson(const Clip& c)
         o[QStringLiteral("preservePitch")] = false;
     if (c.frameBlend)
         o[QStringLiteral("frameBlend")] = true;
+    if (c.opticalFlow)
+        o[QStringLiteral("opticalFlow")] = true;
     if (c.stabilize > 0) {
         o[QStringLiteral("stabilize")] = c.stabilize;
         o[QStringLiteral("stabilizeZoom")] = c.stabilizeZoom;
@@ -851,6 +853,7 @@ Clip clipFromJson(const QJsonObject& o)
     c.reverse = o[QStringLiteral("reverse")].toBool(false);
     c.preservePitch = o[QStringLiteral("preservePitch")].toBool(true);
     c.frameBlend = o[QStringLiteral("frameBlend")].toBool(false);
+    c.opticalFlow = o[QStringLiteral("opticalFlow")].toBool(false);
     c.stabilize = std::clamp(o[QStringLiteral("stabilize")].toDouble(0), 0.0, 10.0);
     c.stabilizeZoom = o[QStringLiteral("stabilizeZoom")].toBool(true);
     c.loopLength = std::max<TimeUs>(0, jsonTime(o[QStringLiteral("loopLength")]));
@@ -1092,6 +1095,8 @@ QByteArray Project::toJson(const QString& baseDir, const QString& backupOf, bool
     root[QStringLiteral("tracks")] = tracks;
     root["chapters"] = m_timeline.chapters;
     root["narrationSettings"] = m_timeline.narrationSettings;
+    if (!m_timeline.multicam.isEmpty())
+        root["multicam"] = m_timeline.multicam;
     if (!m_deliver.isEmpty())
         root[QStringLiteral("deliver")] = m_deliver;
     if (!m_timeline.markers.empty()) {
@@ -1318,6 +1323,7 @@ bool Project::loadFile(const QString& path, QString* error, QStringList* missing
     Timeline timeline;
     timeline.chapters = root["chapters"].toArray();
     timeline.narrationSettings = root["narrationSettings"].toObject();
+    timeline.multicam = root["multicam"].toObject();
     for (const auto& v : root[QStringLiteral("tracks")].toArray()) {
         const QJsonObject o = v.toObject();
         Track t;
@@ -1487,6 +1493,8 @@ QJsonObject nestedTimelineToJson(const Timeline& timeline)
         root["audioMasterLevel"] = timeline.audioMasterLevel;
     root["chapters"] = timeline.chapters;
     root["narrationSettings"] = timeline.narrationSettings;
+    if (!timeline.multicam.isEmpty())
+        root["multicam"] = timeline.multicam;
     return root;
 }
 Timeline nestedTimelineFromJson(const QJsonObject& root)
@@ -1524,6 +1532,7 @@ Timeline nestedTimelineFromJson(const QJsonObject& root)
     timeline.audioMasterLevel = float(std::clamp(root["audioMasterLevel"].toDouble(1.0), 0.0, 1.0));
     timeline.chapters = root["chapters"].toArray();
     timeline.narrationSettings = root["narrationSettings"].toObject();
+    timeline.multicam = root["multicam"].toObject();
     repairTimeline(timeline); timeline.sortClips();
     return timeline;
 }

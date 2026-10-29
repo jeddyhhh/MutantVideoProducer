@@ -44,6 +44,12 @@ EventPropertiesDialog::EventPropertiesDialog(Project* project, std::set<int> cli
     m_blend = new QCheckBox(tr("Blend frames (smoother slow motion)"));
     m_blend->setEnabled(anyVideo);
     form->addRow(tr("Video:"), m_blend);
+    m_flow = new QCheckBox(tr("Make in-between frames (optical flow: the smoothest slow motion)"));
+    m_flow->setObjectName(QStringLiteral("opticalFlow"));
+    m_flow->setToolTip(tr("Follows how things move between two frames to make the ones in between, instead of fading one into the "
+                          "next. Slower to preview and render; fast motion or things passing in front of each other can smear."));
+    m_flow->setEnabled(anyVideo);
+    form->addRow(QString(), m_flow);
     m_pitch = new QCheckBox(tr("Preserve pitch when the speed changes"));
     m_pitch->setEnabled(anyAudio);
     form->addRow(tr("Audio:"), m_pitch);
@@ -56,6 +62,7 @@ EventPropertiesDialog::EventPropertiesDialog(Project* project, std::set<int> cli
         m_rate->setValue(first->speed * 100);
         m_reverse->setChecked(first->reverse);
         m_blend->setChecked(first->frameBlend);
+        m_flow->setChecked(first->opticalFlow);
         m_pitch->setChecked(first->preservePitch);
         m_length = first->length;
         m_span = first->sourceSpan();
@@ -94,8 +101,10 @@ void EventPropertiesDialog::apply()
                 ops::setClipSpeed(c, media.get(), speed, m_keepSpan->isChecked(), fps);
             }
             c.reverse = m_reverse->isChecked();
-            if (isVisualTrack(t.type))
+            if (isVisualTrack(t.type)) {
                 c.frameBlend = m_blend->isChecked();
+                c.opticalFlow = m_flow->isChecked();
+            }
             else
                 c.preservePitch = m_pitch->isChecked();
         }

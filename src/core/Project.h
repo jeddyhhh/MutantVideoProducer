@@ -85,6 +85,7 @@ struct Clip {
     bool reverse = false;         // play the source span backwards
     bool preservePitch = true;    // audio: time-stretch instead of tape-style pitch change
     bool frameBlend = false;      // video: blend neighbouring frames (smooth slow motion)
+    bool opticalFlow = false;     // video: make in-between frames by following the motion (smoother still; see OpticalFlow.h)
     double stabilize = 0;         // video: shake smoothed over this many seconds (0 = off; see Stabilizer.h)
     bool stabilizeZoom = true;    // zoom in to hide the edges the correction moves into view
     TimeUs loopLength = 0;        // > 0: the file repeats every loopLength (the event runs on past its end)
@@ -240,6 +241,7 @@ inline constexpr int kMarkerColors = 8;
 struct Timeline {
     QJsonArray chapters;
     QJsonObject narrationSettings;
+    QJsonObject multicam; // {track: the Multicam track id, angles: [the angles' event ids]} (see Multicam.h)
     std::vector<Track> tracks;
     std::vector<Marker> markers; // sorted by time
     EffectChain outputEffects; // video output FX, applied to the final picture

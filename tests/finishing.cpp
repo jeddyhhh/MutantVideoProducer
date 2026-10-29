@@ -4,6 +4,10 @@
 #include "core/Graphics.h"
 #include "core/MotionGraphics.h"
 #include "core/AudioMixer.h"
+#include "core/AudioSync.h"
+#include "core/Multicam.h"
+#include "core/OpticalFlow.h"
+#include <QPainter>
 #include "core/TimelineOps.h"
 #include "core/YouTubeUpload.h"
 #include "core/FFmpeg.h"
@@ -397,6 +401,162 @@ int main(int argc, char** argv)
                   && tl.findClip(a)->start == 2 * kUsPerSecond && tl.findClip(a)->length == 3 * kUsPerSecond
                   && !ops::placeVoiceOver(tl, silent, 0, fps) && timelineProblem(tl).isEmpty(),
               QStringLiteral("voice-over takes find room on Voice-over tracks (%1, %2, %3)").arg(on(a), on(b), on(c)));
+    }
+    {
+        // Sync by audio: two recordings of the same bursts (the second 1.234 s later, quieter, with hiss), placed anywhere,
+        // end up with their sounds together.
+        QTemporaryDir dir;
+        auto writeWav = [&](const QString& path, double delay, float gain, float hiss) {
+            QFile f(path);
+            f.open(QIODevice::WriteOnly);
+            QDataStream st(&f);
+            st.setByteOrder(QDataStream::LittleEndian);
+            st.setFloatingPointPrecision(QDataStream::SinglePrecision);
+            const int n = rate * 24;
+            f.write("RIFF", 4);
+            st << quint32(36 + n * 8);
+            f.write("WAVEfmt ", 8);
+            st << quint32(16) << quint16(3) << quint16(2) << quint32(rate) << quint32(rate * 8) << quint16(8) << quint16(32);
+            f.write("data", 4);
+            st << quint32(n * 8);
+            uint32_t seed = 99, noise = 7;
+            std::vector<double> bursts; // (the same "events" in both: claps and words at irregular times)
+            for (double t = 0.4; t < 30; t += 0.35 + double((seed = seed * 1664525u + 1013904223u) >> 8) / double(1u << 24) * 0.9)
+                bursts.push_back(t);
+            for (int i = 0; i < n; ++i) {
+                const double t = double(i) / rate - delay;
+                double v = 0;
+                for (double b : bursts)
+                    if (t >= b && t < b + 0.12)
+                        v += std::exp(-(t - b) * 30) * std::sin(2 * pi * (300 + 40 * std::fmod(b * 7, 9)) * t);
+                noise = noise * 1664525u + 1013904223u;
+                const float x = float(v * 0.5) * gain + hiss * (float(noise >> 8) / float(1u << 24) * 2 - 1);
+                st << x << x;
+            }
+        };
+        const QString a = dir.filePath("camera.wav"), b = dir.filePath("recorder.wav");
+        writeWav(a, 0.0, 1.0f, 0.0f);
+        writeWav(b, 1.234, 0.5f, 0.02f);
+        Project p;
+        const int ma = p.addMedia(probeMedia(a)), mb = p.addMedia(probeMedia(b));
+        Timeline tl = p.timeline();
+        const int ta = ops::addTrack(tl, TrackType::Audio, 0), tb = ops::addTrack(tl, TrackType::Audio, 1);
+        auto place = [&](int track, int mediaId, TimeUs at) {
+            Clip c;
+            c.id = tl.allocId();
+            c.mediaId = mediaId;
+            c.streamIndex = p.mediaItem(mediaId)->info.audio.front().index;
+            c.start = at;
+            c.length = 20 * kUsPerSecond;
+            tl.tracks[size_t(track)].clips.push_back(c);
+            return c.id;
+        };
+        const int ca = place(ta, ma, 10 * kUsPerSecond), cb = place(tb, mb, 3 * kUsPerSecond);
+        const audiosync::Result r = audiosync::syncByAudio(tl, p.media(), {ca, cb});
+        const TimeUs got = tl.findClip(cb)->start, want = 10 * kUsPerSecond - 1234000;
+        check(r.error.isEmpty() && r.unmatched.empty() && tl.findClip(ca)->start == 10 * kUsPerSecond && std::llabs(got - want) <= 2000,
+              QStringLiteral("sync by audio lines the second recording up with the first (at %1 s, %2 s expected)")
+                  .arg(double(got) / kUsPerSecond, 0, 'f', 4).arg(double(want) / kUsPerSecond, 0, 'f', 4));
+        // A recording of something else isn't moved.
+        Timeline other = p.timeline();
+        const int oa = ops::addTrack(other, TrackType::Audio, 0), ob = ops::addTrack(other, TrackType::Audio, 1);
+        Clip x;
+        x.id = other.allocId();
+        x.mediaId = ma;
+        x.streamIndex = p.mediaItem(ma)->info.audio.front().index;
+        x.length = 20 * kUsPerSecond;
+        other.tracks[size_t(oa)].clips.push_back(x);
+        const int tone = p.addMedia(probeMedia(wav)); // (the steady 1 kHz tone from the start of this test)
+        Clip y = x;
+        y.id = other.allocId();
+        y.mediaId = tone;
+        y.streamIndex = p.mediaItem(tone)->info.audio.front().index;
+        y.length = 8 * kUsPerSecond;
+        y.start = 5 * kUsPerSecond;
+        other.tracks[size_t(ob)].clips.push_back(y);
+        const audiosync::Result none = audiosync::syncByAudio(other, p.media(), {x.id, y.id});
+        check(none.moved.empty() && none.unmatched.size() == 1 && other.findClip(y.id)->start == 5 * kUsPerSecond,
+              "sync by audio leaves a recording of something else where it was");
+    }
+    {
+        // Multicam: two angles; cutting while playing switches from there on, switching when stopped changes the stretch.
+        MediaMap media;
+        for (int id : {1, 2}) {
+            auto m = std::make_shared<MediaItem>();
+            m->id = id;
+            m->info.duration = 60 * kUsPerSecond;
+            m->info.video.push_back({});
+            media[id] = m;
+        }
+        Timeline tl = defaultTimeline();
+        const int t1 = ops::addTrack(tl, TrackType::Video, 0), t2 = ops::addTrack(tl, TrackType::Video, 1);
+        auto angle = [&](int track, int mediaId, TimeUs at, TimeUs in) {
+            Clip c;
+            c.id = tl.allocId();
+            c.mediaId = mediaId;
+            c.start = at;
+            c.sourceIn = in;
+            c.length = 30 * kUsPerSecond;
+            tl.tracks[size_t(track)].clips.push_back(c);
+            return c.id;
+        };
+        const int a1 = angle(t1, 1, 0, 0), a2 = angle(t2, 2, 2 * kUsPerSecond, 5 * kUsPerSecond);
+        QString error;
+        const bool made = multicam::create(tl, media, {a1, a2}, &error);
+        const int mi = multicam::trackIndex(tl);
+        const bool hidden = made && std::all_of(tl.tracks.begin(), tl.tracks.end(), [&](const Track& t) {
+            return t.clips.empty() || &t == &tl.tracks[size_t(mi)] || t.muted;
+        });
+        const bool cut = multicam::cut(tl, media, 2, 10 * kUsPerSecond, &error);
+        const auto& cuts = tl.tracks[size_t(mi)].clips;
+        const bool pieces = cuts.size() == 2 && multicam::angleOf(cuts[0]) == 1 && cuts[0].end() == 10 * kUsPerSecond
+                            && multicam::angleOf(cuts[1]) == 2 && cuts[1].sourceIn == 13 * kUsPerSecond && cuts[1].end() == 30 * kUsPerSecond;
+        const bool switched = multicam::switchAngle(tl, media, 2, 5 * kUsPerSecond, &error);
+        const auto& after = tl.tracks[size_t(mi)].clips;
+        // Angle 2 starts at 2 s: switching the first stretch to it starts it there.
+        const bool covered = switched && after.size() == 2 && multicam::angleOf(after[0]) == 2 && after[0].start == 2 * kUsPerSecond
+                             && after[0].sourceIn == 5 * kUsPerSecond;
+        const bool refused = !multicam::cut(tl, media, 3, 12 * kUsPerSecond, &error) && !multicam::create(tl, media, {a1}, &error);
+        check(made && mi == 0 && hidden && cut && pieces && covered && refused && multicam::angles(tl, media).size() == 2 && timelineProblem(tl).isEmpty(),
+              QStringLiteral("multicam: two angles under a Multicam track; a cut at 10 s, a switch, no angle 3 (%1)").arg(error));
+        Project saved;
+        saved.applyEdit(tl, "multicam");
+        QTemporaryDir out;
+        Project back;
+        check(saved.save(out.filePath("mc.mvp"), &error) && back.load(out.filePath("mc.mvp"), &error) && back.timeline().multicam == tl.multicam,
+              "the multicam is saved with the project");
+    }
+    {
+        // Optical flow: a square that moved 24 px right and 12 down is, halfway, one square halfway along (frame
+        // blending would show two faint ones).
+        auto frame = [](int x, int y) {
+            QImage img(640, 360, QImage::Format_ARGB32_Premultiplied);
+            img.fill(QColor(30, 40, 60));
+            QPainter p(&img);
+            for (int i = 0; i < 640; i += 40) // (a textured background, so the still parts have something to hold on to)
+                for (int j = 0; j < 360; j += 40)
+                    p.fillRect(i + (j / 40 % 2) * 20, j, 20, 20, QColor(40, 55, 80));
+            p.fillRect(x, y, 80, 80, QColor(250, 220, 40));
+            p.fillRect(x + 20, y + 20, 20, 20, QColor(200, 30, 30));
+            return img;
+        };
+        const QImage a = frame(200, 120), b = frame(224, 132);
+        const flow::Field f = flow::estimate(a, b);
+        const QImage mid = flow::interpolate(a, b, f, 0.5f);
+        auto yellow = [](QRgb c) { return qRed(c) > 200 && qGreen(c) > 170 && qBlue(c) < 120; };
+        int fx = 0, fy = 0;
+        if (!f.empty()) { // the motion at the square's middle, in pixels
+            const int cx = int((240.0 + 12) / 640 * f.w), cy = int((160.0 + 6) / 360 * f.h);
+            fx = int(std::lround(f.dx[size_t(cy) * size_t(f.w) + size_t(cx)] * 640));
+            fy = int(std::lround(f.dy[size_t(cy) * size_t(f.w) + size_t(cx)] * 360));
+        }
+        // Halfway, the square spans 212..292: x 286 (only the second frame's square there) is yellow, x 206 (only the
+        // first's) is background. Blending the two frames would make both half yellow.
+        const bool inside = yellow(mid.pixel(286, 166));
+        const bool outside = qRed(mid.pixel(206, 166)) < 90;
+        check(!f.empty() && std::abs(fx - 24) <= 3 && std::abs(fy - 12) <= 3 && inside && outside,
+              QStringLiteral("optical flow follows a square (%1, %2 px; 24, 12 moved) and the halfway frame has it halfway along, no ghost behind")
+                  .arg(fx).arg(fy));
     }
     return failures;
 }

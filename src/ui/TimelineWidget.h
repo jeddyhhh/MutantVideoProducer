@@ -27,6 +27,7 @@ public:
     void setCursorTime(TimeUs t, bool ensureVisible = true);
     // Playback position marker; nullopt hides it.
     void setPlayhead(std::optional<TimeUs> t);
+    std::optional<TimeUs> playhead() const { return m_playhead; }
 
     bool hasRegion() const { return m_regionEnd > m_regionStart; }
     TimeUs regionStart() const { return m_regionStart; }
@@ -162,8 +163,10 @@ signals:
     // The cursor was dragged on the ruler or stepped by a frame (for audio scrubbing).
     void scrubbed(TimeUs t);
     void message(const QString& text); // for the status bar
+    void angleKey(int angle);          // 1-9 pressed on the timeline (a multicam angle)
 
 protected:
+    void keyPressEvent(QKeyEvent*) override;
     void paintEvent(QPaintEvent*) override;
     void resizeEvent(QResizeEvent*) override;
     void scrollContentsBy(int dx, int dy) override;

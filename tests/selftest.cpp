@@ -1637,6 +1637,13 @@ int cmdGpu(const QString& mediaDir, const QString& outDir)
         compare(QStringLiteral("slowmo_blend_reverse"), s, fps.timeOf(122), 2.0);
     }
     {
+        ProjectSnapshot s = baseSnap(main);
+        Clip& c = s.timeline.tracks[0].clips[0];
+        ops::setClipSpeed(c, main.get(), 0.25, true, fps);
+        c.opticalFlow = true;
+        compare(QStringLiteral("slowmo_optical_flow"), s, fps.timeOf(122), 3.0);
+    }
+    {
         ProjectSnapshot s = withBackground(baseSnap(main));
         s.timeline.tracks[0].clips.clear();
         ops::insertGenerated(s.timeline, *findGeneratorPreset(QStringLiteral("lower_third")), 0, 0, fps);

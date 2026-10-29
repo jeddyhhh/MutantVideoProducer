@@ -28,6 +28,7 @@ private:
     QCheckBox* m_reverse;
     QCheckBox* m_keepSpan;
     QCheckBox* m_blend;
+    QCheckBox* m_flow;
     QCheckBox* m_pitch;
     QLabel* m_info;
     TimeUs m_length = 0;

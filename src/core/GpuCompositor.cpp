@@ -1,4 +1,5 @@
 #include "core/GpuCompositor.h"
+#include "core/OpticalFlow.h"
 #include "core/Dither.h"
 #include "core/CubeLut.h"
 
@@ -205,6 +206,32 @@ void main() {
 
 // Where each uBlock x uBlock block has anything drawn: the first and last such columns and rows in it (r, g: first;
 // b, a: last), r = 255 where nothing is (a scene's drawn bounds, exact, read back small).
+// Optical flow (OpticalFlow.h): the first frame moved forward along the motion, the second back, mixed.
+const char* kFragFlowMix = R"(
+uniform sampler2D uFrom;
+uniform sampler2D uTo;
+uniform sampler2D uFlow; // the motion from uFrom to uTo, in texture coordinates
+uniform float uW;
+float mismatch(vec2 v) {
+    vec3 d = abs(texture(uFrom, vUv - uW * v).rgb - texture(uTo, vUv + (1.0 - uW) * v).rgb);
+    return (d.r + d.g + d.b) * 255.0;
+}
+void main() {
+    // As the CPU (OpticalFlow.cpp): the blended motion, or a neighbouring cell's when it takes the frames to the same colour.
+    vec2 v = texture(uFlow, vUv).xy;
+    ivec2 size = textureSize(uFlow, 0);
+    ivec2 near = ivec2(clamp(vUv * vec2(size) - 0.5, vec2(0.0), vec2(size - 1)) + 0.5); // (the nearest cell, and two around it each way)
+    float best = mismatch(v);
+    for (int k = 0; k < 25; ++k) {
+        if (best <= 24.0) break;
+        vec2 m = texelFetch(uFlow, clamp(near + ivec2(k % 5 - 2, k / 5 - 2), ivec2(0), size - 1), 0).xy;
+        float d = mismatch(m);
+        if (d + 12.0 < best) { best = d; v = m; }
+    }
+    fragColor = mix(texture(uFrom, vUv - uW * v), texture(uTo, vUv + (1.0 - uW) * v), uW);
+}
+)";
+
 const char* kFragMaxAlpha = R"(
 uniform sampler2D uTex;
 uniform int uBlock;
@@ -719,6 +746,10 @@ struct GpuCompositor::Impl : protected QOpenGLExtraFunctions {
         TimeUs rgbaPts = -1;
         Target nextRgba;
         TimeUs nextRgbaPts = -1;
+        // Optical flow between the two (worked out on the CPU from small copies, kept as a texture).
+        GLuint flowTex = 0;
+        QSize flowSize;
+        TimeUs flowPts = -1;
     };
     struct GeneratorCache {
         QString type;
@@ -752,7 +783,7 @@ struct GpuCompositor::Impl : protected QOpenGLExtraFunctions {
     QSize uploadSize;
     std::unique_ptr<QOpenGLShaderProgram> progTex, progSolid, progYuv, progLut, progMatrix, progBlur, progSharpen,
         progBright, progScreen, progVignette, progKey, progNoise, progPixelate, progTransition, progTransitionFx, progRackBlend, progWarp,
-        progChroma, progRadialPass, progCrt, progPsy, progFx, progDiffuse, progConsole, progVgMesh, progLut3D, progEncodeYuv, progMaxAlpha;
+        progChroma, progRadialPass, progCrt, progPsy, progFx, progDiffuse, progConsole, progVgMesh, progLut3D, progEncodeYuv, progMaxAlpha, progFlowMix;
     // .cube LUTs as 3D textures, by the loaded table (kept while it is in the file cache).
     std::map<const CubeLut*, std::pair<std::shared_ptr<const CubeLut>, GLuint>> lut3dTextures;
     GLuint meshVao = 0, meshVbo = 0;
@@ -866,7 +897,7 @@ struct GpuCompositor::Impl : protected QOpenGLExtraFunctions {
                         {&progPixelate, kFragPixelate}, {&progTransition, kFragTransition}, {&progTransitionFx, tfx::kGlsl},
                         {&progRackBlend, kFragRackBlend}, {&progWarp, kFragWarp}, {&progChroma, kFragChroma},
                         {&progRadialPass, kFragRadialPass}, {&progCrt, kFragCrt}, {&progPsy, kFragPsy},
-                        {&progFx, gpufx::kFragFx}, {&progLut3D, kFragLut3D}, {&progMaxAlpha, kFragMaxAlpha}};
+                        {&progFx, gpufx::kFragFx}, {&progLut3D, kFragLut3D}, {&progMaxAlpha, kFragMaxAlpha}, {&progFlowMix, kFragFlowMix}};
         for (auto& p : programs) {
             auto prog = std::make_unique<QOpenGLShaderProgram>();
             if (!prog->addShaderFromSourceCode(QOpenGLShader::Vertex, kVertex)
@@ -1117,6 +1148,10 @@ struct GpuCompositor::Impl : protected QOpenGLExtraFunctions {
             }
         deleteTarget(e.rgba);
         deleteTarget(e.nextRgba);
+        if (e.flowTex) {
+            glDeleteTextures(1, &e.flowTex);
+            e.flowTex = 0;
+        }
     }
 
     void uploadPlane(Entry& e, int i, const uint8_t* data, int linesize, int w, int h, GLenum internal)
@@ -1351,7 +1386,57 @@ struct GpuCompositor::Impl : protected QOpenGLExtraFunctions {
 
         Target* picture = &e->rgba;
         Layer blended;
-        if (clip.frameBlend && !media.info.isStill)
+        if (clip.opticalFlow && !media.info.isStill)
+            if (const AVFrame* next = e->decoder->nextFrame()) {
+                const TimeUs p0 = e->decoder->currentPts(), p1 = e->decoder->nextPts();
+                const double w = p1 > p0 ? double(srcT - p0) / double(p1 - p0) : 0.0;
+                if (w > 0.02 && w < 0.98 && convertFrame(*e, next, e->nextRgba, e->nextRgbaPts, p1)
+                    && e->nextRgba.size() == e->rgba.size()) {
+                    if (e->flowPts != p0 || !e->flowTex) {
+                        // The motion, from small copies of the two read back (the same for every frame in between).
+                        const QSize small = flow::analysisSize(e->rgba.size());
+                        auto shrink = [&](const Target& from) {
+                            Layer l = acquire(small, false);
+                            drawTexture(*l, from.tex, QSizeF(from.w, from.h), QTransform::fromScale(double(small.width()) / from.w,
+                                                                                                double(small.height()) / from.h),
+                                        1.0, QRectF(0, 0, 1, 1), false);
+                            return download(*l);
+                        };
+                        const flow::Field f = flow::estimate(shrink(e->rgba), shrink(e->nextRgba));
+                        if (!f.empty()) {
+                            std::vector<float> rg(size_t(f.w) * size_t(f.h) * 2);
+                            for (size_t i = 0; i < f.dx.size(); ++i) {
+                                rg[i * 2] = f.dx[i];
+                                rg[i * 2 + 1] = f.dy[i];
+                            }
+                            if (!e->flowTex || e->flowSize != QSize(f.w, f.h)) {
+                                if (e->flowTex)
+                                    glDeleteTextures(1, &e->flowTex);
+                                e->flowTex = makeTexture(f.w, f.h, GL_RG32F, GL_LINEAR);
+                                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+                                e->flowSize = QSize(f.w, f.h);
+                            }
+                            glBindTexture(GL_TEXTURE_2D, e->flowTex);
+                            glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, f.w, f.h, GL_RG, GL_FLOAT, rg.data());
+                            e->flowPts = p0;
+                        }
+                    }
+                    if (e->flowTex && e->flowPts == p0) {
+                        blended = acquire(e->rgba.size(), false);
+                        progFlowMix->bind();
+                        bindTexture(0, e->rgba.tex);
+                        bindTexture(1, e->nextRgba.tex);
+                        bindTexture(2, e->flowTex);
+                        progFlowMix->setUniformValue("uFrom", 0);
+                        progFlowMix->setUniformValue("uTo", 1);
+                        progFlowMix->setUniformValue("uFlow", 2);
+                        progFlowMix->setUniformValue("uW", float(w));
+                        fullscreen(*progFlowMix, *blended);
+                        picture = &*blended;
+                    }
+                }
+            }
+        if (clip.frameBlend && !clip.opticalFlow && !media.info.isStill)
             if (const AVFrame* next = e->decoder->nextFrame()) {
                 const TimeUs p0 = e->decoder->currentPts(), p1 = e->decoder->nextPts();
                 const double w = p1 > p0 ? double(srcT - p0) / double(p1 - p0) : 0.0;

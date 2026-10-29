@@ -6,6 +6,14 @@ What changed in each version of Mutant Video Producer. The newest is first.
 
 ### Added
 
+- **Tools > Sync Selected Events by Audio**: lines up a second camera or a separate sound recorder with the first by
+  their sound (to the millisecond), and leaves alone a recording that isn't of the same moment.
+- **Multicam**: Tools > Multicam > Make Multicam from Selected Events puts the cameras under a Multicam track; press
+  1-9 while the edit plays (or click an angle in the Show Angles window) to cut between them, or, stopped, to switch the
+  stretch under the cursor.
+- **Make in-between frames (optical flow)** in Event Properties: slow motion that follows the motion between two frames
+  and draws the frames in between, on the CPU and the GPU.
+
 - Live: **Xbox controllers** (XInput on Windows, joystick devices on Linux) are in the MIDI list as Xbox controller 1-4.
   Buttons and the D-pad map to pads, scenes and the other Learn MIDI actions; the triggers and each stick direction
   drive effect settings through Modulate > MIDI, or press an action when pushed past half way.

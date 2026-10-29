@@ -88,6 +88,10 @@ private:
     bool installAiComponent(const QString& id, const QString& device, QString* error);
     bool m_aiInstallBusy = false;
     void narrationStudio(const std::vector<Caption>& supplied = {}, const QJsonObject& suppliedOptions = {});
+    void syncByAudio();          // Tools > Sync Selected Events by Audio
+    void makeMulticam();         // Tools > Multicam > Make Multicam from Selected Events
+    void multicamAngle(int angle); // 1-9: cut (playing) or switch (stopped) to that angle
+    void showMulticam();         // the angles window
     class VoiceOverDialog* recordVoiceOver(); // Tools > Record Voice-Over (returned for the tests)
     void createCompound();
     void editCompound(int id = 0);

@@ -129,6 +129,33 @@ pull what comes after them:
 - Markers are saved with the project and are undoable.
 - [Detect Beats](audio.md#detect-beats) puts a marker on every beat or bar.
 
+## Sync by audio and multicam
+
+**Tools > Sync Selected Events by Audio** lines up recordings of the same moment: a second camera,
+or a separate sound recorder, with the first.
+
+1. Put each recording on its own track, roughly where it goes.
+2. Select an event from each (their grouped sound comes too).
+3. Choose **Sync Selected Events by Audio**. The event on the topmost track stays where it is, and
+   each of the others moves (with its group) so its sound lines up with it, to the millisecond. A
+   recording that isn't of the same moment (or is too quiet, or not at 100% speed) is left alone,
+   and the status bar says so. It is one undo step.
+
+**Multicam** cuts between cameras as the edit plays:
+
+1. Line the cameras up (Sync by Audio), then select each camera's video event.
+2. **Tools > Multicam > Make Multicam from Selected Events**: a **Multicam** track goes on top,
+   showing angle 1, and the cameras' own tracks are muted (their pictures are the Multicam track's
+   now). The sound is left as it is: keep the best recording playing.
+3. **Tools > Multicam > Show Angles** opens a window with every angle at the playhead; the one
+   showing is outlined.
+4. Play, and press **1** to **9** (on the timeline or in the angles window), or click an angle: the
+   Multicam track cuts to it from there on. Stopped, a number switches the stretch under the cursor
+   to that angle instead.
+
+The Multicam track's events are ordinary events named **Angle 1**, **Angle 2**...: roll an edit
+(**Ctrl+Alt+drag** the cut) to move a cut, and add transitions between them as usual.
+
 ## Remove silences and edit by transcript
 
 Both cut time out of the whole edit: every unlocked track is cut at the same points and closes up,

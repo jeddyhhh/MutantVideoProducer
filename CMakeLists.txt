@@ -122,6 +122,9 @@ add_library(mvp_core STATIC
     src/core/RandomChain.h       src/core/RandomChain.cpp
     src/core/LiveModulation.h    src/core/LiveModulation.cpp
     src/core/MidiInput.h         src/core/MidiInput.cpp
+    src/core/AudioSync.h         src/core/AudioSync.cpp
+    src/core/Multicam.h          src/core/Multicam.cpp
+    src/core/OpticalFlow.h       src/core/OpticalFlow.cpp
     src/core/BeatMarkers.h       src/core/BeatMarkers.cpp
     src/core/EffectMask.h        src/core/EffectMask.cpp
     src/core/Stabilizer.h        src/core/Stabilizer.cpp
@@ -246,7 +249,7 @@ add_executable(mvp WIN32
     src/ui/VoiceOverDialog.h     src/ui/VoiceOverDialog.cpp
     src/ui/RegisteredTo.h
     src/ui/MainWindowYouTube.cpp
-    src/ui/MainWindowSetup.cpp src/ui/MainWindowTools.cpp src/ui/MainWindowCuts.cpp
+    src/ui/MainWindowSetup.cpp src/ui/MainWindowTools.cpp src/ui/MainWindowCuts.cpp src/ui/MainWindowMulticam.cpp
     src/ui/RenderQueue.h src/ui/RenderQueue.cpp
     src/ui/DeliverView.h src/ui/DeliverView.cpp
     src/ui/MainWindowHelp.cpp

@@ -606,6 +606,16 @@ void MainWindow::createActions()
         if (editorActive())
             splitAtSceneChanges();
     }));
+    tools->addAction(act(tr("S&ync Selected Events by Audio"), QKeySequence(), [this] {
+        if (editorActive())
+            syncByAudio();
+    }));
+    QMenu* multicamMenu = tools->addMenu(tr("&Multicam"));
+    multicamMenu->addAction(act(tr("&Make Multicam from Selected Events"), QKeySequence(), [this] {
+        if (editorActive())
+            makeMulticam();
+    }));
+    multicamMenu->addAction(act(tr("Show &Angles"), QKeySequence(), [this] { showMulticam(); }));
     tools->addAction(act(tr("&Remove Silences..."), QKeySequence(), [this] {
         if (editorActive())
             removeSilences();
@@ -1065,6 +1075,7 @@ void MainWindow::connectSignals()
             m_cache->forget(id, m->revision);
         refreshPreview();
     });
+    connect(m_timeline, &TimelineWidget::angleKey, this, &MainWindow::multicamAngle);
     connect(m_timeline, &TimelineWidget::scrubbed, this, [this](TimeUs t) {
         if (QSettings().value(QStringLiteral("audio/scrub"), true).toBool())
             m_engine->scrubAudio(t);
