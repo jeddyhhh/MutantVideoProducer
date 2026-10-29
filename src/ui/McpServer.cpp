@@ -1043,16 +1043,20 @@ QJsonArray McpServer::toolList()
                    {QStringLiteral("time"), prop("number", "seek: seconds")}},
                   {QStringLiteral("action")}));
     t.append(tool("render",
-                  "Renders the project (or a part) to a video file in the background; render_status tells how far it is. "
-                  "Won't overwrite a file unless overwrite is true.",
-                  {{QStringLiteral("path"), prop("string", "Output file, e.g. C:/Users/me/Videos/out.mp4")},
+                  "Renders the project (or a part) to a video file in the background (or in place onto a Rendered track, or as "
+                  "stems); render_status tells how far it is. Won't overwrite a file unless overwrite is true.",
+                  {{QStringLiteral("path"), prop("string", "Output file, e.g. C:/Users/me/Videos/out.mp4 (stems: the folder)")},
+                   {QStringLiteral("in_place"), prop("boolean", "Render from-to (the picture as it is, without Output FX) to a ProRes file that goes onto "
+                                                               "a Rendered track on top when done, so it plays smoothly (Tools > Render Selection to "
+                                                               "New Track); no path or preset")},
+                   {QStringLiteral("stems"), prop("boolean", "Each audio track with sound to its own 24-bit WAV in the folder path, after its "
+                                                            "effects, level, pan and ducking, before Master FX (File > Export Stems)")},
                    {QStringLiteral("preset"), prop("string", "Words from a Render As template name (default: MP4 H.264)")},
                    {QStringLiteral("hardware_encoding"),
                     prop("boolean", "Prefer an available GPU encoder (default true); false preserves the selected template encoder")},
                    {QStringLiteral("from"), prop("number", "Seconds")},
                    {QStringLiteral("to"), prop("number", "Seconds")},
-                   {QStringLiteral("overwrite"), prop("boolean", "Replace an existing file")}},
-                  {QStringLiteral("path")}));
+                   {QStringLiteral("overwrite"), prop("boolean", "Replace an existing file")}}));
     t.append(tool("render_status", "How the render started with render is going (progress 0..1, done, error); cancel stops it.",
                   {{QStringLiteral("cancel"), prop("boolean", "Stop it")}}));
     t.append(tool("undo", "Undoes the last change(s), the same as Ctrl+Z.",
@@ -2684,6 +2688,74 @@ QJsonObject McpServer::ToolCall::tool_render()
 {
     if (server.m_render && !server.m_render->done)
         return errorResult(QStringLiteral("a render is already running (render_status)"));
+    if (a.value(QStringLiteral("in_place")).toBool() || a.value(QStringLiteral("stems")).toBool()) {
+        // Render Selection to New Track (from-to onto a Rendered track on top, when done), or File > Export Stems
+        // (each sounding audio track to a WAV in the folder `path`), in the background as any render.
+        const bool inPlace = a.value(QStringLiteral("in_place")).toBool();
+        const TimeUs from = us(std::max(0.0, num("from"))), to = has("to") ? us(num("to")) : project->timeline().duration();
+        if (to <= from)
+            return errorResult(QStringLiteral("nothing to render there"));
+        std::vector<ExportSettings> jobs;
+        std::shared_ptr<ProjectSnapshot> snap;
+        QString where;
+        if (inPlace) {
+            jobs = {w->inPlaceSettings(from, to)};
+            snap = w->inPlaceSnapshot();
+            where = jobs.front().path;
+        } else {
+            if (str("path").isEmpty())
+                return errorResult(QStringLiteral("stems: give the folder as path"));
+            where = QFileInfo(str("path")).absoluteFilePath();
+            QDir().mkpath(where);
+            jobs = w->stemSettings(where, from, to);
+            snap = w->stemSnapshot();
+            if (jobs.empty())
+                return errorResult(QStringLiteral("there are no audio tracks with sound"));
+        }
+        server.m_render = std::make_shared<Render>();
+        std::shared_ptr<Render> r = server.m_render;
+        r->path = where;
+        r->preset = inPlace ? QStringLiteral("Render in place (ProRes 422 LT)") : QStringLiteral("Stems (24-bit WAV)");
+        if (inPlace && hw::settings().gpuCompositing)
+            r->surface = createGpuSurface();
+        r->thread = std::thread([r, snap, jobs] {
+            bool ok = true;
+            for (size_t k = 0; k < jobs.size() && ok; ++k) {
+                Exporter exporter;
+                ok = exporter.run(
+                    *snap, jobs[k],
+                    [&](double p) {
+                        r->progress = (double(k) + p) / double(jobs.size());
+                        return !r->cancel.load() && !r->monitor->cancel.load();
+                    },
+                    r->surface.get(), [&](const ExportStatus& value) { r->monitor->update(value); });
+                if (!ok)
+                    r->error = r->cancel ? QStringLiteral("cancelled") : exporter.error();
+            }
+            r->ok = ok;
+            r->monitor->done = true;
+            r->done = true;
+        });
+        if (inPlace) { // (placed when it is done)
+            auto* completion = new QTimer(w);
+            MainWindow* win = w;
+            QObject::connect(completion, &QTimer::timeout, win, [r, completion, win, where, from, to] {
+                if (!r->done)
+                    return;
+                completion->stop();
+                completion->deleteLater();
+                if (r->ok)
+                    win->placeRendered(where, from, to);
+            });
+            completion->start(200);
+        }
+        QJsonArray files;
+        for (const ExportSettings& job : jobs)
+            files.append(job.path);
+        return jsonResult({{QStringLiteral("rendering"), where}, {QStringLiteral("files"), files}, {QStringLiteral("seconds"), sec(to - from)},
+                           {QStringLiteral("note"), inPlace ? QStringLiteral("it goes onto a Rendered track on top when render_status says done")
+                                                            : QStringLiteral("each track's stem, before Master FX")}});
+    }
     const QString path = QFileInfo(str("path")).absoluteFilePath();
     if (str("path").isEmpty())
         return errorResult(QStringLiteral("give a path"));

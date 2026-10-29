@@ -62,24 +62,8 @@ void MainWindow::renderInPlace()
                                  tr("Make a time selection (drag in the bar above the ruler) or select events first: that stretch is rendered."));
         return;
     }
-    const auto preset = std::find_if(exportPresets().begin(), exportPresets().end(),
-                                     [](const ExportPreset& p) { return p.name == QLatin1String("MOV - ProRes 422 LT"); });
-    if (preset == exportPresets().end())
-        return;
-    ExportSettings s = settingsFromPreset(*preset, m_project->settings());
-    s.audioEncoder.clear(); // (the picture only: the sound keeps playing live from the events)
-    s.rangeStart = from;
-    s.rangeEnd = to;
-    const QString folder = renderFolder(*m_project, QStringLiteral("rendered"));
-    QDir().mkpath(folder);
-    const QString base = m_project->filePath().isEmpty() ? tr("Untitled") : QFileInfo(m_project->filePath()).completeBaseName();
-    s.path = QDir(folder).filePath(QStringLiteral("%1 %2-%3.mov").arg(base, clock(from), clock(to)));
-    for (int n = 2; QFileInfo::exists(s.path); ++n)
-        s.path = QDir(folder).filePath(QStringLiteral("%1 %2-%3 (%4).mov").arg(base, clock(from), clock(to)).arg(n));
-
-    // The whole picture of that stretch, as it looks, but without Output FX (they apply to the rendered track again).
-    auto snap = std::make_shared<ProjectSnapshot>(*m_project->snapshot());
-    snap->timeline.outputEffects.clear();
+    const ExportSettings s = inPlaceSettings(from, to);
+    const auto snap = inPlaceSnapshot();
     std::unique_ptr<QOffscreenSurface> gpuSurface = hw::settings().gpuCompositing ? createGpuSurface() : nullptr;
     auto monitor = std::make_shared<RenderMonitor>();
     bool ok = false;
@@ -102,9 +86,39 @@ void MainWindow::renderInPlace()
             statusBar()->showMessage(tr("Render in place stopped: %1").arg(error), 8000);
         return;
     }
-    const MediaInfo info = probeMedia(s.path);
+    placeRendered(s.path, from, to);
+}
+
+ExportSettings MainWindow::inPlaceSettings(TimeUs from, TimeUs to) const
+{
+    const auto preset = std::find_if(exportPresets().begin(), exportPresets().end(),
+                                     [](const ExportPreset& p) { return p.name == QLatin1String("MOV - ProRes 422 LT"); });
+    ExportSettings s = settingsFromPreset(*preset, m_project->settings());
+    s.audioEncoder.clear(); // (the picture only: the sound keeps playing live from the events)
+    s.rangeStart = from;
+    s.rangeEnd = to;
+    const QString folder = renderFolder(*m_project, QStringLiteral("rendered"));
+    QDir().mkpath(folder);
+    const QString base = m_project->filePath().isEmpty() ? tr("Untitled") : QFileInfo(m_project->filePath()).completeBaseName();
+    s.path = QDir(folder).filePath(QStringLiteral("%1 %2-%3.mov").arg(base, clock(from), clock(to)));
+    for (int n = 2; QFileInfo::exists(s.path); ++n)
+        s.path = QDir(folder).filePath(QStringLiteral("%1 %2-%3 (%4).mov").arg(base, clock(from), clock(to)).arg(n));
+    return s;
+}
+
+std::shared_ptr<ProjectSnapshot> MainWindow::inPlaceSnapshot() const
+{
+    // The whole picture, as it looks, but without Output FX (they apply to the rendered track again).
+    auto snap = std::make_shared<ProjectSnapshot>(*m_project->snapshot());
+    snap->timeline.outputEffects.clear();
+    return snap;
+}
+
+bool MainWindow::placeRendered(const QString& path, TimeUs from, TimeUs to)
+{
+    const MediaInfo info = probeMedia(path);
     if (!info.ok() || info.video.empty())
-        return;
+        return false;
     Timeline tl = m_project->timeline();
     const int mediaId = m_project->addMedia(info);
     // On a "Rendered" track on top (one with room, else a new one): it hides what it was made from, so playback
@@ -134,6 +148,7 @@ void MainWindow::renderInPlace()
     statusBar()->showMessage(tr("Rendered %1 s onto the Rendered track: it plays from that file now. Mute or delete it to edit what's under it.")
                                  .arg(double(to - from) / kUsPerSecond, 0, 'f', 1),
                              10000);
+    return true;
 }
 
 void MainWindow::exportStems()
@@ -157,26 +172,8 @@ void MainWindow::exportStems()
     settings.setValue(Profiles::instance().settingsKey(QStringLiteral("dirs/stems")), folder);
     const TimeUs from = m_timeline->hasRegion() ? m_timeline->regionStart() : 0;
     const TimeUs to = m_timeline->hasRegion() ? m_timeline->regionEnd() : tl.duration();
-    // Each stem: its track alone, after its own FX, level, pan and ducking, before Master FX and the master volume
-    // (the stems add up to the mix as it goes into the master).
-    auto snap = std::make_shared<ProjectSnapshot>(*m_project->snapshot());
-    snap->timeline.audioMasterEffects.clear();
-    snap->timeline.audioMasterLevel = 1.0f;
-    const QString base = m_project->filePath().isEmpty() ? tr("Untitled") : QFileInfo(m_project->filePath()).completeBaseName();
-    static const QRegularExpression illegal(QStringLiteral("[\\\\/:*?\"<>|]"));
-    std::vector<ExportSettings> jobs;
-    for (const Track* t : tracks) {
-        ExportSettings s;
-        s.muxer = QStringLiteral("wav");
-        s.audioEncoder = QStringLiteral("pcm_s24le");
-        s.sampleRate = 48000;
-        s.channels = 2;
-        s.rangeStart = from;
-        s.rangeEnd = to;
-        s.onlyAudioTrack = t->id;
-        s.path = QDir(folder).filePath(QStringLiteral("%1 - %2.wav").arg(base, QString(t->name).replace(illegal, QStringLiteral(" ")).simplified()));
-        jobs.push_back(s);
-    }
+    const auto snap = stemSnapshot();
+    const std::vector<ExportSettings> jobs = stemSettings(folder, from, to);
     QProgressDialog progress(tr("Exporting stems..."), tr("Stop"), 0, int(jobs.size()) * 100, this);
     progress.setWindowModality(Qt::WindowModal);
     progress.setMinimumDuration(0);
@@ -212,4 +209,36 @@ void MainWindow::exportStems()
         QMessageBox::warning(this, tr("Export Stems"), failed.join(QLatin1Char('\n')));
     else if (!cancel)
         statusBar()->showMessage(tr("Exported %n stem(s) to %1", nullptr, int(jobs.size())).arg(QDir::toNativeSeparators(folder)), 10000);
+}
+
+std::shared_ptr<ProjectSnapshot> MainWindow::stemSnapshot() const
+{
+    // Each stem: its track alone, after its own FX, level, pan and ducking, before Master FX and the master volume
+    // (the stems add up to the mix as it goes into the master).
+    auto snap = std::make_shared<ProjectSnapshot>(*m_project->snapshot());
+    snap->timeline.audioMasterEffects.clear();
+    snap->timeline.audioMasterLevel = 1.0f;
+    return snap;
+}
+
+std::vector<ExportSettings> MainWindow::stemSettings(const QString& folder, TimeUs from, TimeUs to) const
+{
+    const QString base = m_project->filePath().isEmpty() ? tr("Untitled") : QFileInfo(m_project->filePath()).completeBaseName();
+    static const QRegularExpression illegal(QStringLiteral("[\\/:*?\"<>|]"));
+    std::vector<ExportSettings> jobs;
+    for (const Track& t : m_project->timeline().tracks) {
+        if (t.type != TrackType::Audio || t.muted || t.clips.empty())
+            continue;
+        ExportSettings s;
+        s.muxer = QStringLiteral("wav");
+        s.audioEncoder = QStringLiteral("pcm_s24le");
+        s.sampleRate = 48000;
+        s.channels = 2;
+        s.rangeStart = from;
+        s.rangeEnd = to;
+        s.onlyAudioTrack = t.id;
+        s.path = QDir(folder).filePath(QStringLiteral("%1 - %2.wav").arg(base, QString(t.name).replace(illegal, QStringLiteral(" ")).simplified()));
+        jobs.push_back(s);
+    }
+    return jobs;
 }

@@ -57,7 +57,7 @@ for each step and the checks that catch mistakes. It is how the *Snowbank* episo
 | ai_components | Lists optional Windows speech/RVC engines and upstream sources; installs CPU or CUDA environments from Astral/PyPI/PyTorch. Installation shows progress, verifies locked wheels and needs no separate Python install. |
 | get_frame | Looks at any frame as an image. |
 | transport | Plays, stops and moves the cursor. |
-| render, render_status | Renders in the background with any Render As template; opens the detailed Render Status window and exposes statistics in `render_status.details`. |
+| render, render_status | Renders in the background with any Render As template; opens the detailed Render Status window and exposes statistics in `render_status.details`. `in_place` renders from-to onto a Rendered track on top (Tools > Render Selection to New Track); `stems` writes each audio track to a WAV in the folder `path` (File > Export Stems). |
 | undo, redo, save_project, set_project_settings | Undo, save, frame size and rate. |
 | collect_project | Creates a portable project/media folder, opens copying progress, and returns the project, report, missing files and dependency warnings. |
 

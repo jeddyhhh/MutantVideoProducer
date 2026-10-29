@@ -942,7 +942,8 @@ int cmdGenerators(const QString& outDir)
         QPainter(&tile).drawImage(0, 0, mid);
         sheet.push_back(tile);
         const double cov = coverage(mid);
-        const bool blank = preset.id == QLatin1String("graphics_blank") || preset.id == QLatin1String("animation_blank");
+        const bool blank = preset.id == QLatin1String("graphics_blank") || preset.id == QLatin1String("animation_blank")
+                           || preset.id == QLatin1String("adjustment"); // (no picture of its own)
         check(!mid.isNull() && (blank ? cov == 0 : cov > 0.002), QStringLiteral("generator preset %1  (%2% of frame drawn, %3 ms at 720p)")
                                .arg(preset.name)
                                .arg(cov * 100, 0, 'f', 1)

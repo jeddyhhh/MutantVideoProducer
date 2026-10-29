@@ -14,6 +14,8 @@ What changed in each version of Mutant Video Producer. The newest is first.
   stacked footage too.
 - **File > Export Stems**: each audio track with sound to its own 24-bit WAV, after its effects, level, pan and
   ducking, before Master FX.
+- AI control: `render` takes `in_place` (render from-to onto a Rendered track) and `stems` (a WAV per audio track
+  into the folder `path`).
 
 - **Tools > Sync Selected Events by Audio**: lines up a second camera or a separate sound recorder with the first by
   their sound (to the millisecond), and leaves alone a recording that isn't of the same moment.

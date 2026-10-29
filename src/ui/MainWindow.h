@@ -11,6 +11,7 @@
 #include <QTimer>
 #include <memory>
 #include <optional>
+#include "core/Exporter.h"
 #include <vector>
 
 class DeviceChainView;
@@ -94,6 +95,12 @@ private:
     void showMulticam();         // the angles window
     void renderInPlace();        // Tools > Render Selection to New Track
     void exportStems();          // File > Export Stems
+    // (their parts, for AI control too)
+    ExportSettings inPlaceSettings(TimeUs from, TimeUs to) const;
+    std::shared_ptr<ProjectSnapshot> inPlaceSnapshot() const;
+    bool placeRendered(const QString& path, TimeUs from, TimeUs to);
+    std::shared_ptr<ProjectSnapshot> stemSnapshot() const;
+    std::vector<ExportSettings> stemSettings(const QString& folder, TimeUs from, TimeUs to) const;
     class VoiceOverDialog* recordVoiceOver(); // Tools > Record Voice-Over (returned for the tests)
     void createCompound();
     void editCompound(int id = 0);
