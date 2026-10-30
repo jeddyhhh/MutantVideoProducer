@@ -389,6 +389,41 @@ int MainWindow::runEditorTest(QStringList& log)
                                                        .arg(updated));
                 m_project->setTimelineLive(initial);
             }
+            if (def) {
+                // The same on the Live tab's FX chain: double-clicked, it opens the Effect Builder.
+                Timeline tl = m_project->timeline();
+                EffectInstance fx = makeEffect(*def, tl.allocId());
+                const int effectId = fx.id;
+                tl.liveEffects.push_back(fx);
+                m_project->applyEdit(tl, QStringLiteral("test"));
+                DeviceChainView* live = m_live->devices();
+                live->setTarget({FxTarget::Kind::Live, 0});
+                QApplication::processEvents();
+                const auto hints = live->findChildren<QLabel*>(QStringLiteral("userEffectHint"));
+                const auto editorsBefore = findChildren<NodeEffectEditor*>().size();
+                if (hints.size() == 1) {
+                    QWidget* label = hints.front();
+                    const QPointF at(label->width() / 2.0, label->height() / 2.0);
+                    QMouseEvent dbl(QEvent::MouseButtonDblClick, at, label->mapToGlobal(at), Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+                    QApplication::sendEvent(label, &dbl);
+                }
+                const auto editors = findChildren<NodeEffectEditor*>();
+                NodeEffectEditor* opened = editors.size() > editorsBefore ? editors.back() : nullptr;
+                bool updated = false;
+                if (opened) {
+                    opened->setParam(blend, QStringLiteral("opacity"), 0.3);
+                    opened->saveTo(file);
+                    const EffectChain& after = m_project->timeline().liveEffects;
+                    updated = !after.empty() && after.back().id == effectId;
+                    opened->close();
+                }
+                check(hints.size() == 1 && opened && updated, QStringLiteral("a user effect in the Live FX says to double-click it (%1); that opens the "
+                                                                              "Effect Builder (%2), and saving there keeps it in the Live FX (%3)")
+                                                                  .arg(hints.size())
+                                                                  .arg(opened != nullptr)
+                                                                  .arg(updated));
+                m_project->setTimelineLive(initial);
+            }
             QFile::remove(file);
         }
         {

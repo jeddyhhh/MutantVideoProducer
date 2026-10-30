@@ -241,7 +241,7 @@ void MainWindow::splitAtMarkers()
 }
 
 namespace {
-// An effect instance anywhere in the timeline (events, tracks, the output, inside racks), by its id.
+// An effect instance anywhere in the timeline (events, tracks, the output, the Live tab, inside racks), by its id.
 EffectInstance* findInstance(Timeline& tl, int id)
 {
     std::function<EffectInstance*(EffectChain&)> in = [&](EffectChain& chain) -> EffectInstance* {
@@ -261,7 +261,13 @@ EffectInstance* findInstance(Timeline& tl, int id)
             if (EffectInstance* found = in(c.effects))
                 return found;
     }
-    return in(tl.outputEffects);
+    for (LivePad& pad : tl.livePads)
+        if (EffectInstance* found = in(pad.effects))
+            return found;
+    for (EffectChain* chain : {&tl.outputEffects, &tl.liveEffects, &tl.liveLayerEffects})
+        if (EffectInstance* found = in(*chain))
+            return found;
+    return nullptr;
 }
 } // namespace
 

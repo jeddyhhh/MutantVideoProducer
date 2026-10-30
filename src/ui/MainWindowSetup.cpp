@@ -1132,6 +1132,7 @@ void MainWindow::connectSignals()
     connect(m_timeline, &TimelineWidget::stabilizeRequested, this, &MainWindow::stabilizeClip);
     connect(m_timeline, &TimelineWidget::matchColourRequested, this, &MainWindow::matchColour);
     connect(m_devices, &DeviceChainView::userEffectRequested, this, &MainWindow::editUserEffect);
+    connect(m_live->devices(), &DeviceChainView::userEffectRequested, this, &MainWindow::editUserEffect);
     connect(m_bin, &MediaBin::relinkRequested, this, [this](int id) { relinkMissing(id); });
     connect(m_bin, &MediaBin::proxyRequested, this, [this](const QList<int>& ids) { createProxies(ids, false, true); });
     connect(m_bin, &MediaBin::proxyDeleteRequested, this, &MainWindow::deleteProxies);
