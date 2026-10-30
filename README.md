@@ -13,11 +13,9 @@
   <a href="CHANGELOG.md">Changelog</a>
 </p>
 
-![Frames from Snowbank, a cartoon series made entirely inside Mutant Video Producer](docs/screenshots/readme/made-in-mvp.jpg)
-
-*Every frame above is from **Snowbank**, a ten-minute-an-episode cartoon series written, drawn, animated, voiced,
-captioned, mixed and rendered inside Mutant Video Producer: the characters, sets, lip sync, camera work, subtitles,
-lower thirds, snowstorms and the "TO BE CONTINUED" all come from the program's own tools.*
+Cut a vlog, a music video or a documentary. Animate a cartoon with lip-synced voices. Build your own effects from
+nodes, play visuals live to a crowd, then check, render and publish the result. One program does all of it,
+start to finish.
 
 Mutant Video Producer (MVP) runs on Windows and Linux and has three workspaces:
 

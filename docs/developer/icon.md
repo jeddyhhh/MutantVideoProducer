@@ -1,7 +1,7 @@
 # Mutant Video Producer icon
 
 The selected icon is a symmetrical, pointed hexagonal reactor emblem in neon green
-and cyan/blue. Iridescent glass and fine glitches surround a clean central play symbol.
+and cyan/blue. Iridescent glass and fine glitches surround a calm, empty dark centre.
 
 The canonical RGBA source is `data/mvp-icon.png`; `data/mvp.ico` contains
 16, 24, 32, 48, 64, 128 and 256 pixel versions for Windows. The PNG is embedded
@@ -33,3 +33,8 @@ Make one precise alignment correction to this icon. The right-facing play triang
 ### Pass 4
 
 Edit the attached selected Mutant Video Producer icon with ONE localized cleanup: simplify the central play-button area. Remove every horizontal glitch streak, scan line, offset echo and bright circuit fragment crossing the play triangle or its immediate dark surround. Make this middle area a calm clean dark navy inset with generous uninterrupted negative space framing a single crisp right-facing play triangle. Simplify the triangle surface to smooth neon green-to-cyan glass with a restrained bevel and single clean rim, without rainbow noise, duplicate borders or stray diagonal shards behind it. Preserve the play triangle's existing optically centered position, size and vertical height. Preserve the symmetrical angular M/reactor geometry and pointed hexagonal badge, green left/blue right palette, iridescent prismatic glass on the outer emblem and badge rim. Retain the fine holographic glitch treatment only on the outer left/right areas; glitch streaks must stop before entering the central inset. Keep all other details unchanged. One front-facing square icon, transparent outside the hexagonal silhouette, no text or watermark.
+
+### Pass 5
+
+The central play triangle was painted out afterwards (the inset filled with a smooth fit of its own navy), at the
+user's request.
