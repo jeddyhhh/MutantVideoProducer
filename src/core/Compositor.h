@@ -57,6 +57,13 @@ private:
         flow::Field flow;
         TimeUs flowPts = -1;
         QSize flowSize;
+        // Noise reduction: the frame before, and the cleaned-up frame (until the frame or the strength changes).
+        QImage prevImage;
+        TimeUs prevImagePts = -1;
+        QSize prevImageSize;
+        QImage denoised;
+        TimeUs denoisedPts = -1;
+        double denoisedStrength = 0;
     };
     struct GeneratorCache {
         QString type;
@@ -72,7 +79,9 @@ private:
         uint64_t lastUsed = 0;
     };
 
-    void renderTrack(const ProjectSnapshot& snap, const Track& track, TimeUs t, QImage& canvas, const RenderContext& base);
+    // With a matte (the track matte above it, rendered), the track shows only through it (TrackMatte matteMode).
+    void renderTrack(const ProjectSnapshot& snap, const Track& track, TimeUs t, QImage& canvas, const RenderContext& base,
+                     const QImage* matte = nullptr, int matteMode = 0);
     // Draws the event's picture into `target` (fitted, letterboxed); returns
     // the rectangle it occupies, or an empty rect if nothing was drawn.
     QRectF drawClip(const ProjectSnapshot& snap, const Clip& clip, TimeUs t, QImage& target, double opacity);

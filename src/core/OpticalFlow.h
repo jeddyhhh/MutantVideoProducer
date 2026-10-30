@@ -8,6 +8,7 @@
 // it, and mixes them.
 
 #include <QImage>
+#include <algorithm>
 #include <vector>
 
 namespace flow {
@@ -25,5 +26,13 @@ QSize analysisSize(QSize picture);
 Field estimate(const QImage& a, const QImage& b);
 // The frame a fraction `w` (0..1) of the way from a to b.
 QImage interpolate(const QImage& a, const QImage& b, const Field& f, float w);
+
+// Noise reduction (Clip::denoise, strength 0..1): each pixel averaged with the 3 x 3 around it in the frame, and in the
+// frames before and after it followed along the motion (toPrev / toNext: from the frame to them; either may be
+// missing), each weighted by how alike it is in colour. Edges and moving things stay sharp; grain, which changes from
+// frame to frame, averages out. The GPU compositor's shader does the same.
+QImage denoise(const QImage& frame, const QImage* prev, const Field* toPrev, const QImage* next, const Field* toNext, double strength);
+// The colour difference (0..1, the root mean square of the three channels) still taken as alike at that strength.
+inline float denoiseSimilarity(double strength) { return float(0.02 + 0.1 * std::clamp(strength, 0.0, 1.0)); }
 
 } // namespace flow

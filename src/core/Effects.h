@@ -158,6 +158,7 @@ const std::vector<ParamDef>& rackChainParams(bool audio);  // "level" (dB / %), 
 // Video chains are layered bottom-up with these modes (CPU and GPU agree).
 enum class BlendMode { Normal, Add, Screen, Multiply, Overlay, Lighten, Darken, Difference };
 QStringList blendModeNames();
+QStringList trackMatteNames(); // (TrackMatte order)
 EffectInstance makeRack(int id); // empty: add chains with makeRackChain
 RackChain makeRackChain(bool audio, const QString& name, EffectChain effects = {});
 // Chains of a rack that play: enabled, and soloed ones if any are soloed.

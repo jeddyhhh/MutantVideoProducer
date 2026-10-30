@@ -88,6 +88,7 @@ struct Clip {
     bool opticalFlow = false;     // video: make in-between frames by following the motion (smoother still; see OpticalFlow.h)
     double stabilize = 0;         // video: shake smoothed over this many seconds (0 = off; see Stabilizer.h)
     bool stabilizeZoom = true;    // zoom in to hide the edges the correction moves into view
+    double denoise = 0;           // video: noise reduction, 0 (off) .. 1 (strong; see flow::denoise)
     TimeUs loopLength = 0;        // > 0: the file repeats every loopLength (the event runs on past its end)
     Envelope velocity{false, 1.0, {}}; // speed ramp: rate multiplier over event-local time
                                        // (kMinVelocity .. kMaxVelocity), on top of `speed`
@@ -130,6 +131,7 @@ struct Track {
     Envelope panEnvelope{false, 0.0, {}}; // audio: -1 (left) .. 1 (right), added to the pan slider
     Envelope composite{false, 1.0, {}}; // video: opacity multiplier 0 .. 1
     int blend = 0;           // video: compositing mode over the tracks below (BlendMode)
+    int matte = 0;           // video: a track matte (TrackMatte) for the track below: not drawn, it decides where that one shows
     // Audio: auto ducking. While the track with id duckUnder (e.g. a voice)
     // has sound, this one (e.g. music) is turned down by duckAmount dB.
     int duckUnder = 0;
@@ -320,6 +322,11 @@ struct ProjectSnapshot;
 // project's shape, no alpha, no effects, fades, pan/crop or transparency on it or its track): everything below it is
 // hidden, so the compositors start there. -1: none.
 int coveringTrack(const ProjectSnapshot& snap, TimeUs t);
+// Track mattes (Track::matte): how a matte track's picture lets the visual track below it show, where it is drawn
+// (alpha) or where it is bright (luma), or the opposite.
+enum TrackMatte { MatteNone, MatteAlpha, MatteAlphaInverted, MatteLuma, MatteLumaInverted };
+// The matte over visual track ti: the next visual track above it, when that is an unmuted matte; else -1.
+int matteAbove(const Timeline& tl, int ti);
 
 struct PackedTimeline; // the undo history's form of a timeline (Project.cpp)
 

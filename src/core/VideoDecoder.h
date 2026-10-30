@@ -35,6 +35,10 @@ public:
     // The frame following the one last returned (for frame blending), or null.
     const AVFrame* nextFrame() const { return (!m_shownFromHistory && m_hasNext) ? m_next.get() : nullptr; }
     TimeUs nextPts() const { return m_nextPts; }
+    // The frame before the one last returned, when it was decoded just before it (else null). Kept only once asked
+    // for with setKeepPrevious (noise reduction looks at both neighbours).
+    const AVFrame* previousFrame(TimeUs* pts) const;
+    void setKeepPrevious(bool on) { m_keepPrevious = on; }
     TimeUs lastRequest() const { return m_lastRequest; }
     const QString& path() const { return m_path; }
     // True while frames come from the hardware decoder.
@@ -58,6 +62,10 @@ private:
     ff::PacketPtr m_pkt;
     ff::FramePtr m_cur;
     ff::FramePtr m_next;
+    ff::FramePtr m_prev;
+    TimeUs m_prevPts = 0;
+    bool m_hasPrev = false;
+    bool m_keepPrevious = false;
     AVStream* m_stream = nullptr;
 
     TimeUs m_startOffset = 0;

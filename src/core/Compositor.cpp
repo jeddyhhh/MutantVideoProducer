@@ -144,6 +144,9 @@ QRectF Compositor::drawClip(const ProjectSnapshot& snap, const Clip& clip, TimeU
     Entry* e = acquire(media, clip.streamIndex, clip.id, srcT);
     if (!e)
         return {};
+    const bool denoise = clip.denoise > 0 && !media.info.isStill;
+    if (denoise)
+        e->decoder->setKeepPrevious(true);
     const AVFrame* frame = e->decoder->frameAt(srcT);
     if (!frame)
         return {};
@@ -178,6 +181,28 @@ QRectF Compositor::drawClip(const ProjectSnapshot& snap, const Clip& clip, TimeU
     QImage picture = convert(frame, e->decoder->currentPts(), e->image, e->imagePts, e->imageSize);
     if (picture.isNull())
         return {};
+
+    // Noise reduction, with the frames either side (followed along the motion).
+    if (denoise) {
+        const TimeUs p0 = e->decoder->currentPts();
+        if (e->denoisedPts != p0 || e->denoised.size() != picture.size() || e->denoisedStrength != clip.denoise) {
+            QImage prev, next;
+            flow::Field toPrev, toNext;
+            TimeUs pp = -1;
+            if (const AVFrame* f = e->decoder->previousFrame(&pp))
+                prev = convert(f, pp, e->prevImage, e->prevImagePts, e->prevImageSize);
+            if (const AVFrame* f = e->decoder->nextFrame())
+                next = convert(f, e->decoder->nextPts(), e->nextImage, e->nextImagePts, e->nextImageSize);
+            if (prev.size() == picture.size())
+                toPrev = flow::estimate(picture, prev);
+            if (next.size() == picture.size())
+                toNext = flow::estimate(picture, next);
+            e->denoised = flow::denoise(picture, &prev, &toPrev, &next, &toNext, clip.denoise);
+            e->denoisedPts = p0;
+            e->denoisedStrength = clip.denoise;
+        }
+        picture = e->denoised;
+    }
 
     // Slow motion with frames made in between (optical flow): follow the motion towards the next frame.
     if (clip.opticalFlow && !media.info.isStill)
@@ -396,7 +421,7 @@ void Compositor::applyTransition(const TransitionSpec& spec, QImage& target, con
 }
 
 void Compositor::renderTrack(const ProjectSnapshot& snap, const Track& track, TimeUs t, QImage& canvas,
-                             const RenderContext& base)
+                             const RenderContext& base, const QImage* matte, int matteMode)
 {
     std::vector<size_t> active;
     for (size_t ci = 0; ci < track.clips.size(); ++ci) {
@@ -409,8 +434,8 @@ void Compositor::renderTrack(const ProjectSnapshot& snap, const Track& track, Ti
     if (active.empty())
         return;
 
-    // Track FX and blend modes work on the whole track's picture.
-    const bool useTrackLayer = hasActiveEffects(track.effects) || track.blend != 0;
+    // Track FX, blend modes and mattes work on the whole track's picture.
+    const bool useTrackLayer = hasActiveEffects(track.effects) || track.blend != 0 || matte;
     QImage trackLayer;
     if (useTrackLayer)
         trackLayer = transparentImage(canvas.size());
@@ -462,6 +487,8 @@ void Compositor::renderTrack(const ProjectSnapshot& snap, const Track& track, Ti
         ctx.time = t;
         ctx.contentRect = QRectF(trackLayer.rect());
         applyChain(track.effects, trackLayer, ctx);
+        if (matte)
+            imageops::applyMatte(trackLayer, *matte, matteMode);
         if (track.blend != 0)
             imageops::blendLayer(canvas, trackLayer, float(trackLevel), track.blend);
         else
@@ -494,9 +521,15 @@ QImage Compositor::render(const ProjectSnapshot& snap, TimeUs t, QSize outSize)
     const int covering = coveringTrack(snap, t);
     for (int ti = covering >= 0 ? covering : int(tracks.size()) - 1; ti >= 0; --ti) {
         const Track& track = tracks[ti];
-        if (!isVisualTrack(track.type) || track.muted || (anySolo && !track.solo))
+        if (!isVisualTrack(track.type) || track.muted || (anySolo && !track.solo) || track.matte) // (a matte: with the track below)
             continue;
-        renderTrack(snap, track, t, canvas, base);
+        if (const int mi = matteAbove(snap.timeline, ti); mi >= 0) {
+            QImage matte = transparentImage(outSize);
+            renderTrack(snap, tracks[size_t(mi)], t, matte, base);
+            renderTrack(snap, track, t, canvas, base, &matte, tracks[size_t(mi)].matte);
+        } else {
+            renderTrack(snap, track, t, canvas, base);
+        }
         applyAdjustments(track, t, canvas, base);
     }
 

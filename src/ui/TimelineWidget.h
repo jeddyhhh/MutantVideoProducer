@@ -78,6 +78,11 @@ public:
     void moveTrack(int from, int to);
     void toggleTrackLock(int trackIndex);
     void setTrackBlend(int trackIndex, int mode);
+    void setTrackMatte(int trackIndex, int mode);
+    // Noise reduction (0 off .. 1 strong) on the selected video events.
+    void setDenoise(double amount);
+    // The Compositing Mode and Track Matte choices for a video track (the header's Mode box and its right-click menu).
+    void addCompositingMenus(QMenu* menu, int trackIndex);
     // Transitions: removes the one at an event's start / end (a hard cut),
     // or at both ends of every selected video event.
     void removeTransitionAt(int clipId, bool atStart);
@@ -156,6 +161,7 @@ signals:
     void cursorMoved(TimeUs t);
     void beatsRequested(); // right-click > Detect Beats
     void stabilizeRequested(int clipId);
+    void matchColourRequested();
     void selectionChanged();
     void filesDropped(const QStringList& paths, TimeUs at, int trackIndex);
     void clipEffectsRequested(int clipId);

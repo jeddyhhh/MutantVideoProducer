@@ -318,12 +318,7 @@ void TimelineWidget::headerPress(QPoint p)
     }
     if (isVisualTrack(track.type) && hr.height() >= 62 && blendRect(hr).contains(p)) {
         QMenu menu(this);
-        const QStringList modes = blendModeNames();
-        for (int i = 0; i < int(modes.size()); ++i) {
-            QAction* a = menu.addAction(modes[i], this, [this, ti, i] { setTrackBlend(ti, i); });
-            a->setCheckable(true);
-            a->setChecked(track.blend == i);
-        }
+        addCompositingMenus(&menu, ti);
         menu.exec(viewport()->mapToGlobal(blendRect(hr).bottomLeft()));
         return;
     }

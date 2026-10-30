@@ -232,6 +232,43 @@ void main() {
 }
 )";
 
+// Noise reduction (as the CPU's flow::denoise): the 3 x 3 around each pixel in the frame and in the frames either side
+// (followed along the motion), weighted by how alike they are.
+const char* kFragDenoise = R"(
+uniform sampler2D uCur;
+uniform sampler2D uPrev;
+uniform sampler2D uNext;
+uniform sampler2D uFlowPrev; // the motion from uCur to uPrev / uNext, in texture coordinates
+uniform sampler2D uFlowNext;
+uniform int uHasPrev;
+uniform int uHasNext;
+uniform float uSim;
+vec4 centre;
+vec4 sum;
+float total;
+void taps(sampler2D tex, vec2 at, vec2 px) {
+    for (int k = 0; k < 9; ++k) {
+        ivec2 o = ivec2(k % 3 - 1, k / 3 - 1);
+        vec4 q = texture(tex, at + vec2(o) * px);
+        vec3 d = q.rgb - centre.rgb;
+        float near = (o.x == 0 && o.y == 0) ? 1.0 : ((o.x == 0 || o.y == 0) ? 0.6 : 0.37);
+        float w = near * exp(-dot(d, d) / 3.0 / (2.0 * uSim * uSim));
+        sum += w * q;
+        total += w;
+    }
+}
+void main() {
+    vec2 px = 1.0 / vec2(textureSize(uCur, 0));
+    centre = texture(uCur, vUv);
+    sum = vec4(0.0);
+    total = 0.0;
+    taps(uCur, vUv, px);
+    if (uHasPrev != 0) taps(uPrev, vUv + texture(uFlowPrev, vUv).xy, px);
+    if (uHasNext != 0) taps(uNext, vUv + texture(uFlowNext, vUv).xy, px);
+    fragColor = sum / total;
+}
+)";
+
 const char* kFragMaxAlpha = R"(
 uniform sampler2D uTex;
 uniform int uBlock;
@@ -279,6 +316,19 @@ void main() {
     vec4 a = texture(uTex, vUv);
     vec4 b = min(texture(uGlow, vUv) * uIntensity, vec4(1.0));
     fragColor = a + b - a * b;
+}
+)";
+
+// A track matte (TrackMatte uMode, as imageops::applyMatte): the layer kept where the matte is drawn or bright.
+const char* kFragMatte = R"(
+uniform sampler2D uLayer;
+uniform sampler2D uMatte;
+uniform int uMode;
+void main() {
+    vec4 m = texture(uMatte, vUv);
+    float k = uMode <= 2 ? m.a : dot(m.rgb, vec3(0.2126, 0.7152, 0.0722));
+    if (uMode == 2 || uMode == 4) k = 1.0 - k;
+    fragColor = texture(uLayer, vUv) * k;
 }
 )";
 
@@ -750,6 +800,14 @@ struct GpuCompositor::Impl : protected QOpenGLExtraFunctions {
         GLuint flowTex = 0;
         QSize flowSize;
         TimeUs flowPts = -1;
+        // Noise reduction: the frame before, the motion to each neighbour, and the cleaned-up frame.
+        Target prevRgba;
+        TimeUs prevRgbaPts = -1;
+        GLuint prevFlowTex = 0, nextFlowTex = 0;
+        QSize prevFlowSize, nextFlowSize;
+        Target denoised;
+        TimeUs denoisedPts = -1;
+        double denoisedStrength = 0;
     };
     struct GeneratorCache {
         QString type;
@@ -783,7 +841,7 @@ struct GpuCompositor::Impl : protected QOpenGLExtraFunctions {
     QSize uploadSize;
     std::unique_ptr<QOpenGLShaderProgram> progTex, progSolid, progYuv, progLut, progMatrix, progBlur, progSharpen,
         progBright, progScreen, progVignette, progKey, progNoise, progPixelate, progTransition, progTransitionFx, progRackBlend, progWarp,
-        progChroma, progRadialPass, progCrt, progPsy, progFx, progDiffuse, progConsole, progVgMesh, progLut3D, progEncodeYuv, progMaxAlpha, progFlowMix;
+        progChroma, progRadialPass, progCrt, progPsy, progFx, progDiffuse, progConsole, progVgMesh, progLut3D, progEncodeYuv, progMaxAlpha, progFlowMix, progMatte, progDenoise;
     // .cube LUTs as 3D textures, by the loaded table (kept while it is in the file cache).
     std::map<const CubeLut*, std::pair<std::shared_ptr<const CubeLut>, GLuint>> lut3dTextures;
     GLuint meshVao = 0, meshVbo = 0;
@@ -844,6 +902,8 @@ struct GpuCompositor::Impl : protected QOpenGLExtraFunctions {
         progTransition.reset();
         progTransitionFx.reset();
         progRackBlend.reset();
+        progMatte.reset();
+        progDenoise.reset();
         progWarp.reset();
         progChroma.reset();
         progRadialPass.reset();
@@ -897,7 +957,8 @@ struct GpuCompositor::Impl : protected QOpenGLExtraFunctions {
                         {&progPixelate, kFragPixelate}, {&progTransition, kFragTransition}, {&progTransitionFx, tfx::kGlsl},
                         {&progRackBlend, kFragRackBlend}, {&progWarp, kFragWarp}, {&progChroma, kFragChroma},
                         {&progRadialPass, kFragRadialPass}, {&progCrt, kFragCrt}, {&progPsy, kFragPsy},
-                        {&progFx, gpufx::kFragFx}, {&progLut3D, kFragLut3D}, {&progMaxAlpha, kFragMaxAlpha}, {&progFlowMix, kFragFlowMix}};
+                        {&progFx, gpufx::kFragFx}, {&progLut3D, kFragLut3D}, {&progMaxAlpha, kFragMaxAlpha}, {&progFlowMix, kFragFlowMix},
+                        {&progMatte, kFragMatte}, {&progDenoise, kFragDenoise}};
         for (auto& p : programs) {
             auto prog = std::make_unique<QOpenGLShaderProgram>();
             if (!prog->addShaderFromSourceCode(QOpenGLShader::Vertex, kVertex)
@@ -1148,6 +1209,13 @@ struct GpuCompositor::Impl : protected QOpenGLExtraFunctions {
             }
         deleteTarget(e.rgba);
         deleteTarget(e.nextRgba);
+        deleteTarget(e.prevRgba);
+        deleteTarget(e.denoised);
+        for (GLuint* tex : {&e.prevFlowTex, &e.nextFlowTex})
+            if (*tex) {
+                glDeleteTextures(1, tex);
+                *tex = 0;
+            }
         if (e.flowTex) {
             glDeleteTextures(1, &e.flowTex);
             e.flowTex = 0;
@@ -1174,6 +1242,76 @@ struct GpuCompositor::Impl : protected QOpenGLExtraFunctions {
     }
 
     // Converts a decoded frame into an RGBA target at its coded size.
+    // A small copy of a picture, read back (what the motion is worked out from: flow::analysisSize).
+    QImage smallCopy(const Target& from)
+    {
+        const QSize small = flow::analysisSize(from.size());
+        Layer l = acquire(small, false);
+        drawTexture(*l, from.tex, QSizeF(from.w, from.h), QTransform::fromScale(double(small.width()) / from.w, double(small.height()) / from.h),
+                    1.0, QRectF(0, 0, 1, 1), false);
+        return download(*l);
+    }
+
+    // The motion as an RG texture (made, or remade at a new size, as needed); false when there is none.
+    bool uploadFlow(const flow::Field& f, GLuint& tex, QSize& size)
+    {
+        if (f.empty())
+            return false;
+        std::vector<float> rg(size_t(f.w) * size_t(f.h) * 2);
+        for (size_t i = 0; i < f.dx.size(); ++i) {
+            rg[i * 2] = f.dx[i];
+            rg[i * 2 + 1] = f.dy[i];
+        }
+        if (!tex || size != QSize(f.w, f.h)) {
+            if (tex)
+                glDeleteTextures(1, &tex);
+            tex = makeTexture(f.w, f.h, GL_RG32F, GL_LINEAR);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+            size = QSize(f.w, f.h);
+        }
+        glBindTexture(GL_TEXTURE_2D, tex);
+        glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, f.w, f.h, GL_RG, GL_FLOAT, rg.data());
+        return true;
+    }
+
+    // The decoded frame with its noise reduced (flow::denoise), kept until the frame or the strength changes.
+    Target* denoised(Entry& e, double strength)
+    {
+        const TimeUs p0 = e.decoder->currentPts();
+        if (e.denoised && e.denoisedPts == p0 && e.denoisedStrength == strength && e.denoised.size() == e.rgba.size())
+            return &e.denoised;
+        TimeUs pp = -1;
+        const AVFrame* prev = e.decoder->previousFrame(&pp);
+        const AVFrame* next = e.decoder->nextFrame();
+        const bool hasPrev = prev && convertFrame(e, prev, e.prevRgba, e.prevRgbaPts, pp) && e.prevRgba.size() == e.rgba.size();
+        const bool hasNext = next && convertFrame(e, next, e.nextRgba, e.nextRgbaPts, e.decoder->nextPts()) && e.nextRgba.size() == e.rgba.size();
+        const QImage cur = hasPrev || hasNext ? smallCopy(e.rgba) : QImage();
+        const bool prevFlow = hasPrev && uploadFlow(flow::estimate(cur, smallCopy(e.prevRgba)), e.prevFlowTex, e.prevFlowSize);
+        const bool nextFlow = hasNext && uploadFlow(flow::estimate(cur, smallCopy(e.nextRgba)), e.nextFlowTex, e.nextFlowSize);
+        if (!e.denoised || e.denoised.size() != e.rgba.size()) {
+            deleteTarget(e.denoised);
+            e.denoised = createTarget(e.rgba.size());
+        }
+        progDenoise->bind();
+        bindTexture(0, e.rgba.tex);
+        bindTexture(1, prevFlow ? e.prevRgba.tex : e.rgba.tex);
+        bindTexture(2, nextFlow ? e.nextRgba.tex : e.rgba.tex);
+        bindTexture(3, prevFlow ? e.prevFlowTex : e.rgba.tex);
+        bindTexture(4, nextFlow ? e.nextFlowTex : e.rgba.tex);
+        progDenoise->setUniformValue("uCur", 0);
+        progDenoise->setUniformValue("uPrev", 1);
+        progDenoise->setUniformValue("uNext", 2);
+        progDenoise->setUniformValue("uFlowPrev", 3);
+        progDenoise->setUniformValue("uFlowNext", 4);
+        progDenoise->setUniformValue("uHasPrev", prevFlow ? 1 : 0);
+        progDenoise->setUniformValue("uHasNext", nextFlow ? 1 : 0);
+        progDenoise->setUniformValue("uSim", flow::denoiseSimilarity(strength));
+        fullscreen(*progDenoise, e.denoised);
+        e.denoisedPts = p0;
+        e.denoisedStrength = strength;
+        return &e.denoised;
+    }
+
     bool convertFrame(Entry& e, const AVFrame* f, Target& out, TimeUs& outPts, TimeUs pts)
     {
         if (out && outPts == pts && out.w == f->width && out.h == f->height)
@@ -1363,6 +1501,9 @@ struct GpuCompositor::Impl : protected QOpenGLExtraFunctions {
         Entry* e = acquireDecoder(media, clip.streamIndex, clip.id, srcT);
         if (!e)
             return {};
+        const bool denoise = clip.denoise > 0 && !media.info.isStill;
+        if (denoise)
+            e->decoder->setKeepPrevious(true);
         const AVFrame* frame = e->decoder->frameAt(srcT);
         if (!frame || !convertFrame(*e, frame, e->rgba, e->rgbaPts, e->decoder->currentPts()))
             return {};
@@ -1384,7 +1525,7 @@ struct GpuCompositor::Impl : protected QOpenGLExtraFunctions {
         r.translate(-upright.width() / 2, -upright.height() / 2);
         const QTransform full = m * r * view;
 
-        Target* picture = &e->rgba;
+        Target* picture = denoise ? denoised(*e, clip.denoise) : &e->rgba;
         Layer blended;
         if (clip.opticalFlow && !media.info.isStill)
             if (const AVFrame* next = e->decoder->nextFrame()) {
@@ -1394,32 +1535,8 @@ struct GpuCompositor::Impl : protected QOpenGLExtraFunctions {
                     && e->nextRgba.size() == e->rgba.size()) {
                     if (e->flowPts != p0 || !e->flowTex) {
                         // The motion, from small copies of the two read back (the same for every frame in between).
-                        const QSize small = flow::analysisSize(e->rgba.size());
-                        auto shrink = [&](const Target& from) {
-                            Layer l = acquire(small, false);
-                            drawTexture(*l, from.tex, QSizeF(from.w, from.h), QTransform::fromScale(double(small.width()) / from.w,
-                                                                                                double(small.height()) / from.h),
-                                        1.0, QRectF(0, 0, 1, 1), false);
-                            return download(*l);
-                        };
-                        const flow::Field f = flow::estimate(shrink(e->rgba), shrink(e->nextRgba));
-                        if (!f.empty()) {
-                            std::vector<float> rg(size_t(f.w) * size_t(f.h) * 2);
-                            for (size_t i = 0; i < f.dx.size(); ++i) {
-                                rg[i * 2] = f.dx[i];
-                                rg[i * 2 + 1] = f.dy[i];
-                            }
-                            if (!e->flowTex || e->flowSize != QSize(f.w, f.h)) {
-                                if (e->flowTex)
-                                    glDeleteTextures(1, &e->flowTex);
-                                e->flowTex = makeTexture(f.w, f.h, GL_RG32F, GL_LINEAR);
-                                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-                                e->flowSize = QSize(f.w, f.h);
-                            }
-                            glBindTexture(GL_TEXTURE_2D, e->flowTex);
-                            glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, f.w, f.h, GL_RG, GL_FLOAT, rg.data());
+                        if (uploadFlow(flow::estimate(smallCopy(e->rgba), smallCopy(e->nextRgba)), e->flowTex, e->flowSize))
                             e->flowPts = p0;
-                        }
                     }
                     if (e->flowTex && e->flowPts == p0) {
                         blended = acquire(e->rgba.size(), false);
@@ -3175,7 +3292,9 @@ struct GpuCompositor::Impl : protected QOpenGLExtraFunctions {
         }
     }
 
-    void renderTrack(const ProjectSnapshot& snap, const Track& track, TimeUs t, const Target& canvas, const RenderContext& base)
+    // With a matte (the track matte above it, rendered), the track shows only through it (TrackMatte matteMode).
+    void renderTrack(const ProjectSnapshot& snap, const Track& track, TimeUs t, const Target& canvas, const RenderContext& base,
+                     const Target* matte = nullptr, int matteMode = 0)
     {
         std::vector<size_t> active;
         for (size_t ci = 0; ci < track.clips.size(); ++ci) {
@@ -3187,8 +3306,8 @@ struct GpuCompositor::Impl : protected QOpenGLExtraFunctions {
         }
         if (active.empty())
             return;
-        // Track FX and blend modes work on the whole track's picture.
-        const bool useTrackLayer = hasActiveEffects(track.effects) || track.blend != 0;
+        // Track FX, blend modes and mattes work on the whole track's picture.
+        const bool useTrackLayer = hasActiveEffects(track.effects) || track.blend != 0 || matte;
         Layer trackLayer;
         if (useTrackLayer)
             trackLayer = acquire(canvas.size());
@@ -3240,6 +3359,17 @@ struct GpuCompositor::Impl : protected QOpenGLExtraFunctions {
             ctx.time = t;
             ctx.contentRect = QRectF(0, 0, canvas.w, canvas.h);
             applyChain(track.effects, trackLayer, ctx);
+            if (matte && trackLayer->size() == canvas.size()) {
+                Layer out = acquire(canvas.size(), false);
+                progMatte->bind();
+                bindTexture(0, trackLayer->tex);
+                bindTexture(1, matte->tex);
+                progMatte->setUniformValue("uLayer", 0);
+                progMatte->setUniformValue("uMatte", 1);
+                progMatte->setUniformValue("uMode", matteMode);
+                fullscreen(*progMatte, *out);
+                trackLayer = std::move(out);
+            }
             if (track.blend != 0 && trackLayer->size() == canvas.size()) {
                 // Same blend as rack chains (and imageops::blendLayer on the CPU).
                 Layer out = acquire(canvas.size(), false);
@@ -3324,9 +3454,15 @@ struct GpuCompositor::Impl : protected QOpenGLExtraFunctions {
         const int covering = coveringTrack(snap, t); // (the topmost track hiding everything below it)
         for (int ti = covering >= 0 ? covering : int(tracks.size()) - 1; ti >= 0; --ti) {
             const Track& track = tracks[ti];
-            if (!isVisualTrack(track.type) || track.muted || (anySolo && !track.solo))
+            if (!isVisualTrack(track.type) || track.muted || (anySolo && !track.solo) || track.matte) // (a matte: with the track below)
                 continue;
-            renderTrack(snap, track, t, *canvas, base);
+            if (const int mi = matteAbove(snap.timeline, ti); mi >= 0) {
+                Layer matte = acquire(outSize);
+                renderTrack(snap, tracks[size_t(mi)], t, *matte, base);
+                renderTrack(snap, track, t, *canvas, base, &*matte, tracks[size_t(mi)].matte);
+            } else {
+                renderTrack(snap, track, t, *canvas, base);
+            }
             applyAdjustments(track, t, canvas, base);
         }
         if (hasActiveEffects(snap.timeline.outputEffects)) {

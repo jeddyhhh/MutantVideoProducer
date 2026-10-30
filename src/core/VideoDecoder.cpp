@@ -42,8 +42,9 @@ void VideoDecoder::close()
     m_pkt.reset();
     m_cur.reset();
     m_next.reset();
+    m_prev.reset();
     m_stream = nullptr;
-    m_hasCur = m_hasNext = false;
+    m_hasCur = m_hasNext = m_hasPrev = false;
 }
 
 bool VideoDecoder::open(const QString& path, int streamIndex, QString* error, bool allowHardware)
@@ -133,6 +134,7 @@ bool VideoDecoder::open(const QString& path, int streamIndex, QString* error, bo
     m_pkt = ff::makePacket();
     m_cur = ff::makeFrame();
     m_next = ff::makeFrame();
+    m_prev = ff::makeFrame();
     m_startOffset = ff::formatStartTime(fc);
     AVRational fr = m_stream->avg_frame_rate.num > 0 ? m_stream->avg_frame_rate : m_stream->r_frame_rate;
     m_frameDur = (fr.num > 0 && fr.den > 0) ? std::max<TimeUs>(1000, av_rescale(kUsPerSecond, fr.den, fr.num)) : 40000;
@@ -203,7 +205,7 @@ bool VideoDecoder::readFrame(AVFrame* dst, TimeUs* ptsOut)
 
 void VideoDecoder::seek(TimeUs t)
 {
-    m_hasCur = m_hasNext = m_draining = m_eof = m_hasLastPts = false;
+    m_hasCur = m_hasNext = m_draining = m_eof = m_hasLastPts = m_hasPrev = false;
     int64_t ts = av_rescale_q(t + m_startOffset, AV_TIME_BASE_Q, m_stream->time_base);
     // Seeking before the first timestamp confuses some demuxers (MPEG-TS).
     if (m_stream->start_time != AV_NOPTS_VALUE)
@@ -253,6 +255,15 @@ void VideoDecoder::remember(const AVFrame* f, TimeUs pts)
         m_historyBytes -= size_t(std::max(0, av_image_get_buffer_size(AVPixelFormat(old->format), old->width, old->height, 1)));
         m_history.pop_front();
     }
+}
+
+const AVFrame* VideoDecoder::previousFrame(TimeUs* pts) const
+{
+    if (!m_keepPrevious || !m_hasPrev || !m_hasCur || m_shownFromHistory || m_shownPts != m_curPts || m_curPts - m_prevPts > m_frameDur * 3 / 2)
+        return nullptr;
+    if (pts)
+        *pts = m_prevPts;
+    return m_prev.get();
 }
 
 const AVFrame* VideoDecoder::findInHistory(TimeUs t)
@@ -365,6 +376,11 @@ const AVFrame* VideoDecoder::frameAt(TimeUs t, bool accurate)
             return show(m_cur.get(), m_curPts, false);
         if (m_keepHistory)
             remember(m_cur.get(), m_curPts);
+        if (m_keepPrevious) {
+            av_frame_unref(m_prev.get());
+            m_hasPrev = av_frame_ref(m_prev.get(), m_cur.get()) >= 0;
+            m_prevPts = m_curPts;
+        }
         std::swap(m_cur, m_next);
         m_curPts = m_nextPts;
         m_hasNext = false;

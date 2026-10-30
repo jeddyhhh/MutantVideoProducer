@@ -904,10 +904,11 @@ void TimelineWidget::paintHeaders(QPainter& p)
         // Compositing mode.
         if (isVideo && hr.height() >= 62) {
             const QRect br = blendRect(hr);
-            p.fillRect(br, t.blend ? theme::c().checked : theme::c().field);
-            p.setPen(t.blend ? theme::c().bright : theme::c().dim);
+            p.fillRect(br, t.blend || t.matte ? theme::c().checked : theme::c().field);
+            p.setPen(t.blend || t.matte ? theme::c().bright : theme::c().dim);
             p.setFont(small);
-            p.drawText(br.adjusted(4, 0, -4, 0), Qt::AlignVCenter | Qt::AlignLeft, tr("Mode: %1").arg(blendModeNames().value(t.blend)));
+            p.drawText(br.adjusted(4, 0, -4, 0), Qt::AlignVCenter | Qt::AlignLeft,
+                       t.matte ? trackMatteNames().value(t.matte) : tr("Mode: %1").arg(blendModeNames().value(t.blend)));
             p.drawText(br.adjusted(4, 0, -4, 0), Qt::AlignVCenter | Qt::AlignRight, QStringLiteral("\u25BE"));
         }
     }

@@ -216,4 +216,79 @@ QImage interpolate(const QImage& a0, const QImage& b0, const Field& f, float w)
     return out;
 }
 
+QImage denoise(const QImage& frame, const QImage* prev0, const Field* toPrev, const QImage* next0, const Field* toNext, double strength)
+{
+    const QImage cur = frame.convertToFormat(QImage::Format_ARGB32_Premultiplied);
+    auto usable = [&](const QImage* img, const Field* f) {
+        return img && f && !f->empty() && img->size() == cur.size() ? img->convertToFormat(QImage::Format_ARGB32_Premultiplied) : QImage();
+    };
+    const QImage prev = usable(prev0, toPrev), next = usable(next0, toNext);
+    const int W = cur.width(), H = cur.height();
+    const float sim = denoiseSimilarity(strength), inv = 1.0f / (2.0f * sim * sim);
+    static const float spatial[3] = {1.0f, 0.6f, 0.37f}; // (by how far from the middle: none, a side, a corner)
+    QImage out(cur.size(), QImage::Format_ARGB32_Premultiplied);
+    // The motion at a pixel, in pixels (as interpolate: between the cells around it).
+    auto motion = [&](const Field& f, int x, int y, float& vx, float& vy) {
+        const float fy = std::clamp((float(y) + 0.5f) / float(H) * float(f.h) - 0.5f, 0.f, float(f.h - 1));
+        const float fx = std::clamp((float(x) + 0.5f) / float(W) * float(f.w) - 0.5f, 0.f, float(f.w - 1));
+        const int cx0 = int(fx), cy0 = int(fy), cx1 = std::min(cx0 + 1, f.w - 1), cy1 = std::min(cy0 + 1, f.h - 1);
+        const float tx = fx - float(cx0), ty = fy - float(cy0);
+        auto lerp = [&](const std::vector<float>& v) {
+            const float top = v[size_t(cy0) * size_t(f.w) + size_t(cx0)] * (1 - tx) + v[size_t(cy0) * size_t(f.w) + size_t(cx1)] * tx;
+            const float bottom = v[size_t(cy1) * size_t(f.w) + size_t(cx0)] * (1 - tx) + v[size_t(cy1) * size_t(f.w) + size_t(cx1)] * tx;
+            return top * (1 - ty) + bottom * ty;
+        };
+        vx = lerp(f.dx) * float(W);
+        vy = lerp(f.dy) * float(H);
+    };
+    auto rows = [&](int y0, int y1) {
+        for (int y = y0; y < y1; ++y) {
+            auto* o = reinterpret_cast<uint32_t*>(out.scanLine(y));
+            for (int x = 0; x < W; ++x) {
+                const uint32_t cp = nearest(cur, float(x), float(y));
+                float c[4], sum[4] = {0, 0, 0, 0}, total = 0;
+                for (int k = 0; k < 4; ++k)
+                    c[k] = float((cp >> (8 * k)) & 0xff) / 255.0f;
+                auto taps = [&](const QImage& img, float ax, float ay, bool exact) {
+                    for (int dy = -1; dy <= 1; ++dy)
+                        for (int dx = -1; dx <= 1; ++dx) {
+                            const uint32_t q = exact ? nearest(img, ax + float(dx), ay + float(dy)) : sample(img, ax + float(dx), ay + float(dy));
+                            float v[4], d2 = 0;
+                            for (int k = 0; k < 4; ++k) {
+                                v[k] = float((q >> (8 * k)) & 0xff) / 255.0f;
+                                if (k < 3)
+                                    d2 += (v[k] - c[k]) * (v[k] - c[k]);
+                            }
+                            const float w = spatial[std::abs(dx) + std::abs(dy)] * std::exp(-d2 / 3.0f * inv);
+                            for (int k = 0; k < 4; ++k)
+                                sum[k] += w * v[k];
+                            total += w;
+                        }
+                };
+                taps(cur, float(x), float(y), true);
+                float vx = 0, vy = 0;
+                if (!prev.isNull()) {
+                    motion(*toPrev, x, y, vx, vy);
+                    taps(prev, float(x) + vx, float(y) + vy, false);
+                }
+                if (!next.isNull()) {
+                    motion(*toNext, x, y, vx, vy);
+                    taps(next, float(x) + vx, float(y) + vy, false);
+                }
+                uint32_t px = 0;
+                for (int k = 0; k < 4; ++k)
+                    px |= uint32_t(std::clamp(int(sum[k] / total * 255.0f + 0.5f), 0, 255)) << (8 * k);
+                o[x] = px;
+            }
+        }
+    };
+    const int threads = std::clamp(int(std::thread::hardware_concurrency()), 1, 16);
+    std::vector<std::thread> pool;
+    for (int t = 0; t < threads; ++t)
+        pool.emplace_back(rows, H * t / threads, H * (t + 1) / threads);
+    for (auto& t : pool)
+        t.join();
+    return out;
+}
+
 } // namespace flow

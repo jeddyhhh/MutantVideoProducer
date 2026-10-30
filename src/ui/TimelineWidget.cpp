@@ -709,6 +709,57 @@ void TimelineWidget::setTrackBlend(int trackIndex, int mode)
     m_project->applyEdit(tl, tr("Compositing Mode: %1").arg(blendModeNames().value(mode)));
 }
 
+void TimelineWidget::setTrackMatte(int trackIndex, int mode)
+{
+    Timeline tl = m_project->timeline();
+    if (trackIndex < 0 || trackIndex >= int(tl.tracks.size()) || !isVisualTrack(tl.tracks[size_t(trackIndex)].type))
+        return;
+    tl.tracks[size_t(trackIndex)].matte = std::clamp(mode, 0, int(MatteLumaInverted));
+    m_project->applyEdit(tl, tr("Track Matte: %1").arg(trackMatteNames().value(mode)));
+}
+
+void TimelineWidget::setDenoise(double amount)
+{
+    Timeline tl = m_project->timeline();
+    int n = 0;
+    for (Track& t : tl.tracks)
+        if (isVisualTrack(t.type))
+            for (Clip& c : t.clips)
+                if (m_selection.count(c.id) && !c.isGenerated()) {
+                    c.denoise = amount;
+                    ++n;
+                }
+    if (n)
+        m_project->applyEdit(tl, amount > 0 ? tr("Reduce Noise") : tr("Reduce Noise: Off"));
+}
+
+void TimelineWidget::addCompositingMenus(QMenu* menu, int ti)
+{
+    const Track& track = m_project->timeline().tracks[size_t(ti)];
+    QMenu* blend = menu->addMenu(tr("Compositing Mode"));
+    const QStringList modes = blendModeNames();
+    for (int i = 0; i < int(modes.size()); ++i) {
+        QAction* a = blend->addAction(modes[i], this, [this, ti, i] { setTrackBlend(ti, i); });
+        a->setCheckable(true);
+        a->setChecked(track.blend == i);
+    }
+    QMenu* matte = menu->addMenu(tr("Track Matte"));
+    matte->setToolTipsVisible(true);
+    const QStringList mattes = trackMatteNames();
+    static const char* tips[] = {
+        QT_TR_NOOP("A track of its own"),
+        QT_TR_NOOP("Not shown: the track below shows only where this track is drawn (text, a shape, a cut-out)"),
+        QT_TR_NOOP("Not shown: the track below shows only where this track isn't drawn"),
+        QT_TR_NOOP("Not shown: the track below shows where this track is bright, and fades out where it is dark"),
+        QT_TR_NOOP("Not shown: the track below shows where this track is dark, and fades out where it is bright")};
+    for (int i = 0; i < int(mattes.size()); ++i) {
+        QAction* a = matte->addAction(mattes[i], this, [this, ti, i] { setTrackMatte(ti, i); });
+        a->setCheckable(true);
+        a->setChecked(track.matte == i);
+        a->setToolTip(tr(tips[i]));
+    }
+}
+
 void TimelineWidget::removeTransitionAt(int clipId, bool atStart)
 {
     Timeline tl = m_project->timeline();

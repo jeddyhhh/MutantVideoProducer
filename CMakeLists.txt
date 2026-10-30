@@ -125,6 +125,7 @@ add_library(mvp_core STATIC
     src/core/AudioSync.h         src/core/AudioSync.cpp
     src/core/Multicam.h          src/core/Multicam.cpp
     src/core/OpticalFlow.h       src/core/OpticalFlow.cpp
+    src/core/ColorMatch.h        src/core/ColorMatch.cpp
     src/core/BeatMarkers.h       src/core/BeatMarkers.cpp
     src/core/EffectMask.h        src/core/EffectMask.cpp
     src/core/Stabilizer.h        src/core/Stabilizer.cpp

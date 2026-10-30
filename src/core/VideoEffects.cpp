@@ -4,6 +4,7 @@
 // resolution look the same as the final render.
 
 #include "core/Effects.h"
+#include "core/ColorMatch.h"
 #include "core/EffectHelpers.h"
 #include "core/ConsoleEngine.h"
 #include "core/Segmentation.h"
@@ -511,6 +512,39 @@ std::vector<EffectDef> buildEffects()
             l[size_t(c)] = makeLut([&](double x) { return smoothCurve(curve, std::clamp(smoothCurve(master, x), 0.0, 1.0)); });
         }
         return any;
+    };
+    add(d);
+
+    d = {};
+    d.id = QStringLiteral("color_match");
+    d.name = QStringLiteral("Color Match");
+    d.category = QStringLiteral("Color");
+    d.description = QStringLiteral(
+        "Gives the event the colours of another shot: Tools > Match Colour to the Cursor Frame sets its red, green and blue "
+        "curves from the two pictures. Amount mixes it with the picture as it was.");
+    d.params = {num("amount", "Amount", 0, 1, 1)};
+    for (const char* ch : {"red", "green", "blue"})
+        for (int k = 0; k < colormatch::kPoints; ++k) {
+            ParamDef pd = num("", "", 0, 1, double(k) / (colormatch::kPoints - 1), 3);
+            pd.id = QStringLiteral("%1%2").arg(QLatin1String(ch)).arg(k);
+            pd.name = QStringLiteral("%1 at %2%").arg(QLatin1String(ch)).arg(100 * k / (colormatch::kPoints - 1));
+            pd.hidden = true; // (set by Match Colour)
+            d.params.push_back(pd);
+        }
+    d.luts = [](const Params& p, ChannelLuts& l) {
+        const double amount = p.num(QStringLiteral("amount"));
+        bool any = false;
+        const char* chans[3] = {"red", "green", "blue"};
+        for (int c = 0; c < 3; ++c) {
+            std::vector<std::pair<double, double>> curve;
+            for (int k = 0; k < colormatch::kPoints; ++k) {
+                const double x = double(k) / (colormatch::kPoints - 1), y = p.num(QStringLiteral("%1%2").arg(QLatin1String(chans[c])).arg(k));
+                any |= std::abs(y - x) > 1e-4;
+                curve.emplace_back(x, y);
+            }
+            l[size_t(c)] = makeLut([&](double v) { return v + amount * (smoothCurve(curve, v) - v); });
+        }
+        return any && amount > 0;
     };
     add(d);
 

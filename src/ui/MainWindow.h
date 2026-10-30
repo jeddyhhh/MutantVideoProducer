@@ -197,6 +197,7 @@ private:
     void editByTranscript();    // Tools: strike words in a transcript to cut them out
     // Right-click a video event > Stabilize: how much, analysing it first if needed.
     void stabilizeClip(int clipId);
+    void matchColour(); // the selected video events, to the shot at the cursor (a Color Match effect on each)
     // Proxies: queue the files (only the heavy ones if `heavyOnly`), delete theirs.
     void createProxies(const QList<int>& mediaIds, bool heavyOnly, bool replace = false);
     void deleteProxies(const QList<int>& mediaIds);

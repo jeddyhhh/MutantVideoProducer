@@ -14,6 +14,7 @@
 #include "core/FormatRegistry.h"
 #include "core/Project.h"
 #include "core/SceneDetect.h"
+#include "core/ColorMatch.h"
 #include "core/Reframe.h"
 #include "core/PanCrop.h"
 #include "engine/MediaCache.h"
@@ -234,6 +235,27 @@ void MainWindow::splitAtMarkers()
     }
     m_project->applyEdit(tl, tr("Split at Markers"));
     statusBar()->showMessage(tr("Split into %1 more pieces").arg(pieces.size()), 4000);
+}
+
+void MainWindow::matchColour()
+{
+    stopPlayback(false);
+    Timeline tl = m_project->timeline();
+    QString error;
+    QApplication::setOverrideCursor(Qt::WaitCursor);
+    const int n = colormatch::match(tl, *m_project->snapshot(), m_timeline->selection(), m_timeline->cursorTime(), &error);
+    QApplication::restoreOverrideCursor();
+    if (!n) {
+        QMessageBox::information(this, tr("Match Colour"),
+                                 error + QStringLiteral("\n\n")
+                                     + tr("Select the events to fix, put the cursor on the shot whose colours they should have, then "
+                                          "Tools > Match Colour."));
+        return;
+    }
+    m_project->applyEdit(tl, tr("Match Colour"));
+    statusBar()->showMessage(tr("Matched %n event(s) to the frame at %1: each has a Color Match effect (its Amount tones it down)", nullptr, n)
+                                 .arg(formatTimecode(m_timeline->cursorTime(), m_project->settings().fps)),
+                             8000);
 }
 
 void MainWindow::splitAtSceneChanges()

@@ -619,6 +619,10 @@ void MainWindow::createActions()
         if (editorActive())
             splitAtSceneChanges();
     }));
+    tools->addAction(act(tr("Match &Colour to the Cursor Frame"), QKeySequence(), [this] {
+        if (editorActive())
+            matchColour();
+    }));
     tools->addAction(act(tr("Render Selection to &New Track"), QKeySequence(), [this] {
         if (editorActive())
             renderInPlace();
@@ -1101,6 +1105,7 @@ void MainWindow::connectSignals()
     connect(m_timeline, &TimelineWidget::relinkRequested, this, [this](int id) { relinkMissing(id); });
     connect(m_timeline, &TimelineWidget::beatsRequested, this, &MainWindow::detectBeats);
     connect(m_timeline, &TimelineWidget::stabilizeRequested, this, &MainWindow::stabilizeClip);
+    connect(m_timeline, &TimelineWidget::matchColourRequested, this, &MainWindow::matchColour);
     connect(m_bin, &MediaBin::relinkRequested, this, [this](int id) { relinkMissing(id); });
     connect(m_bin, &MediaBin::proxyRequested, this, [this](const QList<int>& ids) { createProxies(ids, false, true); });
     connect(m_bin, &MediaBin::proxyDeleteRequested, this, &MainWindow::deleteProxies);

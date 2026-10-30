@@ -209,15 +209,8 @@ void TimelineWidget::contextMenuEvent(QContextMenuEvent* e)
             menu.addAction(tr0.type == TrackType::Image ? tr("Image Track FX...")
                          : isVisualTrack(tr0.type) ? tr("Video Track FX...") : tr("Audio Track FX..."), this,
                            [this, trackId] { emit trackEffectsRequested(trackId); });
-            if (isVisualTrack(tr0.type)) {
-                QMenu* blend = menu.addMenu(tr("Compositing Mode"));
-                const QStringList modes = blendModeNames();
-                for (int i = 0; i < int(modes.size()); ++i) {
-                    QAction* a = blend->addAction(modes[i], this, [this, ti, i] { setTrackBlend(ti, i); });
-                    a->setCheckable(true);
-                    a->setChecked(tr0.blend == i);
-                }
-            }
+            if (isVisualTrack(tr0.type))
+                addCompositingMenus(&menu, ti);
             menu.addSeparator();
             QAction* lock = menu.addAction(tr("Lock Track"), this, [this, ti] { toggleTrackLock(ti); });
             lock->setCheckable(true);
@@ -270,8 +263,22 @@ void TimelineWidget::contextMenuEvent(QContextMenuEvent* e)
                 const int tid = m_project->timeline().tracks[hit.track].id;
                 menu.addAction(tr("Video Track FX (whole track)..."), this, [this, tid] { emit trackEffectsRequested(tid); });
                 menu.addAction(tr("Event Pan/Crop..."), this, [this, cid] { emit panCropRequested(cid); });
-                if (const Clip* sc = m_project->timeline().findClip(cid); sc && !sc->isGenerated())
+                if (const Clip* sc = m_project->timeline().findClip(cid); sc && !sc->isGenerated()) {
                     menu.addAction(sc->stabilize > 0 ? tr("Stabilize (on)...") : tr("Stabilize..."), this, [this, cid] { emit stabilizeRequested(cid); });
+                    QMenu* noise = menu.addMenu(sc->denoise > 0 ? tr("Reduce Noise (on)") : tr("Reduce Noise"));
+                    noise->setToolTipsVisible(true);
+                    static const std::pair<const char*, double> amounts[] = {
+                        {QT_TR_NOOP("Off"), 0.0}, {QT_TR_NOOP("Light"), 0.35}, {QT_TR_NOOP("Medium"), 0.65}, {QT_TR_NOOP("Strong"), 1.0}};
+                    for (const auto& [name, amount] : amounts) {
+                        QAction* a = noise->addAction(tr(name), this, [this, amount] { setDenoise(amount); });
+                        a->setCheckable(true);
+                        a->setChecked(std::abs(sc->denoise - amount) < 0.01);
+                        a->setToolTip(tr("Takes the grain out of dark or phone footage, by comparing each frame with the ones either side "
+                                         "(slower to preview: Render Selection to New Track plays it smoothly)"));
+                    }
+                    menu.addAction(tr("Match Colour to the Cursor Frame"), this, [this] { emit matchColourRequested(); })
+                        ->setToolTip(tr("Gives the selected events the colours of the shot under the cursor"));
+                }
                 menu.addAction(tr("Freeze Frame at Cursor (2 s)\tShift+F"), this, [this] { insertFreezeFrame(2 * kUsPerSecond); });
                 const Track& vt = m_project->timeline().tracks[size_t(hit.track)];
                 const Clip* vc = m_project->timeline().findClip(cid);

@@ -33,6 +33,7 @@
 #include "core/EffectMask.h"
 #include "core/PanCrop.h"
 #include "core/Compositor.h"
+#include "core/ColorMatch.h"
 #include "core/Dither.h"
 #include "core/ConsoleEngine.h"
 #include "core/BeatTracker.h"
@@ -461,6 +462,8 @@ std::map<QString, double> testValues(const QString& effect)
         {QStringLiteral("curves"), {{QStringLiteral("darks"), -0.1}, {QStringLiteral("lights"), 0.1}, {QStringLiteral("blueShadows"), 0.1}}},
         {QStringLiteral("color_wheels"),
          {{QStringLiteral("liftHue"), 190}, {QStringLiteral("liftAmount"), 0.5}, {QStringLiteral("gainHue"), 30}, {QStringLiteral("gainAmount"), 0.5}}},
+        {QStringLiteral("color_match"), // (as Match Colour would set it: warmer, the blues pulled down)
+         {{QStringLiteral("red0"), 0.15}, {QStringLiteral("red4"), 0.6}, {QStringLiteral("blue4"), 0.4}, {QStringLiteral("blue8"), 0.75}}},
     };
     auto it = table.find(effect);
     return it == table.end() ? std::map<QString, double>{} : it->second;
@@ -1355,6 +1358,71 @@ int cmdGpu(const QString& mediaDir, const QString& outDir)
         cover.timeline.tracks[0].clips[0].fadeIn = 2 * kUsPerSecond;
         check(top == 0 && coveringTrack(cover, kUsPerSecond) == 1, QStringLiteral("the opaque clip on top hides the tracks below (%1); fading, it doesn't")
                                                                       .arg(top));
+    }
+    {
+        // A track matte: the title on top isn't shown; the clip below it shows only through its letters, over the
+        // background (inverted, so it differs from the clip everywhere). The same on the GPU, and the other way round
+        // with an inverted luma matte.
+        auto inverted = [&] {
+            ProjectSnapshot s = withBackground(baseSnap(main));
+            s.timeline.tracks[1].clips[0].effects.push_back(makeEffect(*findEffect(QStringLiteral("invert")), s.timeline.allocId()));
+            return s;
+        };
+        ProjectSnapshot s = inverted();
+        const int at = ops::addTrack(s.timeline, TrackType::Video, 0);
+        ops::insertGenerated(s.timeline, *findGeneratorPreset(QStringLiteral("title")), 0, at, fps);
+        s.timeline.tracks[size_t(at)].matte = MatteAlpha;
+        compare(QStringLiteral("track_matte"), s, kUsPerSecond, 1.5);
+        ProjectSnapshot bgOnly = inverted();
+        bgOnly.timeline.tracks[0].muted = true;
+        const QImage matted = cpu.render(s, kUsPerSecond, size), plain = cpu.render(inverted(), kUsPerSecond, size),
+                     bg = cpu.render(bgOnly, kUsPerSecond, size);
+        const bool corner = matted.pixel(8, 8) == bg.pixel(8, 8) && plain.pixel(8, 8) != bg.pixel(8, 8);
+        check(corner && imageDifference(matted, bg) > 1.0 && imageDifference(matted, plain) > 2.0,
+              QStringLiteral("an alpha track matte: the background around the letters, the clip in them (%1 from the background, %2 from the clip)")
+                  .arg(imageDifference(matted, bg), 0, 'f', 2)
+                  .arg(imageDifference(matted, plain), 0, 'f', 2));
+        s.timeline.tracks[size_t(at)].matte = MatteLumaInverted;
+        compare(QStringLiteral("track_matte_luma_inverted"), s, kUsPerSecond, 1.5);
+    }
+    {
+        // Color Match, the same on the GPU; Match Colour brings a darkened, tinted copy of a shot back to it.
+        ProjectSnapshot s = baseSnap(main);
+        Clip& a = s.timeline.tracks[0].clips[0];
+        a.length = 3 * kUsPerSecond;
+        Clip b = a;
+        b.id = s.timeline.allocId();
+        b.groupId = 0;
+        b.start = 3 * kUsPerSecond;
+        EffectInstance dim = makeEffect(*findEffect(QStringLiteral("brightness_contrast")), s.timeline.allocId());
+        dim.params[QStringLiteral("brightness")].value = -0.2;
+        dim.params[QStringLiteral("contrast")].value = -0.3;
+        EffectInstance tint = makeEffect(*findEffect(QStringLiteral("tint")), s.timeline.allocId());
+        tint.params[QStringLiteral("color")].value = double(0x3060ff);
+        tint.params[QStringLiteral("amount")].value = 0.35;
+        b.effects = {dim, tint};
+        s.timeline.tracks[0].clips.push_back(b);
+        Timeline tl = s.timeline;
+        QString why;
+        const bool refused = colormatch::match(tl, s, {b.id}, 4 * kUsPerSecond, &why) == 0;
+        const int n = colormatch::match(tl, s, {b.id}, kUsPerSecond, &why);
+        ProjectSnapshot fixed = s;
+        fixed.timeline = tl;
+        compare(QStringLiteral("color_match"), fixed, 4 * kUsPerSecond, 1.5);
+        const QImage ref = cpu.render(s, kUsPerSecond, size), off = cpu.render(s, 4 * kUsPerSecond, size), on = cpu.render(fixed, 4 * kUsPerSecond, size);
+        const double before = imageDifference(off, ref), after = imageDifference(on, ref);
+        check(refused && n == 1 && after < before * 0.4, QStringLiteral("Match Colour brings a darkened, tinted shot back to the reference "
+                                                                         "(mean difference %1 -> %2); the cursor in it is refused")
+                                                             .arg(before, 0, 'f', 1)
+                                                             .arg(after, 0, 'f', 1));
+    }
+    {
+        // Noise reduction (with the frames either side), the same on the GPU.
+        ProjectSnapshot s = baseSnap(main);
+        s.timeline.tracks[0].clips[0].denoise = 1.0;
+        compare(QStringLiteral("denoise"), s, kUsPerSecond, 2.0);
+        const double changed = imageDifference(cpu.render(baseSnap(main), kUsPerSecond, size), cpu.render(s, kUsPerSecond, size));
+        check(changed > 0.1 && changed < 6.0, QStringLiteral("noise reduction smooths the picture a little (mean difference %1)").arg(changed, 0, 'f', 2));
     }
 
     // Every effect (tolerances cover sampling differences of blurs/pixelate).
@@ -3354,6 +3422,8 @@ int cmdEditing(const QString& mediaDir, const QString& outDir)
         ops::insertMedia(tl, *proj.mediaItem(id), 0, -1, fps);
         tl.markers = {Marker{tl.allocId(), S, 0, {}, 0}, Marker{tl.allocId(), 2 * S, 3 * S, QStringLiteral("Chorus"), 2}};
         tl.tracks[0].blend = 2;
+        tl.tracks[0].matte = MatteLuma;
+        tl.tracks[0].clips[0].denoise = 0.65;
         proj.applyEdit(tl, QStringLiteral("t"));
         QString error;
         proj.save(projectPath, &error);
@@ -3361,8 +3431,9 @@ int cmdEditing(const QString& mediaDir, const QString& outDir)
         back.load(projectPath, &error);
         const auto& m = back.timeline().markers;
         check(m.size() == 2 && m[1].isRegion() && m[1].name == QStringLiteral("Chorus") && m[1].length == 3 * S && m[1].color == 2
-                  && back.timeline().tracks[0].blend == 2 && back.timeline().nextId > m[1].id,
-              QStringLiteral("markers, regions and track blend modes are saved with the project"));
+                  && back.timeline().tracks[0].blend == 2 && back.timeline().nextId > m[1].id && back.timeline().tracks[0].matte == MatteLuma
+                  && back.timeline().tracks[0].clips[0].denoise == 0.65,
+              QStringLiteral("markers, regions, track blend modes, track mattes and noise reduction are saved with the project"));
 
         // Autosave copy + recovery: the copy keeps the project's file name.
         const QString backup = QDir(outDir).filePath(QStringLiteral("autosave-copy.mvp"));

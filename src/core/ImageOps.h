@@ -35,6 +35,8 @@ void mix(QImage& out, const QImage* from, const QImage* to, float t);
 // order: Normal, Add, Screen, Multiply, Overlay, Lighten, Darken, Difference)
 // and opacity, W3C compositing style. Matches the GPU renderer's shader.
 void blendLayer(QImage& base, const QImage& layer, float opacity, int mode);
+// A track matte (TrackMatte mode) on a premultiplied layer: kept where the matte is drawn (alpha) or bright (luma).
+void applyMatte(QImage& layer, const QImage& matte, int mode);
 
 inline uint8_t clamp8(int v) { return uint8_t(v < 0 ? 0 : (v > 255 ? 255 : v)); }
 inline float smoothstep(float e0, float e1, float x)

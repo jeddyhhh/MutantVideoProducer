@@ -250,6 +250,24 @@ fitted to them, leaving out things that move on their own. The analysis is kept 
 cache. The correction becomes part of the event's framing, so the preview, the GPU and renders all
 get it. Choose **Off** to remove it.
 
+## Reduce Noise
+
+Right-click a video event > **Reduce Noise**: **Light**, **Medium** or **Strong** takes the grain
+out of dark or phone footage (**Off** removes it). Each pixel is averaged with the pixels around it
+in its frame and in the frames just before and after it, followed along the motion, and only
+with those of a similar colour: grain, which changes from frame to frame, averages out, while
+edges and moving things stay sharp. It is slower to preview than plain footage: **Tools > Render
+Selection to New Track** plays a stretch of it smoothly.
+
+## Match Colour
+
+Two cameras, or two days of shooting, rarely look the same. Select the events to fix, put the
+cursor on the shot whose colours they should have, then **Tools > Match Colour to the Cursor
+Frame** (or right-click an event). Each selected event gets a **Color Match** effect at the end of
+its FX: red, green and blue curves that give its spread of colours (from frames across the event)
+the reference shot's. Its **Amount** tones the match down; match again to update it, or remove the
+effect to undo it.
+
 ## GPU acceleration
 
 With **Options > GPU Acceleration** on, every video effect runs on the graphics card, except

@@ -311,6 +311,12 @@ QStringList blendModeNames()
             QStringLiteral("Overlay"), QStringLiteral("Lighten"), QStringLiteral("Darken"), QStringLiteral("Difference")};
 }
 
+QStringList trackMatteNames()
+{
+    return {QStringLiteral("Off"), QStringLiteral("Alpha Matte"), QStringLiteral("Inverted Alpha Matte"), QStringLiteral("Luma Matte"),
+            QStringLiteral("Inverted Luma Matte")};
+}
+
 const std::vector<ParamDef>& rackChainParams(bool audio)
 {
     static const std::vector<ParamDef> audioDefs = [] {

@@ -272,6 +272,16 @@ QString fadeCurveName(int curve)
     return QString::fromLatin1(names[std::clamp(curve, 0, kFadeCurves - 1)]);
 }
 
+int matteAbove(const Timeline& tl, int ti)
+{
+    for (int i = ti - 1; i >= 0; --i) {
+        const Track& t = tl.tracks[size_t(i)];
+        if (isVisualTrack(t.type))
+            return t.matte && !t.muted ? i : -1;
+    }
+    return -1;
+}
+
 int coveringTrack(const ProjectSnapshot& snap, TimeUs t)
 {
     const auto& tracks = snap.timeline.tracks;
@@ -279,7 +289,7 @@ int coveringTrack(const ProjectSnapshot& snap, TimeUs t)
     const double shape = double(snap.settings.width) / std::max(1, snap.settings.height);
     for (int ti = 0; ti < int(tracks.size()); ++ti) {
         const Track& tr = tracks[size_t(ti)];
-        if (!isVisualTrack(tr.type) || tr.muted || (anySolo && !tr.solo))
+        if (!isVisualTrack(tr.type) || tr.muted || (anySolo && !tr.solo) || tr.matte || matteAbove(snap.timeline, ti) >= 0)
             continue;
         const Clip* only = nullptr;
         int count = 0;
@@ -736,6 +746,8 @@ QJsonObject clipToJson(const Clip& c)
         o[QStringLiteral("stabilize")] = c.stabilize;
         o[QStringLiteral("stabilizeZoom")] = c.stabilizeZoom;
     }
+    if (c.denoise > 0)
+        o[QStringLiteral("denoise")] = c.denoise;
     if (c.loopLength > 0)
         o[QStringLiteral("loopLength")] = QString::number(c.loopLength);
     if (c.velocity.active || !c.velocity.points.empty())
@@ -899,6 +911,7 @@ Clip clipFromJson(const QJsonObject& o)
     c.opticalFlow = o[QStringLiteral("opticalFlow")].toBool(false);
     c.stabilize = std::clamp(o[QStringLiteral("stabilize")].toDouble(0), 0.0, 10.0);
     c.stabilizeZoom = o[QStringLiteral("stabilizeZoom")].toBool(true);
+    c.denoise = std::clamp(o[QStringLiteral("denoise")].toDouble(0), 0.0, 1.0);
     c.loopLength = std::max<TimeUs>(0, jsonTime(o[QStringLiteral("loopLength")]));
     c.velocity = envelopeFromJson(o[QStringLiteral("velocityEnvelope")], 1.0);
     for (auto& k : c.velocity.points)
@@ -1117,6 +1130,8 @@ QByteArray Project::toJson(const QString& baseDir, const QString& backupOf, bool
         o[QStringLiteral("pan")] = t.pan;
         if (t.blend)
             o[QStringLiteral("blend")] = t.blend;
+        if (t.matte)
+            o[QStringLiteral("matte")] = t.matte;
         if (t.duckUnder) {
             o[QStringLiteral("duckUnder")] = t.duckUnder;
             o[QStringLiteral("duckAmount")] = t.duckAmount;
@@ -1381,6 +1396,7 @@ bool Project::loadFile(const QString& path, QString* error, QStringList* missing
         t.level = float(o[QStringLiteral("level")].toDouble(1.0));
         t.pan = float(o[QStringLiteral("pan")].toDouble(0.0));
         t.blend = std::clamp(o[QStringLiteral("blend")].toInt(0), 0, 7);
+        t.matte = std::clamp(o[QStringLiteral("matte")].toInt(0), 0, int(MatteLumaInverted));
         t.duckUnder = o[QStringLiteral("duckUnder")].toInt(0);
         if (t.duckUnder) // only saved then
             t.duckAmount = float(std::clamp(o[QStringLiteral("duckAmount")].toDouble(-12.0), -60.0, 0.0));
@@ -1508,6 +1524,8 @@ QJsonObject nestedTimelineToJson(const Timeline& timeline)
         o[QStringLiteral("pan")] = t.pan;
         if (t.blend)
             o[QStringLiteral("blend")] = t.blend;
+        if (t.matte)
+            o[QStringLiteral("matte")] = t.matte;
         if (t.duckUnder) {
             o[QStringLiteral("duckUnder")] = t.duckUnder;
             o[QStringLiteral("duckAmount")] = t.duckAmount;
@@ -1557,6 +1575,7 @@ Timeline nestedTimelineFromJson(const QJsonObject& root)
         t.level = float(o[QStringLiteral("level")].toDouble(1.0));
         t.pan = float(o[QStringLiteral("pan")].toDouble(0.0));
         t.blend = std::clamp(o[QStringLiteral("blend")].toInt(0), 0, 7);
+        t.matte = std::clamp(o[QStringLiteral("matte")].toInt(0), 0, int(MatteLumaInverted));
         t.duckUnder = o[QStringLiteral("duckUnder")].toInt(0);
         if (t.duckUnder) // only saved then
             t.duckAmount = float(std::clamp(o[QStringLiteral("duckAmount")].toDouble(-12.0), -60.0, 0.0));

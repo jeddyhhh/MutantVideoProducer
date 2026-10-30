@@ -34,6 +34,7 @@
 #include "ui/MainWindow.h"
 #include "core/AudioSync.h"
 #include "core/Multicam.h"
+#include "core/ColorMatch.h"
 #include "core/Story.h"
 #include "core/PanCrop.h"
 #include "core/Cuts.h"
@@ -964,6 +965,8 @@ QJsonArray McpServer::toolList()
                    {QStringLiteral("frame_blend"), prop("boolean", "Video slow motion: blend neighbouring frames")},
                    {QStringLiteral("optical_flow"), prop("boolean", "Video slow motion: make in-between frames by following the motion "
                                                                      "(the smoothest; slower to preview and render)")},
+                   {QStringLiteral("denoise"), prop("number", "Video: noise reduction 0 (off) .. 1 (strong; 0.35 light, 0.65 medium), "
+                                                              "for grainy dark or phone footage (slower to preview)")},
                    {QStringLiteral("loop"), prop("boolean", "Repeat the file so the event can run on past its end (false: it stops there; a "
                                                             "length past the end without loop is shortened, with a warning)")},
                    {QStringLiteral("params"), prop("object", "A generated event's settings (as add_text params)")},
@@ -1207,13 +1210,18 @@ QJsonArray McpServer::toolList()
          {"intensity", prop("number", "0 to 1 (default .6)")}},
         {"event_ids"}));
     // Live.
-    t.append(tool("edit_track", "Changes a track: lock it (its events can't be edited, ripples pass it by), mute, solo, rename or set its level.",
+    t.append(tool("edit_track", "Changes a track: lock it (its events can't be edited, ripples pass it by), mute, solo, rename, set its level, "
+                  "or make it a track matte.",
                   {{QStringLiteral("track"), prop("integer", "Track index (see get_project)")},
                    {QStringLiteral("locked"), prop("boolean", "Lock or unlock")},
                    {QStringLiteral("muted"), prop("boolean", "Mute")},
                    {QStringLiteral("solo"), prop("boolean", "Solo")},
                    {QStringLiteral("name"), prop("string", "New name")},
                    {QStringLiteral("level"), prop("number", "Video: opacity 0..1; audio: volume 0..2 (1 = 0 dB)")},
+                   {QStringLiteral("matte"), enumProp({QStringLiteral("off"), QStringLiteral("alpha"), QStringLiteral("alpha_inverted"),
+                                                       QStringLiteral("luma"), QStringLiteral("luma_inverted")},
+                                                      "Video: make this a track matte for the visual track below it (not shown itself; that "
+                                                      "track shows where this one is drawn, alpha, or bright, luma), or off")},
                    {QStringLiteral("duck_under"), prop("integer", "Audio: turn this track down while that track (index) has sound; -1 stops")},
                    {QStringLiteral("duck_amount"), prop("number", "Audio: how far, dB (-60..0, default -12)")}},
                   {QStringLiteral("track")}));
@@ -1239,6 +1247,13 @@ QJsonArray McpServer::toolList()
                   {{QStringLiteral("event_ids"), arrayProp("integer", "Video events")},
                    {QStringLiteral("sensitivity"), prop("number", "0..1 (default 0.5): higher finds subtler cuts")},
                    {QStringLiteral("split"), prop("boolean", "Split at them (default true)")}},
+                  {QStringLiteral("event_ids")}));
+    t.append(tool("match_colour",
+                  "Gives video events the colours of the shot at time (Tools > Match Colour to the Cursor Frame): each gets a "
+                  "Color Match effect (red, green and blue curves; its amount tones it down) at the end of its FX. time must be "
+                  "outside the events.",
+                  {{QStringLiteral("event_ids"), arrayProp("integer", "Video events to change")},
+                   {QStringLiteral("time"), prop("number", "Seconds: the frame to match (default: the cursor)")}},
                   {QStringLiteral("event_ids")}));
     t.append(tool("multicam",
                   "Several cameras of the same moment. sync: moves events (with their groups) so their sound lines up with the "
@@ -1492,6 +1507,7 @@ struct McpServer::ToolCall {
     QJsonObject tool_open_project();
     QJsonObject tool_delete_track();
     QJsonObject tool_scene_changes();
+    QJsonObject tool_match_colour();
     QJsonObject tool_cut_time();
     QJsonObject tool_auto_reframe();
     QJsonObject tool_youtube_publish();
@@ -1705,6 +1721,8 @@ QJsonObject McpServer::ToolCall::tool_get_project()
                 o[QStringLiteral("frame_blend")] = true;
             if (c.opticalFlow)
                 o[QStringLiteral("optical_flow")] = true;
+            if (c.denoise > 0)
+                o[QStringLiteral("denoise")] = c.denoise;
             if (c.gain != 1.0f)
                 o[QStringLiteral("gain")] = double(c.gain);
             if (c.fadeIn > 0)
@@ -1723,6 +1741,10 @@ QJsonObject McpServer::ToolCall::tool_get_project()
             o[QStringLiteral("muted")] = true;
         if (t.locked)
             o[QStringLiteral("locked")] = true; // the user's: leave its events alone
+        if (t.matte)
+            o[QStringLiteral("matte")] = QStringList{QString(), QStringLiteral("alpha"), QStringLiteral("alpha_inverted"), QStringLiteral("luma"),
+                                                     QStringLiteral("luma_inverted")}
+                                             .value(t.matte);
         if (!t.effects.empty())
             o[QStringLiteral("effects")] = chainJson(t.effects);
         tracks.append(o);
@@ -2350,6 +2372,8 @@ QJsonObject McpServer::ToolCall::tool_edit_event()
         c->frameBlend = a.value(QStringLiteral("frame_blend")).toBool();
     if (has("optical_flow"))
         c->opticalFlow = a.value(QStringLiteral("optical_flow")).toBool();
+    if (has("denoise"))
+        c->denoise = c->isGenerated() ? 0.0 : std::clamp(num("denoise", 0), 0.0, 1.0);
     if (has("name"))
         c->name = str("name");
     if (has("muted"))
@@ -3399,6 +3423,14 @@ QJsonObject McpServer::ToolCall::tool_edit_track()
         t.name = str("name").left(80);
     if (has("level"))
         t.level = float(std::clamp(num("level", 1), 0.0, isVisualTrack(t.type) ? 1.0 : 2.0));
+    if (has("matte")) {
+        const int m = QStringList{QStringLiteral("off"), QStringLiteral("alpha"), QStringLiteral("alpha_inverted"), QStringLiteral("luma"),
+                                  QStringLiteral("luma_inverted")}
+                          .indexOf(str("matte"));
+        if (m < 0 || !isVisualTrack(t.type))
+            return errorResult(QStringLiteral("matte is off, alpha, alpha_inverted, luma or luma_inverted, on a video track"));
+        t.matte = m;
+    }
     if (has("duck_under") || has("duck_amount")) {
         if (t.type != TrackType::Audio)
             return errorResult(QStringLiteral("ducking is for audio tracks"));
@@ -3521,6 +3553,21 @@ QJsonObject McpServer::ToolCall::tool_scene_changes()
     if (!times.isEmpty())
         apply(tl, QStringLiteral("Split at Scene Changes"));
     return jsonResult({{QStringLiteral("cuts"), times}, {QStringLiteral("split"), !times.isEmpty()}});
+}
+
+QJsonObject McpServer::ToolCall::tool_match_colour()
+{
+    Timeline tl = project->timeline();
+    std::set<int> ids;
+    for (const QJsonValue v : a.value(QStringLiteral("event_ids")).toArray())
+        ids.insert(v.toInt());
+    const TimeUs at = has("time") ? us(num("time")) : w->m_timeline->cursorTime();
+    QString error;
+    const int n = colormatch::match(tl, *project->snapshot(), ids, at, &error);
+    if (!n)
+        return errorResult(error);
+    apply(tl, QStringLiteral("Match Colour"));
+    return jsonResult({{QStringLiteral("matched"), n}, {QStringLiteral("reference"), sec(at)}});
 }
 
 QJsonObject McpServer::ToolCall::tool_multicam()
@@ -3904,6 +3951,7 @@ QJsonObject McpServer::callTool(const QString& name, const QJsonObject& a)
         {QStringLiteral("open_project"), {&ToolCall::tool_open_project, false}},
         {QStringLiteral("delete_track"), {&ToolCall::tool_delete_track, false}},
         {QStringLiteral("scene_changes"), {&ToolCall::tool_scene_changes, false}},
+        {QStringLiteral("match_colour"), {&ToolCall::tool_match_colour, false}},
         {QStringLiteral("cut_time"), {&ToolCall::tool_cut_time, false}},
         {QStringLiteral("auto_reframe"), {&ToolCall::tool_auto_reframe, false}},
         {QStringLiteral("youtube_publish"), {&ToolCall::tool_youtube_publish, false}},

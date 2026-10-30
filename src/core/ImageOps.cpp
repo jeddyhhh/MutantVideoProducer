@@ -259,6 +259,32 @@ inline float blendChannel(int mode, float b, float s)
 }
 } // namespace
 
+void applyMatte(QImage& layer, const QImage& matte, int mode)
+{
+    if (layer.size() != matte.size() || mode <= 0)
+        return;
+    const int w = layer.width();
+    parallelFor(layer.height(), [&](int y0, int y1) {
+        for (int y = y0; y < y1; ++y) {
+            auto* l = reinterpret_cast<uint32_t*>(layer.scanLine(y));
+            const auto* m = reinterpret_cast<const uint32_t*>(matte.constScanLine(y));
+            for (int x = 0; x < w; ++x) {
+                const uint32_t mp = m[x];
+                // (premultiplied: luma counts what isn't drawn as black)
+                float k = mode <= 2 ? float(mp >> 24) / 255.0f
+                                    : (0.2126f * float((mp >> 16) & 0xff) + 0.7152f * float((mp >> 8) & 0xff) + 0.0722f * float(mp & 0xff)) / 255.0f;
+                if (mode == 2 || mode == 4)
+                    k = 1.0f - k;
+                const uint32_t lp = l[x];
+                uint32_t out = 0;
+                for (int c = 0; c < 32; c += 8)
+                    out |= uint32_t(float((lp >> c) & 0xff) * k + 0.5f) << c;
+                l[x] = out;
+            }
+        }
+    });
+}
+
 void blendLayer(QImage& base, const QImage& layer, float opacity, int mode)
 {
     if (base.size() != layer.size() || opacity <= 0.0f)

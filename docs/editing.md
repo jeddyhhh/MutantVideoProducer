@@ -23,6 +23,12 @@ its colour (Neon Green, Amber, LED Red and others, or a custom one).
 - **Compositing mode** (video tracks): the **Mode** in the header, or right-click > **Compositing
   Mode**, sets how the track mixes with the tracks below it: Normal, Add, Screen, Multiply,
   Overlay, Lighten, Darken or Difference, at the track's level.
+- **Track matte** (video tracks): the **Mode** in the header, or right-click > **Track Matte**, makes
+  the track a matte for the video track below it. The matte itself isn't shown: the track below
+  shows only where the matte is drawn (**Alpha Matte**: video inside the letters of a title, or in a
+  shape) or where it is bright (**Luma Matte**: a gradient or black-and-white footage as the mask).
+  The **Inverted** mattes are the other way round. Animate the matte (a moving title, keyframed
+  Pan/Crop) for reveals. Mute the matte track to turn it off.
 - **Track FX**: click a header, or its **fx** button, to show the track's effects in the device
   chain (see [Effects](effects.md)).
 - **Meters**: each audio track's header shows its level while playing.

@@ -9,6 +9,8 @@
 #include "core/Exporter.h"
 #include "core/Multicam.h"
 #include "core/OpticalFlow.h"
+#include "core/ColorMatch.h"
+#include <random>
 #include <QPainter>
 #include "core/TimelineOps.h"
 #include "core/YouTubeUpload.h"
@@ -592,6 +594,67 @@ int main(int argc, char** argv)
         const double p440 = power(440), p1000 = power(1000);
         check(read && p440 > 1000 * std::max(1e-9, p1000), QStringLiteral("a stem has only its track's sound (440 Hz %1x the other track's 1 kHz)")
                                                              .arg(p440 / std::max(1e-9, p1000), 0, 'g', 3));
+    }
+    {
+        // Match Colour's curves: a picture with every level, against a copy with other levels in each channel, give
+        // the copy's levels.
+        QImage src(256, 32, QImage::Format_ARGB32), ref(256, 32, QImage::Format_ARGB32);
+        for (int y = 0; y < 32; ++y)
+            for (int x = 0; x < 256; ++x) {
+                src.setPixel(x, y, qRgb(x, x, x));
+                ref.setPixel(x, y, qRgb(int(51 + 0.6 * x), x * x / 255, int(0.9 * x)));
+            }
+        colormatch::Histogram hs, hr;
+        hs.add(src);
+        hr.add(ref);
+        const colormatch::Curves cv = colormatch::curves(hs, hr);
+        double worst = 0;
+        for (int k = 1; k < colormatch::kPoints - 1; ++k) {
+            const double x = double(k) / (colormatch::kPoints - 1);
+            const double want[3] = {0.2 + 0.6 * x, x * x, 0.9 * x};
+            for (int c = 0; c < 3; ++c)
+                worst = std::max(worst, std::abs(cv[size_t(c)][size_t(k)] - want[c]));
+        }
+        check(worst < 0.02, QStringLiteral("Match Colour's curves take a picture's levels to the reference's (worst %1 off)").arg(worst, 0, 'f', 3));
+    }
+    {
+        // Noise reduction: the grain on a flat picture (different in each of three frames) mostly goes; an edge in
+        // it stays sharp.
+        auto noisy = [](unsigned seed) {
+            QImage img(320, 180, QImage::Format_ARGB32_Premultiplied);
+            std::mt19937 rng(seed);
+            std::normal_distribution<double> grain(0, 12);
+            for (int y = 0; y < 180; ++y)
+                for (int x = 0; x < 320; ++x) {
+                    const int v = std::clamp(int((x < 160 ? 60 : 190) + grain(rng)), 0, 255);
+                    img.setPixel(x, y, qRgb(v, v, v));
+                }
+            return img;
+        };
+        const QImage a = noisy(1), b = noisy(2), c = noisy(3);
+        const flow::Field toA = flow::estimate(b, a), toC = flow::estimate(b, c);
+        const QImage out = flow::denoise(b, &a, &toA, &c, &toC, 0.65);
+        auto spread = [](const QImage& img) { // (in the flat left part)
+            double s = 0, s2 = 0, n = 0;
+            for (int y = 10; y < 170; ++y)
+                for (int x = 10; x < 140; ++x) {
+                    const double v = qRed(img.pixel(x, y));
+                    s += v;
+                    s2 += v * v;
+                    ++n;
+                }
+            return std::sqrt(std::max(0.0, s2 / n - (s / n) * (s / n)));
+        };
+        double dark = 0, bright = 0;
+        for (int y = 10; y < 170; ++y) {
+            dark += qRed(out.pixel(158, y));
+            bright += qRed(out.pixel(161, y));
+        }
+        const double edge = (bright - dark) / 160, before = spread(b), after = spread(out);
+        check(after < before * 0.45 && edge > 110, QStringLiteral("noise reduction: grain %1 -> %2 levels, the edge kept (%3 levels across it)")
+                                                        .arg(before, 0, 'f', 1)
+                                                        .arg(after, 0, 'f', 1)
+                                                        .arg(edge, 0, 'f', 0));
     }
     {
         // Optical flow: a square that moved 24 px right and 12 down is, halfway, one square halfway along (frame

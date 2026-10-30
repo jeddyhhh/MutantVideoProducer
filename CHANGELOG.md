@@ -2,6 +2,20 @@
 
 What changed in each version of Mutant Video Producer. The newest is first.
 
+## Unreleased
+
+### Added
+
+- **Track mattes**: a video track can be a matte for the track below it (the header's Mode box, or right-click >
+  Track Matte): not shown itself, it decides where that track shows, by where it is drawn (alpha: video inside a
+  title's letters) or where it is bright (luma), or the other way round. The same on the CPU and the GPU.
+- **Match Colour** (Tools > Match Colour to the Cursor Frame, or right-click an event): gives the selected events the
+  colours of the shot under the cursor, as a Color Match effect (red, green and blue curves found by matching the
+  two pictures' levels) with an Amount.
+- **Reduce Noise** (right-click a video event): Light, Medium or Strong noise reduction for grainy footage, from the
+  pixels around each one in its frame and the frames either side, followed along the motion; edges stay sharp.
+- AI control: `edit_track` `matte`, `edit_event` `denoise`, and `match_colour`.
+
 ## 0.8.5 (2026-10-29)
 
 ### Added
