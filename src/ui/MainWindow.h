@@ -205,6 +205,7 @@ private:
     void editUserEffect(int effectId);
     // Proxies: queue the files (only the heavy ones if `heavyOnly`), delete theirs.
     void createProxies(const QList<int>& mediaIds, bool heavyOnly, bool replace = false);
+    QString youtubeFolder() const; // where Create Clip from YouTube saves (the profile's, the project's, or Videos)
     void deleteProxies(const QList<int>& mediaIds);
 
     // J / K / L shuttle (and the Live tab check for editor-only keys).

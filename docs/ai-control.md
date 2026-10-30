@@ -41,6 +41,14 @@ for each step and the checks that catch mistakes. It is how the *Snowbank* episo
 | user_guide | Reads this User Guide and the tutorials: the list of pages, or one page. |
 | multicam | Lines events up by their sound (sync), makes a multicam of video events (create), cuts or switches between angles, and lists the angles and cuts. |
 | match_colour | Gives video events the colours of the shot at a time (Tools > Match Colour to the Cursor Frame): a Color Match effect on each. |
+| envelope | Volume, pan and composite automation on tracks, and an event's velocity (custom speed ramp), as points. |
+| group, duplicate_events | Group / ungroup events; copy events (with effects and groups) to another time. |
+| stabilize, track_motion | Stabilize a video event (analysing the file); make a masked effect's mask follow the footage. |
+| beat_montage | Tools > Make Beat Montage: a montage cut to the markers from the video files. |
+| media | Relink a missing file, remove an unused one, organize (folder, rating, Mark In / Out), make proxies. |
+| presets | List effect presets, apply one to a chain or an effect, save an effect or chain as one, remove a saved one. |
+| normalize_audio | Edit > Normalize Audio Events. |
+| youtube_clip | File > Create Clip from YouTube: download (a part of) a video, import it and place it. |
 | node_effect | Makes video effects from a graph of nodes (Tools > Effect Builder): lists the node types, previews a graph on any frame, saves it as a User Created effect (then `add_effect`), lists the saved ones and reads one's graph back to change it. |
 | edit_track | Locks, mutes, solos, renames and sets a track's level; `matte` makes a video track a track matte for the one below it (alpha, luma, or inverted). |
 | graphics_overlay | Compose native layered text, shapes and images; create/read/update broadcast presets or custom scenes. `bind_audio` with `source_track` (a track index) and `binding` (a name) binds every sound on that track during the scene, for lip sync from each character's voice track (it follows later edits of the track, and its `visemes` drive mouth shapes). `characters` lists the character library, `add_character` adds one (`character`, `name`, `x`, `colours`), `save_character` saves a group; `expression` sets a character's face (`layer_id`, `mood`, `time`); `move` adds a ready-made move or gesture (`move`, `layer_id`, `time`, `duration`, `amount`, `to`); `sets` lists the set library and `add_set` (`set`) puts one behind the scene; `patch` changes properties by path (`operations`), `batch` runs many move/expression/keyframe/patch steps as one undo step, `dance` keys moves on the music's beats (`dancers`, `moves`, `every`), and `props` / `add_prop` put a prop in a character's hand. `freeze_frame` `in_place` holds a frame over the following time without moving anything later. Layers can be `video` (`path`, `source_in`, `speed`, `loop`, `fit`) and carry their own `effects`; the camera's `speaker` frames whoever is talking. Colours are `#RRGGBB`, or `#AARRGGBB` with the alpha first. |
@@ -58,7 +66,7 @@ for each step and the checks that catch mistakes. It is how the *Snowbank* episo
 | generate_dialogue | Speaks a `Name: line` script with a voice, rate and pitch per character (`cast`), one new audio track per character named after them, lines in script order from `start` with `gap` between them, as one undo step; `align` (default on when a Whisper model is installed) times each word for exact mouth shapes. Poll `voice_status` (its `dialogue` field). |
 | generate_voice, voice_status | Starts local caption-to-speech generation and polls or cancels it; optional bundled RVC conversion with an imported `.pth` model. A completed job adds one undoable Voice track. |
 | ai_components | Lists optional Windows speech/RVC engines and upstream sources; installs CPU or CUDA environments from Astral/PyPI/PyTorch. Installation shows progress, verifies locked wheels and needs no separate Python install. |
-| get_frame | Looks at any frame as an image. |
+| get_frame | Looks at any frame as an image; `save_to` also saves it as a file (File > Export Frame). |
 | transport | Plays, stops and moves the cursor. |
 | render, render_status | Renders in the background with any Render As template; opens the detailed Render Status window and exposes statistics in `render_status.details`. `in_place` renders from-to onto a Rendered track on top (Tools > Render Selection to New Track); `stems` writes each audio track to a WAV in the folder `path` (File > Export Stems). |
 | undo, redo, save_project, set_project_settings | Undo, save, frame size and rate. |

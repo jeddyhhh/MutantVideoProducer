@@ -1529,8 +1529,13 @@ void DeviceChainView::updateMaskOverlay()
     m_preview->setOverlay(m_maskOverlay.get());
 }
 
-void DeviceChainView::trackMask(const ChainPath& path, int index)
+QString DeviceChainView::trackMask(const ChainPath& path, int index, bool quiet)
 {
+    auto say = [&](const QString& text) {
+        if (!quiet)
+            QMessageBox::information(this, tr("Track Motion"), text);
+        return text;
+    };
     // From the cursor to the end of the event, on its source frames: the mask's
     // box mapped from the canvas into the source, followed, and its centre mapped
     // back for keyframes on mask.x / mask.y.
@@ -1539,16 +1544,14 @@ void DeviceChainView::trackMask(const ChainPath& path, int index)
     const auto media = clip && !clip->isGenerated() ? m_project->mediaItem(clip->mediaId) : nullptr;
     const VideoStreamInfo* vs = media ? media->info.videoStream(clip->streamIndex) : nullptr;
     if (!clip || !vs || media->info.isStill) {
-        QMessageBox::information(this, tr("Track Motion"), tr("Track Motion follows the footage of a video event: use it on a video event's Event FX."));
-        return;
+        return say(tr("Track Motion follows the footage of a video event: use it on a video event's Event FX."));
     }
     if (clip->reverse || clip->hasRamp()) {
-        QMessageBox::information(this, tr("Track Motion"), tr("Track Motion works on events playing forwards at a steady speed (no reverse or speed ramp)."));
-        return;
+        return say(tr("Track Motion works on events playing forwards at a steady speed (no reverse or speed ramp)."));
     }
     const ParamMap* map = params(ParamRef{path, index, -1});
     if (!map)
-        return;
+        return {};
     const QSizeF canvas(m_project->settings().width, m_project->settings().height);
     const QSizeF disp(vs->displaySize());
     // Canvas <-> source display, at an event-local time (framing and stabilisation as rendered).
@@ -1564,7 +1567,7 @@ void DeviceChainView::trackMask(const ChainPath& path, int index)
     bool invertible = false;
     const QTransform toSource = view(from).inverted(&invertible);
     if (!invertible)
-        return;
+        return {};
     const QPointF centre = toSource.map(QPointF(mp.num(QStringLiteral("mask.x")) * canvas.width(), mp.num(QStringLiteral("mask.y")) * canvas.height()));
     const double scale = std::sqrt(std::abs(toSource.determinant()));
     const QSizeF boxDisp(mp.num(QStringLiteral("mask.w")) * canvas.width() * scale, mp.num(QStringLiteral("mask.h")) * canvas.height() * scale);
@@ -1599,8 +1602,7 @@ void DeviceChainView::trackMask(const ChainPath& path, int index)
     worker.join();
     progress.close();
     if (points.size() < 2) {
-        QMessageBox::information(this, tr("Track Motion"), error.isEmpty() ? tr("Nothing to track there.") : error);
-        return;
+        return say(error.isEmpty() ? tr("Nothing to track there.") : error);
     }
     // Keyframes (every frame, until it is lost for good), replacing the ones in that span.
     std::vector<std::pair<TimeUs, QPointF>> keys;
@@ -1629,8 +1631,7 @@ void DeviceChainView::trackMask(const ChainPath& path, int index)
         }
     }, tr("Track Motion"));
     emit seekRequested(clip->start + last);
-    QMessageBox::information(this, tr("Track Motion"),
-                             lost >= 5 ? tr("Followed it for %1 s, then lost it: track again from there with the mask moved onto it.").arg(double(last - from) / 1e6, 0, 'f', 1)
+    return say(lost >= 5 ? tr("Followed it for %1 s, then lost it: track again from there with the mask moved onto it.").arg(double(last - from) / 1e6, 0, 'f', 1)
                                        : tr("Followed it for %1 s (%2 keyframes).").arg(double(last - from) / 1e6, 0, 'f', 1).arg(keys.size()));
 }
 

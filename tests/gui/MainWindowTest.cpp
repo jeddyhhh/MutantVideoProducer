@@ -895,6 +895,103 @@ int MainWindow::runEditorTest(QStringList& log)
                       .arg(types));
             QFile::remove(saved[QStringLiteral("file")].toString());
         }
+        {
+            // The rest of the menus through AI control: envelopes, groups, track pan and blend, duplicating, the media,
+            // presets, normalizing, saving a frame, Stabilize, Beat Montage, Track Motion and the YouTube clip's checks.
+            const Timeline before = m_project->timeline();
+            const QJsonObject proj = content(call(QStringLiteral("get_project"), {}));
+            const int media = proj[QStringLiteral("media")].toArray().first().toObject()[QStringLiteral("media_id")].toInt();
+            const QJsonArray placed = content(call(QStringLiteral("add_media_to_timeline"), {{QStringLiteral("media_id"), media}, {QStringLiteral("at"), 60}}))
+                                          [QStringLiteral("event_ids")].toArray();
+            int video = 0, audio = 0, audioTrack = -1, videoTrack = -1;
+            for (const QJsonValue v : placed) {
+                int ti = -1;
+                if (m_project->timeline().findClip(v.toInt(), &ti)) {
+                    (m_project->timeline().tracks[size_t(ti)].type == TrackType::Audio ? audio : video) = v.toInt();
+                    (m_project->timeline().tracks[size_t(ti)].type == TrackType::Audio ? audioTrack : videoTrack) = ti;
+                }
+            }
+            QStringList broken;
+            auto ok = [&](bool good, const char* what) {
+                if (!good)
+                    broken << QString::fromLatin1(what);
+            };
+            // Envelopes.
+            const QJsonObject env = content(call(QStringLiteral("envelope"), {{QStringLiteral("kind"), QStringLiteral("volume")}, {QStringLiteral("track"), audioTrack},
+                                                                              {QStringLiteral("points"), QJsonArray{QJsonArray{60, 1.0}, QJsonArray{62, 0.2, QStringLiteral("smooth")}}}}));
+            ok(env[QStringLiteral("points")].toArray().size() == 2 && m_project->timeline().tracks[size_t(audioTrack)].volume.active, "envelope");
+            ok(content(call(QStringLiteral("envelope"), {{QStringLiteral("kind"), QStringLiteral("velocity")}, {QStringLiteral("event_id"), video},
+                                                         {QStringLiteral("points"), QJsonArray{QJsonArray{0, 1.0}, QJsonArray{1, 2.0}}}}))[QStringLiteral("active")].toBool(),
+               "velocity");
+            ok(failed(call(QStringLiteral("envelope"), {{QStringLiteral("kind"), QStringLiteral("pan")}, {QStringLiteral("track"), videoTrack}})), "pan on video refused");
+            // Groups.
+            call(QStringLiteral("group"), {{QStringLiteral("action"), QStringLiteral("ungroup")}, {QStringLiteral("event_ids"), QJsonArray{video, audio}}});
+            const bool apart = m_project->timeline().findClip(video)->groupId == 0;
+            call(QStringLiteral("group"), {{QStringLiteral("action"), QStringLiteral("group")}, {QStringLiteral("event_ids"), QJsonArray{video, audio}}});
+            ok(apart && m_project->timeline().findClip(video)->groupId != 0
+                   && m_project->timeline().findClip(video)->groupId == m_project->timeline().findClip(audio)->groupId, "group");
+            // Track pan and blend.
+            call(QStringLiteral("edit_track"), {{QStringLiteral("track"), audioTrack}, {QStringLiteral("pan"), -0.5}});
+            call(QStringLiteral("edit_track"), {{QStringLiteral("track"), videoTrack}, {QStringLiteral("blend"), QStringLiteral("screen")}});
+            ok(m_project->timeline().tracks[size_t(audioTrack)].pan == -0.5f && m_project->timeline().tracks[size_t(videoTrack)].blend == 2, "pan / blend");
+            // Duplicating.
+            const QJsonArray copies = content(call(QStringLiteral("duplicate_events"), {{QStringLiteral("event_ids"), QJsonArray{video, audio}}, {QStringLiteral("at"), 90}}))
+                                          [QStringLiteral("event_ids")].toArray();
+            const Clip* copy = copies.isEmpty() ? nullptr : m_project->timeline().findClip(copies.first().toInt());
+            ok(copies.size() == 2 && copy && copy->start == 90 * kUsPerSecond && copy->groupId != 0 && copy->groupId != m_project->timeline().findClip(video)->groupId,
+               "duplicate");
+            // The media: organize (and its checks).
+            const QJsonObject org = content(call(QStringLiteral("media"), {{QStringLiteral("action"), QStringLiteral("organize")}, {QStringLiteral("media_id"), media},
+                                                                           {QStringLiteral("folder"), QStringLiteral("AI/Test")}, {QStringLiteral("rating"), 4}}));
+            ok(org[QStringLiteral("folder")].toString() == QLatin1String("AI/Test") && org[QStringLiteral("rating")].toInt() == 4
+                   && failed(call(QStringLiteral("media"), {{QStringLiteral("action"), QStringLiteral("remove")}, {QStringLiteral("media_id"), media}})),
+               "media");
+            call(QStringLiteral("media"), {{QStringLiteral("action"), QStringLiteral("organize")}, {QStringLiteral("media_id"), media}, {QStringLiteral("folder"), QString()},
+                                           {QStringLiteral("rating"), 0}});
+            // Presets: list, apply one onto the event, save the chain, remove it.
+            const QJsonArray presets = content(call(QStringLiteral("presets"), {{QStringLiteral("action"), QStringLiteral("list")}}))[QStringLiteral("presets")].toArray();
+            QString chainPreset;
+            for (const QJsonValue v : presets)
+                if (chainPreset.isEmpty() && v.toObject()[QStringLiteral("chain")].toBool())
+                    chainPreset = v.toObject()[QStringLiteral("id")].toString();
+            const QJsonObject added = content(call(QStringLiteral("presets"), {{QStringLiteral("action"), QStringLiteral("apply")}, {QStringLiteral("preset"), chainPreset},
+                                                                               {QStringLiteral("target"), QStringLiteral("event")}, {QStringLiteral("id"), video}}));
+            const QJsonObject savedPreset = content(call(QStringLiteral("presets"), {{QStringLiteral("action"), QStringLiteral("save")}, {QStringLiteral("name"), QStringLiteral("GUI Test Chain")},
+                                                                                     {QStringLiteral("target"), QStringLiteral("event")}, {QStringLiteral("id"), video}}));
+            const bool removed = !failed(call(QStringLiteral("presets"), {{QStringLiteral("action"), QStringLiteral("remove")},
+                                                                          {QStringLiteral("preset"), savedPreset[QStringLiteral("preset")].toString()}}));
+            ok(presets.size() > 20 && !added[QStringLiteral("effect_ids")].toArray().isEmpty() && savedPreset[QStringLiteral("preset")].toString().startsWith(QLatin1String("u:"))
+                   && removed, "presets");
+            // Normalizing, and a frame saved.
+            const QJsonObject norm = content(call(QStringLiteral("normalize_audio"), {{QStringLiteral("event_ids"), QJsonArray{audio}}}));
+            ok(norm[QStringLiteral("normalized")].toBool(), "normalize");
+            const QString still = work.filePath(QStringLiteral("ai-frame.png"));
+            call(QStringLiteral("get_frame"), {{QStringLiteral("time"), 61}, {QStringLiteral("save_to"), still}});
+            ok(QImage(still).width() == m_project->settings().width, "save_to");
+            QFile::remove(still);
+            // Stabilize (analysing the file), Track Motion (a masked effect followed), Beat Montage (on markers).
+            const QJsonObject stab = content(call(QStringLiteral("stabilize"), {{QStringLiteral("event_id"), video}, {QStringLiteral("smoothing"), 1.5}}));
+            ok(stab[QStringLiteral("smoothing")].toDouble() == 1.5 && m_project->timeline().findClip(video)->stabilize == 1.5, "stabilize");
+            call(QStringLiteral("stabilize"), {{QStringLiteral("event_id"), video}, {QStringLiteral("smoothing"), 0}});
+            call(QStringLiteral("envelope"), {{QStringLiteral("kind"), QStringLiteral("velocity")}, {QStringLiteral("event_id"), video}, {QStringLiteral("clear"), true}});
+            const int fx = content(call(QStringLiteral("add_effect"), {{QStringLiteral("target"), QStringLiteral("event")}, {QStringLiteral("id"), video},
+                                                                       {QStringLiteral("effect"), QStringLiteral("pixelate")},
+                                                                       {QStringLiteral("params"), QJsonObject{{QStringLiteral("mask.shape"), QStringLiteral("Ellipse")},
+                                                                                                              {QStringLiteral("mask.w"), 0.3}, {QStringLiteral("mask.h"), 0.3}}}}))
+                               [QStringLiteral("effect_id")].toInt();
+            const QJsonObject tracked = content(call(QStringLiteral("track_motion"), {{QStringLiteral("event_id"), video}, {QStringLiteral("effect_id"), fx}, {QStringLiteral("from"), 60}}));
+            ok(tracked[QStringLiteral("keyframes")].toInt() > 5, "track_motion");
+            for (double t : {60.0, 61.0, 62.0, 63.0})
+                call(QStringLiteral("add_marker"), {{QStringLiteral("time"), t}});
+            const QJsonObject montage = content(call(QStringLiteral("beat_montage"), {{QStringLiteral("every"), 1}, {QStringLiteral("from"), 59.5}, {QStringLiteral("to"), 63.5}}));
+            ok(montage[QStringLiteral("event_ids")].toArray().size() == 3, "beat_montage");
+            // The YouTube clip: its checks (no download here).
+            ok(failed(call(QStringLiteral("youtube_clip"), {{QStringLiteral("url"), QStringLiteral("not a link")}})), "youtube_clip");
+            check(broken.isEmpty(), QStringLiteral("AI control: envelopes, groups, track pan and blend, duplicating, media, presets, normalize, "
+                                                   "saving a frame, stabilize, track motion, beat montage and the YouTube clip %1")
+                                        .arg(broken.join(QStringLiteral(", "))));
+            m_project->setTimelineLive(before);
+        }
 
         int status = 0;
         const QJsonObject init =

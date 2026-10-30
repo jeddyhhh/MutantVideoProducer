@@ -73,6 +73,7 @@ private:
     friend class DeviceTitle;
     friend class ChainStrip;
     friend class RackChainList;
+    friend class McpServer; // (AI control: Track Motion)
 
     // A parameter of effect `index` in chain `path`, or of that rack's chain `chain`.
     struct ParamRef {
@@ -115,7 +116,8 @@ private:
     // Masks: on / off (an ellipse), the one shown on the picture, and Track Motion.
     void toggleMask(const ChainPath& path, int index);
     void updateMaskOverlay();
-    void trackMask(const ChainPath& path, int index);
+    // Returns what it says when done; quiet: says it only that way, no message boxes (AI control).
+    QString trackMask(const ChainPath& path, int index, bool quiet = false);
 
     // Structure.
     bool dropMime(const QMimeData* mime, const ChainPath& path, int index, bool copy);

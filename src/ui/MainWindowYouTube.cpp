@@ -82,6 +82,14 @@ bool MainWindow::downloadFile(QWidget* parent, const QUrl& url, const QString& d
     return true;
 }
 
+QString MainWindow::youtubeFolder() const
+{
+    const QString profileFolder = Profiles::instance().folder(QStringLiteral("YouTube"));
+    return !profileFolder.isEmpty() ? profileFolder : m_project->filePath().isEmpty()
+               ? brand::userFolder(QStandardPaths::MoviesLocation, QStringLiteral("YouTube"))
+               : QDir(QFileInfo(m_project->filePath()).absolutePath()).filePath(QStringLiteral("YouTube"));
+}
+
 void MainWindow::createClipFromYouTube()
 {
     stopPlayback(false);
@@ -108,10 +116,7 @@ void MainWindow::createClipFromYouTube()
     quality->addItem(tr("Sound only"), 0);
     QSettings settings;
     quality->setCurrentIndex(std::max(0, quality->findData(settings.value(QStringLiteral("youtube/quality"), 1080))));
-    const QString profileFolder = Profiles::instance().folder(QStringLiteral("YouTube"));
-    const QString folder = !profileFolder.isEmpty() ? profileFolder : m_project->filePath().isEmpty()
-                               ? brand::userFolder(QStandardPaths::MoviesLocation, QStringLiteral("YouTube"))
-                               : QDir(QFileInfo(m_project->filePath()).absolutePath()).filePath(QStringLiteral("YouTube"));
+    const QString folder = youtubeFolder();
     form->addRow(tr("Link"), link);
     form->addRow(tr("Part (optional, e.g. 1:30)"), part);
     form->addRow(tr("Quality"), quality);

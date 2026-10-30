@@ -12,6 +12,10 @@ What changed in each version of Mutant Video Producer. The newest is first.
   key, split and combine channels, threshold, displace, place and delay. Settings ticked "Show on effect" become the
   effect's (keyframable). Saved, the effect is in the Effects tab under User Created; projects carry its graph.
 - AI control: `node_effect` builds, previews and saves Effect Builder graphs, and reads saved ones back.
+- AI control covers the rest of the menus: `envelope` (track volume / pan / composite automation and custom speed
+  ramps), `group`, `duplicate_events`, `stabilize`, `track_motion`, `beat_montage`, `media` (relink, remove, organize,
+  proxies), `presets`, `normalize_audio` and `youtube_clip`; `edit_track` sets pan and the compositing mode, and
+  `get_frame` can save the frame to a file.
 - Eleven example node effects come with the program (User Created > Examples; Tools > Edit User Effect > Examples
   opens them to see how they're made).
 - A user effect's box in the device chain says to double-click it: that opens it in the Effect Builder, and saving

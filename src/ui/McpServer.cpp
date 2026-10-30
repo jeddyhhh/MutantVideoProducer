@@ -36,6 +36,13 @@
 #include "core/Multicam.h"
 #include "core/ColorMatch.h"
 #include "core/NodeGraph.h"
+#include "core/Presets.h"
+#include "core/Stabilizer.h"
+#include "core/YouTube.h"
+#include "ui/DeviceChainView.h"
+#include "ui/FxTarget.h"
+#include <atomic>
+#include <thread>
 #include "core/Story.h"
 #include "core/PanCrop.h"
 #include "core/Cuts.h"
@@ -1040,7 +1047,9 @@ QJsonArray McpServer::toolList()
                    {QStringLiteral("to"), prop("number", "Seconds (default: the end)")}}));
     t.append(tool("get_frame", "The picture at a time (default: the cursor), as an image, with the effects.",
                   {{QStringLiteral("time"), prop("number", "Seconds")},
-                   {QStringLiteral("width"), prop("integer", "Image width, 160-1920 (default 640)")}},
+                   {QStringLiteral("width"), prop("integer", "Image width, 160-1920 (default 640)")},
+                   {QStringLiteral("save_to"), prop("string", "Also save it to this file (.png or .jpg; File > Export Frame), at the project's size "
+                                                              "unless width is given")}},
                   {}, true));
     t.append(tool("transport", "Moves the cursor, plays or stops the preview.",
                   {{QStringLiteral("action"), enumProp({QStringLiteral("seek"), QStringLiteral("play"), QStringLiteral("stop")}, "What")},
@@ -1223,6 +1232,9 @@ QJsonArray McpServer::toolList()
                                                        QStringLiteral("luma"), QStringLiteral("luma_inverted")},
                                                       "Video: make this a track matte for the visual track below it (not shown itself; that "
                                                       "track shows where this one is drawn, alpha, or bright, luma), or off")},
+                   {QStringLiteral("pan"), prop("number", "Audio: -1 (left) .. 1 (right)")},
+                   {QStringLiteral("blend"), prop("string", "Video: compositing mode over the tracks below: Normal, Add, Screen, Multiply, Overlay, "
+                                                            "Lighten, Darken or Difference")},
                    {QStringLiteral("duck_under"), prop("integer", "Audio: turn this track down while that track (index) has sound; -1 stops")},
                    {QStringLiteral("duck_amount"), prop("number", "Audio: how far, dB (-60..0, default -12)")}},
                   {QStringLiteral("track")}));
@@ -1249,6 +1261,90 @@ QJsonArray McpServer::toolList()
                    {QStringLiteral("sensitivity"), prop("number", "0..1 (default 0.5): higher finds subtler cuts")},
                    {QStringLiteral("split"), prop("boolean", "Split at them (default true)")}},
                   {QStringLiteral("event_ids")}));
+    t.append(tool("envelope",
+                  "Automation lines: a track's volume (0..2, 1 = 0 dB), pan (-1 left .. 1 right) or composite level (video, 0..1), "
+                  "in timeline seconds; or an event's velocity (speed ramp: a rate multiplier, -1 backwards .. 10, 1 = as set), in "
+                  "seconds from its start (the grouped sound follows). points replaces the line ([seconds, value, curve?]; curve as "
+                  "keyframes: linear, hold, smooth, ease_in...); active switches it on / off; clear removes it. Returns the line.",
+                  {{QStringLiteral("kind"), enumProp({QStringLiteral("volume"), QStringLiteral("pan"), QStringLiteral("composite"), QStringLiteral("velocity")}, "Which")},
+                   {QStringLiteral("track"), prop("integer", "volume / pan / composite: the track index")},
+                   {QStringLiteral("event_id"), prop("integer", "velocity: the event")},
+                   {QStringLiteral("points"), arrayProp("array", "[[seconds, value, curve?], ...]")},
+                   {QStringLiteral("active"), prop("boolean", "On or off (default: on when points are given)")},
+                   {QStringLiteral("clear"), prop("boolean", "Remove the line")}},
+                  {QStringLiteral("kind")}));
+    t.append(tool("group", "Groups events (they move, trim and fade together; Edit > Group) or ungroups them (e.g. to delete a video "
+                           "event's sound without its picture).",
+                  {{QStringLiteral("action"), enumProp({QStringLiteral("group"), QStringLiteral("ungroup")}, "What")},
+                   {QStringLiteral("event_ids"), arrayProp("integer", "Events")}},
+                  {QStringLiteral("action"), QStringLiteral("event_ids")}));
+    t.append(tool("duplicate_events", "Copies events (with their effects, fades and groups) to a new time on the same tracks (Edit > Copy, "
+                                      "Paste at the cursor). Returns the new event ids.",
+                  {{QStringLiteral("event_ids"), arrayProp("integer", "Events")},
+                   {QStringLiteral("at"), prop("number", "Seconds: where the earliest of them goes (default: the cursor)")}},
+                  {QStringLiteral("event_ids")}));
+    t.append(tool("stabilize", "Smooths camera shake out of a video event (right-click > Stabilize), analysing the file the first time. "
+                               "smoothing: seconds of shake smoothed (0 off, 0.5 light, 1.5 medium, 3 strong, 8 nearly a tripod).",
+                  {{QStringLiteral("event_id"), prop("integer", "A video event")},
+                   {QStringLiteral("smoothing"), prop("number", "Seconds, 0..10 (default 1.5)")},
+                   {QStringLiteral("zoom"), prop("boolean", "Zoom in to hide the moving edges (default true)")}},
+                  {QStringLiteral("event_id")}));
+    t.append(tool("beat_montage", "A montage cut to the markers (Tools > Make Beat Montage; put markers on the beat with detect_beats first): a "
+                                  "new video track on top with a clip from the video files between the cuts, each from a random part of its file.",
+                  {{QStringLiteral("media_ids"), arrayProp("integer", "Video files to use (default: every video file)")},
+                   {QStringLiteral("every"), prop("integer", "Cut every n markers (1, 2, 4, 8 or 16; default 4)")},
+                   {QStringLiteral("shuffle"), prop("boolean", "Clips in a random order (default true; false: in turn)")},
+                   {QStringLiteral("from"), prop("number", "Seconds: only markers from here (default 0)")},
+                   {QStringLiteral("to"), prop("number", "Seconds: only markers to here (default: the end)")},
+                   {QStringLiteral("seed"), prop("integer", "For the random choices (default 1)")}}));
+    t.append(tool("media", "Project Media: relink a missing (or moved) file, remove a file nothing uses, organize one (folder, rating, Mark "
+                           "In / Out: the part placed from it), or make proxies (smaller copies that play smoothly; in the background).",
+                  {{QStringLiteral("action"), enumProp({QStringLiteral("relink"), QStringLiteral("remove"), QStringLiteral("organize"), QStringLiteral("proxies")}, "What")},
+                   {QStringLiteral("media_id"), prop("integer", "relink / remove / organize: the file (see get_project)")},
+                   {QStringLiteral("media_ids"), arrayProp("integer", "proxies: the files (default: every heavy one)")},
+                   {QStringLiteral("path"), prop("string", "relink: the file where it is now")},
+                   {QStringLiteral("folder"), prop("string", "organize: e.g. Footage/Day 1")},
+                   {QStringLiteral("rating"), prop("integer", "organize: 0..5 stars")},
+                   {QStringLiteral("mark_in"), prop("number", "organize: seconds")},
+                   {QStringLiteral("mark_out"), prop("number", "organize: seconds (0: to the end)")},
+                   {QStringLiteral("replace"), prop("boolean", "proxies: make them again")}},
+                  {QStringLiteral("action")}));
+    t.append(tool("track_motion", "Track Motion: an effect's mask follows what is inside it, from a time to the end of the video event, "
+                                  "keyframing the mask's position on every frame. The effect needs a mask (add_effect params mask.shape, "
+                                  "mask.x / y / w / h) and the event a steady forward speed.",
+                  {{QStringLiteral("event_id"), prop("integer", "The video event")},
+                   {QStringLiteral("effect_id"), prop("integer", "The masked effect on it")},
+                   {QStringLiteral("from"), prop("number", "Seconds on the timeline (default: the cursor, else the event's start)")}},
+                  {QStringLiteral("event_id"), QStringLiteral("effect_id")}));
+    t.append(tool("presets", "Effect presets. list: the factory and saved ones (search narrows; audio: the audio ones). apply: a preset onto "
+                             "a chain (target and id as add_effect), or a single-effect preset onto that effect (effect_id). save: an effect "
+                             "(effect_id) or a whole chain (target, id) as a preset named name. remove: a saved preset.",
+                  {{QStringLiteral("action"), enumProp({QStringLiteral("list"), QStringLiteral("apply"), QStringLiteral("save"), QStringLiteral("remove")}, "What")},
+                   {QStringLiteral("search"), prop("string", "list: words to look for")},
+                   {QStringLiteral("audio"), prop("boolean", "list: the audio presets (default: video)")},
+                   {QStringLiteral("preset"), prop("string", "apply / remove: its id (from list)")},
+                   {QStringLiteral("target"), enumProp({QStringLiteral("event"), QStringLiteral("track"), QStringLiteral("output"), QStringLiteral("audio_master"),
+                                                        QStringLiteral("live"), QStringLiteral("pad"), QStringLiteral("layer")},
+                                                       "apply / save: the chain")},
+                   {QStringLiteral("id"), prop("integer", "apply / save: event id, track index or pad number")},
+                   {QStringLiteral("effect_id"), prop("integer", "apply / save: one effect")},
+                   {QStringLiteral("name"), prop("string", "save: the preset's name")}},
+                  {QStringLiteral("action")}));
+    t.append(tool("normalize_audio", "Edit > Normalize Audio Events: each audio event's loudest peak to -0.1 dBFS (a Gain effect at the front "
+                                     "of its chain).",
+                  {{QStringLiteral("event_ids"), arrayProp("integer", "Audio events")}},
+                  {QStringLiteral("event_ids")}));
+    t.append(tool("youtube_clip", "File > Create Clip from YouTube: downloads a video (or a part of it) with yt-dlp into the YouTube folder, "
+                                  "imports it and (unless place is false) puts it on the timeline. Only for videos you may use (your own, "
+                                  "Creative Commons, or with permission). Takes as long as the download.",
+                  {{QStringLiteral("url"), prop("string", "The video's link")},
+                   {QStringLiteral("from"), prop("number", "Seconds: the part's start (default: the start)")},
+                   {QStringLiteral("to"), prop("number", "Seconds: the part's end (default: the end)")},
+                   {QStringLiteral("quality"), prop("integer", "Up to 1080, 720, 480 or 360 lines; 0: the sound only (default 1080)")},
+                   {QStringLiteral("place"), prop("boolean", "Put it on the timeline (default true)")},
+                   {QStringLiteral("at"), prop("number", "Seconds: where (default: the cursor)")},
+                   {QStringLiteral("browser"), prop("string", "Use this browser's session if YouTube asks to verify: firefox, chrome, edge or brave")}},
+                  {QStringLiteral("url")}));
     t.append(tool("node_effect",
                   "Makes video effects from a graph of nodes (Tools > Effect Builder): saved, an effect is in the User Created "
                   "category, for add_effect on any event, track or adjustment layer. nodes: the node types (search narrows; with "
@@ -1532,6 +1628,18 @@ struct McpServer::ToolCall {
     QJsonObject tool_scene_changes();
     QJsonObject tool_match_colour();
     QJsonObject tool_node_effect();
+    QJsonObject tool_envelope();
+    QJsonObject tool_group();
+    QJsonObject tool_duplicate_events();
+    QJsonObject tool_stabilize();
+    QJsonObject tool_beat_montage();
+    QJsonObject tool_media();
+    QJsonObject tool_track_motion();
+    QJsonObject tool_presets();
+    QJsonObject tool_normalize_audio();
+    QJsonObject tool_youtube_clip();
+    // The chain `target` / `id` name (as add_effect): null with `error` set.
+    EffectChain* chainFor(Timeline& tl, bool* audio, QString* error) const;
     QJsonObject tool_cut_time();
     QJsonObject tool_auto_reframe();
     QJsonObject tool_youtube_publish();
@@ -2599,40 +2707,11 @@ QJsonObject McpServer::ToolCall::tool_add_effect()
     if (!meta)
         return errorResult(QStringLiteral("no effect \"%1\" (list_effects)").arg(type));
     Timeline tl = project->timeline();
-    const QString target = str("target");
-    const int id = integer("id", -1);
-    EffectChain* chain = nullptr;
     bool audioChain = false;
-    if (target == QLatin1String("event")) {
-        int ti = -1;
-        Clip* c = tl.findClip(id, &ti);
-        if (!c)
-            return errorResult(QStringLiteral("no event %1").arg(id));
-        chain = &c->effects;
-        audioChain = tl.tracks[size_t(ti)].type == TrackType::Audio;
-    } else if (target == QLatin1String("track")) {
-        if (id < 0 || id >= int(tl.tracks.size()))
-            return errorResult(QStringLiteral("no track %1").arg(id));
-        chain = &tl.tracks[size_t(id)].effects;
-        audioChain = tl.tracks[size_t(id)].type == TrackType::Audio;
-    } else if (target == QLatin1String("output")) {
-        chain = &tl.outputEffects;
-    } else if (target == QLatin1String("audio_master")) {
-        chain = &tl.audioMasterEffects;
-        audioChain = true;
-    } else if (target == QLatin1String("live")) {
-        chain = &tl.liveEffects;
-    } else if (target == QLatin1String("layer")) {
-        chain = &tl.liveLayerEffects;
-    } else if (target == QLatin1String("pad")) {
-        if (id < 1 || id > kLivePads)
-            return errorResult(QStringLiteral("pads are 1-16"));
-        if (tl.livePads[size_t(id - 1)].locked)
-            return errorResult(QStringLiteral("pad %1 is locked").arg(id));
-        chain = &tl.livePads[size_t(id - 1)].effects;
-    } else {
-        return errorResult(QStringLiteral("target is event, track, output, audio_master, live, pad or layer"));
-    }
+    QString chainError;
+    EffectChain* chain = chainFor(tl, &audioChain, &chainError);
+    if (!chain)
+        return errorResult(chainError);
     if (meta->audio != audioChain)
         return errorResult(
             meta->audio ? QStringLiteral("%1 is an audio effect: put it on an audio event, audio track or the audio master").arg(type)
@@ -2708,13 +2787,26 @@ QJsonObject McpServer::ToolCall::tool_detect_beats()
 QJsonObject McpServer::ToolCall::tool_get_frame()
 {
     const TimeUs t = has("time") ? us(num("time")) : w->m_timeline->cursorTime();
-    const int width = std::clamp(integer("width", 640), 160, 1920);
+    const QString saveTo = str("save_to");
+    // (saved: the project's size unless a width is given)
+    const int width = std::clamp(integer("width", saveTo.isEmpty() ? 640 : ps.width), 160, saveTo.isEmpty() ? 1920 : 8192);
     const QSize size(width, std::max(2, int(std::lround(double(width) * ps.height / std::max(1, ps.width)))));
     Compositor renderer(true);
     const QImage img = renderer.render(*project->snapshot(), t, size);
     if (img.isNull())
         return errorResult(QStringLiteral("nothing rendered"));
-    return imageResult(img, QStringLiteral("The picture at %1 s (%2x%3)").arg(sec(t), 0, 'f', 2).arg(size.width()).arg(size.height()));
+    QString saved;
+    if (!saveTo.isEmpty()) {
+        const QString suffix = QFileInfo(saveTo).suffix().toLower();
+        if (suffix != QLatin1String("png") && suffix != QLatin1String("jpg") && suffix != QLatin1String("jpeg"))
+            return errorResult(QStringLiteral("save_to: a .png or .jpg file"));
+        QDir().mkpath(QFileInfo(saveTo).absolutePath());
+        if (!img.convertToFormat(QImage::Format_RGB32).save(saveTo, nullptr, 92))
+            return errorResult(QStringLiteral("couldn't write %1").arg(saveTo));
+        saved = QStringLiteral(", saved to %1").arg(saveTo);
+    }
+    const QImage shown = img.width() > 1280 ? img.scaledToWidth(1280, Qt::SmoothTransformation) : img;
+    return imageResult(shown, QStringLiteral("The picture at %1 s (%2x%3)%4").arg(sec(t), 0, 'f', 2).arg(size.width()).arg(size.height()).arg(saved));
 }
 
 QJsonObject McpServer::ToolCall::tool_transport()
@@ -3450,6 +3542,17 @@ QJsonObject McpServer::ToolCall::tool_edit_track()
         t.name = str("name").left(80);
     if (has("level"))
         t.level = float(std::clamp(num("level", 1), 0.0, isVisualTrack(t.type) ? 1.0 : 2.0));
+    if (has("pan")) {
+        if (t.type != TrackType::Audio)
+            return errorResult(QStringLiteral("pan is for audio tracks"));
+        t.pan = float(std::clamp(num("pan", 0), -1.0, 1.0));
+    }
+    if (has("blend")) {
+        const int b = blendModeNames().indexOf(str("blend"), 0, Qt::CaseInsensitive);
+        if (b < 0 || !isVisualTrack(t.type))
+            return errorResult(QStringLiteral("blend is one of %1, on a video track").arg(blendModeNames().join(QStringLiteral(", "))));
+        t.blend = b;
+    }
     if (has("matte")) {
         const int m = QStringList{QStringLiteral("off"), QStringLiteral("alpha"), QStringLiteral("alpha_inverted"), QStringLiteral("luma"),
                                   QStringLiteral("luma_inverted")}
@@ -3783,6 +3886,531 @@ QJsonObject McpServer::ToolCall::tool_node_effect()
             params.append(p.id);
     return jsonResult({{QStringLiteral("effect"), def->id}, {QStringLiteral("name"), def->name}, {QStringLiteral("file"), file}, {QStringLiteral("params"), params},
                        {QStringLiteral("note"), QStringLiteral("add it with add_effect effect %1").arg(def->id)}});
+}
+
+EffectChain* McpServer::ToolCall::chainFor(Timeline& tl, bool* audio, QString* error) const
+{
+    const QString target = str("target");
+    const int id = integer("id", -1);
+    *audio = false;
+    auto fail = [&](const QString& why) -> EffectChain* {
+        *error = why;
+        return nullptr;
+    };
+    if (target == QLatin1String("event")) {
+        int ti = -1;
+        Clip* c = tl.findClip(id, &ti);
+        if (!c)
+            return fail(QStringLiteral("no event %1").arg(id));
+        *audio = tl.tracks[size_t(ti)].type == TrackType::Audio;
+        return &c->effects;
+    }
+    if (target == QLatin1String("track")) {
+        if (id < 0 || id >= int(tl.tracks.size()))
+            return fail(QStringLiteral("no track %1").arg(id));
+        *audio = tl.tracks[size_t(id)].type == TrackType::Audio;
+        return &tl.tracks[size_t(id)].effects;
+    }
+    if (target == QLatin1String("output"))
+        return &tl.outputEffects;
+    if (target == QLatin1String("audio_master")) {
+        *audio = true;
+        return &tl.audioMasterEffects;
+    }
+    if (target == QLatin1String("live"))
+        return &tl.liveEffects;
+    if (target == QLatin1String("layer"))
+        return &tl.liveLayerEffects;
+    if (target == QLatin1String("pad")) {
+        if (id < 1 || id > kLivePads)
+            return fail(QStringLiteral("pads are 1-16"));
+        if (tl.livePads[size_t(id - 1)].locked)
+            return fail(QStringLiteral("pad %1 is locked").arg(id));
+        return &tl.livePads[size_t(id - 1)].effects;
+    }
+    return fail(QStringLiteral("target is event, track, output, audio_master, live, pad or layer"));
+}
+
+namespace {
+QJsonArray envelopeJson(const Envelope& e)
+{
+    QJsonArray out;
+    for (const Keyframe& k : e.points)
+        out.append(QJsonArray{sec(k.time), k.value, keyInterpId(k.interp)});
+    return out;
+}
+
+// An effect anywhere in the project, by its id.
+EffectInstance* effectById(Timeline& tl, int id)
+{
+    EffectInstance* found = nullptr;
+    std::function<void(EffectChain&)> in = [&](EffectChain& chain) {
+        for (EffectInstance& e : chain) {
+            if (e.id == id)
+                found = &e;
+            for (RackChain& c : e.chains)
+                in(c.effects);
+        }
+    };
+    forEachChain(tl, [&](EffectChain& chain, const QString&) {
+        in(chain);
+        return found != nullptr; // (true stops the walk)
+    });
+    return found;
+}
+
+std::set<int> idSet(const QJsonValue& v)
+{
+    std::set<int> ids;
+    for (const QJsonValue x : v.toArray())
+        ids.insert(x.toInt());
+    return ids;
+}
+} // namespace
+
+QJsonObject McpServer::ToolCall::tool_envelope()
+{
+    const QString kind = str("kind");
+    Timeline tl = project->timeline();
+    Envelope* env = nullptr;
+    double lo = 0, hi = 2, def = 1;
+    Clip* clip = nullptr;
+    if (kind == QLatin1String("velocity")) {
+        clip = tl.findClip(integer("event_id", -1));
+        if (!clip)
+            return errorResult(QStringLiteral("velocity: give the event_id"));
+        env = &clip->velocity;
+        lo = kMinVelocity;
+        hi = kMaxVelocity;
+    } else {
+        const int ti = integer("track", -1);
+        if (ti < 0 || ti >= int(tl.tracks.size()))
+            return errorResult(QStringLiteral("give the track (index)"));
+        Track& t = tl.tracks[size_t(ti)];
+        if (kind == QLatin1String("volume") || kind == QLatin1String("pan")) {
+            if (t.type != TrackType::Audio)
+                return errorResult(QStringLiteral("%1 is for audio tracks (video tracks have composite)").arg(kind));
+            env = kind == QLatin1String("volume") ? &t.volume : &t.panEnvelope;
+            if (kind == QLatin1String("pan")) {
+                lo = -1;
+                hi = 1;
+                def = 0;
+            }
+        } else if (kind == QLatin1String("composite")) {
+            if (!isVisualTrack(t.type))
+                return errorResult(QStringLiteral("composite is for video tracks"));
+            env = &t.composite;
+            hi = 1;
+        } else {
+            return errorResult(QStringLiteral("kind is volume, pan, composite or velocity"));
+        }
+    }
+    if (a.value(QStringLiteral("clear")).toBool()) {
+        *env = Envelope{false, def, {}};
+    } else {
+        if (has("points")) {
+            std::vector<Keyframe> points;
+            for (const QJsonValue v : a.value(QStringLiteral("points")).toArray()) {
+                const QJsonArray p = v.toArray();
+                if (p.size() < 2)
+                    return errorResult(QStringLiteral("points are [seconds, value, curve?]"));
+                Keyframe k;
+                k.time = us(std::max(0.0, p[0].toDouble()));
+                k.value = std::clamp(p[1].toDouble(), lo, hi);
+                if (p.size() >= 3) {
+                    const auto interp = keyInterpFromId(p[2].toString());
+                    if (!interp)
+                        return errorResult(QStringLiteral("unknown curve \"%1\"").arg(p[2].toString()));
+                    k.interp = *interp;
+                }
+                points.push_back(k);
+            }
+            std::sort(points.begin(), points.end(), [](const Keyframe& x, const Keyframe& y) { return x.time < y.time; });
+            env->points = std::move(points);
+            env->active = true;
+        }
+        if (has("active"))
+            env->active = a.value(QStringLiteral("active")).toBool();
+    }
+    if (clip)
+        ops::syncGroupRamps(tl, clip->id); // (the grouped sound keeps pace)
+    apply(tl, QStringLiteral("Envelope"));
+    return jsonResult({{QStringLiteral("kind"), kind}, {QStringLiteral("active"), env->active}, {QStringLiteral("points"), envelopeJson(*env)}});
+}
+
+QJsonObject McpServer::ToolCall::tool_group()
+{
+    Timeline tl = project->timeline();
+    const std::set<int> ids = idSet(a.value(QStringLiteral("event_ids")));
+    for (int id : ids)
+        if (!tl.findClip(id))
+            return errorResult(QStringLiteral("no event %1").arg(id));
+    if (str("action") == QLatin1String("group")) {
+        if (ids.size() < 2)
+            return errorResult(QStringLiteral("group needs two events or more"));
+        ops::groupClips(tl, ids);
+    } else if (str("action") == QLatin1String("ungroup")) {
+        ops::ungroupClips(tl, ids);
+    } else {
+        return errorResult(QStringLiteral("action is group or ungroup"));
+    }
+    apply(tl, str("action") == QLatin1String("group") ? QStringLiteral("Group") : QStringLiteral("Ungroup"));
+    const Clip* c = project->timeline().findClip(*ids.begin());
+    return jsonResult({{QStringLiteral("group"), c ? c->groupId : 0}});
+}
+
+QJsonObject McpServer::ToolCall::tool_duplicate_events()
+{
+    Timeline tl = project->timeline();
+    const std::set<int> ids = idSet(a.value(QStringLiteral("event_ids")));
+    std::vector<std::pair<int, Clip>> copies;
+    TimeUs earliest = std::numeric_limits<TimeUs>::max();
+    for (size_t ti = 0; ti < tl.tracks.size(); ++ti)
+        for (const Clip& c : tl.tracks[ti].clips)
+            if (ids.count(c.id)) {
+                if (tl.tracks[ti].locked)
+                    return errorResult(QStringLiteral("event %1 is on a locked track").arg(c.id));
+                copies.emplace_back(int(ti), c);
+                earliest = std::min(earliest, c.start);
+            }
+    if (copies.empty())
+        return errorResult(QStringLiteral("give event_ids"));
+    const TimeUs at = has("at") ? us(std::max(0.0, num("at"))) : w->m_timeline->cursorTime();
+    std::map<int, int> groups;
+    QJsonArray made;
+    for (auto& [ti, c] : copies) {
+        c.id = tl.allocId();
+        c.start = at + (c.start - earliest);
+        reassignEffectIds(c.effects, [&] { return tl.allocId(); });
+        if (c.groupId) {
+            auto it = groups.find(c.groupId);
+            if (it == groups.end())
+                it = groups.emplace(c.groupId, tl.allocId()).first;
+            c.groupId = it->second;
+        }
+        made.append(c.id);
+        tl.tracks[size_t(ti)].clips.push_back(c);
+    }
+    tl.sortClips();
+    apply(tl, QStringLiteral("Paste"));
+    return jsonResult({{QStringLiteral("event_ids"), made}});
+}
+
+QJsonObject McpServer::ToolCall::tool_stabilize()
+{
+    Timeline tl = project->timeline();
+    const Clip* clip = tl.findClip(integer("event_id", -1));
+    const auto media = clip && !clip->isGenerated() ? project->mediaItem(clip->mediaId) : nullptr;
+    if (!media || media->info.isStill || !media->info.videoStream(clip->streamIndex))
+        return errorResult(QStringLiteral("give a video event (from a video file)"));
+    const double amount = std::clamp(num("smoothing", 1.5), 0.0, 10.0);
+    const QString path = media->path;
+    const int stream = clip->streamIndex, clipId = clip->id, mediaId = media->id;
+    if (amount > 0 && !stabilize::isAnalyzed(path, stream)) {
+        // The analysis on a thread, the window kept going (as the menu's progress window does).
+        std::atomic<bool> finished{false}, ok{false};
+        QString error;
+        std::thread worker([&] {
+            ok = stabilize::analyze(path, stream, [](double) { return true; }, &error);
+            finished = true;
+        });
+        while (!finished)
+            QCoreApplication::processEvents(QEventLoop::AllEvents, 30);
+        worker.join();
+        if (!ok)
+            return errorResult(QStringLiteral("couldn't analyse the footage: %1").arg(error));
+    }
+    tl = project->timeline();
+    for (int id : ops::expandToGroups(tl, {clipId}))
+        if (Clip* c = tl.findClip(id); c && c->mediaId == mediaId && c->streamIndex == stream) {
+            c->stabilize = amount;
+            c->stabilizeZoom = a.value(QStringLiteral("zoom")).toBool(true);
+        }
+    apply(tl, amount > 0 ? QStringLiteral("Stabilize") : QStringLiteral("Stabilize Off"));
+    return jsonResult({{QStringLiteral("event_id"), clipId}, {QStringLiteral("smoothing"), amount}});
+}
+
+QJsonObject McpServer::ToolCall::tool_beat_montage()
+{
+    std::vector<std::shared_ptr<const MediaItem>> media;
+    const std::set<int> wanted = idSet(a.value(QStringLiteral("media_ids")));
+    for (const auto& [id, m] : project->media())
+        if (m->info.hasVideo() && !m->info.isStill && (wanted.empty() || wanted.count(id)))
+            media.push_back(m);
+    if (media.empty())
+        return errorResult(QStringLiteral("no video files to cut from (import_media first)"));
+    Timeline tl = project->timeline();
+    const TimeUs from = us(std::max(0.0, num("from", 0))), to = has("to") ? us(num("to")) : std::numeric_limits<TimeUs>::max();
+    const int every = std::clamp(integer("every", 4), 1, 64);
+    std::vector<TimeUs> markers;
+    for (const Marker& m : tl.markers)
+        if (!m.isRegion() && m.time >= from && m.time <= to)
+            markers.push_back(m.time);
+    std::sort(markers.begin(), markers.end());
+    std::vector<TimeUs> cuts;
+    for (size_t i = 0; i < markers.size(); i += size_t(every))
+        cuts.push_back(markers[i]);
+    if (cuts.size() < 2)
+        return errorResult(QStringLiteral("put markers on the beat first (detect_beats): %1 marker(s) there, a cut every %2").arg(markers.size()).arg(every));
+    const std::vector<int> made = ops::beatMontage(tl, media, cuts, a.value(QStringLiteral("shuffle")).toBool(true), uint32_t(integer("seed", 1)));
+    if (made.empty())
+        return errorResult(QStringLiteral("nothing was made"));
+    apply(tl, QStringLiteral("Beat Montage"));
+    QJsonArray ids;
+    for (int id : made)
+        ids.append(id);
+    return jsonResult({{QStringLiteral("event_ids"), ids}, {QStringLiteral("cuts"), int(cuts.size())}});
+}
+
+QJsonObject McpServer::ToolCall::tool_media()
+{
+    const QString action = str("action");
+    if (action == QLatin1String("proxies")) {
+        QList<int> ids;
+        for (int id : idSet(a.value(QStringLiteral("media_ids"))))
+            ids << id;
+        const bool heavyOnly = ids.isEmpty();
+        if (heavyOnly)
+            for (const auto& [id, m] : project->media())
+                ids << id;
+        w->createProxies(ids, heavyOnly, a.value(QStringLiteral("replace")).toBool());
+        return jsonResult({{QStringLiteral("queued"), ids.size()}, {QStringLiteral("note"), QStringLiteral("proxies are made in the background; "
+                                                                                                         "get_project shows proxy: true when ready")}});
+    }
+    const int id = integer("media_id", -1);
+    const auto m = project->mediaItem(id);
+    if (!m)
+        return errorResult(QStringLiteral("no media %1 (get_project lists them)").arg(id));
+    if (action == QLatin1String("relink")) {
+        QString error;
+        if (!project->relinkMedia(id, str("path"), &error))
+            return errorResult(QStringLiteral("couldn't relink: %1").arg(error));
+        w->refreshPreview();
+        return jsonResult({{QStringLiteral("media_id"), id}, {QStringLiteral("path"), project->mediaItem(id)->path}});
+    }
+    if (action == QLatin1String("remove")) {
+        if (!project->removeMedia(id))
+            return errorResult(QStringLiteral("media %1 is used on the timeline: delete its events first").arg(id));
+        return jsonResult({{QStringLiteral("removed"), id}});
+    }
+    if (action == QLatin1String("organize")) {
+        const TimeUs in = has("mark_in") ? us(std::max(0.0, num("mark_in"))) : m->markIn;
+        const TimeUs out = has("mark_out") ? us(std::max(0.0, num("mark_out"))) : m->markOut;
+        if (out > 0 && out <= in)
+            return errorResult(QStringLiteral("mark_out must be after mark_in"));
+        project->setMediaDetails(id, has("folder") ? str("folder").trimmed() : m->folder, has("rating") ? std::clamp(integer("rating"), 0, 5) : m->rating,
+                                 in, out, m->origin);
+        const auto now = project->mediaItem(id);
+        return jsonResult({{QStringLiteral("media_id"), id}, {QStringLiteral("folder"), now->folder}, {QStringLiteral("rating"), now->rating},
+                           {QStringLiteral("mark_in"), sec(now->markIn)}, {QStringLiteral("mark_out"), sec(now->markOut)}});
+    }
+    return errorResult(QStringLiteral("action is relink, remove, organize or proxies"));
+}
+
+QJsonObject McpServer::ToolCall::tool_track_motion()
+{
+    const Timeline& tl = project->timeline();
+    const Clip* clip = tl.findClip(integer("event_id", -1));
+    if (!clip)
+        return errorResult(QStringLiteral("no event %1").arg(integer("event_id", -1)));
+    const auto media = clip->isGenerated() ? nullptr : project->mediaItem(clip->mediaId);
+    if (!media || media->info.isStill || !media->info.videoStream(clip->streamIndex))
+        return errorResult(QStringLiteral("Track Motion follows the footage of a video event"));
+    if (clip->reverse || clip->hasRamp())
+        return errorResult(QStringLiteral("Track Motion needs the event playing forwards at a steady speed (no reverse or speed ramp)"));
+    int index = -1;
+    for (int i = 0; i < int(clip->effects.size()); ++i)
+        if (clip->effects[size_t(i)].id == integer("effect_id", -1))
+            index = i;
+    if (index < 0)
+        return errorResult(QStringLiteral("effect %1 isn't on that event (only its own effects, not ones inside racks)").arg(integer("effect_id", -1)));
+    const auto shape = clip->effects[size_t(index)].params.find(QStringLiteral("mask.shape"));
+    if (shape == clip->effects[size_t(index)].params.end() || shape->second.value < 0.5)
+        return errorResult(QStringLiteral("give the effect a mask first (add_effect / set_effect params mask.shape, mask.x, mask.y, mask.w, mask.h)"));
+    const int clipId = clip->id, effectId = integer("effect_id", -1);
+    const TimeUs from = has("from") ? us(num("from")) : std::clamp(w->m_timeline->cursorTime(), clip->start, clip->end() - 1);
+    w->stopPlayback(false);
+    w->seekTo(std::clamp(from, clip->start, clip->end() - 1));
+    w->m_devices->setTarget({FxTarget::Kind::Clip, clipId});
+    const int before = project->undoStack()->index();
+    const QString said = w->m_devices->trackMask(ChainPath{}, index, true);
+    if (project->undoStack()->index() == before)
+        return errorResult(said.isEmpty() ? QStringLiteral("nothing was tracked") : said);
+    Timeline now = project->timeline();
+    const EffectInstance* e = effectById(now, effectId);
+    const auto x = e ? e->params.find(QStringLiteral("mask.x")) : ParamMap::const_iterator{};
+    return jsonResult({{QStringLiteral("effect_id"), effectId}, {QStringLiteral("keyframes"), e && x != e->params.end() ? int(x->second.keys.size()) : 0},
+                       {QStringLiteral("note"), said}});
+}
+
+QJsonObject McpServer::ToolCall::tool_presets()
+{
+    const QString action = str("action");
+    PresetLibrary& lib = PresetLibrary::instance();
+    if (action == QLatin1String("list")) {
+        QJsonArray out;
+        for (const Preset& p : lib.all(a.value(QStringLiteral("audio")).toBool())) {
+            bool match = true;
+            for (const QString& word : str("search").split(QLatin1Char(' '), Qt::SkipEmptyParts))
+                match = match && (p.name + QLatin1Char(' ') + p.category + QLatin1Char(' ') + p.effectType + QLatin1Char(' ') + p.description).contains(word, Qt::CaseInsensitive);
+            if (!match)
+                continue;
+            QJsonObject o{{QStringLiteral("id"), p.id}, {QStringLiteral("name"), p.name}, {QStringLiteral("user"), p.user}};
+            if (p.isChain()) {
+                o[QStringLiteral("chain")] = true;
+                o[QStringLiteral("category")] = p.category;
+            } else {
+                o[QStringLiteral("effect")] = p.effectType;
+            }
+            if (!p.description.isEmpty())
+                o[QStringLiteral("description")] = p.description;
+            out.append(o);
+        }
+        return jsonResult({{QStringLiteral("presets"), out}});
+    }
+    if (action == QLatin1String("remove")) {
+        const auto p = lib.find(str("preset"));
+        if (!p || !p->user)
+            return errorResult(QStringLiteral("only saved (user) presets can be removed"));
+        lib.remove(p->id);
+        return jsonResult({{QStringLiteral("removed"), p->id}});
+    }
+    Timeline tl = project->timeline();
+    if (action == QLatin1String("apply")) {
+        const auto p = lib.find(str("preset"));
+        if (!p)
+            return errorResult(QStringLiteral("no preset \"%1\" (action list)").arg(str("preset")));
+        if (has("effect_id")) {
+            EffectInstance* e = effectById(tl, integer("effect_id"));
+            if (!e)
+                return errorResult(QStringLiteral("no effect %1").arg(integer("effect_id")));
+            if (p->isChain() || p->effectType != e->type)
+                return errorResult(QStringLiteral("that preset is for %1, not this effect (%2)").arg(p->isChain() ? QStringLiteral("a chain") : p->effectType, e->type));
+            applyPresetTo(*p, *e, [&] { return tl.allocId(); });
+            apply(tl, QStringLiteral("Apply Preset"));
+            return jsonResult({{QStringLiteral("effect_id"), integer("effect_id")}, {QStringLiteral("preset"), p->name}});
+        }
+        bool audio = false;
+        QString error;
+        EffectChain* chain = chainFor(tl, &audio, &error);
+        if (!chain)
+            return errorResult(error);
+        if (p->audio != audio)
+            return errorResult(p->audio ? QStringLiteral("that's an audio preset: that chain is for pictures") : QStringLiteral("that's a video preset: that chain is for sound"));
+        QJsonArray ids;
+        for (EffectInstance& e : instantiatePreset(*p, [&] { return tl.allocId(); })) {
+            ids.append(e.id);
+            chain->push_back(std::move(e));
+        }
+        apply(tl, QStringLiteral("Add Preset"));
+        return jsonResult({{QStringLiteral("effect_ids"), ids}, {QStringLiteral("preset"), p->name}});
+    }
+    if (action == QLatin1String("save")) {
+        const QString name = str("name").trimmed();
+        if (name.isEmpty())
+            return errorResult(QStringLiteral("give the preset a name"));
+        EffectChain chain;
+        bool audio = false;
+        QString type;
+        if (has("effect_id")) {
+            const EffectInstance* e = effectById(tl, integer("effect_id"));
+            if (!e)
+                return errorResult(QStringLiteral("no effect %1").arg(integer("effect_id")));
+            chain = {*e};
+            type = e->isRack() ? QString() : e->type;
+            audio = e->type.startsWith(QLatin1String("a_")) || (e->isRack() && !e->chains.empty() && !e->chains.front().effects.empty()
+                                                                 && e->chains.front().effects.front().type.startsWith(QLatin1String("a_")));
+        } else {
+            QString error;
+            const EffectChain* c = chainFor(tl, &audio, &error);
+            if (!c)
+                return errorResult(error);
+            if (c->empty())
+                return errorResult(QStringLiteral("that chain has no effects"));
+            chain = *c;
+        }
+        QString error;
+        const QString id = lib.save(name, audio, type, chain, &error);
+        if (id.isEmpty())
+            return errorResult(QStringLiteral("couldn't save: %1").arg(error));
+        return jsonResult({{QStringLiteral("preset"), id}, {QStringLiteral("name"), name}, {QStringLiteral("chain"), type.isEmpty()}});
+    }
+    return errorResult(QStringLiteral("action is list, apply, save or remove"));
+}
+
+QJsonObject McpServer::ToolCall::tool_normalize_audio()
+{
+    const std::set<int> ids = idSet(a.value(QStringLiteral("event_ids")));
+    const Timeline& tl = project->timeline();
+    std::set<int> audio;
+    for (const Track& t : tl.tracks)
+        if (t.type == TrackType::Audio)
+            for (const Clip& c : t.clips)
+                if (ids.count(c.id))
+                    audio.insert(c.id);
+    if (audio.empty())
+        return errorResult(QStringLiteral("give audio events"));
+    const int before = project->undoStack()->index();
+    const std::set<int> selection = w->m_timeline->selection();
+    w->m_timeline->selectClips(audio);
+    w->m_timeline->normalizeSelection();
+    w->m_timeline->selectClips(selection);
+    QJsonArray gains;
+    for (int id : audio)
+        if (const Clip* c = project->timeline().findClip(id); c && !c->effects.empty() && c->effects.front().type == QLatin1String("a_gain"))
+            gains.append(QJsonObject{{QStringLiteral("event_id"), id}, {QStringLiteral("gain_db"), c->effects.front().params.at(QStringLiteral("gain")).value}});
+    return jsonResult({{QStringLiteral("normalized"), project->undoStack()->index() != before}, {QStringLiteral("gains"), gains}});
+}
+
+QJsonObject McpServer::ToolCall::tool_youtube_clip()
+{
+    YouTubeOptions o;
+    o.url = str("url").trimmed();
+    if (!o.url.startsWith(QLatin1String("http")))
+        return errorResult(QStringLiteral("give the video's link (https://...)"));
+    o.maxHeight = std::clamp(integer("quality", 1080), 0, 2160);
+    o.folder = w->youtubeFolder();
+    o.jsRuntime = youtubeJsRuntime();
+    o.cookiesBrowser = str("browser").toLower();
+    const TimeUs from = has("from") ? us(std::max(0.0, num("from"))) : 0, to = has("to") ? us(num("to")) : -1;
+    if (to >= 0 && to <= from)
+        return errorResult(QStringLiteral("to must be after from"));
+    // yt-dlp: fetched once.
+    const QString ytdlp = ytdlpPath();
+    QString error;
+    if (!QFileInfo::exists(ytdlp)) {
+        if (!w->downloadFile(w, ytdlpDownloadUrl(), ytdlp, QStringLiteral("yt-dlp"), &error))
+            return errorResult(QStringLiteral("yt-dlp (the downloader) could not be fetched: %1").arg(error));
+        QFile(ytdlp).setPermissions(QFile(ytdlp).permissions() | QFileDevice::ExeOwner | QFileDevice::ExeUser);
+    }
+    // The download on a thread, the window kept going.
+    std::atomic<bool> finished{false};
+    QString path;
+    std::thread worker([&] {
+        path = youtubeDownload(ytdlp, ffmpegFolder(), o, [](double) { return true; }, &error);
+        finished = true;
+    });
+    while (!finished)
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+    worker.join();
+    if (path.isEmpty())
+        return errorResult(QStringLiteral("the download failed: %1").arg(youtubeFailureHelp(error)));
+    int mediaId = 0;
+    if (a.value(QStringLiteral("place")).toBool(true)) {
+        if (has("at"))
+            w->seekTo(us(std::max(0.0, num("at"))));
+        mediaId = w->placeDownloadedClip(path, from, to);
+    } else {
+        w->importFiles({path});
+        for (const auto& [id, m] : project->media())
+            if (QFileInfo(m->path) == QFileInfo(path))
+                mediaId = id;
+        if (mediaId && (from > 0 || to >= 0)) {
+            const auto m = project->mediaItem(mediaId);
+            project->setMediaDetails(mediaId, QStringLiteral("YouTube"), m->rating, from, to >= 0 ? std::min(to, m->info.duration) : 0, QStringLiteral("youtube"));
+        }
+    }
+    return jsonResult({{QStringLiteral("media_id"), mediaId}, {QStringLiteral("path"), path}, {QStringLiteral("placed"), a.value(QStringLiteral("place")).toBool(true)}});
 }
 
 QJsonObject McpServer::ToolCall::tool_match_colour()
@@ -4183,6 +4811,16 @@ QJsonObject McpServer::callTool(const QString& name, const QJsonObject& a)
         {QStringLiteral("scene_changes"), {&ToolCall::tool_scene_changes, false}},
         {QStringLiteral("match_colour"), {&ToolCall::tool_match_colour, false}},
         {QStringLiteral("node_effect"), {&ToolCall::tool_node_effect, false}},
+        {QStringLiteral("envelope"), {&ToolCall::tool_envelope, false}},
+        {QStringLiteral("group"), {&ToolCall::tool_group, false}},
+        {QStringLiteral("duplicate_events"), {&ToolCall::tool_duplicate_events, false}},
+        {QStringLiteral("stabilize"), {&ToolCall::tool_stabilize, false}},
+        {QStringLiteral("beat_montage"), {&ToolCall::tool_beat_montage, false}},
+        {QStringLiteral("media"), {&ToolCall::tool_media, false}},
+        {QStringLiteral("track_motion"), {&ToolCall::tool_track_motion, false}},
+        {QStringLiteral("presets"), {&ToolCall::tool_presets, false}},
+        {QStringLiteral("normalize_audio"), {&ToolCall::tool_normalize_audio, false}},
+        {QStringLiteral("youtube_clip"), {&ToolCall::tool_youtube_clip, false}},
         {QStringLiteral("cut_time"), {&ToolCall::tool_cut_time, false}},
         {QStringLiteral("auto_reframe"), {&ToolCall::tool_auto_reframe, false}},
         {QStringLiteral("youtube_publish"), {&ToolCall::tool_youtube_publish, false}},
