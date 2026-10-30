@@ -90,6 +90,20 @@ int main(int argc, char** argv)
               QStringLiteral("all %1 nodes run (%2 effects, %3 sources) %4").arg(nodes::nodeDefs().size()).arg(effects).arg(sources).arg(bad.join(QStringLiteral(", "))));
     }
     {
+        // A text source late in a long event still shows its text (a source is as long as any event it's on).
+        nodes::Graph g = nodes::starter();
+        const int title = g.addNode(QStringLiteral("gen.title"), {});
+        g.connect(title, g.nodes[1].id, 0);
+        RenderContext late = ctx;
+        late.time = 40 * kUsPerSecond;
+        const QImage out = nodes::Evaluator().run(g, picture, late);
+        int drawn = 0;
+        for (int y = 0; y < out.height(); ++y)
+            for (int x = 0; x < out.width(); ++x)
+                drawn += qAlpha(out.pixel(x, y)) > 128;
+        check(drawn > 50, QStringLiteral("a text source 40 s into an event still draws its text (%1 pixels)").arg(drawn));
+    }
+    {
         // Source -> Invert -> Output is the Invert effect; the three channels split and combined again are the picture.
         nodes::Graph g = nodes::starter();
         const int src = g.nodes[0].id, out = g.nodes[1].id;

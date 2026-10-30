@@ -460,7 +460,8 @@ std::vector<NodeDef> buildNodes()
             spec.type = type;
             spec.params = raw;
             const FrameRate fps{std::max(1, int(std::lround(c.render.fps))), 1};
-            QImage img = renderGenerator(spec, c.size, c.render.scale, c.render.time, 10 * kUsPerSecond, fps);
+            // (as an event an hour long: a title's out-animation never comes, however long the event it's on)
+            QImage img = renderGenerator(spec, c.size, c.render.scale, c.render.time, 3600 * kUsPerSecond, fps);
             if (img.size() != c.size)
                 img = img.scaled(c.size, Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
             return img.format() == QImage::Format_ARGB32_Premultiplied ? img : img.convertToFormat(QImage::Format_ARGB32_Premultiplied);
