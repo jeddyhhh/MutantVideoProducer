@@ -1,0 +1,194 @@
+{
+    "description": "A spinning kaleidoscope fed back into itself, zooming, turning and shifting hue, with a lens fringe.",
+    "exposed": [
+        {
+            "id": "n2_segments",
+            "name": "Segments",
+            "node": 2,
+            "param": "segments"
+        }
+    ],
+    "format": "mvp-node-effect",
+    "links": [
+        [
+            1,
+            2,
+            0
+        ],
+        [
+            2,
+            3,
+            0
+        ],
+        [
+            3,
+            4,
+            0
+        ],
+        [
+            4,
+            5,
+            0
+        ],
+        [
+            5,
+            6,
+            0
+        ]
+    ],
+    "name": "Kaleido Feedback",
+    "nextId": 7,
+    "nodes": [
+        {
+            "id": 1,
+            "params": {
+            },
+            "type": "source",
+            "x": 0,
+            "y": 0
+        },
+        {
+            "id": 2,
+            "params": {
+                "centerX": {
+                    "v": 0.5
+                },
+                "centerY": {
+                    "v": 0.5
+                },
+                "rotation": {
+                    "v": 0
+                },
+                "segments": {
+                    "v": 8
+                },
+                "spin": {
+                    "v": 45
+                },
+                "zoom": {
+                    "v": 1.2
+                }
+            },
+            "type": "fx.kaleidoscope",
+            "x": 250,
+            "y": 0
+        },
+        {
+            "id": 3,
+            "params": {
+                "decay": {
+                    "v": 0.9
+                },
+                "hueShift": {
+                    "v": 14
+                },
+                "input": {
+                    "v": 0.45
+                },
+                "mode": {
+                    "v": 1
+                },
+                "offsetX": {
+                    "v": 0
+                },
+                "offsetY": {
+                    "v": 0
+                },
+                "rotation": {
+                    "v": 3
+                },
+                "zoom": {
+                    "v": 1.06
+                }
+            },
+            "type": "fx.video_feedback",
+            "x": 500,
+            "y": 0
+        },
+        {
+            "id": 4,
+            "params": {
+                "amount": {
+                    "v": 14
+                },
+                "angle": {
+                    "v": 0
+                },
+                "centerX": {
+                    "v": 0.5
+                },
+                "centerY": {
+                    "v": 0.5
+                },
+                "falloff": {
+                    "v": 1
+                },
+                "fxBoxH": {
+                    "v": 0.5
+                },
+                "fxBoxW": {
+                    "v": 0.5
+                },
+                "fxBoxX": {
+                    "v": 0.25
+                },
+                "fxBoxY": {
+                    "v": 0.25
+                },
+                "fxFeather": {
+                    "v": 0.05
+                },
+                "fxMask": {
+                    "v": 0
+                },
+                "fxMix": {
+                    "v": 1
+                },
+                "fxThreshold": {
+                    "v": 0.5
+                },
+                "greenShift": {
+                    "v": 0
+                },
+                "mode": {
+                    "v": 0
+                },
+                "wobble": {
+                    "v": 0
+                },
+                "wobbleSpeed": {
+                    "v": 2
+                }
+            },
+            "type": "fx.chromatic_aberration",
+            "x": 750,
+            "y": 0
+        },
+        {
+            "id": 5,
+            "params": {
+                "hue": {
+                    "v": 0
+                },
+                "lightness": {
+                    "v": 0
+                },
+                "saturation": {
+                    "v": 0.4
+                }
+            },
+            "type": "fx.hsl",
+            "x": 1000,
+            "y": 0
+        },
+        {
+            "id": 6,
+            "params": {
+            },
+            "type": "output",
+            "x": 1250,
+            "y": 0
+        }
+    ],
+    "version": 1
+}

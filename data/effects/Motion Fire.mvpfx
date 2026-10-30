@@ -1,0 +1,226 @@
+{
+    "description": "Only what moves, as fire: the difference from two frames before, mapped to heat, with trails, over a dark picture.",
+    "exposed": [
+        {
+            "id": "n3_gain",
+            "name": "Heat",
+            "node": 3,
+            "param": "gain"
+        }
+    ],
+    "format": "mvp-node-effect",
+    "links": [
+        [
+            1,
+            2,
+            0
+        ],
+        [
+            1,
+            3,
+            0
+        ],
+        [
+            2,
+            3,
+            1
+        ],
+        [
+            3,
+            4,
+            0
+        ],
+        [
+            4,
+            11,
+            0
+        ],
+        [
+            3,
+            11,
+            1
+        ],
+        [
+            11,
+            5,
+            0
+        ],
+        [
+            1,
+            7,
+            0
+        ],
+        [
+            7,
+            6,
+            0
+        ],
+        [
+            6,
+            8,
+            0
+        ],
+        [
+            5,
+            8,
+            1
+        ],
+        [
+            8,
+            9,
+            0
+        ],
+        [
+            9,
+            10,
+            0
+        ]
+    ],
+    "name": "Motion Fire",
+    "nextId": 12,
+    "nodes": [
+        {
+            "id": 1,
+            "params": {
+            },
+            "type": "source",
+            "x": 0,
+            "y": 0
+        },
+        {
+            "id": 2,
+            "params": {
+                "frames": {
+                    "v": 2
+                }
+            },
+            "type": "delay",
+            "x": 250,
+            "y": 0
+        },
+        {
+            "id": 3,
+            "params": {
+                "gain": {
+                    "v": 4
+                },
+                "op": {
+                    "v": 6
+                }
+            },
+            "type": "math",
+            "x": 500,
+            "y": 0
+        },
+        {
+            "id": 4,
+            "params": {
+                "cycle": {
+                    "v": 0
+                },
+                "mix": {
+                    "v": 1
+                },
+                "palette": {
+                    "v": 0
+                }
+            },
+            "type": "fx.gradient_map",
+            "x": 750,
+            "y": 0
+        },
+        {
+            "id": 5,
+            "params": {
+                "decay": {
+                    "v": 0.8
+                },
+                "mode": {
+                    "v": 0
+                }
+            },
+            "type": "fx.trails",
+            "x": 1250,
+            "y": 0
+        },
+        {
+            "id": 6,
+            "params": {
+                "brightness": {
+                    "v": -0.7
+                },
+                "center": {
+                    "v": 0.5
+                },
+                "contrast": {
+                    "v": 0.3
+                }
+            },
+            "type": "fx.brightness_contrast",
+            "x": 500,
+            "y": 210
+        },
+        {
+            "id": 7,
+            "params": {
+                "amount": {
+                    "v": 1
+                }
+            },
+            "type": "fx.black_white",
+            "x": 250,
+            "y": 210
+        },
+        {
+            "id": 8,
+            "params": {
+                "mode": {
+                    "v": 1
+                },
+                "opacity": {
+                    "v": 1
+                }
+            },
+            "type": "blend",
+            "x": 1500,
+            "y": 0
+        },
+        {
+            "id": 9,
+            "params": {
+                "intensity": {
+                    "v": 1.4
+                },
+                "radius": {
+                    "v": 30
+                },
+                "threshold": {
+                    "v": 0.4
+                }
+            },
+            "type": "fx.glow",
+            "x": 1750,
+            "y": 0
+        },
+        {
+            "id": 10,
+            "params": {
+            },
+            "type": "output",
+            "x": 2000,
+            "y": 0
+        },
+        {
+            "id": 11,
+            "params": {
+                "mode": {
+                    "v": 2
+                }
+            },
+            "type": "mask",
+            "x": 1000,
+            "y": 0
+        }
+    ],
+    "version": 1
+}

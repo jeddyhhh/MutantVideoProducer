@@ -1096,7 +1096,8 @@ bool NodeEffectEditor::openFile(const QString& path)
         QMessageBox::warning(this, tr("Open Effect"), tr("Couldn't open %1: %2").arg(QFileInfo(path).fileName(), error));
         return false;
     }
-    m_path = path;
+    // (an example, from the program's folder, is a starting point: Save asks where, in the user's)
+    m_path = QFileInfo(path).absolutePath() == QFileInfo(nodes::examplesFolder()).absoluteFilePath() ? QString() : path;
     setGraph(g);
     m_modified = false;
     return true;

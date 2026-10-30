@@ -1,0 +1,251 @@
+{
+    "description": "An ASCII terminal on one side, a thermal camera on the other, the line between them turning.",
+    "exposed": [
+        {
+            "id": "n4_angle",
+            "name": "Angle",
+            "node": 4,
+            "param": "angle"
+        }
+    ],
+    "format": "mvp-node-effect",
+    "links": [
+        [
+            1,
+            2,
+            0
+        ],
+        [
+            1,
+            3,
+            0
+        ],
+        [
+            3,
+            5,
+            0
+        ],
+        [
+            4,
+            9,
+            0
+        ],
+        [
+            9,
+            5,
+            1
+        ],
+        [
+            2,
+            6,
+            0
+        ],
+        [
+            5,
+            6,
+            1
+        ],
+        [
+            6,
+            11,
+            0
+        ],
+        [
+            9,
+            10,
+            0
+        ],
+        [
+            10,
+            11,
+            1
+        ],
+        [
+            11,
+            7,
+            0
+        ],
+        [
+            7,
+            8,
+            0
+        ]
+    ],
+    "name": "Split Reality",
+    "nextId": 12,
+    "nodes": [
+        {
+            "id": 1,
+            "params": {
+            },
+            "type": "source",
+            "x": 0,
+            "y": 0
+        },
+        {
+            "id": 2,
+            "params": {
+                "background": {
+                    "v": 0
+                },
+                "cellSize": {
+                    "v": 10
+                },
+                "charset": {
+                    "v": 1
+                },
+                "colorMode": {
+                    "v": 1
+                }
+            },
+            "type": "fx.ascii",
+            "x": 250,
+            "y": 0
+        },
+        {
+            "id": 3,
+            "params": {
+                "cycle": {
+                    "v": 0
+                },
+                "mix": {
+                    "v": 1
+                },
+                "palette": {
+                    "v": 2
+                }
+            },
+            "type": "fx.gradient_map",
+            "x": 250,
+            "y": 210
+        },
+        {
+            "id": 4,
+            "params": {
+                "angle": {
+                    "v": 0
+                },
+                "centerX": {
+                    "v": 0.5
+                },
+                "centerY": {
+                    "v": 0.5
+                },
+                "color1": {
+                    "v": 0
+                },
+                "color2": {
+                    "v": 16777215
+                },
+                "shape": {
+                    "v": 0
+                }
+            },
+            "type": "gen.gradient",
+            "x": 0,
+            "y": 210
+        },
+        {
+            "id": 5,
+            "params": {
+                "mode": {
+                    "v": 2
+                }
+            },
+            "type": "mask",
+            "x": 500,
+            "y": 0
+        },
+        {
+            "id": 6,
+            "params": {
+                "mode": {
+                    "v": 0
+                },
+                "opacity": {
+                    "v": 1
+                }
+            },
+            "type": "blend",
+            "x": 750,
+            "y": 0
+        },
+        {
+            "id": 7,
+            "params": {
+                "intensity": {
+                    "v": 1
+                },
+                "radius": {
+                    "v": 18
+                },
+                "threshold": {
+                    "v": 0.55
+                }
+            },
+            "type": "fx.glow",
+            "x": 1250,
+            "y": 0
+        },
+        {
+            "id": 8,
+            "params": {
+            },
+            "type": "output",
+            "x": 1500,
+            "y": 0
+        },
+        {
+            "id": 9,
+            "params": {
+                "level": {
+                    "v": 0.5
+                },
+                "softness": {
+                    "v": 0.01
+                }
+            },
+            "type": "threshold",
+            "x": 250,
+            "y": 420
+        },
+        {
+            "id": 10,
+            "params": {
+                "background": {
+                    "v": 0
+                },
+                "color": {
+                    "v": 16777215
+                },
+                "colorMode": {
+                    "v": 2
+                },
+                "glow": {
+                    "v": 16
+                },
+                "strength": {
+                    "v": 8
+                }
+            },
+            "type": "fx.neon_edges",
+            "x": 500,
+            "y": 210
+        },
+        {
+            "id": 11,
+            "params": {
+                "mode": {
+                    "v": 2
+                },
+                "opacity": {
+                    "v": 1
+                }
+            },
+            "type": "blend",
+            "x": 1000,
+            "y": 0
+        }
+    ],
+    "version": 1
+}

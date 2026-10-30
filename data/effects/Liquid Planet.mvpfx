@@ -1,0 +1,171 @@
+{
+    "description": "Melting: displaced by a slow plasma, waved, iced over and solarized at the edges.",
+    "exposed": [
+        {
+            "id": "n3_amountX",
+            "name": "Melt",
+            "node": 3,
+            "param": "amountX"
+        }
+    ],
+    "format": "mvp-node-effect",
+    "links": [
+        [
+            1,
+            3,
+            0
+        ],
+        [
+            2,
+            3,
+            1
+        ],
+        [
+            3,
+            4,
+            0
+        ],
+        [
+            4,
+            5,
+            0
+        ],
+        [
+            4,
+            6,
+            0
+        ],
+        [
+            5,
+            7,
+            0
+        ],
+        [
+            6,
+            7,
+            1
+        ],
+        [
+            7,
+            8,
+            0
+        ]
+    ],
+    "name": "Liquid Planet",
+    "nextId": 9,
+    "nodes": [
+        {
+            "id": 1,
+            "params": {
+            },
+            "type": "source",
+            "x": 0,
+            "y": 0
+        },
+        {
+            "id": 2,
+            "params": {
+                "palette": {
+                    "v": 2
+                },
+                "scale": {
+                    "v": 0.8
+                },
+                "speed": {
+                    "v": 0.8
+                }
+            },
+            "type": "gen.plasma_ocean",
+            "x": 0,
+            "y": 210
+        },
+        {
+            "id": 3,
+            "params": {
+                "amountX": {
+                    "v": 70
+                },
+                "amountY": {
+                    "v": 50
+                },
+                "use": {
+                    "v": 0
+                }
+            },
+            "type": "displace",
+            "x": 250,
+            "y": 0
+        },
+        {
+            "id": 4,
+            "params": {
+                "amplitude": {
+                    "v": 18
+                },
+                "direction": {
+                    "v": 2
+                },
+                "speed": {
+                    "v": 1.2
+                },
+                "wavelength": {
+                    "v": 300
+                }
+            },
+            "type": "fx.wave_warp",
+            "x": 500,
+            "y": 0
+        },
+        {
+            "id": 5,
+            "params": {
+                "cycle": {
+                    "v": 0
+                },
+                "mix": {
+                    "v": 0.55
+                },
+                "palette": {
+                    "v": 5
+                }
+            },
+            "type": "fx.gradient_map",
+            "x": 750,
+            "y": 0
+        },
+        {
+            "id": 6,
+            "params": {
+                "threshold": {
+                    "v": 0.6
+                }
+            },
+            "type": "fx.solarize",
+            "x": 750,
+            "y": 210
+        },
+        {
+            "id": 7,
+            "params": {
+                "mode": {
+                    "v": 4
+                },
+                "opacity": {
+                    "v": 0.6
+                }
+            },
+            "type": "blend",
+            "x": 1000,
+            "y": 0
+        },
+        {
+            "id": 8,
+            "params": {
+            },
+            "type": "output",
+            "x": 1250,
+            "y": 0
+        }
+    ],
+    "version": 1
+}

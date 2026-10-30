@@ -7,6 +7,7 @@
 #include "core/Project.h"
 #include "core/TimelineOps.h"
 #include <QDir>
+#include <QFileInfo>
 #include <QGuiApplication>
 #include <QJsonDocument>
 #include <QPainter>
@@ -88,6 +89,24 @@ int main(int argc, char** argv)
         }
         check(effects > 150 && sources > 25 && nodes::nodeDefs().size() > 200 && broken == 0,
               QStringLiteral("all %1 nodes run (%2 effects, %3 sources) %4").arg(nodes::nodeDefs().size()).arg(effects).arg(sources).arg(bad.join(QStringLiteral(", "))));
+    }
+    {
+        // The example effects that come with the program (data/effects): every one reads, has only nodes this build has,
+        // and runs without an error.
+        QStringList bad;
+        int count = 0;
+        for (const QFileInfo& fi : QDir(QStringLiteral("data/effects")).entryInfoList({QStringLiteral("*.mvpfx")}, QDir::Files)) {
+            ++count;
+            nodes::Graph g;
+            QString err;
+            nodes::Evaluator eval;
+            const bool read = nodes::load(fi.absoluteFilePath(), &g, &err);
+            const QImage out = read ? eval.run(g, picture, ctx) : QImage();
+            const bool known = std::all_of(g.nodes.begin(), g.nodes.end(), [](const nodes::Node& n) { return nodes::findNode(n.type); });
+            if (!read || !known || !eval.error.isEmpty() || out.size() != size || g.name.isEmpty())
+                bad << fi.fileName();
+        }
+        check(count >= 10 && bad.isEmpty(), QStringLiteral("the %1 example effects read and run %2").arg(count).arg(bad.join(QStringLiteral(", "))));
     }
     {
         // A text source late in a long event still shows its text (a source is as long as any event it's on).

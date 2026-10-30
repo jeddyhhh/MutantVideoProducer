@@ -297,6 +297,12 @@ Every graph runs from **Source** (the picture the effect is on) to **Output**. T
 - **Distort**: Displace (push pixels around by another picture), Place (move, scale, turn).
 - **Time**: Delay (the picture from frames before: blend it with the present for echoes).
 
+Eleven examples come with the program, under **User Created > Examples** (Chroma Time Slip, Fractal
+Tunnel, Glitch Letters, Hologram, Hyperspace Geyser, Kaleido Feedback, Liquid Planet, Motion Fire,
+Neon Plasma Title, Plasma Possession, Split Reality). Put one on an event, or open it from **Tools >
+Edit User Effect > Examples** to see how it's wired and make your own from it (saving puts your
+version in your own effects).
+
 Give it a **Name** (and a description), then **Save as User Created Effect**: it's saved to a
 `.mvpfx` file and appears in the Effects tab and the device chain's **+** menu under **User
 Created**, ready for any event, track or adjustment layer. The graph is saved inside the project

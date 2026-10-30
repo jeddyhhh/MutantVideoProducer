@@ -1,0 +1,494 @@
+{
+    "description": "The picture inside itself six times over, each smaller, turned and further round the colour wheel.",
+    "exposed": [
+        {
+            "id": "n2_rotation",
+            "name": "Twist",
+            "node": 2,
+            "param": "rotation"
+        },
+        {
+            "id": "n2_scale",
+            "name": "Depth",
+            "node": 2,
+            "param": "scale"
+        }
+    ],
+    "format": "mvp-node-effect",
+    "links": [
+        [
+            1,
+            2,
+            0
+        ],
+        [
+            2,
+            3,
+            0
+        ],
+        [
+            1,
+            4,
+            0
+        ],
+        [
+            3,
+            4,
+            1
+        ],
+        [
+            3,
+            5,
+            0
+        ],
+        [
+            5,
+            6,
+            0
+        ],
+        [
+            4,
+            7,
+            0
+        ],
+        [
+            6,
+            7,
+            1
+        ],
+        [
+            6,
+            8,
+            0
+        ],
+        [
+            8,
+            9,
+            0
+        ],
+        [
+            7,
+            10,
+            0
+        ],
+        [
+            9,
+            10,
+            1
+        ],
+        [
+            9,
+            11,
+            0
+        ],
+        [
+            11,
+            12,
+            0
+        ],
+        [
+            10,
+            13,
+            0
+        ],
+        [
+            12,
+            13,
+            1
+        ],
+        [
+            12,
+            14,
+            0
+        ],
+        [
+            14,
+            15,
+            0
+        ],
+        [
+            13,
+            16,
+            0
+        ],
+        [
+            15,
+            16,
+            1
+        ],
+        [
+            15,
+            17,
+            0
+        ],
+        [
+            17,
+            18,
+            0
+        ],
+        [
+            16,
+            19,
+            0
+        ],
+        [
+            18,
+            19,
+            1
+        ],
+        [
+            19,
+            20,
+            0
+        ],
+        [
+            20,
+            21,
+            0
+        ]
+    ],
+    "name": "Fractal Tunnel",
+    "nextId": 22,
+    "nodes": [
+        {
+            "id": 1,
+            "params": {
+            },
+            "type": "source",
+            "x": 0,
+            "y": 0
+        },
+        {
+            "id": 2,
+            "params": {
+                "rotation": {
+                    "v": 14
+                },
+                "scale": {
+                    "v": 0.74
+                },
+                "x": {
+                    "v": 0
+                },
+                "y": {
+                    "v": 0
+                }
+            },
+            "type": "place",
+            "x": 250,
+            "y": 0
+        },
+        {
+            "id": 3,
+            "params": {
+                "hue": {
+                    "v": 32
+                },
+                "lightness": {
+                    "v": 0
+                },
+                "saturation": {
+                    "v": 0.15
+                }
+            },
+            "type": "fx.hsl",
+            "x": 500,
+            "y": 0
+        },
+        {
+            "id": 4,
+            "params": {
+                "mode": {
+                    "v": 0
+                },
+                "opacity": {
+                    "v": 1
+                }
+            },
+            "type": "blend",
+            "x": 750,
+            "y": 0
+        },
+        {
+            "id": 5,
+            "params": {
+                "rotation": {
+                    "v": 14
+                },
+                "scale": {
+                    "v": 0.74
+                },
+                "x": {
+                    "v": 0
+                },
+                "y": {
+                    "v": 0
+                }
+            },
+            "type": "place",
+            "x": 750,
+            "y": 210
+        },
+        {
+            "id": 6,
+            "params": {
+                "hue": {
+                    "v": 32
+                },
+                "lightness": {
+                    "v": 0
+                },
+                "saturation": {
+                    "v": 0.15
+                }
+            },
+            "type": "fx.hsl",
+            "x": 1000,
+            "y": 0
+        },
+        {
+            "id": 7,
+            "params": {
+                "mode": {
+                    "v": 0
+                },
+                "opacity": {
+                    "v": 1
+                }
+            },
+            "type": "blend",
+            "x": 1250,
+            "y": 0
+        },
+        {
+            "id": 8,
+            "params": {
+                "rotation": {
+                    "v": 14
+                },
+                "scale": {
+                    "v": 0.74
+                },
+                "x": {
+                    "v": 0
+                },
+                "y": {
+                    "v": 0
+                }
+            },
+            "type": "place",
+            "x": 1250,
+            "y": 210
+        },
+        {
+            "id": 9,
+            "params": {
+                "hue": {
+                    "v": 32
+                },
+                "lightness": {
+                    "v": 0
+                },
+                "saturation": {
+                    "v": 0.15
+                }
+            },
+            "type": "fx.hsl",
+            "x": 1500,
+            "y": 0
+        },
+        {
+            "id": 10,
+            "params": {
+                "mode": {
+                    "v": 0
+                },
+                "opacity": {
+                    "v": 1
+                }
+            },
+            "type": "blend",
+            "x": 1750,
+            "y": 0
+        },
+        {
+            "id": 11,
+            "params": {
+                "rotation": {
+                    "v": 14
+                },
+                "scale": {
+                    "v": 0.74
+                },
+                "x": {
+                    "v": 0
+                },
+                "y": {
+                    "v": 0
+                }
+            },
+            "type": "place",
+            "x": 1750,
+            "y": 210
+        },
+        {
+            "id": 12,
+            "params": {
+                "hue": {
+                    "v": 32
+                },
+                "lightness": {
+                    "v": 0
+                },
+                "saturation": {
+                    "v": 0.15
+                }
+            },
+            "type": "fx.hsl",
+            "x": 2000,
+            "y": 0
+        },
+        {
+            "id": 13,
+            "params": {
+                "mode": {
+                    "v": 0
+                },
+                "opacity": {
+                    "v": 1
+                }
+            },
+            "type": "blend",
+            "x": 2250,
+            "y": 0
+        },
+        {
+            "id": 14,
+            "params": {
+                "rotation": {
+                    "v": 14
+                },
+                "scale": {
+                    "v": 0.74
+                },
+                "x": {
+                    "v": 0
+                },
+                "y": {
+                    "v": 0
+                }
+            },
+            "type": "place",
+            "x": 2250,
+            "y": 210
+        },
+        {
+            "id": 15,
+            "params": {
+                "hue": {
+                    "v": 32
+                },
+                "lightness": {
+                    "v": 0
+                },
+                "saturation": {
+                    "v": 0.15
+                }
+            },
+            "type": "fx.hsl",
+            "x": 2500,
+            "y": 0
+        },
+        {
+            "id": 16,
+            "params": {
+                "mode": {
+                    "v": 0
+                },
+                "opacity": {
+                    "v": 1
+                }
+            },
+            "type": "blend",
+            "x": 2750,
+            "y": 0
+        },
+        {
+            "id": 17,
+            "params": {
+                "rotation": {
+                    "v": 14
+                },
+                "scale": {
+                    "v": 0.74
+                },
+                "x": {
+                    "v": 0
+                },
+                "y": {
+                    "v": 0
+                }
+            },
+            "type": "place",
+            "x": 2750,
+            "y": 210
+        },
+        {
+            "id": 18,
+            "params": {
+                "hue": {
+                    "v": 32
+                },
+                "lightness": {
+                    "v": 0
+                },
+                "saturation": {
+                    "v": 0.15
+                }
+            },
+            "type": "fx.hsl",
+            "x": 3000,
+            "y": 0
+        },
+        {
+            "id": 19,
+            "params": {
+                "mode": {
+                    "v": 0
+                },
+                "opacity": {
+                    "v": 1
+                }
+            },
+            "type": "blend",
+            "x": 3250,
+            "y": 0
+        },
+        {
+            "id": 20,
+            "params": {
+                "intensity": {
+                    "v": 1
+                },
+                "radius": {
+                    "v": 30
+                },
+                "threshold": {
+                    "v": 0.6
+                }
+            },
+            "type": "fx.glow",
+            "x": 3500,
+            "y": 0
+        },
+        {
+            "id": 21,
+            "params": {
+            },
+            "type": "output",
+            "x": 3750,
+            "y": 0
+        }
+    ],
+    "version": 1
+}

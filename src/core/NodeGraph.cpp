@@ -5,6 +5,7 @@
 #include "core/ImageOps.h"
 #include "core/Parallel.h"
 
+#include <QCoreApplication>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
@@ -703,6 +704,11 @@ QString userEffectsFolder()
     return brand::storageLocation(QStandardPaths::AppDataLocation) + QStringLiteral("/effects");
 }
 
+QString examplesFolder()
+{
+    return QDir(QCoreApplication::applicationDirPath()).filePath(QStringLiteral("effects"));
+}
+
 bool save(const Graph& g, const QString& path, QString* error)
 {
     QDir().mkpath(QFileInfo(path).absolutePath());
@@ -746,12 +752,12 @@ QString effectId(const QString& name)
 }
 
 namespace {
-const EffectDef* registerAs(const Graph& g, const QString& id)
+const EffectDef* registerAs(const Graph& g, const QString& id, bool example = false)
 {
     EffectDef d;
     d.id = id;
     d.name = g.name.trimmed().isEmpty() ? QStringLiteral("User Effect") : g.name.trimmed();
-    d.category = QStringLiteral("User Created");
+    d.category = example ? QStringLiteral("User Created/Examples") : QStringLiteral("User Created");
     d.description = g.description.trimmed().isEmpty() ? QStringLiteral("Made in the Effect Builder (Tools > Effect Builder).") : g.description.trimmed();
     for (const Exposed& x : g.exposed) {
         const Node* n = g.find(x.node);
@@ -810,11 +816,13 @@ const EffectDef* registerEffect(const Graph& g) { return registerAs(g, effectId(
 
 void loadUserEffects()
 {
-    const QDir dir(userEffectsFolder());
-    for (const QFileInfo& fi : dir.entryInfoList({QStringLiteral("*.mvpfx")}, QDir::Files, QDir::Name)) {
-        Graph g;
-        if (load(fi.absoluteFilePath(), &g, nullptr))
-            registerEffect(g);
+    for (const bool example : {true, false}) {
+        const QDir dir(example ? examplesFolder() : userEffectsFolder());
+        for (const QFileInfo& fi : dir.entryInfoList({QStringLiteral("*.mvpfx")}, QDir::Files, QDir::Name)) {
+            Graph g;
+            if (load(fi.absoluteFilePath(), &g, nullptr))
+                registerAs(g, effectId(g.name), example);
+        }
     }
 }
 

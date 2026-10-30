@@ -999,8 +999,12 @@ DeviceChainView::DeviceChainView(Project* project, std::function<TimeUs()> curso
     m_videoMenu->insertMenu(m_videoMenu->actions().value(m_videoMenu->actions().size() - 2), userMenu);
     connect(userMenu, &QMenu::aboutToShow, this, [this, userMenu] {
         userMenu->clear();
+        QMenu* examples = nullptr;
         for (const EffectDef* e : nodes::userEffects()) {
-            QAction* a = userMenu->addAction(QString(e->name).replace(QLatin1Char('&'), QStringLiteral("&&")));
+            QMenu* into = userMenu;
+            if (e->category.endsWith(QLatin1String("/Examples"))) // (the ones that come with the program)
+                into = examples ? examples : (examples = userMenu->addMenu(tr("Examples")));
+            QAction* a = into->addAction(QString(e->name).replace(QLatin1Char('&'), QStringLiteral("&&")));
             a->setToolTip(e->description);
             connect(a, &QAction::triggered, this, [this, id = e->id] { addEffect(id); });
         }

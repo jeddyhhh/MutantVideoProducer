@@ -1,0 +1,229 @@
+{
+    "description": "Red, green and blue from different moments: moving things leave colour ghosts.",
+    "exposed": [
+        {
+            "id": "n9_amount",
+            "name": "Fringe",
+            "node": 9,
+            "param": "amount"
+        }
+    ],
+    "format": "mvp-node-effect",
+    "links": [
+        [
+            1,
+            2,
+            0
+        ],
+        [
+            1,
+            3,
+            0
+        ],
+        [
+            1,
+            4,
+            0
+        ],
+        [
+            3,
+            5,
+            0
+        ],
+        [
+            4,
+            6,
+            0
+        ],
+        [
+            2,
+            7,
+            0
+        ],
+        [
+            5,
+            7,
+            1
+        ],
+        [
+            6,
+            7,
+            2
+        ],
+        [
+            7,
+            8,
+            0
+        ],
+        [
+            8,
+            9,
+            0
+        ],
+        [
+            9,
+            10,
+            0
+        ]
+    ],
+    "name": "Chroma Time Slip",
+    "nextId": 11,
+    "nodes": [
+        {
+            "id": 1,
+            "params": {
+            },
+            "type": "source",
+            "x": 0,
+            "y": 0
+        },
+        {
+            "id": 2,
+            "params": {
+                "channel": {
+                    "v": 0
+                }
+            },
+            "type": "channel",
+            "x": 250,
+            "y": 0
+        },
+        {
+            "id": 3,
+            "params": {
+                "channel": {
+                    "v": 1
+                }
+            },
+            "type": "channel",
+            "x": 250,
+            "y": 210
+        },
+        {
+            "id": 4,
+            "params": {
+                "channel": {
+                    "v": 2
+                }
+            },
+            "type": "channel",
+            "x": 250,
+            "y": 420
+        },
+        {
+            "id": 5,
+            "params": {
+                "frames": {
+                    "v": 6
+                }
+            },
+            "type": "delay",
+            "x": 500,
+            "y": 0
+        },
+        {
+            "id": 6,
+            "params": {
+                "frames": {
+                    "v": 12
+                }
+            },
+            "type": "delay",
+            "x": 500,
+            "y": 210
+        },
+        {
+            "id": 7,
+            "params": {
+            },
+            "type": "combine",
+            "x": 750,
+            "y": 0
+        },
+        {
+            "id": 8,
+            "params": {
+                "intensity": {
+                    "v": 1.2
+                },
+                "radius": {
+                    "v": 24
+                },
+                "threshold": {
+                    "v": 0.55
+                }
+            },
+            "type": "fx.glow",
+            "x": 1000,
+            "y": 0
+        },
+        {
+            "id": 9,
+            "params": {
+                "amount": {
+                    "v": 10
+                },
+                "angle": {
+                    "v": 0
+                },
+                "centerX": {
+                    "v": 0.5
+                },
+                "centerY": {
+                    "v": 0.5
+                },
+                "falloff": {
+                    "v": 1
+                },
+                "fxBoxH": {
+                    "v": 0.5
+                },
+                "fxBoxW": {
+                    "v": 0.5
+                },
+                "fxBoxX": {
+                    "v": 0.25
+                },
+                "fxBoxY": {
+                    "v": 0.25
+                },
+                "fxFeather": {
+                    "v": 0.05
+                },
+                "fxMask": {
+                    "v": 0
+                },
+                "fxMix": {
+                    "v": 1
+                },
+                "fxThreshold": {
+                    "v": 0.5
+                },
+                "greenShift": {
+                    "v": 0
+                },
+                "mode": {
+                    "v": 0
+                },
+                "wobble": {
+                    "v": 0
+                },
+                "wobbleSpeed": {
+                    "v": 2
+                }
+            },
+            "type": "fx.chromatic_aberration",
+            "x": 1250,
+            "y": 0
+        },
+        {
+            "id": 10,
+            "params": {
+            },
+            "type": "output",
+            "x": 1500,
+            "y": 0
+        }
+    ],
+    "version": 1
+}

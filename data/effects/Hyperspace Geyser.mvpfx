@@ -1,0 +1,215 @@
+{
+    "description": "The brightest things (a geyser, a flame) keyed out over hyperspace, zoom-blurred, with a long echo.",
+    "exposed": [
+        {
+            "id": "n4_speed",
+            "name": "Warp",
+            "node": 4,
+            "param": "speed"
+        }
+    ],
+    "format": "mvp-node-effect",
+    "links": [
+        [
+            1,
+            2,
+            0
+        ],
+        [
+            2,
+            3,
+            0
+        ],
+        [
+            4,
+            5,
+            0
+        ],
+        [
+            5,
+            6,
+            0
+        ],
+        [
+            3,
+            6,
+            1
+        ],
+        [
+            6,
+            8,
+            0
+        ],
+        [
+            6,
+            7,
+            0
+        ],
+        [
+            7,
+            8,
+            1
+        ],
+        [
+            8,
+            9,
+            0
+        ],
+        [
+            9,
+            10,
+            0
+        ]
+    ],
+    "name": "Hyperspace Geyser",
+    "nextId": 11,
+    "nodes": [
+        {
+            "id": 1,
+            "params": {
+            },
+            "type": "source",
+            "x": 0,
+            "y": 0
+        },
+        {
+            "id": 2,
+            "params": {
+                "high": {
+                    "v": 0.75
+                },
+                "invert": {
+                    "v": 0
+                },
+                "low": {
+                    "v": 0.5
+                }
+            },
+            "type": "luma_key",
+            "x": 250,
+            "y": 0
+        },
+        {
+            "id": 3,
+            "params": {
+                "amount": {
+                    "v": 0.35
+                },
+                "color": {
+                    "v": 10545407
+                }
+            },
+            "type": "fx.tint",
+            "x": 500,
+            "y": 0
+        },
+        {
+            "id": 4,
+            "params": {
+                "background": {
+                    "v": 5
+                },
+                "color": {
+                    "v": 12574975
+                },
+                "count": {
+                    "v": 1800
+                },
+                "speed": {
+                    "v": 6
+                },
+                "trails": {
+                    "v": 1
+                }
+            },
+            "type": "gen.hyperspace",
+            "x": 0,
+            "y": 210
+        },
+        {
+            "id": 5,
+            "params": {
+                "amount": {
+                    "v": 0.18
+                },
+                "centerX": {
+                    "v": 0.5
+                },
+                "centerY": {
+                    "v": 0.5
+                },
+                "mode": {
+                    "v": 0
+                }
+            },
+            "type": "fx.radial_blur",
+            "x": 250,
+            "y": 210
+        },
+        {
+            "id": 6,
+            "params": {
+                "mode": {
+                    "v": 0
+                },
+                "opacity": {
+                    "v": 1
+                }
+            },
+            "type": "blend",
+            "x": 750,
+            "y": 0
+        },
+        {
+            "id": 7,
+            "params": {
+                "frames": {
+                    "v": 10
+                }
+            },
+            "type": "delay",
+            "x": 1000,
+            "y": 0
+        },
+        {
+            "id": 8,
+            "params": {
+                "mode": {
+                    "v": 5
+                },
+                "opacity": {
+                    "v": 0.6
+                }
+            },
+            "type": "blend",
+            "x": 1250,
+            "y": 0
+        },
+        {
+            "id": 9,
+            "params": {
+                "intensity": {
+                    "v": 1.3
+                },
+                "radius": {
+                    "v": 30
+                },
+                "threshold": {
+                    "v": 0.5
+                }
+            },
+            "type": "fx.glow",
+            "x": 1500,
+            "y": 0
+        },
+        {
+            "id": 10,
+            "params": {
+            },
+            "type": "output",
+            "x": 1750,
+            "y": 0
+        }
+    ],
+    "version": 1
+}

@@ -692,6 +692,11 @@ void MainWindow::createActions()
             userEffectsMenu->addAction(fi.completeBaseName(), this, [this, path = fi.absoluteFilePath()] { effectBuilder(path); });
         if (userEffectsMenu->isEmpty())
             userEffectsMenu->addAction(tr("(none yet)"))->setEnabled(false);
+        // The examples that come with the program: open one to see how it's made, or start from it.
+        QMenu* examples = userEffectsMenu->addMenu(tr("Examples"));
+        for (const QFileInfo& fi : QDir(nodes::examplesFolder()).entryInfoList({QStringLiteral("*.mvpfx")}, QDir::Files, QDir::Name))
+            examples->addAction(fi.completeBaseName(), this, [this, path = fi.absoluteFilePath()] { effectBuilder(path); });
+        examples->setEnabled(!examples->isEmpty());
         userEffectsMenu->addSeparator();
         userEffectsMenu->addAction(tr("Open the Folder"), this, [] {
             QDir().mkpath(nodes::userEffectsFolder());

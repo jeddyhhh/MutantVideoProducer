@@ -109,12 +109,15 @@ private:
 
 // ---- Saved effects ----
 QString userEffectsFolder();
+// The example effects that come with the program (the effects folder next to it), under User Created/Examples.
+QString examplesFolder();
 bool save(const Graph& g, const QString& path, QString* error);
 bool load(const QString& path, Graph* g, QString* error);
 QString effectId(const QString& name); // "user.<name as an id>"
 // Registers (or updates) the graph as a video effect; returns it.
 const EffectDef* registerEffect(const Graph& g);
-// The effects of the .mvpfx files in userEffectsFolder() (at startup).
+// The examples', then the user's own (in userEffectsFolder()), at startup. One the user saved under an example's
+// name takes its place.
 void loadUserEffects();
 // The registered user effects (the latest of each).
 std::vector<const EffectDef*> userEffects();

@@ -1,0 +1,294 @@
+{
+    "description": "Cyan edges, scanlines and slice glitches, keyed onto a synthwave grid with a ghost of the picture.",
+    "exposed": [
+        {
+            "id": "n8_amount",
+            "name": "Ghost",
+            "node": 8,
+            "param": "amount"
+        }
+    ],
+    "format": "mvp-node-effect",
+    "links": [
+        [
+            1,
+            2,
+            0
+        ],
+        [
+            2,
+            3,
+            0
+        ],
+        [
+            3,
+            4,
+            0
+        ],
+        [
+            4,
+            5,
+            0
+        ],
+        [
+            1,
+            7,
+            0
+        ],
+        [
+            6,
+            8,
+            0
+        ],
+        [
+            7,
+            8,
+            1
+        ],
+        [
+            8,
+            9,
+            0
+        ],
+        [
+            5,
+            9,
+            1
+        ],
+        [
+            9,
+            10,
+            0
+        ],
+        [
+            10,
+            11,
+            0
+        ]
+    ],
+    "name": "Hologram",
+    "nextId": 12,
+    "nodes": [
+        {
+            "id": 1,
+            "params": {
+            },
+            "type": "source",
+            "x": 0,
+            "y": 0
+        },
+        {
+            "id": 2,
+            "params": {
+                "background": {
+                    "v": 0
+                },
+                "color": {
+                    "v": 2285823
+                },
+                "colorMode": {
+                    "v": 2
+                },
+                "glow": {
+                    "v": 12
+                },
+                "strength": {
+                    "v": 5
+                }
+            },
+            "type": "fx.neon_edges",
+            "x": 250,
+            "y": 0
+        },
+        {
+            "id": 3,
+            "params": {
+                "brightness": {
+                    "v": 1.25
+                },
+                "curvature": {
+                    "v": 0.06
+                },
+                "lineCount": {
+                    "v": 320
+                },
+                "mask": {
+                    "v": 1
+                },
+                "maskStrength": {
+                    "v": 0.3
+                },
+                "scanlines": {
+                    "v": 0.85
+                },
+                "vignette": {
+                    "v": 0.35
+                }
+            },
+            "type": "fx.crt",
+            "x": 500,
+            "y": 0
+        },
+        {
+            "id": 4,
+            "params": {
+                "amount": {
+                    "v": 0.25
+                },
+                "colorGlitch": {
+                    "v": 0
+                },
+                "direction": {
+                    "v": 0
+                },
+                "edge": {
+                    "v": 0
+                },
+                "fxBoxH": {
+                    "v": 0.5
+                },
+                "fxBoxW": {
+                    "v": 0.5
+                },
+                "fxBoxX": {
+                    "v": 0.25
+                },
+                "fxBoxY": {
+                    "v": 0.25
+                },
+                "fxFeather": {
+                    "v": 0.05
+                },
+                "fxMask": {
+                    "v": 0
+                },
+                "fxMix": {
+                    "v": 1
+                },
+                "fxThreshold": {
+                    "v": 0.5
+                },
+                "maxShift": {
+                    "v": 80
+                },
+                "rate": {
+                    "v": 6
+                },
+                "rgbSplit": {
+                    "v": 6
+                },
+                "seed": {
+                    "v": 1
+                },
+                "slices": {
+                    "v": 30
+                }
+            },
+            "type": "fx.slice_glitch",
+            "x": 750,
+            "y": 0
+        },
+        {
+            "id": 5,
+            "params": {
+                "high": {
+                    "v": 0.25
+                },
+                "invert": {
+                    "v": 0
+                },
+                "low": {
+                    "v": 0.04
+                }
+            },
+            "type": "luma_key",
+            "x": 1000,
+            "y": 0
+        },
+        {
+            "id": 6,
+            "params": {
+                "color": {
+                    "v": 16722902
+                },
+                "horizon": {
+                    "v": 0.55
+                },
+                "speed": {
+                    "v": 1
+                },
+                "sun": {
+                    "v": 1
+                }
+            },
+            "type": "gen.retro_grid",
+            "x": 0,
+            "y": 210
+        },
+        {
+            "id": 7,
+            "params": {
+                "amount": {
+                    "v": 0.8
+                },
+                "color": {
+                    "v": 2285823
+                }
+            },
+            "type": "fx.tint",
+            "x": 250,
+            "y": 210
+        },
+        {
+            "id": 8,
+            "params": {
+                "amount": {
+                    "v": 0.18
+                }
+            },
+            "type": "mix",
+            "x": 500,
+            "y": 210
+        },
+        {
+            "id": 9,
+            "params": {
+                "mode": {
+                    "v": 0
+                },
+                "opacity": {
+                    "v": 1
+                }
+            },
+            "type": "blend",
+            "x": 1250,
+            "y": 0
+        },
+        {
+            "id": 10,
+            "params": {
+                "intensity": {
+                    "v": 1.3
+                },
+                "radius": {
+                    "v": 26
+                },
+                "threshold": {
+                    "v": 0.5
+                }
+            },
+            "type": "fx.glow",
+            "x": 1500,
+            "y": 0
+        },
+        {
+            "id": 11,
+            "params": {
+            },
+            "type": "output",
+            "x": 1750,
+            "y": 0
+        }
+    ],
+    "version": 1
+}

@@ -1,0 +1,259 @@
+{
+    "description": "Text pushed around by plasma, rainbow neon edges, a glow and an echo. Change the words in the Text node.",
+    "exposed": [
+        {
+            "id": "n4_amountX",
+            "name": "Wobble",
+            "node": 4,
+            "param": "amountX"
+        }
+    ],
+    "format": "mvp-node-effect",
+    "links": [
+        [
+            2,
+            4,
+            0
+        ],
+        [
+            3,
+            4,
+            1
+        ],
+        [
+            4,
+            5,
+            0
+        ],
+        [
+            5,
+            6,
+            0
+        ],
+        [
+            6,
+            8,
+            0
+        ],
+        [
+            6,
+            7,
+            0
+        ],
+        [
+            7,
+            8,
+            1
+        ],
+        [
+            8,
+            9,
+            0
+        ]
+    ],
+    "name": "Neon Plasma Title",
+    "nextId": 10,
+    "nodes": [
+        {
+            "id": 1,
+            "params": {},
+            "type": "source",
+            "x": 0,
+            "y": 0
+        },
+        {
+            "id": 2,
+            "params": {
+                "align": {
+                    "v": 1
+                },
+                "animIn": {
+                    "v": 1
+                },
+                "animOut": {
+                    "v": 1
+                },
+                "bold": {
+                    "v": 1
+                },
+                "box": {
+                    "v": 0
+                },
+                "boxColor": {
+                    "v": 0
+                },
+                "boxPadding": {
+                    "v": 20
+                },
+                "boxRadius": {
+                    "v": 6
+                },
+                "color": {
+                    "v": 16777215
+                },
+                "font": {
+                    "text": "Arial Black",
+                    "v": 0
+                },
+                "inDuration": {
+                    "v": 0.5
+                },
+                "italic": {
+                    "v": 0
+                },
+                "lineSpacing": {
+                    "v": 0.9
+                },
+                "outDuration": {
+                    "v": 0.5
+                },
+                "outline": {
+                    "v": 0
+                },
+                "outlineColor": {
+                    "v": 0
+                },
+                "shadow": {
+                    "v": 0
+                },
+                "shadowBlur": {
+                    "v": 6
+                },
+                "shadowColor": {
+                    "v": 0
+                },
+                "shadowX": {
+                    "v": 4
+                },
+                "shadowY": {
+                    "v": 4
+                },
+                "size": {
+                    "v": 30
+                },
+                "text": {
+                    "text": "YOUR\nTITLE"
+                },
+                "tracking": {
+                    "v": 0
+                },
+                "x": {
+                    "v": 0.5
+                },
+                "y": {
+                    "v": 0.5
+                }
+            },
+            "type": "gen.title",
+            "x": 0,
+            "y": 210
+        },
+        {
+            "id": 3,
+            "params": {
+                "palette": {
+                    "v": 0
+                },
+                "scale": {
+                    "v": 1.4
+                },
+                "speed": {
+                    "v": 2.5
+                }
+            },
+            "type": "gen.plasma_neon",
+            "x": 0,
+            "y": 420
+        },
+        {
+            "id": 4,
+            "params": {
+                "amountX": {
+                    "v": 45
+                },
+                "amountY": {
+                    "v": 30
+                },
+                "use": {
+                    "v": 0
+                }
+            },
+            "type": "displace",
+            "x": 250,
+            "y": 0
+        },
+        {
+            "id": 5,
+            "params": {
+                "background": {
+                    "v": 0
+                },
+                "color": {
+                    "v": 58879
+                },
+                "colorMode": {
+                    "v": 1
+                },
+                "glow": {
+                    "v": 14
+                },
+                "strength": {
+                    "v": 6
+                }
+            },
+            "type": "fx.neon_edges",
+            "x": 500,
+            "y": 0
+        },
+        {
+            "id": 6,
+            "params": {
+                "intensity": {
+                    "v": 1.6
+                },
+                "radius": {
+                    "v": 40
+                },
+                "threshold": {
+                    "v": 0.3
+                }
+            },
+            "type": "fx.glow",
+            "x": 750,
+            "y": 0
+        },
+        {
+            "id": 7,
+            "params": {
+                "frames": {
+                    "v": 4
+                }
+            },
+            "type": "delay",
+            "x": 1000,
+            "y": 0
+        },
+        {
+            "id": 8,
+            "params": {
+                "mode": {
+                    "v": 2
+                },
+                "opacity": {
+                    "v": 0.55
+                }
+            },
+            "type": "blend",
+            "x": 1250,
+            "y": 0
+        },
+        {
+            "id": 9,
+            "params": {},
+            "type": "output",
+            "x": 1500,
+            "y": 0
+        }
+    ],
+    "version": 1
+}

@@ -1,0 +1,201 @@
+{
+    "description": "Thermal, with a psychedelic version of the picture showing through drifting plasma, under neon edges.",
+    "exposed": [
+        {
+            "id": "n6_opacity",
+            "name": "Possession",
+            "node": 6,
+            "param": "opacity"
+        }
+    ],
+    "format": "mvp-node-effect",
+    "links": [
+        [
+            1,
+            2,
+            0
+        ],
+        [
+            1,
+            3,
+            0
+        ],
+        [
+            3,
+            5,
+            0
+        ],
+        [
+            4,
+            5,
+            1
+        ],
+        [
+            2,
+            6,
+            0
+        ],
+        [
+            5,
+            6,
+            1
+        ],
+        [
+            1,
+            7,
+            0
+        ],
+        [
+            6,
+            8,
+            0
+        ],
+        [
+            7,
+            8,
+            1
+        ],
+        [
+            8,
+            9,
+            0
+        ]
+    ],
+    "name": "Plasma Possession",
+    "nextId": 10,
+    "nodes": [
+        {
+            "id": 1,
+            "params": {
+            },
+            "type": "source",
+            "x": 0,
+            "y": 0
+        },
+        {
+            "id": 2,
+            "params": {
+                "cycle": {
+                    "v": 0
+                },
+                "mix": {
+                    "v": 1
+                },
+                "palette": {
+                    "v": 0
+                }
+            },
+            "type": "fx.gradient_map",
+            "x": 250,
+            "y": 0
+        },
+        {
+            "id": 3,
+            "params": {
+                "lumaSpread": {
+                    "v": 360
+                },
+                "positionSpread": {
+                    "v": 0
+                },
+                "saturation": {
+                    "v": 2.5
+                },
+                "speed": {
+                    "v": 240
+                }
+            },
+            "type": "fx.psychedelic",
+            "x": 250,
+            "y": 210
+        },
+        {
+            "id": 4,
+            "params": {
+                "palette": {
+                    "v": 0
+                },
+                "scale": {
+                    "v": 1.6
+                },
+                "speed": {
+                    "v": 1.5
+                }
+            },
+            "type": "gen.plasma_neon",
+            "x": 0,
+            "y": 210
+        },
+        {
+            "id": 5,
+            "params": {
+                "mode": {
+                    "v": 2
+                }
+            },
+            "type": "mask",
+            "x": 500,
+            "y": 0
+        },
+        {
+            "id": 6,
+            "params": {
+                "mode": {
+                    "v": 0
+                },
+                "opacity": {
+                    "v": 1
+                }
+            },
+            "type": "blend",
+            "x": 750,
+            "y": 0
+        },
+        {
+            "id": 7,
+            "params": {
+                "background": {
+                    "v": 0
+                },
+                "color": {
+                    "v": 2285823
+                },
+                "colorMode": {
+                    "v": 2
+                },
+                "glow": {
+                    "v": 10
+                },
+                "strength": {
+                    "v": 4
+                }
+            },
+            "type": "fx.neon_edges",
+            "x": 250,
+            "y": 420
+        },
+        {
+            "id": 8,
+            "params": {
+                "mode": {
+                    "v": 2
+                },
+                "opacity": {
+                    "v": 0.9
+                }
+            },
+            "type": "blend",
+            "x": 1000,
+            "y": 0
+        },
+        {
+            "id": 9,
+            "params": {
+            },
+            "type": "output",
+            "x": 1250,
+            "y": 0
+        }
+    ],
+    "version": 1
+}
