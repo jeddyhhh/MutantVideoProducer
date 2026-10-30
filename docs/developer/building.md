@@ -70,7 +70,7 @@ or manually running the workflow against that tag, builds and attaches:
 - `MutantVideoProducer-<version>-win64-setup.exe`: the installer, made with [Inno Setup](https://jrsoftware.org/isinfo.php)
   from `installer/mvp.iss`. It installs for the current user (or, if chosen, all users), adds
   Start menu and optional desktop shortcuts, opens `.mvp` files with Mutant Video Producer, and has an uninstaller.
-  To build it by hand: `iscc /DAppVersion=0.8.5 /DSourceDir=<the release folder> installer\mvp.iss`.
+  To build it by hand: `iscc /DAppVersion=0.9.0 /DSourceDir=<the release folder> installer\mvp.iss`.
 - `MutantVideoProducer-<version>-win64.zip`,
   The standard installer and portable ZIP omit the speech/RVC frameworks and enforce
   a size budget below 1 GiB. Optional engines download directly from upstream sources
