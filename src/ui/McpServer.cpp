@@ -1249,6 +1249,28 @@ QJsonArray McpServer::toolList()
                    {QStringLiteral("sensitivity"), prop("number", "0..1 (default 0.5): higher finds subtler cuts")},
                    {QStringLiteral("split"), prop("boolean", "Split at them (default true)")}},
                   {QStringLiteral("event_ids")}));
+    t.append(tool("node_effect",
+                  "Makes video effects from a graph of nodes (Tools > Effect Builder): saved, an effect is in the User Created "
+                  "category, for add_effect on any event, track or adjustment layer. nodes: the node types (search narrows; with "
+                  "details or a search, each one's inputs and settings). preview: runs graph on the picture at time (default: the "
+                  "cursor) and returns the image. save: saves graph as an effect (overwrite replaces one of the same name) and "
+                  "returns its effect id. list: the saved effects. get: one's graph (effect: its id or name), to change and save "
+                  "again. A graph: {name, description, nodes: [{id, type, params: {setting: value}}], links: [[from, to, input]], "
+                  "exposed: [{node, param, name}]}. It needs one node of type output (and source: the picture the effect is on). "
+                  "Node ids are yours (whole numbers from 1). A link wires node from's output into input number `input` (from 0, "
+                  "in the order nodes lists them) of node to; nothing wired in reads as transparent. Setting values as add_effect's. "
+                  "exposed settings become the effect's own, keyframable with set_effect.",
+                  {{QStringLiteral("action"), enumProp({QStringLiteral("nodes"), QStringLiteral("preview"), QStringLiteral("save"), QStringLiteral("list"),
+                                                        QStringLiteral("get")},
+                                                       "What to do")},
+                   {QStringLiteral("search"), prop("string", "nodes: words to look for (e.g. blur, key, glitch, text)")},
+                   {QStringLiteral("details"), prop("boolean", "nodes: each one's description, inputs and settings")},
+                   {QStringLiteral("graph"), prop("object", "preview / save: the graph (see above)")},
+                   {QStringLiteral("time"), prop("number", "preview: seconds (default: the cursor)")},
+                   {QStringLiteral("width"), prop("integer", "preview: picture width (160..1280, default 640)")},
+                   {QStringLiteral("overwrite"), prop("boolean", "save: replace a saved effect of the same name")},
+                   {QStringLiteral("effect"), prop("string", "get: the effect's id (user....) or name")}},
+                  {QStringLiteral("action")}));
     t.append(tool("match_colour",
                   "Gives video events the colours of the shot at time (Tools > Match Colour to the Cursor Frame): each gets a "
                   "Color Match effect (red, green and blue curves; its amount tones it down) at the end of its FX. time must be "
@@ -1509,6 +1531,7 @@ struct McpServer::ToolCall {
     QJsonObject tool_delete_track();
     QJsonObject tool_scene_changes();
     QJsonObject tool_match_colour();
+    QJsonObject tool_node_effect();
     QJsonObject tool_cut_time();
     QJsonObject tool_auto_reframe();
     QJsonObject tool_youtube_publish();
@@ -3559,6 +3582,209 @@ QJsonObject McpServer::ToolCall::tool_scene_changes()
     return jsonResult({{QStringLiteral("cuts"), times}, {QStringLiteral("split"), !times.isEmpty()}});
 }
 
+namespace {
+// An AI's graph ({name, description, nodes, links, exposed}) into a node graph, laid out in columns by how far each node
+// is from the start. Empty when it's fine, else what's wrong.
+QString graphFromJson(const QJsonObject& o, nodes::Graph* g)
+{
+    g->name = o.value(QStringLiteral("name")).toString().trimmed();
+    g->description = o.value(QStringLiteral("description")).toString().trimmed();
+    int top = 0, outputs = 0;
+    for (const QJsonValue v : o.value(QStringLiteral("nodes")).toArray()) {
+        const QJsonObject n = v.toObject();
+        nodes::Node node;
+        node.id = n.value(QStringLiteral("id")).toInt();
+        node.type = n.value(QStringLiteral("type")).toString();
+        const nodes::NodeDef* def = nodes::findNode(node.type);
+        if (node.id <= 0 || g->find(node.id))
+            return QStringLiteral("each node needs its own id (a whole number from 1): %1").arg(node.id);
+        if (!def)
+            return QStringLiteral("there is no node type \"%1\" (node_effect action nodes lists them)").arg(node.type);
+        node.params = defaultParams(def->params);
+        const QJsonObject params = n.value(QStringLiteral("params")).toObject();
+        for (auto it = params.begin(); it != params.end(); ++it)
+            if (const QString error = setParam(node.params, def->params, it.key(), it.value()); !error.isEmpty())
+                return QStringLiteral("node %1 (%2): %3").arg(node.id).arg(node.type, error);
+        outputs += node.type == QLatin1String("output");
+        top = std::max(top, node.id);
+        g->nodes.push_back(std::move(node));
+    }
+    if (outputs != 1)
+        return QStringLiteral("the graph needs exactly one node of type output (it has %1)").arg(outputs);
+    g->nextId = top + 1;
+    for (const QJsonValue v : o.value(QStringLiteral("links")).toArray()) {
+        int from = 0, to = 0, port = 0;
+        if (v.isArray()) {
+            const QJsonArray l = v.toArray();
+            from = l.at(0).toInt();
+            to = l.at(1).toInt();
+            port = l.at(2).toInt();
+        } else {
+            const QJsonObject l = v.toObject();
+            from = l.value(QStringLiteral("from")).toInt();
+            to = l.value(QStringLiteral("to")).toInt();
+            port = l.value(QStringLiteral("input")).toInt();
+        }
+        const nodes::Node* a = g->find(from);
+        const nodes::Node* b = g->find(to);
+        const nodes::NodeDef* bd = b ? nodes::findNode(b->type) : nullptr;
+        if (!a || !b)
+            return QStringLiteral("a link names a node that isn't there: [%1, %2, %3]").arg(from).arg(to).arg(port);
+        if (!nodes::findNode(a->type)->output)
+            return QStringLiteral("node %1 is the output: nothing comes out of it").arg(from);
+        if (port < 0 || port >= int(bd->inputs.size()))
+            return QStringLiteral("node %1 (%2) has inputs 0..%3 (%4)").arg(to).arg(b->type).arg(int(bd->inputs.size()) - 1).arg(bd->inputs.join(QStringLiteral(", ")));
+        if (!g->connect(from, to, port))
+            return QStringLiteral("linking %1 into %2 would make a loop").arg(from).arg(to);
+    }
+    for (const QJsonValue v : o.value(QStringLiteral("exposed")).toArray()) {
+        const QJsonObject x = v.toObject();
+        const int node = x.value(QStringLiteral("node")).toInt();
+        const QString param = x.value(QStringLiteral("param")).toString();
+        const nodes::Node* n = g->find(node);
+        const nodes::NodeDef* def = n ? nodes::findNode(n->type) : nullptr;
+        const auto pd = def ? std::find_if(def->params.begin(), def->params.end(), [&](const ParamDef& p) { return p.id == param; })
+                            : std::vector<ParamDef>::const_iterator{};
+        if (!def || pd == def->params.end())
+            return QStringLiteral("exposed: node %1 has no setting \"%2\"").arg(node).arg(param);
+        if (pd->type == ParamType::Text || pd->type == ParamType::Font)
+            return QStringLiteral("exposed: text settings can't be the effect's (%1)").arg(param);
+        const QString name = x.value(QStringLiteral("name")).toString().trimmed();
+        g->exposed.push_back({QStringLiteral("n%1_%2").arg(node).arg(param), name.isEmpty() ? pd->name : name, node, param});
+    }
+    // Columns by depth (how many nodes lie between it and the start), rows in order.
+    std::map<int, int> depth;
+    std::function<int(int, int)> deep = [&](int id, int guard) {
+        if (auto it = depth.find(id); it != depth.end())
+            return it->second;
+        int d = 0;
+        for (const nodes::Link& l : g->links)
+            if (l.to == id && guard < 512)
+                d = std::max(d, deep(l.from, guard + 1) + 1);
+        return depth[id] = d;
+    };
+    std::map<int, int> rows;
+    for (nodes::Node& n : g->nodes) {
+        const int d = deep(n.id, 0);
+        n.pos = QPointF(d * 250.0, rows[d]++ * 210.0);
+    }
+    return {};
+}
+
+// A node graph as an AI writes one (setting values plain).
+QJsonObject graphToJson(const nodes::Graph& g)
+{
+    QJsonArray ns, ls, xs;
+    for (const nodes::Node& n : g.nodes) {
+        QJsonObject params;
+        for (const auto& [id, v] : n.params)
+            params[id] = v.text.isEmpty() ? QJsonValue(v.value) : QJsonValue(v.text);
+        ns.append(QJsonObject{{QStringLiteral("id"), n.id}, {QStringLiteral("type"), n.type}, {QStringLiteral("params"), params}});
+    }
+    for (const nodes::Link& l : g.links)
+        ls.append(QJsonArray{l.from, l.to, l.port});
+    for (const nodes::Exposed& x : g.exposed)
+        xs.append(QJsonObject{{QStringLiteral("node"), x.node}, {QStringLiteral("param"), x.param}, {QStringLiteral("name"), x.name}, {QStringLiteral("id"), x.id}});
+    return {{QStringLiteral("name"), g.name}, {QStringLiteral("description"), g.description}, {QStringLiteral("nodes"), ns},
+            {QStringLiteral("links"), ls}, {QStringLiteral("exposed"), xs}};
+}
+} // namespace
+
+QJsonObject McpServer::ToolCall::tool_node_effect()
+{
+    const QString action = str("action");
+    if (action == QLatin1String("nodes")) {
+        const QString search = str("search");
+        const bool details = a.value(QStringLiteral("details")).toBool() || !search.isEmpty();
+        QJsonArray out;
+        for (const nodes::NodeDef& d : nodes::nodeDefs()) {
+            bool match = true;
+            for (const QString& word : search.split(QLatin1Char(' '), Qt::SkipEmptyParts))
+                match = match && (d.id + QLatin1Char(' ') + d.name + QLatin1Char(' ') + d.category + QLatin1Char(' ') + d.description).contains(word, Qt::CaseInsensitive);
+            if (!match)
+                continue;
+            QJsonObject o{{QStringLiteral("type"), d.id}, {QStringLiteral("name"), d.name}, {QStringLiteral("category"), d.category},
+                          {QStringLiteral("inputs"), QJsonArray::fromStringList(d.inputs)}};
+            if (details) {
+                o[QStringLiteral("description")] = d.description;
+                QJsonArray ps2;
+                for (const ParamDef& p : d.params)
+                    if (!p.hidden)
+                        ps2.append(paramDefJson(p));
+                o[QStringLiteral("params")] = ps2;
+            }
+            out.append(o);
+        }
+        return jsonResult({{QStringLiteral("nodes"), out}, {QStringLiteral("count"), out.size()}});
+    }
+    if (action == QLatin1String("list")) {
+        QJsonArray out;
+        for (const EffectDef* d : nodes::userEffects()) {
+            QJsonArray ps2;
+            for (const ParamDef& p : d->params)
+                if (!p.hidden)
+                    ps2.append(p.id);
+            out.append(QJsonObject{{QStringLiteral("id"), d->id}, {QStringLiteral("name"), d->name}, {QStringLiteral("description"), d->description},
+                                   {QStringLiteral("params"), ps2}});
+        }
+        return jsonResult({{QStringLiteral("effects"), out}, {QStringLiteral("folder"), nodes::userEffectsFolder()}});
+    }
+    if (action == QLatin1String("get")) {
+        const QString which = str("effect");
+        const EffectDef* def = nodes::findUserEffect(which);
+        for (const EffectDef* d : nodes::userEffects())
+            if (!def && d->name.compare(which, Qt::CaseInsensitive) == 0)
+                def = d;
+        if (!def)
+            return errorResult(QStringLiteral("no user effect \"%1\" (action list)").arg(which));
+        const auto graph = std::find_if(def->params.begin(), def->params.end(), [](const ParamDef& p) { return p.id == QLatin1String("graph"); });
+        if (graph == def->params.end())
+            return errorResult(QStringLiteral("that effect has no graph"));
+        QJsonObject o = graphToJson(nodes::fromJson(QJsonDocument::fromJson(graph->defText.toUtf8()).object()));
+        o[QStringLiteral("effect")] = def->id;
+        return jsonResult(o);
+    }
+    if (action != QLatin1String("preview") && action != QLatin1String("save"))
+        return errorResult(QStringLiteral("action is nodes, preview, save, list or get"));
+    nodes::Graph g;
+    if (const QString error = graphFromJson(a.value(QStringLiteral("graph")).toObject(), &g); !error.isEmpty())
+        return errorResult(error);
+    if (action == QLatin1String("preview")) {
+        const TimeUs t = has("time") ? us(num("time")) : w->m_timeline->cursorTime();
+        const int width = std::clamp(integer("width", 640), 160, 1280);
+        const QSize size(width, std::max(2, int(std::lround(double(width) * ps.height / std::max(1, ps.width)))));
+        Compositor renderer(true);
+        const QImage frame = renderer.render(*project->snapshot(), t, size);
+        RenderContext ctx;
+        ctx.time = t;
+        ctx.timelineTime = t;
+        ctx.scale = double(width) / std::max(1, ps.width);
+        ctx.fps = ps.fps.toDouble();
+        ctx.contentRect = QRectF(frame.rect());
+        nodes::Evaluator eval;
+        const QImage out = eval.run(g, frame, ctx);
+        return imageResult(out, eval.error.isEmpty() ? QStringLiteral("The graph on the picture at %1 s").arg(sec(t), 0, 'f', 2)
+                                                     : QStringLiteral("The graph at %1 s: %2").arg(sec(t), 0, 'f', 2).arg(eval.error));
+    }
+    if (g.name.isEmpty())
+        return errorResult(QStringLiteral("give the graph a name"));
+    static const QRegularExpression illegal(QStringLiteral("[\\\\/:*?\"<>|]"));
+    const QString file = QDir(nodes::userEffectsFolder()).filePath(QString(g.name).replace(illegal, QStringLiteral(" ")).simplified() + QStringLiteral(".mvpfx"));
+    const QString id = nodes::effectId(g.name);
+    if (!a.value(QStringLiteral("overwrite")).toBool() && (QFileInfo::exists(file) || nodes::findUserEffect(id)))
+        return errorResult(QStringLiteral("there is already an effect called \"%1\" (overwrite true replaces it)").arg(g.name));
+    QString error;
+    if (!nodes::save(g, file, &error))
+        return errorResult(QStringLiteral("couldn't save: %1").arg(error));
+    const EffectDef* def = nodes::registerEffect(g);
+    QJsonArray params;
+    for (const ParamDef& p : def->params)
+        if (!p.hidden)
+            params.append(p.id);
+    return jsonResult({{QStringLiteral("effect"), def->id}, {QStringLiteral("name"), def->name}, {QStringLiteral("file"), file}, {QStringLiteral("params"), params},
+                       {QStringLiteral("note"), QStringLiteral("add it with add_effect effect %1").arg(def->id)}});
+}
+
 QJsonObject McpServer::ToolCall::tool_match_colour()
 {
     Timeline tl = project->timeline();
@@ -3956,6 +4182,7 @@ QJsonObject McpServer::callTool(const QString& name, const QJsonObject& a)
         {QStringLiteral("delete_track"), {&ToolCall::tool_delete_track, false}},
         {QStringLiteral("scene_changes"), {&ToolCall::tool_scene_changes, false}},
         {QStringLiteral("match_colour"), {&ToolCall::tool_match_colour, false}},
+        {QStringLiteral("node_effect"), {&ToolCall::tool_node_effect, false}},
         {QStringLiteral("cut_time"), {&ToolCall::tool_cut_time, false}},
         {QStringLiteral("auto_reframe"), {&ToolCall::tool_auto_reframe, false}},
         {QStringLiteral("youtube_publish"), {&ToolCall::tool_youtube_publish, false}},

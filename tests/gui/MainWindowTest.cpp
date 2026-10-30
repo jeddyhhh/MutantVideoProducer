@@ -814,6 +814,38 @@ int MainWindow::runEditorTest(QStringList& log)
         check(voiceList.value(QStringLiteral("voices")).toArray().size() == 28 && !voiceState.value(QStringLiteral("busy")).toBool()
                   && failed(call(QStringLiteral("generate_voice"), {{QStringLiteral("voice"), QStringLiteral("missing-voice")}})),
               QStringLiteral("AI control exposes the voice library and async status, and rejects unknown voices without edits"));
+        {
+            // node_effect: the node types, a graph previewed on the picture, a loop refused, saved as an effect and read back.
+            const QJsonObject graph{
+                {QStringLiteral("name"), QStringLiteral("GUI Test Node Tool")},
+                {QStringLiteral("nodes"), QJsonArray{QJsonObject{{QStringLiteral("id"), 1}, {QStringLiteral("type"), QStringLiteral("source")}},
+                                                     QJsonObject{{QStringLiteral("id"), 2}, {QStringLiteral("type"), QStringLiteral("fx.invert")}},
+                                                     QJsonObject{{QStringLiteral("id"), 3}, {QStringLiteral("type"), QStringLiteral("mix")},
+                                                                 {QStringLiteral("params"), QJsonObject{{QStringLiteral("amount"), 0.75}}}},
+                                                     QJsonObject{{QStringLiteral("id"), 4}, {QStringLiteral("type"), QStringLiteral("output")}}}},
+                {QStringLiteral("links"), QJsonArray{QJsonArray{1, 2, 0}, QJsonArray{1, 3, 0}, QJsonArray{2, 3, 1}, QJsonArray{3, 4, 0}}},
+                {QStringLiteral("exposed"), QJsonArray{QJsonObject{{QStringLiteral("node"), 3}, {QStringLiteral("param"), QStringLiteral("amount")}}}}};
+            const int types = content(call(QStringLiteral("node_effect"), {{QStringLiteral("action"), QStringLiteral("nodes")}}))
+                                  .value(QStringLiteral("count")).toInt();
+            const QJsonObject preview = call(QStringLiteral("node_effect"), {{QStringLiteral("action"), QStringLiteral("preview")}, {QStringLiteral("graph"), graph}});
+            const bool image = std::any_of(preview[QStringLiteral("content")].toArray().begin(), preview[QStringLiteral("content")].toArray().end(),
+                                           [](const QJsonValue& c) { return c.toObject()[QStringLiteral("type")].toString() == QLatin1String("image"); });
+            QJsonObject looped = graph;
+            QJsonArray links = graph[QStringLiteral("links")].toArray();
+            links.append(QJsonArray{3, 2, 0});
+            looped[QStringLiteral("links")] = links;
+            const bool refused = failed(call(QStringLiteral("node_effect"), {{QStringLiteral("action"), QStringLiteral("save")}, {QStringLiteral("graph"), looped}}));
+            const QJsonObject saved = content(call(QStringLiteral("node_effect"), {{QStringLiteral("action"), QStringLiteral("save")},
+                                                                                    {QStringLiteral("graph"), graph},
+                                                                                    {QStringLiteral("overwrite"), true}}));
+            const QJsonObject back = content(call(QStringLiteral("node_effect"), {{QStringLiteral("action"), QStringLiteral("get")},
+                                                                                   {QStringLiteral("effect"), QStringLiteral("GUI Test Node Tool")}}));
+            check(types > 200 && image && refused && saved[QStringLiteral("effect")].toString() == QLatin1String("user.gui_test_node_tool")
+                      && findEffect(QStringLiteral("user.gui_test_node_tool")) && back[QStringLiteral("links")].toArray().size() == 4,
+                  QStringLiteral("AI control: node_effect lists %1 node types, previews a graph, refuses a loop, saves it as an effect and reads it back")
+                      .arg(types));
+            QFile::remove(saved[QStringLiteral("file")].toString());
+        }
 
         int status = 0;
         const QJsonObject init =
