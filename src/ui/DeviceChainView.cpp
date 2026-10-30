@@ -717,6 +717,7 @@ class DeviceWidget : public QFrame {
 public:
     // Devices nested in a rack keep the standard height (the rack grows to fit them).
     DeviceWidget(DeviceChainView* view, const ChainPath& path, int index, const EffectInstance& e, bool nested)
+        : m_view(view), m_effectId(e.id), m_user(e.type.startsWith(QLatin1String("user.")))
     {
         const int bodyHeight = nested ? kBodyHeight : view->m_bodyHeight;
         const bool selected = view->m_selected.count(e.id) > 0;
@@ -789,13 +790,27 @@ public:
         grid->setContentsMargins(6, 4, 6, 4);
         grid->setHorizontalSpacing(6);
         grid->setVerticalSpacing(4);
+        int row = 0, col = 0, used = 0;
+        if (m_user) {
+            // Made in the Effect Builder: its graph is changed there, not here.
+            auto* warn = new QLabel(QObject::tr("\u26A0 Double-click this effect to change it in the Effect Builder"));
+            warn->setObjectName(QStringLiteral("userEffectHint"));
+            theme::style(warn, QStringLiteral("color: @warn; font-weight: bold;"));
+            grid->addWidget(warn, row++, col, Qt::AlignTop | Qt::AlignHCenter);
+            used += 46;
+            setToolTip(QObject::tr("Double-click to change this effect in the Effect Builder (Tools)"));
+        }
+        const bool anyShown = meta && meta->params && std::any_of(meta->params->begin(), meta->params->end(), [](const ParamDef& d) { return !d.hidden; });
+        if (!anyShown && m_user) {
+            grid->setRowStretch(grid->rowCount(), 1);
+            return;
+        }
         if (!meta || !meta->params || meta->params->empty()) {
             grid->addWidget(new QLabel(QObject::tr("No settings")), 0, 0);
             return;
         }
         // Column-major: fill each column down to the body height, by the
         // controls' real heights (knobs are tall, menus and toggles short).
-        int row = 0, col = 0, used = 0;
         const int avail = bodyHeight - 8;
         std::vector<ParamDef> defs = *meta->params;
         const auto shape = e.params.find(QStringLiteral("mask.shape"));
@@ -832,6 +847,20 @@ public:
         }
         grid->setRowStretch(grid->rowCount(), 1);
     }
+
+protected:
+    void mouseDoubleClickEvent(QMouseEvent* e) override
+    {
+        if (m_user)
+            emit m_view->userEffectRequested(m_effectId);
+        else
+            QFrame::mouseDoubleClickEvent(e);
+    }
+
+private:
+    DeviceChainView* m_view;
+    int m_effectId;
+    bool m_user;
 };
 
 ChainStrip::ChainStrip(DeviceChainView* view, ChainPath path, const EffectChain& chain, bool nested)

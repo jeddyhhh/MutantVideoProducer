@@ -300,9 +300,10 @@ Every graph runs from **Source** (the picture the effect is on) to **Output**. T
 Give it a **Name** (and a description), then **Save as User Created Effect**: it's saved to a
 `.mvpfx` file and appears in the Effects tab and the device chain's **+** menu under **User
 Created**, ready for any event, track or adjustment layer. The graph is saved inside the project
-too, so it renders the same on another computer. **Tools > Edit User Effect** opens one again
-(changes apply to the events you add it to from then on), and **Open the Folder** shows the files
-to share them.
+too, so it renders the same on another computer. On an event (or track), the effect's box in the
+device chain says to **double-click it**: that opens it in the Effect Builder, and saving there
+changes that event's effect too. **Tools > Edit User Effect** opens one again (changes apply to
+the events you add it to from then on), and **Open the Folder** shows the files to share them.
 
 ## GPU acceleration
 

@@ -68,6 +68,8 @@
 #include <QFileDialog>
 #include <QFile>
 #include <QFileInfo>
+#include <functional>
+#include <QDir>
 #include <QLabel>
 #include <QLineEdit>
 #include <QListWidget>
@@ -238,7 +240,76 @@ void MainWindow::splitAtMarkers()
     statusBar()->showMessage(tr("Split into %1 more pieces").arg(pieces.size()), 4000);
 }
 
-void MainWindow::effectBuilder(const QString& file)
+namespace {
+// An effect instance anywhere in the timeline (events, tracks, the output, inside racks), by its id.
+EffectInstance* findInstance(Timeline& tl, int id)
+{
+    std::function<EffectInstance*(EffectChain&)> in = [&](EffectChain& chain) -> EffectInstance* {
+        for (EffectInstance& e : chain) {
+            if (e.id == id)
+                return &e;
+            for (RackChain& c : e.chains)
+                if (EffectInstance* found = in(c.effects))
+                    return found;
+        }
+        return nullptr;
+    };
+    for (Track& t : tl.tracks) {
+        if (EffectInstance* found = in(t.effects))
+            return found;
+        for (Clip& c : t.clips)
+            if (EffectInstance* found = in(c.effects))
+                return found;
+    }
+    return in(tl.outputEffects);
+}
+} // namespace
+
+void MainWindow::editUserEffect(int effectId)
+{
+    Timeline tl = m_project->timeline();
+    const EffectInstance* e = findInstance(tl, effectId);
+    if (!e)
+        return;
+    // This one's own graph (as the event shows it), in the file it came from when there is one.
+    const auto carried = e->params.find(QStringLiteral("graph"));
+    nodes::Graph graph;
+    if (carried != e->params.end() && !carried->second.text.isEmpty())
+        graph = nodes::fromJson(QJsonDocument::fromJson(carried->second.text.toUtf8()).object());
+    else if (const EffectDef* def = findEffect(e->type))
+        for (const ParamDef& p : def->params)
+            if (p.id == QLatin1String("graph"))
+                graph = nodes::fromJson(QJsonDocument::fromJson(p.defText.toUtf8()).object());
+    QString file;
+    for (const QFileInfo& fi : QDir(nodes::userEffectsFolder()).entryInfoList({QStringLiteral("*.mvpfx")}, QDir::Files)) {
+        nodes::Graph g;
+        if (nodes::load(fi.absoluteFilePath(), &g, nullptr) && nodes::effectId(g.name) == e->type) {
+            file = fi.absoluteFilePath();
+            break;
+        }
+    }
+    NodeEffectEditor* editor = effectBuilder(file);
+    if (!graph.nodes.empty())
+        editor->setGraph(graph);
+    connect(editor, &NodeEffectEditor::saved, this, [this, effectId](const QString& id) {
+        Timeline now = m_project->timeline();
+        EffectInstance* inst = findInstance(now, effectId);
+        const EffectDef* def = findEffect(id);
+        if (!inst || !def)
+            return;
+        // The new graph, and the settings it shows now (as they were set, for new ones).
+        inst->type = id;
+        for (const ParamDef& p : def->params)
+            if (p.id == QLatin1String("graph"))
+                inst->params[p.id].text = p.defText;
+            else if (!inst->params.count(p.id))
+                inst->params[p.id].value = p.def;
+        m_project->applyEdit(now, tr("Edit User Effect"));
+        refreshPreview();
+    });
+}
+
+NodeEffectEditor* MainWindow::effectBuilder(const QString& file)
 {
     stopPlayback(false);
     // The project's videos to try it on, starting with the selected event's (else the first).
@@ -262,6 +333,8 @@ void MainWindow::effectBuilder(const QString& file)
     if (!file.isEmpty())
         editor->openFile(file);
     editor->show();
+    editor->raise();
+    return editor;
 }
 
 void MainWindow::matchColour()

@@ -340,6 +340,55 @@ int MainWindow::runEditorTest(QStringList& log)
                                  "shown setting with it (%2)")
                       .arg(editor.status(), error));
             editor.close();
+            {
+                // On an event, the device says to double-click it; double-clicked, the Effect Builder opens on it, and saved
+                // there, the event's copy of the graph changes.
+                Timeline tl = m_project->timeline();
+                Clip* clip = nullptr;
+                for (Track& t : tl.tracks)
+                    if (t.type == TrackType::Video)
+                        for (Clip& c : t.clips)
+                            if (!clip)
+                                clip = &c;
+                bool hinted = false, opened = false, updated = false;
+                if (clip && def) {
+                    EffectInstance fx = makeEffect(*def, tl.allocId());
+                    const int effectId = fx.id, clipId = clip->id;
+                    const QString before = fx.params[QStringLiteral("graph")].text;
+                    clip->effects.push_back(fx);
+                    m_project->applyEdit(tl, QStringLiteral("test"));
+                    m_devices->setTarget({FxTarget::Kind::Clip, clipId});
+                    QApplication::processEvents();
+                    const auto hints = m_devices->findChildren<QLabel*>(QStringLiteral("userEffectHint"));
+                    hinted = hints.size() == 1 && hints.front()->text().contains(QStringLiteral("Double-click"));
+                    m_devices->grab().save(work.filePath("user-effect-device.png"));
+                    const auto editorsBefore = findChildren<NodeEffectEditor*>().size();
+                    if (hinted) {
+                        QWidget* label = hints.front();
+                        const QPointF at(label->width() / 2.0, label->height() / 2.0);
+                        QMouseEvent dbl(QEvent::MouseButtonDblClick, at, label->mapToGlobal(at), Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+                        QApplication::sendEvent(label, &dbl);
+                    }
+                    const auto editors = findChildren<NodeEffectEditor*>();
+                    NodeEffectEditor* opened2 = editors.size() > editorsBefore ? editors.back() : nullptr;
+                    opened = opened2 && opened2->graph().nodes.size() == editor.graph().nodes.size();
+                    if (opened2) {
+                        opened2->setParam(blend, QStringLiteral("opacity"), 0.2);
+                        opened2->saveTo(file);
+                        const Clip* after = m_project->timeline().findClip(clipId);
+                        const auto it = after && !after->effects.empty() ? after->effects.back().params.find(QStringLiteral("graph"))
+                                                                         : ParamMap::const_iterator{};
+                        updated = after && !after->effects.empty() && after->effects.back().id == effectId && it->second.text != before;
+                        opened2->close();
+                    }
+                }
+                check(hinted && opened && updated, QStringLiteral("a user effect on an event says to double-click it (%1); that opens the Effect Builder "
+                                                                   "on it (%2), and saving there changes the event's effect (%3)")
+                                                       .arg(hinted)
+                                                       .arg(opened)
+                                                       .arg(updated));
+                m_project->setTimelineLive(initial);
+            }
             QFile::remove(file);
         }
         {

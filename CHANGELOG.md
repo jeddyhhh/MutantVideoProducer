@@ -12,6 +12,8 @@ What changed in each version of Mutant Video Producer. The newest is first.
   key, split and combine channels, threshold, displace, place and delay. Settings ticked "Show on effect" become the
   effect's (keyframable). Saved, the effect is in the Effects tab under User Created; projects carry its graph.
 - AI control: `node_effect` builds, previews and saves Effect Builder graphs, and reads saved ones back.
+- A user effect's box in the device chain says to double-click it: that opens it in the Effect Builder, and saving
+  there updates that event's effect.
 
 - **Track mattes**: a video track can be a matte for the track below it (the header's Mode box, or right-click >
   Track Matte): not shown itself, it decides where that track shows, by where it is drawn (alpha: video inside a

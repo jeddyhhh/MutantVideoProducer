@@ -15,6 +15,7 @@
 #include <vector>
 
 class DeviceChainView;
+class NodeEffectEditor;
 class EffectEditor;
 class AudioMeter;
 class MediaBin;
@@ -199,7 +200,9 @@ private:
     void stabilizeClip(int clipId);
     void matchColour(); // the selected video events, to the shot at the cursor (a Color Match effect on each)
     // Tools > Effect Builder: make a video effect from nodes (an effect file to change, or a new one).
-    void effectBuilder(const QString& file = {});
+    NodeEffectEditor* effectBuilder(const QString& file = {});
+    // The Effect Builder on a user effect in the project (by its effect id): saved, that effect takes the new graph.
+    void editUserEffect(int effectId);
     // Proxies: queue the files (only the heavy ones if `heavyOnly`), delete theirs.
     void createProxies(const QList<int>& mediaIds, bool heavyOnly, bool replace = false);
     void deleteProxies(const QList<int>& mediaIds);

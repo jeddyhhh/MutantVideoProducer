@@ -63,6 +63,8 @@ signals:
     void targetChanged(const FxTarget& target);
     // A control's "Edit in Keyframe Editor": show that setting there.
     void keyframeEditorRequested(const keyops::Address& address);
+    // An effect made in the Effect Builder was double-clicked: open it there (the instance, by its effect id).
+    void userEffectRequested(int effectId);
 
 private:
     friend class ParamControl;
