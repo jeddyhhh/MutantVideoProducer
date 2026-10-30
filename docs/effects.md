@@ -318,7 +318,9 @@ the events you add it to from then on), and **Open the Folder** shows the files 
 
 With **Options > GPU Acceleration** on, every video effect runs on the graphics card, except
 *FFmpeg Filter*, which FFmpeg runs. The GPU and CPU give the same result, so turning it off only
-changes the speed.
+changes the speed. Effects made in the Effect Builder run there node by node too (a text source
+is drawn on the CPU and sent up), which keeps even the heaviest examples well within a frame on
+the Live tab.
 
 ## Try it
 

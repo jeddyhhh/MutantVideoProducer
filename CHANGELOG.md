@@ -2,6 +2,21 @@
 
 What changed in each version of Mutant Video Producer. The newest is first.
 
+## Unreleased
+
+### Changed
+
+- **Effect Builder effects run on the GPU**: node by node on the graphics card instead of the CPU. The examples at 720p
+  take 3 to 14 ms a frame instead of 45 to 170 ms, so they keep up on the Live tab (and play faster in the editor).
+- **Live tab**: the Live FX, the active pad and held pads go through the GPU in one go (one upload, one read back),
+  instead of once each.
+- **Starfield / Hyperspace and Retro Grid** draw on the GPU (they were the slowest backgrounds).
+
+### Fixed
+
+- **Live tab**: animated sources inside a user effect (plasma, starfield, titles...) stood still there.
+- Effects on the CPU renderer could crash or tear on the Live tab: the picture they changed was shared with the capture.
+
 ## 0.9.2 (2026-10-31)
 
 ### Added

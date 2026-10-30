@@ -214,16 +214,17 @@ void renderAurora(QImage& layer, const Params& p, const GeneratorContext& ctx)
     }
 }
 
-void renderStarfield(QImage& layer, const Params& p, const GeneratorContext& ctx)
+bool paintStarfield(QPainter& painter, QSize size, const Params& p, const GeneratorContext& ctx)
 {
     const double T = seconds(ctx);
     const double speed = p.num(QStringLiteral("speed")), trails = p.num(QStringLiteral("trails"));
     const int count = int(std::lround(p.num(QStringLiteral("count"))));
     const QColor col = p.color(QStringLiteral("color"));
-    layer.fill(p.color(QStringLiteral("background")));
-    QPainter painter(&layer);
+    painter.setCompositionMode(QPainter::CompositionMode_Source);
+    painter.fillRect(QRect(QPoint(0, 0), size), p.color(QStringLiteral("background")));
+    painter.setCompositionMode(QPainter::CompositionMode_SourceOver);
     painter.setRenderHint(QPainter::Antialiasing, true);
-    const double w = layer.width(), h = layer.height(), spread = std::max(w, h) * 0.25;
+    const double w = size.width(), h = size.height(), spread = std::max(w, h) * 0.25;
     for (int i = 0; i < count; ++i) {
         const double x0 = rnd(i, 0) * 2 - 1, y0 = rnd(i, 1) * 2 - 1;
         const double z = fract(rnd(i, 2) - T * speed * 0.15);
@@ -245,6 +246,13 @@ void renderStarfield(QImage& layer, const Params& p, const GeneratorContext& ctx
             painter.drawEllipse(at, r / 2, r / 2);
         }
     }
+    return true;
+}
+
+void renderStarfield(QImage& layer, const Params& p, const GeneratorContext& ctx)
+{
+    QPainter painter(&layer);
+    paintStarfield(painter, layer.size(), p, ctx);
 }
 
 void renderBokeh(QImage& layer, const Params& p, const GeneratorContext& ctx)
@@ -276,13 +284,12 @@ void renderBokeh(QImage& layer, const Params& p, const GeneratorContext& ctx)
     }
 }
 
-void renderRetroGrid(QImage& layer, const Params& p, const GeneratorContext& ctx)
+bool paintRetroGrid(QPainter& painter, QSize size, const Params& p, const GeneratorContext& ctx)
 {
     const double T = seconds(ctx) * p.num(QStringLiteral("speed"));
-    const double w = layer.width(), h = layer.height();
+    const double w = size.width(), h = size.height();
     const double hy = h * p.num(QStringLiteral("horizon"));
     const QColor grid = p.color(QStringLiteral("color"));
-    QPainter painter(&layer);
     painter.setRenderHint(QPainter::Antialiasing, true);
     QLinearGradient sky(0, 0, 0, hy);
     sky.setColorAt(0, QColor(0x0d0221));
@@ -341,6 +348,13 @@ void renderRetroGrid(QImage& layer, const Params& p, const GeneratorContext& ctx
             painter.drawLine(QPointF(0, y), QPointF(w, y));
         }
     }
+    return true;
+}
+
+void renderRetroGrid(QImage& layer, const Params& p, const GeneratorContext& ctx)
+{
+    QPainter painter(&layer);
+    paintRetroGrid(painter, layer.size(), p, ctx);
 }
 
 void renderDigitalRain(QImage& layer, const Params& p, const GeneratorContext& ctx)
@@ -707,6 +721,8 @@ void addAnimatedGenerators(std::vector<GeneratorDef>& list)
         {num("count", "Stars", 20, 3000, 600, 0), num("speed", "Speed", 0, 10, 1), num("trails", "Trails", 0, 1, 0.3),
          color("color", "Star color", 0xffffff), color("background", "Background", 0x000005)},
         renderStarfield, always);
+    list.back().paint = paintStarfield; // (on the GPU too, drawn twice as big for smooth lines)
+    list.back().paintScale = 2;
     add("bokeh", "Bokeh Lights", "Animated", "Soft out-of-focus lights drifting and twinkling. Lower the background opacity to lay it over footage.",
         {choice("palette", "Colors", kLightPalettes), num("count", "Lights", 5, 200, 40, 0), num("size", "Size (% of height)", 2, 40, 12, 1, "%"),
          num("speed", "Speed", 0, 5, 1), color("background", "Background", 0x07050f), num("backgroundOpacity", "Background opacity", 0, 1, 1)},
@@ -715,6 +731,8 @@ void addAnimatedGenerators(std::vector<GeneratorDef>& list)
         {color("color", "Grid color", 0xff2bd6), num("speed", "Speed", 0, 5, 1), num("horizon", "Horizon", 0.3, 0.8, 0.55),
          flag("sun", "Sun", true)},
         renderRetroGrid, always);
+    list.back().paint = paintRetroGrid;
+    list.back().paintScale = 2;
     add("digital_rain", "Digital Rain", "Animated", "Columns of glowing glyphs raining down the screen.",
         {color("color", "Color", 0x35ff69), num("speed", "Speed", 0.1, 5, 1), num("size", "Glyph size (% of height)", 1, 8, 2.4, 1, "%"),
          flag("background", "Black background", true)},

@@ -12,6 +12,7 @@
 #include "core/FrameConverter.h"
 #include "core/Hardware.h"
 #include "core/MotionGraphics.h"
+#include "core/NodeGraph.h"
 #include "core/PanCrop.h"
 #include "core/EffectMask.h"
 #include "core/Proxy.h"
@@ -33,7 +34,10 @@
 #include <QSurfaceFormat>
 #include <algorithm>
 #include <cmath>
+#include <deque>
+#include <functional>
 #include <map>
+#include <set>
 #include <memory>
 #include <vector>
 
@@ -329,6 +333,76 @@ void main() {
     float k = uMode <= 2 ? m.a : dot(m.rgb, vec3(0.2126, 0.7152, 0.0722));
     if (uMode == 2 || uMode == 4) k = 1.0 - k;
     fragColor = texture(uLayer, vUv) * k;
+}
+)";
+
+// The Effect Builder's own nodes (core/NodeGraph.cpp, same formulas): uTex, uB, uC, uD are its inputs (uHas: which
+// are wired), uP its settings.
+const char* kFragNode = R"(
+uniform sampler2D uTex;
+uniform sampler2D uB;
+uniform sampler2D uC;
+uniform sampler2D uD;
+uniform int uMode;
+uniform ivec4 uHas;
+uniform vec4 uP;
+uniform vec2 uSize;
+float luma(vec4 p) { return dot(p.rgb, vec3(54.0, 183.0, 19.0) / 256.0); }
+float op(int o, float a, float b) {
+    if (o == 0) return a + b;
+    if (o == 1) return a - b;
+    if (o == 2) return a * b;
+    if (o == 3) return b > 0.004 ? a / b : 1.0;
+    if (o == 4) return min(a, b);
+    if (o == 5) return max(a, b);
+    if (o == 6) return abs(a - b);
+    return 0.5 * (a + b);
+}
+void main() {
+    vec4 a = texture(uTex, vUv);
+    vec4 b = texture(uB, vUv);
+    if (uMode == 0) { // mix
+        fragColor = mix(a, b, uP.x);
+    } else if (uMode == 1) { // math (alpha: what either has; the colour kept within it)
+        int o = int(uP.x);
+        vec3 c = clamp(vec3(op(o, a.r, b.r), op(o, a.g, b.g), op(o, a.b, b.b)) * uP.y, 0.0, 1.0);
+        float al = max(a.a, b.a);
+        fragColor = vec4(min(c, vec3(al)), al);
+    } else if (uMode == 2) { // set alpha
+        vec3 c = a.a > 0.0 ? a.rgb / a.a : vec3(0.0);
+        float k = uHas.y != 0 ? luma(b) : 1.0;
+        if (uP.x > 0.5) k = 1.0 - k;
+        fragColor = vec4(c * k, k);
+    } else if (uMode == 3) { // luma key
+        float l = a.a > 0.0 ? luma(a) / a.a : 0.0;
+        float k = clamp((l - uP.x) / (uP.y - uP.x), 0.0, 1.0);
+        k = k * k * (3.0 - 2.0 * k);
+        if (uP.z > 0.5) k = 1.0 - k;
+        fragColor = a * k;
+    } else if (uMode == 4) { // difference key
+        vec3 d3 = abs(a.rgb - b.rgb);
+        float d = max(d3.r, max(d3.g, d3.b));
+        float k = uHas.y != 0 ? clamp((d - uP.x) / uP.y, 0.0, 1.0) : 1.0;
+        fragColor = a * k;
+    } else if (uMode == 5) { // channel
+        int ch = int(uP.x);
+        if (ch == 3) { fragColor = vec4(vec3(a.a), 1.0); return; }
+        float v = ch == 0 ? a.r : ch == 1 ? a.g : ch == 2 ? a.b : luma(a);
+        fragColor = vec4(vec3(v), a.a);
+    } else if (uMode == 6) { // combine channels
+        float al = uHas.w != 0 ? luma(texture(uD, vUv)) : 1.0;
+        vec3 c = vec3(uHas.x != 0 ? luma(a) : 0.0, uHas.y != 0 ? luma(b) : 0.0, uHas.z != 0 ? luma(texture(uC, vUv)) : 0.0);
+        fragColor = vec4(c * al, al);
+    } else if (uMode == 7) { // threshold
+        float l = a.a > 0.0 ? luma(a) / a.a : 0.0;
+        float k = clamp((l - uP.x) / uP.y + 0.5, 0.0, 1.0);
+        fragColor = vec4(vec3(k * a.a), a.a);
+    } else { // displace (uP: pixels across and up / down, red-green)
+        if (uHas.y == 0) { fragColor = a; return; }
+        float mx = uP.z > 0.5 ? b.r : luma(b);
+        float my = uP.z > 0.5 ? b.g : mx;
+        fragColor = texture(uTex, vUv + vec2((mx - 0.5) * 2.0 * uP.x, (my - 0.5) * 2.0 * uP.y) / uSize);
+    }
 }
 )";
 
@@ -841,7 +915,7 @@ struct GpuCompositor::Impl : protected QOpenGLExtraFunctions {
     QSize uploadSize;
     std::unique_ptr<QOpenGLShaderProgram> progTex, progSolid, progYuv, progLut, progMatrix, progBlur, progSharpen,
         progBright, progScreen, progVignette, progKey, progNoise, progPixelate, progTransition, progTransitionFx, progRackBlend, progWarp,
-        progChroma, progRadialPass, progCrt, progPsy, progFx, progDiffuse, progConsole, progVgMesh, progLut3D, progEncodeYuv, progMaxAlpha, progFlowMix, progMatte, progDenoise;
+        progChroma, progRadialPass, progCrt, progPsy, progFx, progDiffuse, progConsole, progVgMesh, progLut3D, progEncodeYuv, progMaxAlpha, progFlowMix, progMatte, progDenoise, progNode;
     // .cube LUTs as 3D textures, by the loaded table (kept while it is in the file cache).
     std::map<const CubeLut*, std::pair<std::shared_ptr<const CubeLut>, GLuint>> lut3dTextures;
     GLuint meshVao = 0, meshVbo = 0;
@@ -904,6 +978,7 @@ struct GpuCompositor::Impl : protected QOpenGLExtraFunctions {
         progRackBlend.reset();
         progMatte.reset();
         progDenoise.reset();
+        progNode.reset();
         progWarp.reset();
         progChroma.reset();
         progRadialPass.reset();
@@ -958,7 +1033,7 @@ struct GpuCompositor::Impl : protected QOpenGLExtraFunctions {
                         {&progRackBlend, kFragRackBlend}, {&progWarp, kFragWarp}, {&progChroma, kFragChroma},
                         {&progRadialPass, kFragRadialPass}, {&progCrt, kFragCrt}, {&progPsy, kFragPsy},
                         {&progFx, gpufx::kFragFx}, {&progLut3D, kFragLut3D}, {&progMaxAlpha, kFragMaxAlpha}, {&progFlowMix, kFragFlowMix},
-                        {&progMatte, kFragMatte}, {&progDenoise, kFragDenoise}};
+                        {&progMatte, kFragMatte}, {&progDenoise, kFragDenoise}, {&progNode, kFragNode}};
         for (auto& p : programs) {
             auto prog = std::make_unique<QOpenGLShaderProgram>();
             if (!prog->addShaderFromSourceCode(QOpenGLShader::Vertex, kVertex)
@@ -1572,6 +1647,38 @@ struct GpuCompositor::Impl : protected QOpenGLExtraFunctions {
         return full.mapRect(QRectF(0, 0, picture->w, picture->h)).intersected(QRectF(0, 0, dst.w, dst.h));
     }
 
+    // Paints a generator with its GPU paint path into `target` (`size` logical pixels, painted `paintScale` times as
+    // big). False: it couldn't (then it draws on the CPU).
+    bool paintGenerator(const GeneratorDef& def, Target& target, QSize size, int paintScale, const Params& params, const GeneratorContext& ctx)
+    {
+        bool painted = false;
+        ensureStencil(target);
+        glBindFramebuffer(GL_FRAMEBUFFER, target.fbo);
+        if (glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE) {
+            clear(target, 0, 0, 0, 0);
+            glStencilMask(0xffffffffu);
+            glClearStencil(0);
+            glClear(GL_STENCIL_BUFFER_BIT);
+            // (Mutant Video Producer's texture origin is at GL row zero, the logical top. The device binds its
+            // framebuffer again after a scene paints pictures of its own, which stay on the GPU meanwhile.)
+            motion::FramebufferPaintDevice device(target.size(), target.fbo);
+            ScenePictures pictures(*this);
+            motion::setGpuPictures(&pictures);
+            QPainter painter(&device);
+            painter.scale(paintScale,paintScale);
+            if (painter.isActive())
+                painted = def.paint(painter, size, params, ctx);
+            painter.end();
+            motion::setGpuPictures(nullptr);
+        }
+        glDisable(GL_SCISSOR_TEST);
+        glDisable(GL_STENCIL_TEST);
+        glDisable(GL_DEPTH_TEST);
+        glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+        glBlendEquation(GL_FUNC_ADD);
+        return painted;
+    }
+
     QRectF drawGenerated(const ProjectSnapshot& snap, const Clip& clip, TimeUs t, const Target& dst, double opacity)
     {
         const GeneratorDef* def = findGenerator(clip.generator.type);
@@ -1597,34 +1704,8 @@ struct GpuCompositor::Impl : protected QOpenGLExtraFunctions {
             cache.valid = false;
         }
         if (animating || !cache.valid || cache.type != def->id || !(cache.params == params) || cache.data != clip.generator.data) {
-            bool painted = false;
-            if (def->paint && !qEnvironmentVariableIsSet("MVP_CPU_GENERATORS")) {
-                Target& target = cache.target;
-                ensureStencil(target);
-                glBindFramebuffer(GL_FRAMEBUFFER, target.fbo);
-                if (glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE) {
-                    clear(target, 0, 0, 0, 0);
-                    glStencilMask(0xffffffffu);
-                    glClearStencil(0);
-                    glClear(GL_STENCIL_BUFFER_BIT);
-                    // (Mutant Video Producer's texture origin is at GL row zero, the logical top. The device binds its
-                    // framebuffer again after a scene paints pictures of its own, which stay on the GPU meanwhile.)
-                    motion::FramebufferPaintDevice device(target.size(), target.fbo);
-                    ScenePictures pictures(*this);
-                    motion::setGpuPictures(&pictures);
-                    QPainter painter(&device);
-                    painter.scale(paintScale,paintScale);
-                    if (painter.isActive())
-                        painted = def->paint(painter, QSize(dst.w,dst.h), params, ctx);
-                    painter.end();
-                    motion::setGpuPictures(nullptr);
-                }
-                glDisable(GL_SCISSOR_TEST);
-                glDisable(GL_STENCIL_TEST);
-                glDisable(GL_DEPTH_TEST);
-                glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
-                glBlendEquation(GL_FUNC_ADD);
-            }
+            const bool painted = def->paint && !qEnvironmentVariableIsSet("MVP_CPU_GENERATORS")
+                                 && paintGenerator(*def, cache.target, QSize(dst.w, dst.h), paintScale, params, ctx);
             if (!painted) {
                 QImage img(paintSize, QImage::Format_ARGB32_Premultiplied);
                 img.fill(Qt::transparent);
@@ -1958,6 +2039,290 @@ struct GpuCompositor::Impl : protected QOpenGLExtraFunctions {
         layer = std::move(out);
     }
 
+    // ---- User effects: Effect Builder graphs (core/NodeGraph.h), node by node on the GPU ----
+
+    struct NodeGraphState : EffectState {
+        Impl* owner = nullptr;
+        QString text;
+        nodes::Graph graph;
+        std::map<int, StateEntry> states;         // each node's own (effect nodes, nodes drawn on the CPU)
+        std::map<int, std::deque<Target>> delays; // Delay nodes: the frames they saw, newest last
+        std::map<int, Target> painted;            // source nodes painted on the GPU
+        ~NodeGraphState() override
+        {
+            if (owner)
+                owner->freeNodeGraphState(*this);
+        }
+    };
+
+    void freeNodeGraphState(NodeGraphState& s)
+    {
+        s.states.clear(); // (effect states free their own textures)
+        if (QOpenGLContext::currentContext() != context.get())
+            return; // context already gone: the driver frees everything
+        for (auto& [id, frames] : s.delays)
+            for (Target& t : frames)
+                deleteTarget(t);
+        for (auto& [id, t] : s.painted)
+            deleteTarget(t);
+    }
+
+    // The node's picture drawn by its CPU version (the inputs read back, the result sent up again).
+    Layer cpuNode(const nodes::NodeDef& def, const nodes::Node& n, const std::vector<const Target*>& in, const Params& p,
+                  const nodes::NodeContext& nc, std::unique_ptr<EffectState>& state)
+    {
+        ++cpuFallbacks;
+        std::vector<QImage> images(in.size());
+        std::vector<const QImage*> ptrs(in.size(), nullptr);
+        for (size_t i = 0; i < in.size(); ++i)
+            if (in[i]) {
+                images[i] = download(*in[i]);
+                ptrs[i] = &images[i];
+            }
+        QImage img = def.eval(ptrs, p, n.params, nc, state);
+        if (!img.isNull() && img.size() != nc.size)
+            img = img.scaled(nc.size, Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
+        Layer out = acquire(nc.size, img.isNull());
+        if (!img.isNull())
+            upload(*out, img);
+        return out;
+    }
+
+    void nodeGraphEffect(const Params& p, Layer& layer, const RenderContext& ctx, std::unique_ptr<EffectState>& state)
+    {
+        auto* s = dynamic_cast<NodeGraphState*>(state.get());
+        if (!s) {
+            auto fresh = std::make_unique<NodeGraphState>();
+            fresh->owner = this;
+            s = fresh.get();
+            state = std::move(fresh);
+        }
+        nodes::graphFor(p, s->text, s->graph);
+        const nodes::Graph& g = s->graph;
+        const nodes::Node* output = nullptr;
+        for (const nodes::Node& n : g.nodes)
+            if (n.type == QLatin1String("output"))
+                output = &n;
+        if (!output)
+            return; // (the source, unchanged)
+        for (auto it = s->states.begin(); it != s->states.end();) // (nodes deleted since)
+            it = g.find(it->first) ? std::next(it) : s->states.erase(it);
+        const QSize size = layer->size();
+        const nodes::NodeContext nc{size, ctx};
+        std::map<int, Layer> done;
+        std::set<int> visiting;
+        std::function<const Target*(int)> eval = [&](int id) -> const Target* {
+            if (auto it = done.find(id); it != done.end())
+                return it->second.get();
+            const nodes::Node* n = g.find(id);
+            if (!n || !visiting.insert(id).second)
+                return (done[id] = acquire(size)).get();
+            const nodes::NodeDef* def = nodes::findNode(n->type);
+            std::vector<const Target*> in(def ? size_t(def->inputs.size()) : 0, nullptr);
+            for (int i = 0; i < int(in.size()); ++i)
+                if (const nodes::Link* l = g.input(id, i))
+                    in[size_t(i)] = eval(l->from);
+            const QString& type = n->type;
+            Layer out;
+            if (!def) {
+                out = acquire(size);
+            } else if (type == QLatin1String("source")) {
+                out = acquire(size, false);
+                drawLayerReplace(*out, *layer);
+            } else if (!def->output) { // the Output node: what is wired in, or the source
+                out = acquire(size, false);
+                drawLayerReplace(*out, in.empty() || !in[0] ? *layer : *in[0]);
+            } else {
+                const Params pr = resolveParams(def->params, n->params, ctx.time);
+                StateEntry& st = s->states[id];
+                if (st.type != type) {
+                    st.state.reset();
+                    st.type = type;
+                }
+                out = gpuNode(*def, *n, in, pr, nc, *s, st.state);
+            }
+            visiting.erase(id);
+            return (done[id] = std::move(out)).get();
+        };
+        const Target* result = eval(output->id);
+        Layer final = acquire(size, false);
+        drawLayerReplace(*final, *result);
+        layer = std::move(final);
+    }
+
+    Layer gpuNode(const nodes::NodeDef& def, const nodes::Node& n, const std::vector<const Target*>& in, const Params& p,
+                  const nodes::NodeContext& nc, NodeGraphState& s, std::unique_ptr<EffectState>& state)
+    {
+        const QSize size = nc.size;
+        const QString& type = n.type;
+        auto has = [&](size_t i) { return i < in.size() && in[i]; };
+        auto tex = [&](size_t i) { return has(i) ? in[i]->tex : emptyTex; };
+        auto copyIn = [&](size_t i) {
+            Layer l = acquire(size, !has(i));
+            if (has(i))
+                drawLayerReplace(*l, *in[i]);
+            return l;
+        };
+        if (type.startsWith(QLatin1String("fx."))) { // a video effect: as on an event (Compositor::applyChain)
+            const EffectDef* fx = findEffect(type.mid(3));
+            Layer l = copyIn(0);
+            if (!fx || !fx->apply)
+                return l;
+            RenderContext c = nc.render;
+            c.contentRect = QRectF(0, 0, size.width(), size.height());
+            const fx::PostMask post = fx->glitchPost ? fx::postMask(p, size) : fx::PostMask{};
+            Layer before;
+            if (post.active())
+                before = copyIn(0);
+            applyEffect(*fx, p, l, c, state);
+            if (post.active() && l->size() == before->size()) {
+                Layer o = acquire(size, false);
+                fxPass(*o, gpufx::GlitchPost, *l, [&](QOpenGLShaderProgram& g) {
+                    g.setUniformValue("uA", QVector4D(post.mix, post.threshold, post.feather, float(post.mode)));
+                    g.setUniformValue("uB", QVector4D(post.x0, post.y0, post.x1, post.y1));
+                }, &*before);
+                l = std::move(o);
+            }
+            if (l->size() != size) {
+                Layer o = acquire(size);
+                drawTexture(*o, l->tex, QSizeF(size), QTransform(), 1.0, QRectF(0, 0, 1, 1), false);
+                l = std::move(o);
+            }
+            return l;
+        }
+        if (type.startsWith(QLatin1String("gen."))) { // a source: painted on the GPU where it can be
+            const GeneratorPreset* preset = findGeneratorPreset(type.mid(4));
+            const GeneratorDef* gen = preset ? findGenerator(preset->generator) : nullptr;
+            if (gen && gen->paint && !qEnvironmentVariableIsSet("MVP_CPU_GENERATORS")) {
+                static const QJsonObject kNoData;
+                GeneratorContext gc;
+                gc.time = nc.render.time;
+                gc.length = 3600 * kUsPerSecond; // (as the CPU node: a title's out-animation never comes)
+                gc.timelineTime = nc.render.timelineTime;
+                gc.scale = nc.render.scale;
+                gc.fps = FrameRate{std::max(1, int(std::lround(nc.render.fps))), 1};
+                gc.highQuality = highQuality;
+                gc.data = &kNoData;
+                const Params gp = resolveParams(gen->params, n.params, gc.time);
+                const int scale = std::clamp(gen->paintScale, 1, 2);
+                Target& t = s.painted[n.id];
+                if (!t || t.size() != size * scale) {
+                    deleteTarget(t);
+                    t = createTarget(size * scale);
+                }
+                if (paintGenerator(*gen, t, size, scale, gp, gc)) {
+                    Layer o = acquire(size);
+                    drawTexture(*o, t.tex, QSizeF(size), QTransform(), 1.0, QRectF(0, 0, 1, 1), false);
+                    return o;
+                }
+            }
+            return cpuNode(def, n, in, p, nc, state);
+        }
+        if (type == QLatin1String("blend")) {
+            Layer base = copyIn(0);
+            if (!has(1))
+                return base;
+            Layer o = acquire(size, false);
+            progRackBlend->bind();
+            bindTexture(0, base->tex);
+            bindTexture(1, in[1]->tex);
+            progRackBlend->setUniformValue("uBase", 0);
+            progRackBlend->setUniformValue("uLayer", 1);
+            progRackBlend->setUniformValue("uOpacity", float(std::clamp(p.num(QStringLiteral("opacity")), 0.0, 1.0)));
+            progRackBlend->setUniformValue("uMode", p.choice(QStringLiteral("mode")));
+            fullscreen(*progRackBlend, *o);
+            return o;
+        }
+        if (type == QLatin1String("mask")) {
+            Layer o = acquire(size, false);
+            progMatte->bind();
+            bindTexture(0, tex(0));
+            bindTexture(1, tex(1));
+            progMatte->setUniformValue("uLayer", 0);
+            progMatte->setUniformValue("uMatte", 1);
+            progMatte->setUniformValue("uMode", p.choice(QStringLiteral("mode")) + 1);
+            fullscreen(*progMatte, *o);
+            return o;
+        }
+        if (type == QLatin1String("place")) {
+            Layer o = acquire(size);
+            if (!has(0))
+                return o;
+            const double scale = p.num(QStringLiteral("scale"));
+            QTransform t;
+            t.translate(size.width() * (0.5 + p.num(QStringLiteral("x")) / 2), size.height() * (0.5 + p.num(QStringLiteral("y")) / 2));
+            t.rotate(p.num(QStringLiteral("rotation")));
+            t.scale(scale, scale);
+            drawTexture(*o, in[0]->tex, QSizeF(size), QTransform::fromTranslate(-size.width() / 2.0, -size.height() / 2.0) * t, 1.0);
+            return o;
+        }
+        if (type == QLatin1String("delay")) {
+            std::deque<Target>& frames = s.delays[n.id];
+            const size_t keep = size_t(std::clamp(int(p.num(QStringLiteral("frames"))), 1, 120)) + 1;
+            Target slot;
+            if (frames.size() >= keep) { // (the oldest's texture is reused for the newest)
+                slot = frames.front();
+                frames.pop_front();
+            }
+            while (frames.size() > keep - 1) {
+                deleteTarget(frames.front());
+                frames.pop_front();
+            }
+            if (slot.size() != size) {
+                deleteTarget(slot);
+                slot = createTarget(size);
+            }
+            if (has(0))
+                drawLayerReplace(slot, *in[0]);
+            else
+                clear(slot, 0, 0, 0, 0);
+            frames.push_back(slot);
+            Layer o = acquire(size, false);
+            drawLayerReplace(*o, frames.front());
+            return o;
+        }
+        static const std::map<QString, int> kModes = {
+            {QStringLiteral("mix"), 0},      {QStringLiteral("math"), 1},           {QStringLiteral("set_alpha"), 2},
+            {QStringLiteral("luma_key"), 3}, {QStringLiteral("difference_key"), 4}, {QStringLiteral("channel"), 5},
+            {QStringLiteral("combine"), 6},  {QStringLiteral("threshold"), 7},      {QStringLiteral("displace"), 8}};
+        const auto mode = kModes.find(type);
+        if (mode == kModes.end())
+            return cpuNode(def, n, in, p, nc, state);
+        QVector4D u;
+        switch (mode->second) {
+        case 0: u = QVector4D(float(p.num(QStringLiteral("amount"))), 0, 0, 0); break;
+        case 1: u = QVector4D(float(p.choice(QStringLiteral("op"))), float(p.num(QStringLiteral("gain"))), 0, 0); break;
+        case 2: u = QVector4D(p.flag(QStringLiteral("invert")) ? 1.f : 0.f, 0, 0, 0); break;
+        case 3: {
+            const float lo = float(p.num(QStringLiteral("low")));
+            u = QVector4D(lo, std::max(lo + 0.001f, float(p.num(QStringLiteral("high")))), p.flag(QStringLiteral("invert")) ? 1.f : 0.f, 0);
+            break;
+        }
+        case 4: u = QVector4D(float(p.num(QStringLiteral("threshold"))), std::max(0.001f, float(p.num(QStringLiteral("softness")))), 0, 0); break;
+        case 5: u = QVector4D(float(p.choice(QStringLiteral("channel"))), 0, 0, 0); break;
+        case 7: u = QVector4D(float(p.num(QStringLiteral("level"))), std::max(0.001f, float(p.num(QStringLiteral("softness")))), 0, 0); break;
+        case 8:
+            u = QVector4D(float(p.num(QStringLiteral("amountX")) * nc.render.scale), float(p.num(QStringLiteral("amountY")) * nc.render.scale),
+                          p.choice(QStringLiteral("use")) == 1 ? 1.f : 0.f, 0);
+            break;
+        default: break;
+        }
+        Layer o = acquire(size, false);
+        progNode->bind();
+        for (int i = 0; i < 4; ++i)
+            bindTexture(i, tex(size_t(i)));
+        progNode->setUniformValue("uTex", 0);
+        progNode->setUniformValue("uB", 1);
+        progNode->setUniformValue("uC", 2);
+        progNode->setUniformValue("uD", 3);
+        progNode->setUniformValue("uMode", mode->second);
+        glUniform4i(progNode->uniformLocation("uHas"), has(0), has(1), has(2), has(3));
+        progNode->setUniformValue("uP", u);
+        progNode->setUniformValue("uSize", QVector2D(float(size.width()), float(size.height())));
+        fullscreen(*progNode, *o);
+        return o;
+    }
+
     void applyEffect(const EffectDef& def, const Params& p, Layer& layer, const RenderContext& ctx, std::unique_ptr<EffectState>& state)
     {
         const QSize size = layer->size();
@@ -1993,7 +2358,9 @@ struct GpuCompositor::Impl : protected QOpenGLExtraFunctions {
             return;
         }
         const QString& id = def.id;
-        if (id == QLatin1String("gaussian_blur")) {
+        if (id.startsWith(QLatin1String("user."))) {
+            nodeGraphEffect(p, layer, ctx, state);
+        } else if (id == QLatin1String("gaussian_blur")) {
             blur(layer, p.num(QStringLiteral("horizontal")) * ctx.scale, p.num(QStringLiteral("vertical")) * ctx.scale);
         } else if (id == QLatin1String("sharpen")) {
             const float amount = float(p.num(QStringLiteral("amount")));
@@ -3519,9 +3886,14 @@ struct GpuCompositor::Impl : protected QOpenGLExtraFunctions {
         return true;
     }
 
-    QImage renderLive(const QImage& frame, const EffectChain& chain, TimeUs t, double fps, bool keepAlpha)
+    // The chains one after the other, each flattened onto black (unless keepAlpha), with one upload and one read back.
+    QImage renderLive(const QImage& frame, const std::vector<const EffectChain*>& all, TimeUs t, double fps, bool keepAlpha)
     {
-        if (frame.isNull() || !hasActiveEffects(chain))
+        std::vector<const EffectChain*> chains;
+        for (const EffectChain* c : all)
+            if (c && hasActiveEffects(*c))
+                chains.push_back(c);
+        if (frame.isNull() || chains.empty())
             return frame;
         if (!context->makeCurrent(surface))
             return {};
@@ -3530,24 +3902,22 @@ struct GpuCompositor::Impl : protected QOpenGLExtraFunctions {
         Layer canvas = acquire(size, false);
         upload(*canvas, frame);
         RenderContext ctx;
-        ctx.time = 0;
+        ctx.time = t; // (no events: local time is the Live tab's, so animated sources in user effects move)
         ctx.timelineTime = t;
         ctx.scale = double(size.width()) / 1920.0; // effect sizes as if the picture were 1080p
         ctx.fps = fps;
         ctx.highQuality = highQuality;
         ctx.contentRect = QRectF(0, 0, size.width(), size.height());
-        applyChain(chain, canvas, ctx);
-        if (keepAlpha) {
-            QImage img = download(*canvas);
-            canvas.reset();
-            evict();
-            return img;
+        for (const EffectChain* c : chains) {
+            applyChain(*c, canvas, ctx);
+            if (keepAlpha)
+                continue;
+            Layer flat = acquire(size, false);
+            clear(*flat, 0, 0, 0, 1);
+            drawLayer(*flat, *canvas, 1.0);
+            canvas = std::move(flat);
         }
-        Layer flat = acquire(size, false);
-        clear(*flat, 0, 0, 0, 1);
-        drawLayer(*flat, *canvas, 1.0);
-        QImage img = download(*flat);
-        flat.reset();
+        QImage img = download(*canvas);
         canvas.reset();
         evict();
         return img;
@@ -3578,7 +3948,12 @@ std::unique_ptr<GpuCompositor> GpuCompositor::create(QOffscreenSurface* surface,
 
 QImage GpuCompositor::renderLive(const QImage& frame, const EffectChain& chain, TimeUs t, double fps, bool keepAlpha)
 {
-    return d->renderLive(frame, chain, t, fps, keepAlpha);
+    return d->renderLive(frame, {&chain}, t, fps, keepAlpha);
+}
+
+QImage GpuCompositor::renderLiveChains(const QImage& frame, const std::vector<const EffectChain*>& chains, TimeUs t, double fps)
+{
+    return d->renderLive(frame, chains, t, fps, false);
 }
 
 QImage GpuCompositor::render(const ProjectSnapshot& snap, TimeUs t, QSize outSize)

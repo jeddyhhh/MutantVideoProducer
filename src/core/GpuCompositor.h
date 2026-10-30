@@ -18,6 +18,7 @@ public:
 
     QImage render(const ProjectSnapshot& snap, TimeUs t, QSize outSize) override;
     QImage renderLive(const QImage& frame, const EffectChain& chain, TimeUs t, double fps, bool keepAlpha = false) override;
+    QImage renderLiveChains(const QImage& frame, const std::vector<const EffectChain*>& chains, TimeUs t, double fps) override;
     QString name() const override;
     bool isGpu() const override { return true; }
     bool renderYuv(const ProjectSnapshot& snap, TimeUs t, AVFrame* frame) override;

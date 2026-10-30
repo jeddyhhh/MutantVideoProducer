@@ -1067,26 +1067,38 @@ void LiveEngine::threadMain(Options o)
                 p.drawImage(r.topLeft(), l);
             }
         }
-        QImage out = renderer->renderLive(img, snap ? chainNow(snap->timeline.liveEffects) : kNone, liveTime, fps);
-        // The active pad's chain on top of the Live FX (and, while switching,
-        // the previous pad's, blended with the transition).
-        auto withPad = [&](const QImage& base, int p) {
+        // The Live FX, then the active pad's chain on top (and, while switching, the previous pad's, blended with
+        // the transition), then the held (momentary) pads'. Without a switch: all in one go (on the GPU: one upload).
+        auto padChain = [&](int p) -> EffectChain {
             if (p < 0 || !snap || !hasActiveEffects(snap->timeline.livePads[size_t(p)].effects))
-                return base;
-            return renderer->renderLive(base, chainNow(snap->timeline.livePads[size_t(p)].effects), liveTime, fps);
+                return {};
+            return chainNow(snap->timeline.livePads[size_t(p)].effects);
         };
-        if (fading) {
-            const double progress = std::chrono::duration<double>(Clock::now() - fadeStart).count() / std::max(0.001, fadeSeconds);
-            if (progress >= 1.0)
-                fading = false;
-            else
-                out = liveTransition(withPad(out, fromPad), withPad(out, pad), progress, fadeSpec, fps);
-        }
+        const EffectChain liveFx = snap ? chainNow(snap->timeline.liveEffects) : kNone;
+        if (fading && std::chrono::duration<double>(Clock::now() - fadeStart).count() >= fadeSeconds)
+            fading = false;
+        std::vector<EffectChain> after; // (the pads after the Live FX)
         if (!fading)
-            out = withPad(out, pad);
+            after.push_back(padChain(pad));
         for (int h : held) // momentary pads, while held
             if (h != pad)
-                out = withPad(out, h);
+                after.push_back(padChain(h));
+        QImage out;
+        if (fading) {
+            const double progress = std::chrono::duration<double>(Clock::now() - fadeStart).count() / std::max(0.001, fadeSeconds);
+            const QImage base = renderer->renderLive(img, liveFx, liveTime, fps);
+            const EffectChain from = padChain(fromPad), to = padChain(pad);
+            out = liveTransition(renderer->renderLive(base, from, liveTime, fps), renderer->renderLive(base, to, liveTime, fps), progress, fadeSpec, fps);
+            std::vector<const EffectChain*> rest;
+            for (const EffectChain& c : after)
+                rest.push_back(&c);
+            out = renderer->renderLiveChains(out, rest, liveTime, fps);
+        } else {
+            std::vector<const EffectChain*> chains{&liveFx};
+            for (const EffectChain& c : after)
+                chains.push_back(&c);
+            out = renderer->renderLiveChains(img, chains, liveTime, fps);
+        }
         if (snap && !snap->timeline.liveOverlays.empty()) {
             double bpm;
             {

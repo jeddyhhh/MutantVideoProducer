@@ -698,6 +698,22 @@ QImage Evaluator::run(const Graph& g, const QImage& source0, const RenderContext
     return eval(out->id);
 }
 
+void graphFor(const Params& p, QString& text, Graph& graph)
+{
+    const QString now = p.text(QStringLiteral("graph"));
+    if (text != now) {
+        text = now;
+        graph = fromJson(QJsonDocument::fromJson(now.toUtf8()).object());
+    }
+    // The effect's settings (keyframed, perhaps) into the nodes they show.
+    for (const Exposed& x : graph.exposed)
+        if (Node* n = graph.find(x.node); n && p.numbers.count(x.id)) {
+            ParamValue& v = n->params[x.param];
+            v.keys.clear();
+            v.value = p.num(x.id);
+        }
+}
+
 // ---- Saved effects ----
 QString userEffectsFolder()
 {
@@ -787,18 +803,7 @@ const EffectDef* registerAs(const Graph& g, const QString& id, bool example = fa
             state = std::make_unique<UserState>();
             s = static_cast<UserState*>(state.get());
         }
-        const QString text = p.text(QStringLiteral("graph"));
-        if (s->text != text) {
-            s->text = text;
-            s->graph = fromJson(QJsonDocument::fromJson(text.toUtf8()).object());
-        }
-        // The effect's settings (keyframed, perhaps) into the nodes they show.
-        for (const Exposed& x : s->graph.exposed)
-            if (Node* n = s->graph.find(x.node); n && p.numbers.count(x.id)) {
-                ParamValue& v = n->params[x.param];
-                v.keys.clear();
-                v.value = p.num(x.id);
-            }
+        graphFor(p, s->text, s->graph);
         img = s->eval.run(s->graph, img, ctx);
     };
     const EffectDef* added = nullptr;

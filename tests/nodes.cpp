@@ -1,15 +1,19 @@
 // The Effect Builder's graphs (core/NodeGraph.h): every node runs, nodes put a picture back together, wiring refuses
 // loops, a graph survives saving, and a saved effect renders on an event as it did in the builder, its shown
-// settings and all, also on a computer that never had its file.
+// settings and all, also on a computer that never had its file. On the GPU (when there is one) each node and each
+// example draws as on the CPU, and the examples keep up with a live picture.
 #include "core/Compositor.h"
 #include "core/FFmpeg.h"
+#include "core/FrameRenderer.h"
 #include "core/NodeGraph.h"
 #include "core/Project.h"
 #include "core/TimelineOps.h"
 #include <QDir>
 #include <QFileInfo>
 #include <QGuiApplication>
+#include <QElapsedTimer>
 #include <QJsonDocument>
+#include <QOffscreenSurface>
 #include <QPainter>
 #include <QTemporaryDir>
 #include <QTextStream>
@@ -221,6 +225,101 @@ int main(int argc, char** argv)
         const EffectInstance back = effectFromJson(effectToJson(carried));
         const EffectDef* there = findEffect(back.type);
         check(there && there->name == loaded.name, QStringLiteral("an effect from another computer's project registers from the graph it carries"));
+    }
+    {
+        // The GPU renderer runs a graph node by node (GpuCompositor): each node as the CPU draws it, the examples too,
+        // over a few frames (Delay, feedback), each fast enough for the Live tab.
+        const auto surface = createGpuSurface();
+        QString err;
+        auto gpu = surface ? createFrameRenderer(false, surface.get(), &err) : nullptr;
+        if (!gpu || !gpu->isGpu()) {
+            QTextStream(stdout) << "SKIP  user effects on the GPU: no GPU here (" << err << ")" << Qt::endl;
+        } else {
+            const QImage pic = testPicture(QSize(640, 360));
+            static const EffectChain kNoChain;
+            auto renderBoth = [&](const nodes::Graph& g, int frames, double* ms) {
+                const EffectDef* def = nodes::registerEffect(g);
+                const EffectChain chain{makeEffect(*def, 1)};
+                Compositor cpu;
+                auto fresh = createFrameRenderer(false, surface.get(), nullptr); // (its own effect states)
+                QImage a, b;
+                QElapsedTimer t;
+                qint64 gpuNs = 0;
+                for (int f = 0; f < frames; ++f) {
+                    a = cpu.renderLive(pic, chain, TimeUs(f) * 33333, 30, true);
+                    t.start();
+                    b = fresh->renderLive(pic, chain, TimeUs(f) * 33333, 30, true);
+                    gpuNs += t.nsecsElapsed();
+                }
+                if (ms)
+                    *ms = gpuNs / 1e6 / frames;
+                return difference(a, b);
+            };
+            // Each node with what it takes: the source, and a checkerboard (drawn the same on both) as a second picture.
+            struct Case {
+                QString type;
+                std::map<QString, double> settings;
+            };
+            std::vector<Case> cases = {{QStringLiteral("mix"), {}}, {QStringLiteral("set_alpha"), {}}, {QStringLiteral("set_alpha"), {{QStringLiteral("invert"), 1}}},
+                                       {QStringLiteral("luma_key"), {}}, {QStringLiteral("difference_key"), {}}, {QStringLiteral("combine"), {}},
+                                       {QStringLiteral("threshold"), {}}, {QStringLiteral("displace"), {}}, {QStringLiteral("displace"), {{QStringLiteral("use"), 1}}},
+                                       {QStringLiteral("place"), {{QStringLiteral("x"), 0.2}, {QStringLiteral("rotation"), 30}}}, {QStringLiteral("delay"), {{QStringLiteral("frames"), 2}}},
+                                       {QStringLiteral("fx.glow"), {}}, {QStringLiteral("gen.retro_grid"), {}}, {QStringLiteral("gen.hyperspace"), {}}};
+            for (int op = 0; op < 8; ++op)
+                cases.push_back({QStringLiteral("math"), {{QStringLiteral("op"), op}}});
+            for (int ch = 0; ch < 5; ++ch)
+                cases.push_back({QStringLiteral("channel"), {{QStringLiteral("channel"), ch}}});
+            for (int mode = 0; mode < 8; ++mode)
+                cases.push_back({QStringLiteral("blend"), {{QStringLiteral("mode"), mode}, {QStringLiteral("opacity"), 0.8}}});
+            for (int mode = 0; mode < 4; ++mode)
+                cases.push_back({QStringLiteral("mask"), {{QStringLiteral("mode"), mode}}});
+            QStringList off;
+            double worst = 0;
+            for (const Case& c : cases) {
+                nodes::Graph g = nodes::starter();
+                g.name = QStringLiteral("GPU node selftest");
+                const int src = g.nodes.front().id, out = g.nodes.back().id;
+                const int checker = g.addNode(QStringLiteral("gen.checkerboard"), {});
+                const int n = g.addNode(c.type, {});
+                for (const auto& [k, v] : c.settings)
+                    g.find(n)->params[k].value = v;
+                const int inputs = int(nodes::findNode(c.type)->inputs.size());
+                for (int i = 0; i < inputs; ++i)
+                    g.connect(i % 2 ? checker : src, n, i);
+                g.connect(n, out, 0);
+                const double d = renderBoth(g, 3, nullptr);
+                worst = std::max(worst, d);
+                if (d > (c.type.startsWith(QLatin1String("gen.")) ? 6.0 : 2.0)) // (sources painted on the GPU: lines antialiased its way)
+                    off << QStringLiteral("%1 %2 (%3)").arg(c.type).arg(c.settings.empty() ? 0 : c.settings.begin()->second).arg(d, 0, 'f', 1);
+            }
+            check(off.isEmpty(), QStringLiteral("each node draws on the GPU as on the CPU (worst %1 of 255; off: %2)")
+                                     .arg(worst, 0, 'f', 2)
+                                     .arg(off.isEmpty() ? QStringLiteral("none") : off.join(QStringLiteral(", "))));
+            QStringList slowOrOff;
+            for (const QFileInfo& fi : QDir(nodes::examplesFolder()).entryInfoList({QStringLiteral("*.mvpfx")})) {
+                nodes::Graph g;
+                if (!nodes::load(fi.absoluteFilePath(), &g, nullptr))
+                    continue;
+                double ms = 0;
+                const double d = renderBoth(g, 5, &ms);
+                QTextStream(stdout) << "      " << g.name << ": " << QString::number(ms, 'f', 1) << " ms a frame on the GPU, "
+                                    << QString::number(d, 'f', 2) << " off" << Qt::endl;
+                if (d > 6.0 || ms > 33.0)
+                    slowOrOff << QStringLiteral("%1 (%2 off, %3 ms)").arg(g.name).arg(d, 0, 'f', 1).arg(ms, 0, 'f', 1);
+            }
+            {
+                // The Live tab's chains in one go (one upload) draw as one at a time.
+                const EffectChain liveFx{makeEffect(*findEffect(QStringLiteral("glow")), 11)};
+                EffectChain padFx{makeEffect(*findEffect(QStringLiteral("rgb_split")), 12)};
+                auto one = createFrameRenderer(false, surface.get(), nullptr), both = createFrameRenderer(false, surface.get(), nullptr);
+                const QImage apart = one->renderLive(one->renderLive(pic, liveFx, 0, 30), padFx, 0, 30);
+                const QImage together = both->renderLiveChains(pic, {&liveFx, &kNoChain, &padFx}, 0, 30);
+                check(difference(apart, together) < 0.01, QStringLiteral("the Live FX and a pad in one go draw as one after the other (%1 off)")
+                                                              .arg(difference(apart, together), 0, 'f', 3));
+            }
+            check(slowOrOff.isEmpty(), QStringLiteral("the example effects draw on the GPU as on the CPU, at 30 frames a second (not: %1)")
+                                           .arg(slowOrOff.isEmpty() ? QStringLiteral("none") : slowOrOff.join(QStringLiteral(", "))));
+        }
     }
     QTextStream(stdout) << (failures ? "FAILED" : "ALL PASSED") << Qt::endl;
     return failures ? 1 : 0;

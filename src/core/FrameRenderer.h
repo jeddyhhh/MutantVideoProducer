@@ -5,6 +5,7 @@
 #include <QImage>
 #include <QString>
 #include <memory>
+#include <vector>
 
 class QOffscreenSurface;
 struct AVFrame;
@@ -17,9 +18,18 @@ public:
     virtual QImage render(const ProjectSnapshot& snap, TimeUs t, QSize outSize) = 0;
     // Live tab: applies `chain` to a captured picture (premultiplied ARGB32,
     // already at the output size). `t` is the live clock (animation and
-    // time-based effects); keyframes are read at 0. Returns an opaque image.
+    // time-based effects, and keyframes). Returns an opaque image.
     // keepAlpha: leave transparency (a keyed layer) instead of flattening onto black.
     virtual QImage renderLive(const QImage& frame, const EffectChain& chain, TimeUs t, double fps, bool keepAlpha = false) = 0;
+    // Chains one after the other (the Live FX, then a pad's), as renderLive one at a time; the GPU sends the
+    // picture up and reads it back only once.
+    virtual QImage renderLiveChains(const QImage& frame, const std::vector<const EffectChain*>& chains, TimeUs t, double fps)
+    {
+        QImage img = frame;
+        for (const EffectChain* c : chains)
+            img = renderLive(img, *c, t, fps);
+        return img;
+    }
     virtual QString name() const = 0;
     virtual bool isGpu() const { return false; }
     // Optional direct encoder-plane output. Unsupported layouts use render().

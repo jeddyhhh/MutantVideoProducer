@@ -107,6 +107,10 @@ private:
     std::map<int, State> m_states;
 };
 
+// The graph a user effect's settings hold (its hidden "graph" setting, parsed again only when it changed: `text` keeps
+// what `graph` was parsed from), with the effect's shown settings put into their nodes. For the renderers.
+void graphFor(const Params& p, QString& text, Graph& graph);
+
 // ---- Saved effects ----
 QString userEffectsFolder();
 // The example effects that come with the program (the effects folder next to it), under User Created/Examples.

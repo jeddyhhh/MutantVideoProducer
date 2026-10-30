@@ -375,8 +375,8 @@ void Compositor::applyChain(const EffectChain& chain, QImage& img, const RenderC
         const Params params = resolveParams(def->params, e.params, ctx.time);
         const fx::PostMask post = def->glitchPost ? fx::postMask(params, img.size()) : fx::PostMask{};
         const QImage before = post.active() ? img : QImage(); // shared: the effect detaches img
-        if (!unmasked.isNull() || !before.isNull())
-            img.bits(); // detach here: effects write rows from several threads, and each scanLine() would detach
+        img.bits(); // detach here (shared with the caller's picture, or kept for the mask): effects write rows from
+                    // several threads, and each scanLine() would detach
         def->apply(img, params, ctx, st.state);
         if (post.active())
             fx::applyPostMask(img, before, post);
@@ -554,7 +554,7 @@ QImage Compositor::renderLive(const QImage& frame, const EffectChain& chain, Tim
     if (canvas.isNull() || !hasActiveEffects(chain))
         return canvas;
     RenderContext ctx;
-    ctx.time = 0;
+    ctx.time = t; // (no events: local time is the Live tab's, so animated sources in user effects move)
     ctx.timelineTime = t;
     ctx.scale = double(canvas.width()) / 1920.0; // effect sizes as if the picture were 1080p
     ctx.fps = fps;
