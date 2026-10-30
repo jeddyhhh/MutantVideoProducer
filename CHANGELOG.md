@@ -2,6 +2,18 @@
 
 What changed in each version of Mutant Video Producer. The newest is first.
 
+## Unreleased
+
+### Added
+
+- **Effect Builder**: opened from the Live tab, the example is what is live (the big Live picture, before its effects;
+  the colour bars when nothing is live). 14 more example patterns to try effects on (SMPTE bars, gradients, a
+  checkerboard, plasma, aurora, starfield, hyperspace, retro grid, digital rain, bokeh, a countdown).
+
+### Fixed
+
+- **Live tab**: double-clicking a user effect in a device chain opens it in the Effect Builder (it did nothing).
+
 ## 0.9.0 (2026-10-30)
 
 ### Added

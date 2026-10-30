@@ -330,6 +330,14 @@ void LiveEngine::setCanvas(QSize canvas, LiveFraming framing)
     m_maxSizeChanged = true;
 }
 
+QImage LiveEngine::cleanFrame() const
+{
+    if (!m_running)
+        return {};
+    std::lock_guard lock(m_mutex);
+    return m_clean;
+}
+
 void LiveEngine::startRecording(const QString& path, bool withEffects)
 {
     {
@@ -1246,6 +1254,10 @@ void LiveEngine::threadMain(Options o)
                 QMetaObject::invokeMethod(this, [this, p = recordPath, err] { emit recordingFinished(p, false, err, 0); },
                                           Qt::QueuedConnection);
             }
+        }
+        {
+            std::lock_guard lock(m_mutex);
+            m_clean = img;
         }
         if (recorder)
             recorder->addFrame(recordEffects ? out : img);

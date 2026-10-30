@@ -56,6 +56,8 @@ public:
     void start(const Options& options);
     void stop();
     bool isRunning() const { return m_running; }
+    // The latest picture before the effects (as the clean recording has it); null when not running.
+    QImage cleanFrame() const;
 
     // While running.
     void setMirror(bool on) { m_mirror = on; }
@@ -180,6 +182,7 @@ private:
     QSize m_maxSize;
     bool m_maxSizeChanged = false;
     QSize m_canvas; // guarded by m_mutex
+    QImage m_clean; // guarded by m_mutex
     LiveFraming m_framing = LiveFraming::CropFill;
     LivePanZoom m_panZoom; // guarded by m_mutex
     // Recording requests (guarded by m_mutex).

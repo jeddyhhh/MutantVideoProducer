@@ -409,7 +409,12 @@ NodeEffectEditor::NodeEffectEditor(const std::vector<std::pair<QString, QString>
     m_example->setMinimumWidth(220);
     for (const auto& [name, path] : m_videos)
         m_example->addItem(name, path);
-    m_example->addItem(tr("Test pattern"), QString());
+    // Patterns to try it on (the color bars are the empty entry, the default).
+    m_example->addItem(tr("Pattern: Color bars"), QString());
+    for (const char* id : {"bars_smpte", "gradient", "vignette_gradient", "checkerboard", "plasma_neon", "plasma_fire", "plasma_ocean",
+                           "aurora", "starfield", "hyperspace", "retro_grid", "digital_rain", "bokeh_warm", "countdown"})
+        if (const GeneratorPreset* p = findGeneratorPreset(QLatin1String(id)))
+            m_example->addItem(tr("Pattern: %1").arg(p->name), QStringLiteral("pattern:") + p->id);
     m_example->addItem(tr("Choose a File..."), QStringLiteral("?"));
     connect(m_example, qOverload<int>(&QComboBox::activated), this, [this](int i) {
         QString path = m_example->itemData(i).toString();
@@ -643,8 +648,11 @@ void NodeEffectEditor::setExample(const QString& path)
 {
     m_decoder.reset();
     m_time = 0;
-    m_duration = 10 * kUsPerSecond;
-    if (!path.isEmpty()) {
+    m_duration = 20 * kUsPerSecond;
+    m_live = path == QLatin1String("live");
+    const bool pattern = path.startsWith(QLatin1String("pattern:"));
+    m_pattern = pattern ? path.mid(8) : QStringLiteral("bars_full");
+    if (!path.isEmpty() && !m_live && !pattern) {
         const MediaInfo info = probeMedia(path);
         auto dec = std::make_unique<VideoDecoder>();
         if (info.ok() && !info.video.empty() && dec->open(path, info.video.front().index)) {
@@ -652,20 +660,38 @@ void NodeEffectEditor::setExample(const QString& path)
             m_duration = std::max<TimeUs>(kUsPerSecond / 10, info.duration);
         }
     }
-    if (!m_decoder && m_testPattern.isNull()) {
-        if (const GeneratorPreset* bars = findGeneratorPreset(QStringLiteral("bars_full")))
-            m_testPattern = renderGenerator(makeGenerator(*bars), QSize(512, 288), 512.0 / m_projectWidth, 0, 5 * kUsPerSecond, FrameRate{30, 1});
-        if (m_testPattern.isNull()) {
-            m_testPattern = QImage(512, 288, QImage::Format_ARGB32_Premultiplied);
-            m_testPattern.fill(Qt::gray);
-        }
+}
+
+void NodeEffectEditor::setLiveSource(std::function<QImage()> frame)
+{
+    m_liveFrame = std::move(frame);
+    m_example->insertItem(0, tr("Live (the Big Live picture)"), QStringLiteral("live"));
+    m_example->setCurrentIndex(0);
+    setExample(QStringLiteral("live"));
+}
+
+QImage NodeEffectEditor::patternFrame()
+{
+    QImage img;
+    if (const GeneratorPreset* p = findGeneratorPreset(m_pattern))
+        img = renderGenerator(makeGenerator(*p), QSize(512, 288), 512.0 / m_projectWidth, m_time, m_duration, FrameRate{30, 1});
+    if (img.isNull()) {
+        img = QImage(512, 288, QImage::Format_ARGB32_Premultiplied);
+        img.fill(Qt::gray);
     }
+    return img.convertToFormat(QImage::Format_ARGB32_Premultiplied);
 }
 
 QImage NodeEffectEditor::exampleFrame()
 {
+    if (m_live) {
+        const QImage f = m_liveFrame ? m_liveFrame() : QImage();
+        if (f.isNull())
+            return patternFrame();
+        return f.scaled(QSize(512, 288), Qt::KeepAspectRatio, Qt::SmoothTransformation).convertToFormat(QImage::Format_ARGB32_Premultiplied);
+    }
     if (!m_decoder)
-        return m_testPattern;
+        return patternFrame();
     const AVFrame* f = m_decoder->frameAt(m_time);
     if (!f)
         return {};

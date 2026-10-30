@@ -7,6 +7,7 @@
 #include <QDialog>
 #include <QJsonObject>
 #include <QPointer>
+#include <functional>
 #include <memory>
 
 class FrameConverter;
@@ -30,12 +31,15 @@ class NodeEffectEditor : public QDialog {
     Q_OBJECT
 public:
     // videos: the project's video files (name, path) to try the effect on; example: the one to start with (empty: a
-    // test pattern). projectWidth: the project's picture width (pixel sizes in the settings are of it).
+    // pattern). projectWidth: the project's picture width (pixel sizes in the settings are of it).
     NodeEffectEditor(const std::vector<std::pair<QString, QString>>& videos, const QString& example, int projectWidth, QWidget* parent = nullptr);
     ~NodeEffectEditor() override;
 
     bool openFile(const QString& path);
     bool saveTo(const QString& path, QString* error = nullptr);
+    // The Live tab's picture as the example (first in the list, and chosen): frame() gives it, null when nothing is
+    // live (then the color bars show).
+    void setLiveSource(std::function<QImage()> frame);
 
     // (also for the tests)
     const nodes::Graph& graph() const { return m_graph; }
@@ -59,6 +63,7 @@ protected:
 private:
     void setExample(const QString& path);
     QImage exampleFrame();
+    QImage patternFrame();
     void rebuildScene();
     void frameGraph();
     void rebuildLibrary(const QString& filter);
@@ -82,7 +87,9 @@ private:
     std::vector<std::pair<QString, QString>> m_videos;
     std::unique_ptr<VideoDecoder> m_decoder;
     std::unique_ptr<FrameConverter> m_converter;
-    QImage m_testPattern;
+    QString m_pattern;                   // the generator preset shown without a video
+    std::function<QImage()> m_liveFrame; // setLiveSource
+    bool m_live = false;
     TimeUs m_time = 0;
     TimeUs m_duration = 0;
     bool m_playing = true;

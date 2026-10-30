@@ -273,7 +273,10 @@ effect to undo it.
 Make your own video effects: **Tools > Effect Builder (Node Graph)...**. The window has three parts:
 
 - **Left**: the example video (any video in the project, the selected event's to start with, a file,
-  or a test pattern; Play / Pause and a scrub bar), and the list of **nodes** with a search box.
+  or one of 15 patterns: colour bars, gradients, a checkerboard, plasma, aurora, starfield, retro grid,
+  digital rain, bokeh, a countdown; Play / Pause and a scrub bar), and the list of **nodes** with a
+  search box. Opened from the **Live** tab (or by double-clicking a user effect there), the example is
+  what is live in the big Live picture, before its effects; with nothing live, the colour bars.
 - **Middle**: the graph. Drag a node from the list onto it (or double-click it in the list, or
   right-click the graph > Add Node). Drag from a node's **Out** (right) to another's input (left) to
   wire them; drag a wire off an input to unplug it. Each node shows its own picture as it plays.

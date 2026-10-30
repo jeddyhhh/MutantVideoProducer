@@ -62,6 +62,7 @@
 #include <QSlider>
 #include <QCloseEvent>
 #include <QComboBox>
+#include <QSet>
 #include <QDate>
 #include <QDateTime>
 #include <QJsonDocument>
@@ -397,6 +398,8 @@ int MainWindow::runEditorTest(QStringList& log)
                 tl.liveEffects.push_back(fx);
                 m_project->applyEdit(tl, QStringLiteral("test"));
                 DeviceChainView* live = m_live->devices();
+                QWidget* tabBefore = m_modes->currentWidget();
+                m_modes->setCurrentWidget(m_live);
                 live->setTarget({FxTarget::Kind::Live, 0});
                 QApplication::processEvents();
                 const auto hints = live->findChildren<QLabel*>(QStringLiteral("userEffectHint"));
@@ -409,8 +412,33 @@ int MainWindow::runEditorTest(QStringList& log)
                 }
                 const auto editors = findChildren<NodeEffectEditor*>();
                 NodeEffectEditor* opened = editors.size() > editorsBefore ? editors.back() : nullptr;
-                bool updated = false;
+                bool updated = false, liveFirst = false;
+                QStringList blankPatterns;
                 if (opened) {
+                    // Opened on the Live tab, the example is what is live (nothing here: the color bars), and every
+                    // pattern in the list draws.
+                    auto varied = [](const QImage& img) {
+                        QSet<QRgb> seen;
+                        for (int y = 0; y < 8 && !img.isNull(); ++y)
+                            for (int x = 0; x < img.width(); ++x)
+                                seen.insert(img.pixel(x, y * (img.height() - 1) / 7));
+                        return seen.size() > 1;
+                    };
+                    for (QComboBox* box : opened->findChildren<QComboBox*>())
+                        if (box->count() && box->itemData(0).toString() == QLatin1String("live")) {
+                            liveFirst = box->currentIndex() == 0;
+                            opened->step();
+                            if (!varied(opened->result()))
+                                blankPatterns << box->itemText(0) + (m_live->engine()->isRunning() ? QStringLiteral(" (capturing)") : QString());
+                            for (int i = 0; i < box->count(); ++i)
+                                if (box->itemData(i).toString().startsWith(QLatin1String("pattern:"))) {
+                                    box->setCurrentIndex(i);
+                                    emit box->activated(i);
+                                    opened->step();
+                                    if (!varied(opened->result()))
+                                        blankPatterns << box->itemText(i);
+                                }
+                        }
                     opened->setParam(blend, QStringLiteral("opacity"), 0.3);
                     opened->saveTo(file);
                     const EffectChain& after = m_project->timeline().liveEffects;
@@ -422,6 +450,11 @@ int MainWindow::runEditorTest(QStringList& log)
                                                                   .arg(hints.size())
                                                                   .arg(opened != nullptr)
                                                                   .arg(updated));
+                check(liveFirst && blankPatterns.isEmpty(), QStringLiteral("from the Live tab the Effect Builder's example is the Live picture (%1); "
+                                                                           "examples that drew nothing: %2")
+                                                                .arg(liveFirst)
+                                                                .arg(blankPatterns.isEmpty() ? QStringLiteral("none") : blankPatterns.join(QStringLiteral(", "))));
+                m_modes->setCurrentWidget(tabBefore);
                 m_project->setTimelineLive(initial);
             }
             QFile::remove(file);

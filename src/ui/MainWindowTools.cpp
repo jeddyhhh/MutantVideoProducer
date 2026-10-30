@@ -336,6 +336,8 @@ NodeEffectEditor* MainWindow::effectBuilder(const QString& file)
         const EffectDef* def = findEffect(id);
         statusBar()->showMessage(tr("Saved \"%1\": it's in the Effects tab under User Created").arg(def ? def->name : id), 8000);
     });
+    if (m_modes && m_modes->currentWidget() == m_live) // on the Live tab: tried on what is live (before its effects)
+        editor->setLiveSource([engine = QPointer<LiveEngine>(m_live->engine())] { return engine ? engine->cleanFrame() : QImage(); });
     if (!file.isEmpty())
         editor->openFile(file);
     editor->show();
