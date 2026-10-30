@@ -126,6 +126,7 @@ add_library(mvp_core STATIC
     src/core/Multicam.h          src/core/Multicam.cpp
     src/core/OpticalFlow.h       src/core/OpticalFlow.cpp
     src/core/ColorMatch.h        src/core/ColorMatch.cpp
+    src/core/NodeGraph.h         src/core/NodeGraph.cpp
     src/core/BeatMarkers.h       src/core/BeatMarkers.cpp
     src/core/EffectMask.h        src/core/EffectMask.cpp
     src/core/Stabilizer.h        src/core/Stabilizer.cpp
@@ -261,7 +262,7 @@ add_executable(mvp WIN32
     src/ui/Vst3Window.h          src/ui/Vst3Window.cpp
     src/ui/ShortcutsDialog.h     src/ui/ShortcutsDialog.cpp
     src/ui/TimelineWidget.h      src/ui/TimelineWidget.cpp src/ui/TimelineLayout.h
-    src/ui/TimelineWidgetMouse.cpp src/ui/TimelineWidgetMenus.cpp src/ui/TimelineWidgetDrop.cpp src/ui/TimelineWidgetPaint.cpp
+    src/ui/NodeEffectEditor.cpp src/ui/TimelineWidgetMouse.cpp src/ui/TimelineWidgetMenus.cpp src/ui/TimelineWidgetDrop.cpp src/ui/TimelineWidgetPaint.cpp
     src/ui/PreviewWidget.h       src/ui/PreviewWidget.cpp
     src/ui/LiveView.h            src/ui/LiveView.cpp
     src/ui/LiveClipsBrowser.h    src/ui/LiveClipsBrowser.cpp
@@ -382,6 +383,8 @@ add_executable(mvp_adversarial_test tests/adversarial.cpp)
 target_link_libraries(mvp_adversarial_test PRIVATE mvp_core)
 add_executable(mvp_collection_test tests/collection.cpp)
 add_executable(mvp_finishing_test tests/finishing.cpp)
+add_executable(mvp_nodes_test tests/nodes.cpp)
+target_link_libraries(mvp_nodes_test PRIVATE mvp_core)
 add_executable(mvp_keyframes_test tests/keyframes.cpp)
 target_link_libraries(mvp_keyframes_test PRIVATE mvp_core)
 target_link_libraries(mvp_finishing_test PRIVATE mvp_core)
@@ -450,7 +453,7 @@ foreach(_suite gpu racks tools consoles)
 endforeach()
 mvp_test(story local $<TARGET_FILE:mvp_story_test> ${_clip})
 mvp_test(adversarial local $<TARGET_FILE:mvp_adversarial_test>)
-foreach(_suite collection brand finishing keyframes)
+foreach(_suite collection brand finishing keyframes nodes)
     mvp_test(${_suite} "ci;smoke" $<TARGET_FILE:mvp_${_suite}_test>)
 endforeach()
 if(WIN32)

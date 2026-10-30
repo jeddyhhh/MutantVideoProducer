@@ -1,4 +1,5 @@
 #include "core/Effects.h"
+#include "core/NodeGraph.h"
 
 #include <QJsonArray>
 #include <algorithm>
@@ -601,6 +602,7 @@ EffectInstance effectFromJson(const QJsonObject& o)
             c.effects.push_back(effectFromJson(ev.toObject()));
         e.chains.push_back(std::move(c));
     }
+    nodes::registerFromInstance(e); // (an effect made in the Effect Builder on another computer: from the graph it carries)
     return e;
 }
 

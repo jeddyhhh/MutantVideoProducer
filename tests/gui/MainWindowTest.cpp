@@ -33,6 +33,8 @@
 #include "ui/KeyframeEditor.h"
 #include "ui/EventPropertiesDialog.h"
 #include "ui/EffectsBrowser.h"
+#include "ui/NodeEffectEditor.h"
+#include "core/NodeGraph.h"
 #include "ui/CrashReport.h"
 #include "ui/ExportDialog.h"
 #include "ui/StoryPanel.h"
@@ -290,6 +292,56 @@ int MainWindow::runEditorTest(QStringList& log)
         });
         narrationStudio();
         m_project->setTimelineLive(initial);
+        {
+            // Tools > Effect Builder: a graph built in the editor (Source -> Pixelate and Invert, blended) shows live, undoes,
+            // and saved, is an effect in the Effects tab under User Created.
+            std::vector<std::pair<QString, QString>> videos;
+            for (const auto& [id, m] : m_project->media())
+                if (m && !m->info.video.empty() && !m->info.isStill)
+                    videos.emplace_back(QFileInfo(m->path).fileName(), m->path);
+            NodeEffectEditor editor(videos, videos.empty() ? QString() : videos.front().second, m_project->settings().width, this);
+            editor.resize(1500, 860);
+            editor.show();
+            const int src = editor.graph().nodes[0].id, out = editor.graph().nodes[1].id;
+            const int pix = editor.addNode(QStringLiteral("fx.pixelate"), QPointF(250, -170));
+            const int inv = editor.addNode(QStringLiteral("fx.invert"), QPointF(250, 170));
+            const int blend = editor.addNode(QStringLiteral("blend"), QPointF(500, 0));
+            const bool wired = editor.connectNodes(src, pix, 0) && editor.connectNodes(src, inv, 0) && editor.connectNodes(pix, blend, 0)
+                               && editor.connectNodes(inv, blend, 1) && editor.connectNodes(blend, out, 0) && !editor.connectNodes(blend, pix, 0);
+            editor.setParam(blend, QStringLiteral("opacity"), 0.5);
+            editor.setExposed(blend, QStringLiteral("opacity"), true);
+            editor.step();
+            const QImage built = editor.result();
+            editor.undo(); // (the exposed setting)
+            editor.undo(); // (the opacity)
+            editor.undo(); // (the wire to the Output)
+            editor.step();
+            const QImage undone = editor.result();
+            editor.redo();
+            editor.redo();
+            editor.redo();
+            editor.step();
+            const QString file = work.filePath(QStringLiteral("GUI Test Mosaic.mvpfx"));
+            nodes::Graph named = editor.graph();
+            named.name = QStringLiteral("GUI Test Mosaic");
+            named.find(out)->pos = QPointF(760, 0);
+            editor.setGraph(named);
+            QApplication::processEvents();
+            editor.step();
+            editor.grab().save(work.filePath("effect-builder.png"));
+            QString error;
+            const bool saved = editor.saveTo(file, &error);
+            const EffectDef* def = findEffect(nodes::effectId(named.name));
+            EffectsBrowser browser(EffectsBrowser::Kind::Effects);
+            const bool listed = !browser.findItems(QStringLiteral("GUI Test Mosaic"), Qt::MatchExactly | Qt::MatchRecursive).isEmpty();
+            check(wired && !built.isNull() && built != undone && saved && def && listed
+                      && std::any_of(def->params.begin(), def->params.end(), [](const ParamDef& p) { return p.name == QLatin1String("Opacity"); }),
+                  QStringLiteral("Effect Builder: a graph wired in the editor shows live (%1), undoes, and saved is in the Effects tab, its "
+                                 "shown setting with it (%2)")
+                      .arg(editor.status(), error));
+            editor.close();
+            QFile::remove(file);
+        }
         {
             // Render Selection to New Track: the time selection becomes a file on a Rendered track on top, which then hides
             // the tracks under it (the compositors start there).

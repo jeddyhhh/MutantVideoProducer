@@ -10,6 +10,7 @@
 #include "core/AudioEffects.h"
 #include "core/Effects.h"
 #include "core/Generators.h"
+#include "core/NodeGraph.h"
 
 #include <QHeaderView>
 #include <QMimeData>
@@ -43,6 +44,8 @@ EffectsBrowser::EffectsBrowser(Kind kind, QWidget* parent) : QTreeWidget(parent)
     setSelectionMode(QAbstractItemView::SingleSelection);
     setRootIsDecorated(kind != Kind::Transitions);
     populate();
+    if (kind == Kind::Effects)
+        connect(&nodes::Notifier::instance(), &nodes::Notifier::changed, this, &EffectsBrowser::populate);
     if (kind == Kind::Effects || kind == Kind::AudioEffects)
         connect(&PresetLibrary::instance(), &PresetLibrary::changed, this, &EffectsBrowser::populate);
 
@@ -113,6 +116,9 @@ void EffectsBrowser::populate()
         else
             for (const EffectDef& e : videoEffects())
                 addEffect(e.id, e.name, e.category, e.description);
+        if (!audio)
+            for (const EffectDef* e : nodes::userEffects()) // (made in Tools > Effect Builder)
+                addEffect(e->id, e->name, e->category, e->description);
         for (auto& [name, g] : groups)
             g->setExpanded(!g->data(0, kNestedRole).toBool()); // categories open, sub-folders and presets folded
     } else if (m_kind == Kind::Generators) {

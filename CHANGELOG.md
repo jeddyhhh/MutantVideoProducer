@@ -6,6 +6,12 @@ What changed in each version of Mutant Video Producer. The newest is first.
 
 ### Added
 
+- **Effect Builder** (Tools > Effect Builder (Node Graph)): make your own video effects by wiring nodes, with the example
+  video on the left, the graph in the middle (each node showing its picture) and the result live on the right. 249
+  nodes: every video effect, the backgrounds, patterns and text as sources, and nodes to blend, mix, do maths, mask,
+  key, split and combine channels, threshold, displace, place and delay. Settings ticked "Show on effect" become the
+  effect's (keyframable). Saved, the effect is in the Effects tab under User Created; projects carry its graph.
+
 - **Track mattes**: a video track can be a matte for the track below it (the header's Mode box, or right-click >
   Track Matte): not shown itself, it decides where that track shows, by where it is drawn (alpha: video inside a
   title's letters) or where it is bright (luma), or the other way round. The same on the CPU and the GPU.

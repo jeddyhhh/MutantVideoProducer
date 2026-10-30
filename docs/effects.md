@@ -268,6 +268,42 @@ its FX: red, green and blue curves that give its spread of colours (from frames 
 the reference shot's. Its **Amount** tones the match down; match again to update it, or remove the
 effect to undo it.
 
+## Effect Builder
+
+Make your own video effects: **Tools > Effect Builder (Node Graph)...**. The window has three parts:
+
+- **Left**: the example video (any video in the project, the selected event's to start with, a file,
+  or a test pattern; Play / Pause and a scrub bar), and the list of **nodes** with a search box.
+- **Middle**: the graph. Drag a node from the list onto it (or double-click it in the list, or
+  right-click the graph > Add Node). Drag from a node's **Out** (right) to another's input (left) to
+  wire them; drag a wire off an input to unplug it. Each node shows its own picture as it plays.
+  Wheel to zoom, the middle button (or Space + drag) to pan, Delete to remove, Ctrl+Z / Ctrl+Y to
+  undo and redo. Right-click a node to duplicate it or reset its settings.
+- **Right**: the **live result**, and the settings of the node you clicked. Tick **Show on
+  effect** next to a setting to make it a setting of the saved effect: it can then be changed, and
+  keyframed, on each event.
+
+Every graph runs from **Source** (the picture the effect is on) to **Output**. The nodes:
+
+- **Every video effect** (glitches, colour, blurs, distortions, the retro consoles...): one input,
+  one output, with all their settings.
+- **Sources**: the backgrounds, test patterns, animated backgrounds, overlays and text, to mix in.
+- **Combine**: Blend (a blend mode at an opacity), Mix (crossfade), Math (add, subtract, multiply,
+  divide, minimum, maximum, difference, average).
+- **Keys and Masks**: Mask (keep a picture where another is drawn or bright), Set Alpha, Luma Key,
+  Difference Key (against a clean plate).
+- **Channels**: Channel (red, green, blue, alpha or brightness as grey), Combine Channels,
+  Threshold.
+- **Distort**: Displace (push pixels around by another picture), Place (move, scale, turn).
+- **Time**: Delay (the picture from frames before: blend it with the present for echoes).
+
+Give it a **Name** (and a description), then **Save as User Created Effect**: it's saved to a
+`.mvpfx` file and appears in the Effects tab and the device chain's **+** menu under **User
+Created**, ready for any event, track or adjustment layer. The graph is saved inside the project
+too, so it renders the same on another computer. **Tools > Edit User Effect** opens one again
+(changes apply to the events you add it to from then on), and **Open the Folder** shows the files
+to share them.
+
 ## GPU acceleration
 
 With **Options > GPU Acceleration** on, every video effect runs on the graphics card, except

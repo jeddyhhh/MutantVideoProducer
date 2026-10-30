@@ -15,6 +15,7 @@
 #include "core/Project.h"
 #include "core/SceneDetect.h"
 #include "core/ColorMatch.h"
+#include "ui/NodeEffectEditor.h"
 #include "core/Reframe.h"
 #include "core/PanCrop.h"
 #include "engine/MediaCache.h"
@@ -235,6 +236,32 @@ void MainWindow::splitAtMarkers()
     }
     m_project->applyEdit(tl, tr("Split at Markers"));
     statusBar()->showMessage(tr("Split into %1 more pieces").arg(pieces.size()), 4000);
+}
+
+void MainWindow::effectBuilder(const QString& file)
+{
+    stopPlayback(false);
+    // The project's videos to try it on, starting with the selected event's (else the first).
+    std::vector<std::pair<QString, QString>> videos;
+    for (const auto& [id, m] : m_project->media())
+        if (m && m->info.ok() && !m->info.video.empty() && !m->info.isStill)
+            videos.emplace_back(QFileInfo(m->path).fileName(), m->path);
+    QString example = videos.empty() ? QString() : videos.front().second;
+    for (int id : m_timeline->selection())
+        if (const Clip* c = m_project->timeline().findClip(id); c && !c->isGenerated())
+            if (auto m = m_project->mediaItem(c->mediaId); m && !m->info.video.empty() && !m->info.isStill) {
+                example = m->path;
+                break;
+            }
+    auto* editor = new NodeEffectEditor(videos, example, m_project->settings().width, this);
+    editor->setAttribute(Qt::WA_DeleteOnClose);
+    connect(editor, &NodeEffectEditor::saved, this, [this](const QString& id) {
+        const EffectDef* def = findEffect(id);
+        statusBar()->showMessage(tr("Saved \"%1\": it's in the Effects tab under User Created").arg(def ? def->name : id), 8000);
+    });
+    if (!file.isEmpty())
+        editor->openFile(file);
+    editor->show();
 }
 
 void MainWindow::matchColour()

@@ -102,6 +102,7 @@
 #include "core/TimelineOps.h"
 #include "ui/ScopesWidget.h"
 #include "core/Stabilizer.h"
+#include "core/NodeGraph.h"
 #include <atomic>
 #include <thread>
 #ifdef Q_OS_WIN
@@ -678,6 +679,25 @@ void MainWindow::createActions()
     auto* dialogueAction = act(tr("Generate &Dialogue from a Script..."), QKeySequence(), [this] { if (editorActive()) generateDialogue(); });
     dialogueAction->setObjectName(QStringLiteral("generateDialogue"));
     captionsMenu->addAction(dialogueAction);
+    heading(tools, tr("Effects"));
+    auto* builderAction = act(tr("Effect &Builder (Node Graph)..."), QKeySequence(), [this] { effectBuilder(); });
+    builderAction->setObjectName(QStringLiteral("effectBuilder"));
+    builderAction->setToolTip(tr("Make your own video effect by wiring nodes together, with the result live as you go"));
+    tools->addAction(builderAction);
+    QMenu* userEffectsMenu = tools->addMenu(tr("Edit User Effect"));
+    connect(userEffectsMenu, &QMenu::aboutToShow, this, [this, userEffectsMenu] {
+        userEffectsMenu->clear();
+        const QDir dir(nodes::userEffectsFolder());
+        for (const QFileInfo& fi : dir.entryInfoList({QStringLiteral("*.mvpfx")}, QDir::Files, QDir::Name))
+            userEffectsMenu->addAction(fi.completeBaseName(), this, [this, path = fi.absoluteFilePath()] { effectBuilder(path); });
+        if (userEffectsMenu->isEmpty())
+            userEffectsMenu->addAction(tr("(none yet)"))->setEnabled(false);
+        userEffectsMenu->addSeparator();
+        userEffectsMenu->addAction(tr("Open the Folder"), this, [] {
+            QDir().mkpath(nodes::userEffectsFolder());
+            QDesktopServices::openUrl(QUrl::fromLocalFile(nodes::userEffectsFolder()));
+        });
+    });
     heading(tools, tr("Sequences"));
     tools->addAction(act(tr("Create Compound Sequence..."),QKeySequence("Ctrl+Shift+G"),[this]{if(editorActive())createCompound();}));
     tools->addAction(act(tr("Edit Compound Sequence..."),QKeySequence(),[this]{if(editorActive())editCompound();}));

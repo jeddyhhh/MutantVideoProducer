@@ -1,4 +1,5 @@
 #include "ui/DeviceChainView.h"
+#include "core/NodeGraph.h"
 
 #include "ui/Help.h"
 #include "core/AudioEffects.h"
@@ -965,6 +966,18 @@ DeviceChainView::DeviceChainView(Project* project, std::function<TimeUs()> curso
     };
     m_videoMenu = new QMenu(this);
     buildMenu(m_videoMenu, videoEffects(), false);
+    QMenu* userMenu = new QMenu(tr("User Created"), m_videoMenu);
+    m_videoMenu->insertMenu(m_videoMenu->actions().value(m_videoMenu->actions().size() - 2), userMenu);
+    connect(userMenu, &QMenu::aboutToShow, this, [this, userMenu] {
+        userMenu->clear();
+        for (const EffectDef* e : nodes::userEffects()) {
+            QAction* a = userMenu->addAction(QString(e->name).replace(QLatin1Char('&'), QStringLiteral("&&")));
+            a->setToolTip(e->description);
+            connect(a, &QAction::triggered, this, [this, id = e->id] { addEffect(id); });
+        }
+        if (userMenu->isEmpty())
+            userMenu->addAction(tr("(none yet: Tools > Effect Builder)"))->setEnabled(false);
+    });
     m_audioMenu = new QMenu(this);
     buildMenu(m_audioMenu, audioEffects(), true);
     connect(m_groupButton, &QToolButton::clicked, this, &DeviceChainView::groupSelection);

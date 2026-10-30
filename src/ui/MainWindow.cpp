@@ -5,6 +5,7 @@
 #include "core/LiveRecorder.h"
 #include <QUuid>
 #include "ui/MainWindow.h"
+#include "core/NodeGraph.h"
 #include "ui/RegisteredTo.h"
 #include "ui/RenderQueue.h"
 #include "ui/DeliverView.h"
@@ -139,6 +140,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
         hw::settings().gpuCompositing = settings.value(QStringLiteral("gpu/compositing"), true).toBool();
         hw::settings().hardwareDecoding = settings.value(QStringLiteral("gpu/hardwareDecoding"), true).toBool();
     }
+    nodes::loadUserEffects(); // (Tools > Effect Builder's saved effects, before a project that uses them opens)
     m_project = new Project(this);
     m_cache = new MediaCache(this);
     m_engine = new PlaybackEngine(this);

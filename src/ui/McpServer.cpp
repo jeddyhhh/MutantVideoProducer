@@ -35,6 +35,7 @@
 #include "core/AudioSync.h"
 #include "core/Multicam.h"
 #include "core/ColorMatch.h"
+#include "core/NodeGraph.h"
 #include "core/Story.h"
 #include "core/PanCrop.h"
 #include "core/Cuts.h"
@@ -2546,9 +2547,12 @@ QJsonObject McpServer::ToolCall::tool_list_effects()
         }
         out.append(o);
     };
-    if (kind == QLatin1String("video"))
+    if (kind == QLatin1String("video")) {
         for (const EffectDef& d : videoEffects())
             add(d.id, d.name, d.category, d.description, d.params);
+        for (const EffectDef* d : nodes::userEffects()) // (made in the Effect Builder)
+            add(d->id, d->name, d->category, d->description, d->params);
+    }
     else if (kind == QLatin1String("audio"))
         for (const AudioEffectDef& d : audioEffects())
             add(d.id, d.name, d.category, d.description, d.params);
