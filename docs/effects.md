@@ -133,9 +133,11 @@ Each drag or command is one step of undo.
   EQ *Vocal Presence*, Reverb *Cathedral*, Pixel Sort *Melting Highlights*.
 - **Preset Chains** are whole chains, racks included. Examples: *Podcast Voice*, *Telephone*,
   *Blockbuster Grade*, *Broken Stream*.
-- Drag a preset onto an event, a track or the device chain, or double-click it.
+- Drag a preset onto an event, a track or the device chain, or double-click it. The device chain's
+  **Add** menu has the Preset Chains too.
 - A device's **≡** button loads presets into it, and **Save as Preset...** keeps its settings as your own preset.
-- **Save Chain**, or right-click with several devices selected, saves a chain preset.
+- **Save Chain**, or right-click with several devices selected, saves a chain preset. It is in the
+  browsers and the Add menu straight away.
 - Your presets (video and audio) are JSON files in the app data folder. Right-click one in the
   browser to delete it.
 

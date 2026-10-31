@@ -43,6 +43,9 @@ What changed in each version of Mutant Video Producer. The newest is first.
   layer on the big Live picture to put it anywhere.
 - **Status bar**: CPU and GPU load, RAM, the GPU's temperature and memory (NVIDIA), once a second.
 - **Help > About**: links to jeddyh.fyi and the YouTube channel.
+- **Device chain > Add**: the Preset Chains, as in the FX tabs. A chain saved with Save Chain is there straight away.
+- Effect Builder effects are in the nested sequence editor's Add FX list and in the graphics editor's effect on a layer,
+  as soon as they are saved.
 
 ## 0.9.2 (2026-10-31)
 

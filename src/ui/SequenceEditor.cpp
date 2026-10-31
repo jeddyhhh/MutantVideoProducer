@@ -4,6 +4,7 @@
 #include "core/TimelineOps.h"
 #include "core/MediaInfo.h"
 #include "core/Effects.h"
+#include "core/NodeGraph.h"
 #include "engine/MediaCache.h"
 #include "engine/PlaybackEngine.h"
 #include "ui/TimelineWidget.h"
@@ -126,8 +127,17 @@ bool editEmbeddedSequence(Project* project, int clipId, QWidget* parent)
         tabs->setCurrentWidget(properties);
     });
     auto* effects = new QComboBox;
-    for (const auto& e : videoEffects())
-        effects->addItem(e.name, e.id);
+    auto listEffects = [effects] { // (and the Effect Builder's, as they are saved)
+        const QString current = effects->currentData().toString();
+        effects->clear();
+        for (const auto& e : videoEffects())
+            effects->addItem(e.name, e.id);
+        for (const EffectDef* e : nodes::userEffects())
+            effects->addItem(e->name, e->id);
+        effects->setCurrentIndex(std::max(0, effects->findData(current)));
+    };
+    listEffects();
+    QObject::connect(&nodes::Notifier::instance(), &nodes::Notifier::changed, effects, listEffects);
     toolbar->addWidget(effects);
     auto* addFx = new QPushButton(QObject::tr("Add FX"));
     toolbar->addWidget(addFx);

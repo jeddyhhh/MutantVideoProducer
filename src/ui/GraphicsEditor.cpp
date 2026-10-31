@@ -1,5 +1,6 @@
 #include "core/Brand.h"
 #include "core/Effects.h"
+#include "core/NodeGraph.h"
 #include "ui/GraphicsEditor.h"
 #include "core/Graphics.h"
 #include "core/GraphicsWorkflow.h"
@@ -1343,6 +1344,11 @@ public:
             if (e.apply) {
                 names << e.name;
                 ids << e.id;
+            }
+        for (const EffectDef* e : nodes::userEffects()) // (made in the Effect Builder)
+            if (e->apply) {
+                names << e->name;
+                ids << e->id;
             }
         bool ok = false;
         const QString pick = QInputDialog::getItem(this, tr("Effect on This Layer"),

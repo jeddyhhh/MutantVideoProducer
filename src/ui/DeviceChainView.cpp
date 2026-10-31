@@ -928,6 +928,7 @@ DeviceChainView::DeviceChainView(Project* project, std::function<TimeUs()> curso
     theme::style(m_title, QStringLiteral("font-weight: bold; color: @bright;"));
     hl->addWidget(m_title);
     m_addButton = new QToolButton;
+    m_addButton->setObjectName(QStringLiteral("addDevice"));
     m_addButton->setText(tr("Add"));
     m_addButton->setPopupMode(QToolButton::InstantPopup);
     hl->addWidget(m_addButton);
@@ -1013,6 +1014,27 @@ DeviceChainView::DeviceChainView(Project* project, std::function<TimeUs()> curso
     });
     m_audioMenu = new QMenu(this);
     buildMenu(m_audioMenu, audioEffects(), true);
+    // Preset Chains at the top, as the FX browsers have them: read when opened, so a chain just saved is there.
+    for (QMenu* menu : {m_videoMenu, m_audioMenu}) {
+        const bool audio = menu == m_audioMenu;
+        QMenu* chains = new QMenu(tr("Preset Chains"), menu);
+        menu->insertMenu(menu->actions().value(0), chains);
+        menu->insertSeparator(menu->actions().value(1));
+        connect(chains, &QMenu::aboutToShow, this, [this, chains, audio] {
+            chains->clear();
+            std::map<QString, QMenu*> groups;
+            for (const Preset& p : PresetLibrary::instance().chains(audio)) {
+                QMenu*& group = groups[p.category.isEmpty() ? tr("Other") : p.category];
+                if (!group)
+                    group = chains->addMenu(QString(p.category.isEmpty() ? tr("Other") : p.category).replace(QLatin1Char('&'), QStringLiteral("&&")));
+                QAction* a = group->addAction(QString(p.name).replace(QLatin1Char('&'), QStringLiteral("&&")));
+                a->setToolTip(p.description);
+                connect(a, &QAction::triggered, this, [this, id = p.id] { addPreset(id); });
+            }
+            if (chains->isEmpty())
+                chains->addAction(tr("(none yet: Save Chain makes one)"))->setEnabled(false);
+        });
+    }
     connect(m_groupButton, &QToolButton::clicked, this, &DeviceChainView::groupSelection);
     connect(m_scopeEvent, &QToolButton::clicked, this, [this] {
         if (m_contextClip)

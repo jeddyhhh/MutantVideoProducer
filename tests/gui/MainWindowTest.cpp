@@ -29,6 +29,8 @@
 #include "ui/RegisteredTo.h"
 #include "ui/AudioFinishingWindow.h"
 #include "ui/DeviceChainView.h"
+#include "core/Presets.h"
+#include <QMenu>
 #include "ui/EffectEditor.h"
 #include "ui/KeyframeEditor.h"
 #include "ui/EventPropertiesDialog.h"
@@ -340,6 +342,40 @@ int MainWindow::runEditorTest(QStringList& log)
                   QStringLiteral("Effect Builder: a graph wired in the editor shows live (%1), undoes, and saved is in the Effects tab, its "
                                  "shown setting with it (%2)")
                       .arg(editor.status(), error));
+            {
+                // The device chain's Add menu: the saved effect under User Created, and a chain saved now under Preset Chains,
+                // without opening anything again.
+                const FxTarget before = m_devices->target();
+                m_devices->setTarget({FxTarget::Kind::Output, 0});
+                auto* add = m_devices->findChild<QToolButton*>(QStringLiteral("addDevice"));
+                auto submenu = [](QMenu* menu, const QString& title) -> QMenu* {
+                    for (QAction* a : menu ? menu->actions() : QList<QAction*>())
+                        if (a->menu() && a->text() == title) {
+                            emit a->menu()->aboutToShow();
+                            return a->menu();
+                        }
+                    return nullptr;
+                };
+                auto holds = [&](QMenu* menu, const QString& text, auto&& self) -> bool {
+                    for (QAction* a : menu ? menu->actions() : QList<QAction*>())
+                        if (a->text() == text || (a->menu() && self(a->menu(), text, self)))
+                            return true;
+                    return false;
+                };
+                const QString presetId = PresetLibrary::instance().save(QStringLiteral("GUI Test Chain"), false, QString(),
+                                                                        {makeEffectOfType(QStringLiteral("invert"), 1)});
+                QMenu* menu = add ? add->menu() : nullptr;
+                QMenu* chains = submenu(menu, tr("Preset Chains"));
+                QMenu* user = submenu(menu, tr("User Created"));
+                const bool chainListed = holds(chains, QStringLiteral("GUI Test Chain"), holds);
+                const bool effectListed = holds(user, QStringLiteral("GUI Test Mosaic"), holds);
+                PresetLibrary::instance().remove(presetId);
+                m_devices->setTarget(before);
+                check(!presetId.isEmpty() && chainListed && effectListed,
+                      QStringLiteral("the device chain's Add menu has a chain just saved under Preset Chains (%1) and a user effect just "
+                                     "saved under User Created (%2)")
+                          .arg(chainListed ? "yes" : "no", effectListed ? "yes" : "no"));
+            }
             editor.close();
             {
                 // On an event, the device says to double-click it; double-clicked, the Effect Builder opens on it, and saved
