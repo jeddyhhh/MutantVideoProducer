@@ -107,6 +107,9 @@ private:
     std::map<int, State> m_states;
 };
 
+// What keeps a graph from drawing (no Output node, a node this version doesn't have); empty when nothing.
+QString problem(const Graph& g);
+
 // The graph a user effect's settings hold (its hidden "graph" setting, parsed again only when it changed: `text` keeps
 // what `graph` was parsed from), with the effect's shown settings put into their nodes. For the renderers.
 void graphFor(const Params& p, QString& text, Graph& graph);

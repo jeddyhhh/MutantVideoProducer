@@ -134,25 +134,34 @@ QImage smallCanvas(QSize full)
     return img;
 }
 
-void drawScaledUp(QImage& layer, const QImage& small)
+void drawScaledUp(QPainter& painter, QSize size, const QImage& small)
 {
-    QPainter painter(&layer);
     painter.setRenderHint(QPainter::SmoothPixmapTransform, true);
-    painter.drawImage(QRectF(layer.rect()), small);
+    painter.setCompositionMode(QPainter::CompositionMode_Source);
+    painter.drawImage(QRectF(QPointF(0, 0), QSizeF(size)), small);
+    painter.setCompositionMode(QPainter::CompositionMode_SourceOver);
+}
+
+// The whole picture one colour (what QImage::fill did, on whichever device the painter draws).
+void fillAll(QPainter& painter, QSize size, const QColor& c)
+{
+    painter.setCompositionMode(QPainter::CompositionMode_Source);
+    painter.fillRect(QRect(QPoint(0, 0), size), c);
+    painter.setCompositionMode(QPainter::CompositionMode_SourceOver);
 }
 
 bool always(const Params&, const GeneratorContext&) { return true; }
 
 // ---- Animated backgrounds --------------------------------------------------------------
 
-void renderPlasma(QImage& layer, const Params& p, const GeneratorContext& ctx)
+bool paintPlasma(QPainter& painter, QSize size, const Params& p, const GeneratorContext& ctx)
 {
     const double T = seconds(ctx) * p.num(QStringLiteral("speed"));
     const double sc = std::max(0.05, p.num(QStringLiteral("scale")));
     const std::vector<QColor> stops = palette(p.choice(QStringLiteral("palette")));
-    QImage small = smallCanvas(layer.size());
+    QImage small = smallCanvas(size);
     const int sw = small.width(), sh = small.height();
-    const double aspect = double(layer.width()) / std::max(1, layer.height());
+    const double aspect = double(size.width()) / std::max(1, size.height());
     parallelFor(sh, [&](int y0, int y1) {
         for (int y = y0; y < y1; ++y) {
             auto* row = reinterpret_cast<QRgb*>(small.scanLine(y));
@@ -164,17 +173,26 @@ void renderPlasma(QImage& layer, const Params& p, const GeneratorContext& ctx)
             }
         }
     });
-    drawScaledUp(layer, small);
+    drawScaledUp(painter, size, small);
+    return true;
 }
 
-void renderAurora(QImage& layer, const Params& p, const GeneratorContext& ctx)
+void renderPlasma(QImage& layer, const Params& p, const GeneratorContext& ctx)
+{
+    QPainter painter(&layer);
+    paintPlasma(painter, layer.size(), p, ctx);
+}
+
+bool paintAuroraStars(QPainter& painter, QSize size, const Params& p, const GeneratorContext& ctx);
+
+bool paintAurora(QPainter& painter, QSize size, const Params& p, const GeneratorContext& ctx)
 {
     const double T = seconds(ctx) * p.num(QStringLiteral("speed"));
     const QColor c1 = p.color(QStringLiteral("color1")), c2 = p.color(QStringLiteral("color2"));
     const QColor skyTop = p.color(QStringLiteral("sky")), skyLow = p.color(QStringLiteral("horizon"));
-    QImage small = smallCanvas(layer.size());
+    QImage small = smallCanvas(size);
     const int sw = small.width(), sh = small.height();
-    const double aspect = double(layer.width()) / std::max(1, layer.height());
+    const double aspect = double(size.width()) / std::max(1, size.height());
     parallelFor(sh, [&](int y0, int y1) {
         for (int y = y0; y < y1; ++y) {
             auto* row = reinterpret_cast<QRgb*>(small.scanLine(y));
@@ -199,19 +217,31 @@ void renderAurora(QImage& layer, const Params& p, const GeneratorContext& ctx)
             }
         }
     });
-    drawScaledUp(layer, small);
+    drawScaledUp(painter, size, small);
+    return paintAuroraStars(painter, size, p, ctx);
+}
+
+bool paintAuroraStars(QPainter& painter, QSize size, const Params& p, const GeneratorContext& ctx)
+{
     if (!p.flag(QStringLiteral("stars")))
-        return;
-    QPainter painter(&layer);
+        return true;
+    const double T = seconds(ctx) * p.num(QStringLiteral("speed"));
     painter.setRenderHint(QPainter::Antialiasing, true);
     painter.setPen(Qt::NoPen);
-    const double w = layer.width(), h = layer.height();
+    const double w = size.width(), h = size.height();
     for (int i = 0; i < 180; ++i) {
         const double tw = 0.45 + 0.55 * (0.5 + 0.5 * std::sin(T * (1.0 + rnd(i, 3) * 3.0) + rnd(i, 4) * 6.283));
         painter.setBrush(withAlpha(Qt::white, tw * (0.3 + 0.7 * rnd(i, 5))));
         const double r = (0.5 + rnd(i, 2) * 1.2) * ctx.scale;
         painter.drawEllipse(QPointF(rnd(i, 0) * w, rnd(i, 1) * h * 0.75), r, r);
     }
+    return true;
+}
+
+void renderAurora(QImage& layer, const Params& p, const GeneratorContext& ctx)
+{
+    QPainter painter(&layer);
+    paintAurora(painter, layer.size(), p, ctx);
 }
 
 bool paintStarfield(QPainter& painter, QSize size, const Params& p, const GeneratorContext& ctx)
@@ -255,14 +285,13 @@ void renderStarfield(QImage& layer, const Params& p, const GeneratorContext& ctx
     paintStarfield(painter, layer.size(), p, ctx);
 }
 
-void renderBokeh(QImage& layer, const Params& p, const GeneratorContext& ctx)
+bool paintBokeh(QPainter& painter, QSize area, const Params& p, const GeneratorContext& ctx)
 {
     const double T = seconds(ctx) * p.num(QStringLiteral("speed"));
     const int count = int(std::lround(p.num(QStringLiteral("count"))));
     const std::vector<QColor> cols = lightPalette(p.choice(QStringLiteral("palette")));
-    const double w = layer.width(), h = layer.height();
-    layer.fill(withAlpha(p.color(QStringLiteral("background")), p.num(QStringLiteral("backgroundOpacity"))));
-    QPainter painter(&layer);
+    const double w = area.width(), h = area.height();
+    fillAll(painter, area, withAlpha(p.color(QStringLiteral("background")), p.num(QStringLiteral("backgroundOpacity"))));
     painter.setRenderHint(QPainter::Antialiasing, true);
     painter.setCompositionMode(QPainter::CompositionMode_Plus);
     painter.setPen(Qt::NoPen);
@@ -282,6 +311,13 @@ void renderBokeh(QImage& layer, const Params& p, const GeneratorContext& ctx)
         painter.setBrush(g);
         painter.drawEllipse(QPointF(x, y), r, r);
     }
+    return true;
+}
+
+void renderBokeh(QImage& layer, const Params& p, const GeneratorContext& ctx)
+{
+    QPainter painter(&layer);
+    paintBokeh(painter, layer.size(), p, ctx);
 }
 
 bool paintRetroGrid(QPainter& painter, QSize size, const Params& p, const GeneratorContext& ctx)
@@ -357,14 +393,14 @@ void renderRetroGrid(QImage& layer, const Params& p, const GeneratorContext& ctx
     paintRetroGrid(painter, layer.size(), p, ctx);
 }
 
-void renderDigitalRain(QImage& layer, const Params& p, const GeneratorContext& ctx)
+bool paintDigitalRain(QPainter& painter, QSize size, const Params& p, const GeneratorContext& ctx)
 {
     const double T = seconds(ctx);
     const double speed = p.num(QStringLiteral("speed"));
     const QColor col = p.color(QStringLiteral("color"));
-    const double w = layer.width(), h = layer.height();
+    const double w = size.width(), h = size.height();
     if (p.flag(QStringLiteral("background")))
-        layer.fill(Qt::black);
+        fillAll(painter, size, Qt::black);
     static const QString glyphs = [] {
         QString s = QStringLiteral("0123456789Z:=*+-<>");
         for (char16_t u = 0xFF66; u <= 0xFF9D; ++u)
@@ -375,7 +411,6 @@ void renderDigitalRain(QImage& layer, const Params& p, const GeneratorContext& c
     QFont f(QStringLiteral("MS Gothic"));
     f.setPixelSize(int(std::lround(gs)));
     f.setHintingPreference(QFont::PreferNoHinting);
-    QPainter painter(&layer);
     painter.setFont(f);
     const double colW = gs * 0.8;
     const int cols = int(std::ceil(w / colW)), rows = int(h / gs) + 1;
@@ -396,18 +431,24 @@ void renderDigitalRain(QImage& layer, const Params& p, const GeneratorContext& c
             painter.drawText(QPointF(c * colW, (r + 1) * gs), QString(ch));
         }
     }
+    return true;
+}
+
+void renderDigitalRain(QImage& layer, const Params& p, const GeneratorContext& ctx)
+{
+    QPainter painter(&layer);
+    paintDigitalRain(painter, layer.size(), p, ctx);
 }
 
 // ---- Overlays --------------------------------------------------------------------------
 
-void renderConfetti(QImage& layer, const Params& p, const GeneratorContext& ctx)
+bool paintConfetti(QPainter& painter, QSize area, const Params& p, const GeneratorContext& ctx)
 {
     const double T = seconds(ctx);
     const double speed = p.num(QStringLiteral("speed")), size = p.num(QStringLiteral("size"));
     const int count = int(std::lround(p.num(QStringLiteral("count"))));
     const std::vector<QColor> cols = lightPalette(p.choice(QStringLiteral("palette")) == 1 ? 3 : 2);
-    const double w = layer.width(), h = layer.height();
-    QPainter painter(&layer);
+    const double w = area.width(), h = area.height();
     painter.setRenderHint(QPainter::Antialiasing, true);
     painter.setPen(Qt::NoPen);
     for (int i = 0; i < count; ++i) {
@@ -430,31 +471,44 @@ void renderConfetti(QImage& layer, const Params& p, const GeneratorContext& ctx)
             painter.drawEllipse(QPointF(0, 0), s * 0.5 * std::abs(flip) + 0.25, s * 0.5);
         painter.restore();
     }
+    return true;
 }
 
-void renderProgressBar(QImage& layer, const Params& p, const GeneratorContext& ctx)
+void renderConfetti(QImage& layer, const Params& p, const GeneratorContext& ctx)
 {
-    const double w = layer.width(), h = layer.height();
+    QPainter painter(&layer);
+    paintConfetti(painter, layer.size(), p, ctx);
+}
+
+bool paintProgressBar(QPainter& painter, QSize size, const Params& p, const GeneratorContext& ctx)
+{
+    const double w = size.width(), h = size.height();
     const double fill = ctx.length > 0 ? clamp01(double(ctx.time) / double(ctx.length)) : 0.0;
     const double bh = std::max(1.0, p.num(QStringLiteral("height")) / 100.0 * h);
     const double margin = p.num(QStringLiteral("margin")) / 100.0 * h;
     const bool top = p.choice(QStringLiteral("position")) == 1;
     const QRectF track(margin, top ? margin : h - margin - bh, w - 2 * margin, bh);
     const double radius = p.flag(QStringLiteral("rounded")) ? bh / 2 : 0.0;
-    QPainter painter(&layer);
     painter.setRenderHint(QPainter::Antialiasing, true);
     painter.setPen(Qt::NoPen);
     painter.setBrush(withAlpha(p.color(QStringLiteral("trackColor")), p.num(QStringLiteral("trackOpacity"))));
     painter.drawRoundedRect(track, radius, radius);
     painter.setBrush(p.color(QStringLiteral("color")));
     painter.drawRoundedRect(QRectF(track.topLeft(), QSizeF(track.width() * fill, bh)), radius, radius);
+    return true;
+}
+
+void renderProgressBar(QImage& layer, const Params& p, const GeneratorContext& ctx)
+{
+    QPainter painter(&layer);
+    paintProgressBar(painter, layer.size(), p, ctx);
 }
 
 const double kAspects[] = {2.39, 2.0, 1.85, 4.0 / 3.0, 1.0, 9.0 / 16.0};
 
-void renderLetterbox(QImage& layer, const Params& p, const GeneratorContext& ctx)
+bool paintLetterbox(QPainter& painter, QSize size, const Params& p, const GeneratorContext& ctx)
 {
-    const double w = layer.width(), h = layer.height();
+    const double w = size.width(), h = size.height();
     const double target = kAspects[std::clamp(p.choice(QStringLiteral("aspect")), 0, 5)];
     double k = 1.0;
     if (p.flag(QStringLiteral("animate"))) {
@@ -462,7 +516,6 @@ void renderLetterbox(QImage& layer, const Params& p, const GeneratorContext& ctx
         const double T = seconds(ctx), len = double(ctx.length) / kUsPerSecond;
         k = std::min(easeOut(T / d), easeOut((len - T) / d));
     }
-    QPainter painter(&layer);
     const QColor c = withAlpha(p.color(QStringLiteral("color")), p.num(QStringLiteral("opacity")));
     if (target > w / h) {
         const double bar = (h - w / target) / 2 * k;
@@ -473,6 +526,13 @@ void renderLetterbox(QImage& layer, const Params& p, const GeneratorContext& ctx
         painter.fillRect(QRectF(0, 0, bar, h), c);
         painter.fillRect(QRectF(w - bar, 0, bar, h), c);
     }
+    return true;
+}
+
+void renderLetterbox(QImage& layer, const Params& p, const GeneratorContext& ctx)
+{
+    QPainter painter(&layer);
+    paintLetterbox(painter, layer.size(), p, ctx);
 }
 
 bool letterboxAnimating(const Params& p, const GeneratorContext& ctx)
@@ -528,13 +588,12 @@ QPainterPath shapePath(int shape, double W, double H, double corner)
     return path;
 }
 
-void renderShape(QImage& layer, const Params& p, const GeneratorContext& ctx)
+bool paintShape(QPainter& painter, QSize size, const Params& p, const GeneratorContext& ctx)
 {
-    const double w = layer.width(), h = layer.height();
+    const double w = size.width(), h = size.height();
     const double W = p.num(QStringLiteral("width")) / 100.0 * h, H = p.num(QStringLiteral("height")) / 100.0 * h;
     if (W <= 0 || H <= 0)
-        return;
-    QPainter painter(&layer);
+        return true;
     painter.setRenderHint(QPainter::Antialiasing, true);
     painter.translate(p.num(QStringLiteral("x")) * w, p.num(QStringLiteral("y")) * h);
     painter.rotate(p.num(QStringLiteral("angle")));
@@ -543,6 +602,13 @@ void renderShape(QImage& layer, const Params& p, const GeneratorContext& ctx)
     const double outline = p.num(QStringLiteral("outline")) * ctx.scale;
     if (outline > 0)
         painter.strokePath(path, QPen(p.color(QStringLiteral("outlineColor")), outline, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+    return true;
+}
+
+void renderShape(QImage& layer, const Params& p, const GeneratorContext& ctx)
+{
+    QPainter painter(&layer);
+    paintShape(painter, layer.size(), p, ctx);
 }
 
 // ---- Text and test patterns ------------------------------------------------------------
@@ -552,12 +618,12 @@ QStringList kineticWords(const Params& p)
     return p.text(QStringLiteral("text")).split(QRegularExpression(QStringLiteral("\\s+")), Qt::SkipEmptyParts);
 }
 
-void renderKineticText(QImage& layer, const Params& p, const GeneratorContext& ctx)
+bool paintKineticText(QPainter& painter, QSize size, const Params& p, const GeneratorContext& ctx)
 {
     const QStringList words = kineticWords(p);
     if (words.isEmpty())
-        return;
-    const double w = layer.width(), h = layer.height();
+        return true;
+    const double w = size.width(), h = size.height();
     const double T = seconds(ctx), wps = std::max(0.1, p.num(QStringLiteral("rate")));
     QFont f(p.text(QStringLiteral("font")));
     f.setPixelSize(std::max(1, int(std::lround(p.num(QStringLiteral("size")) / 100.0 * std::min(h, w * 9.0 / 16.0))))); // (as titles: 16:9 sizes)
@@ -587,7 +653,6 @@ void renderKineticText(QImage& layer, const Params& p, const GeneratorContext& c
     const int current = int(std::floor(T * wps));
     const QColor col = p.color(QStringLiteral("color")), hi = p.color(QStringLiteral("highlight"));
     const double outline = p.num(QStringLiteral("outline")) * ctx.scale;
-    QPainter painter(&layer);
     painter.setRenderHint(QPainter::Antialiasing, true);
     for (int i = 0; i < int(words.size()); ++i) {
         const double e = (T - i / wps) / 0.3;
@@ -616,6 +681,13 @@ void renderKineticText(QImage& layer, const Params& p, const GeneratorContext& c
             painter.strokePath(placedPath, QPen(p.color(QStringLiteral("outlineColor")), outline * 2, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
         painter.fillPath(placedPath, i == current ? hi : col);
     }
+    return true;
+}
+
+void renderKineticText(QImage& layer, const Params& p, const GeneratorContext& ctx)
+{
+    QPainter painter(&layer);
+    paintKineticText(painter, layer.size(), p, ctx);
 }
 
 bool kineticAnimating(const Params& p, const GeneratorContext& ctx)
@@ -624,14 +696,13 @@ bool kineticAnimating(const Params& p, const GeneratorContext& ctx)
     return seconds(ctx) <= (kineticWords(p).size() + 1) / wps + 0.35;
 }
 
-void renderCountdown(QImage& layer, const Params& p, const GeneratorContext& ctx)
+bool paintCountdown(QPainter& painter, QSize size, const Params& p, const GeneratorContext& ctx)
 {
-    const double w = layer.width(), h = layer.height(), T = seconds(ctx);
+    const double w = size.width(), h = size.height(), T = seconds(ctx);
     const int start = int(std::lround(p.num(QStringLiteral("start"))));
     const int n = start - int(std::floor(T));
     const QColor ink = p.color(QStringLiteral("ink"));
-    layer.fill(p.color(QStringLiteral("background")));
-    QPainter painter(&layer);
+    fillAll(painter, size, p.color(QStringLiteral("background")));
     painter.setRenderHint(QPainter::Antialiasing, true);
     const QPointF c(w / 2, h / 2);
     const double R = h * 0.42;
@@ -649,7 +720,7 @@ void renderCountdown(QImage& layer, const Params& p, const GeneratorContext& ctx
     painter.drawEllipse(c, R, R);
     painter.drawEllipse(c, R * 0.84, R * 0.84);
     if (n < 1)
-        return;
+        return true;
     QFont f(QStringLiteral("Arial"));
     f.setBold(true);
     f.setPixelSize(std::max(1, int(h * 0.55)));
@@ -658,12 +729,18 @@ void renderCountdown(QImage& layer, const Params& p, const GeneratorContext& ctx
     const QString s = QString::number(n);
     digits.addText(QPointF(c.x() - fm.horizontalAdvance(s) / 2, c.y() + (fm.ascent() - fm.descent()) / 2), f, s);
     painter.fillPath(digits, ink);
+    return true;
 }
 
-void renderColorBars(QImage& layer, const Params& p, const GeneratorContext&)
+void renderCountdown(QImage& layer, const Params& p, const GeneratorContext& ctx)
 {
-    const double w = layer.width(), h = layer.height();
     QPainter painter(&layer);
+    paintCountdown(painter, layer.size(), p, ctx);
+}
+
+bool paintColorBars(QPainter& painter, QSize size, const Params& p, const GeneratorContext&)
+{
+    const double w = size.width(), h = size.height();
     auto bar = [&](double x0, double x1, double y0, double y1, QRgb c) {
         painter.fillRect(QRectF(x0 * w, y0 * h, (x1 - x0) * w, (y1 - y0) * h), QColor::fromRgb(c));
     };
@@ -671,7 +748,7 @@ void renderColorBars(QImage& layer, const Params& p, const GeneratorContext&)
         const QRgb full[] = {0xffffff, 0xffff00, 0x00ffff, 0x00ff00, 0xff00ff, 0xff0000, 0x0000ff, 0x000000};
         for (int i = 0; i < 8; ++i)
             bar(i / 8.0, (i + 1) / 8.0, 0, 1, full[i]);
-        return;
+        return true;
     }
     const QRgb top[] = {0xbfbfbf, 0xbfbf00, 0x00bfbf, 0x00bf00, 0xbf00bf, 0xbf0000, 0x0000bf};
     const QRgb mid[] = {0x0000bf, 0x131313, 0xbf00bf, 0x131313, 0x00bfbf, 0x131313, 0xbfbfbf};
@@ -689,9 +766,18 @@ void renderColorBars(QImage& layer, const Params& p, const GeneratorContext&)
     bar(4 * q + pl, 4 * q + 2 * pl, 0.75, 1, 0x131313);
     bar(4 * q + 2 * pl, 4 * q + 3 * pl, 0.75, 1, 0x1d1d1d);
     bar(4 * q + 3 * pl, 1, 0.75, 1, 0x131313);
+    return true;
+}
+
+void renderColorBars(QImage& layer, const Params& p, const GeneratorContext& ctx)
+{
+    QPainter painter(&layer);
+    paintColorBars(painter, layer.size(), p, ctx);
 }
 
 } // namespace
+
+std::vector<QColor> plasmaPalette(int which) { return palette(which); }
 
 void addAnimatedGenerators(std::vector<GeneratorDef>& list)
 {
@@ -713,10 +799,16 @@ void addAnimatedGenerators(std::vector<GeneratorDef>& list)
 
     add("plasma", "Plasma", "Animated", "Flowing, ever-changing colour waves.",
         {choice("palette", "Palette", kPaletteNames), num("speed", "Speed", 0, 5, 1), num("scale", "Scale", 0.2, 5, 1)}, renderPlasma, always);
+    list.back().paint = paintPlasma;
+    list.back().gpuShader = true;
     add("aurora", "Aurora", "Animated", "Northern lights rippling over a starry night sky.",
         {color("color1", "Light color", 0x3dffa0), color("color2", "Top color", 0x8a5cff), color("sky", "Sky color", 0x02040f),
          color("horizon", "Horizon color", 0x0b2340), num("speed", "Speed", 0, 5, 1), flag("stars", "Stars", true)},
         renderAurora, always);
+    list.back().paint = paintAurora;
+    list.back().gpuShader = true;
+    list.back().paintOver = paintAuroraStars;
+    list.back().paintScale = 2;
     add("starfield", "Starfield", "Animated", "Flying through the stars; long trails make it hyperspace.",
         {num("count", "Stars", 20, 3000, 600, 0), num("speed", "Speed", 0, 10, 1), num("trails", "Trails", 0, 1, 0.3),
          color("color", "Star color", 0xffffff), color("background", "Background", 0x000005)},
@@ -727,6 +819,8 @@ void addAnimatedGenerators(std::vector<GeneratorDef>& list)
         {choice("palette", "Colors", kLightPalettes), num("count", "Lights", 5, 200, 40, 0), num("size", "Size (% of height)", 2, 40, 12, 1, "%"),
          num("speed", "Speed", 0, 5, 1), color("background", "Background", 0x07050f), num("backgroundOpacity", "Background opacity", 0, 1, 1)},
         renderBokeh, always);
+    list.back().paint = paintBokeh;
+    list.back().paintScale = 2;
     add("retro_grid", "Retro Grid", "Animated", "An endless neon grid racing towards a striped sunset.",
         {color("color", "Grid color", 0xff2bd6), num("speed", "Speed", 0, 5, 1), num("horizon", "Horizon", 0.3, 0.8, 0.55),
          flag("sun", "Sun", true)},
@@ -737,15 +831,20 @@ void addAnimatedGenerators(std::vector<GeneratorDef>& list)
         {color("color", "Color", 0x35ff69), num("speed", "Speed", 0.1, 5, 1), num("size", "Glyph size (% of height)", 1, 8, 2.4, 1, "%"),
          flag("background", "Black background", true)},
         renderDigitalRain, always);
+    list.back().paint = paintDigitalRain;
     add("confetti", "Confetti", "Overlays", "Falling, tumbling confetti over whatever is below.",
         {choice("palette", "Colors", {QStringLiteral("Party"), QStringLiteral("Gold")}), num("count", "Pieces", 10, 1000, 220, 0),
          num("speed", "Speed", 0.1, 4, 1), num("size", "Size", 0.3, 3, 1)},
         renderConfetti, always);
+    list.back().paint = paintConfetti;
+    list.back().paintScale = 2;
     add("progress_bar", "Progress Bar", "Overlays", "A bar that fills up over the length of the event.",
         {choice("position", "Position", {QStringLiteral("Bottom"), QStringLiteral("Top")}), num("height", "Height (% of frame)", 0.2, 10, 1.2, 1, "%"),
          num("margin", "Margin (% of frame)", 0, 10, 0, 1, "%"), color("color", "Bar color", 0xff3b3b), color("trackColor", "Track color", 0xffffff),
          num("trackOpacity", "Track opacity", 0, 1, 0.25), flag("rounded", "Rounded ends", false)},
         renderProgressBar, always);
+    list.back().paint = paintProgressBar;
+    list.back().paintScale = 2;
     add("letterbox", "Letterbox", "Overlays", "Cinema bars for a wider (or narrower) look; they can slide in and out.",
         {choice("aspect", "Aspect",
                 {QStringLiteral("2.39:1 (scope)"), QStringLiteral("2:1"), QStringLiteral("1.85:1"), QStringLiteral("4:3 (pillarbox)"),
@@ -753,6 +852,7 @@ void addAnimatedGenerators(std::vector<GeneratorDef>& list)
          color("color", "Color", 0x000000), num("opacity", "Opacity", 0, 1, 1), flag("animate", "Slide in and out", true),
          num("duration", "Slide duration", 0, 5, 0.6, 2, " s")},
         renderLetterbox, letterboxAnimating);
+    list.back().paint = paintLetterbox;
     add("shape", "Shape", "Overlays", "A rectangle, ellipse, star, heart, arrow or ring, with fill and outline. Drag it on the preview.",
         {choice("shape", "Shape", shapes, 1), num("x", "Position X", -0.5, 1.5, 0.5, 3), num("y", "Position Y", -0.5, 1.5, 0.5, 3),
          num("width", "Width (% of height)", 1, 400, 40, 1, "%"), num("height", "Height (% of height)", 1, 400, 40, 1, "%"),
@@ -760,6 +860,8 @@ void addAnimatedGenerators(std::vector<GeneratorDef>& list)
          num("corner", "Corner radius (%)", 0, 50, 15, 0, "%"), num("outline", "Outline width", 0, 60, 0, 1, " px"),
          color("outlineColor", "Outline color", 0xffffff)},
         renderShape, nullptr);
+    list.back().paint = paintShape;
+    list.back().paintScale = 2;
     add("kinetic_text", "Kinetic Text", "Text", "Words pop on one at a time, the newest highlighted, like social-media captions.",
         {text("text", "Text", QStringLiteral("Make every single word count"), true), font("font", "Font", "Arial Black"),
          num("size", "Size (% of height)", 1, 30, 9, 1, "%"), flag("bold", "Bold", true), color("color", "Color", 0xffffff),
@@ -768,12 +870,17 @@ void addAnimatedGenerators(std::vector<GeneratorDef>& list)
          num("y", "Position Y", -0.5, 1.5, 0.5, 3), num("outline", "Outline width", 0, 30, 0, 1, " px"),
          color("outlineColor", "Outline color", 0x000000)},
         renderKineticText, kineticAnimating);
+    list.back().paint = paintKineticText;
+    list.back().paintScale = 2;
     add("countdown", "Countdown Leader", "Text", "An old film-leader countdown with a sweeping hand, one number a second.",
         {num("start", "Count from", 1, 20, 5, 0), color("background", "Background", 0xc9c9c9), color("sweep", "Sweep", 0x7a7a7a),
          color("ink", "Lines and numbers", 0x141414)},
         renderCountdown, always);
+    list.back().paint = paintCountdown;
+    list.back().paintScale = 2;
     add("color_bars", "Color Bars", "Test Patterns", "SMPTE-style colour bars (or full-field 100% bars) for checking levels.",
         {choice("style", "Style", {QStringLiteral("SMPTE"), QStringLiteral("Full-field 100%")})}, renderColorBars, nullptr);
+    list.back().paint = paintColorBars;
 }
 
 void addAnimatedGeneratorPresets(std::vector<GeneratorPreset>& list)

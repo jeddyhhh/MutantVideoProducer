@@ -698,6 +698,16 @@ QImage Evaluator::run(const Graph& g, const QImage& source0, const RenderContext
     return eval(out->id);
 }
 
+QString problem(const Graph& g)
+{
+    if (std::none_of(g.nodes.begin(), g.nodes.end(), [](const Node& n) { return n.type == QLatin1String("output"); }))
+        return QStringLiteral("The graph has no Output node.");
+    for (const Node& n : g.nodes)
+        if (!findNode(n.type))
+            return QStringLiteral("This version has no \"%1\" node.").arg(n.type);
+    return {};
+}
+
 void graphFor(const Params& p, QString& text, Graph& graph)
 {
     const QString now = p.text(QStringLiteral("graph"));

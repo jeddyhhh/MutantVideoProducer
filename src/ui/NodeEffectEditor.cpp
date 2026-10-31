@@ -1,5 +1,6 @@
 #include "ui/NodeEffectEditor.h"
 #include "core/FrameConverter.h"
+#include "core/GpuCompositor.h"
 #include "core/Generators.h"
 #include "core/MediaInfo.h"
 #include "core/VideoDecoder.h"
@@ -31,6 +32,7 @@
 #include <QMenu>
 #include <QMessageBox>
 #include <QMimeData>
+#include <QOffscreenSurface>
 #include <QPainter>
 #include <QPlainTextEdit>
 #include <QPushButton>
@@ -726,7 +728,18 @@ void NodeEffectEditor::step()
     ctx.scale = double(frame.width()) / m_projectWidth;
     ctx.fps = 30;
     ctx.contentRect = QRectF(frame.rect());
-    m_result = m_eval.run(m_graph, frame, ctx, true);
+    if (!m_renderer) {
+        m_gpuSurface = createGpuSurface();
+        m_renderer = createFrameRenderer(false, m_gpuSurface.get());
+        m_gpu = dynamic_cast<GpuCompositor*>(m_renderer.get());
+    }
+    if (m_gpu && nodes::problem(m_graph).isEmpty()) {
+        m_eval.outputs.clear();
+        m_eval.error.clear();
+        m_result = m_gpu->renderGraph(m_graph, frame, ctx, &m_eval.outputs, QSize(int(nodeui::kThumbW), int(nodeui::kThumbH)));
+    } else {
+        m_result = m_eval.run(m_graph, frame, ctx, true);
+    }
     const qint64 ms = took.elapsed();
     auto show = [](QLabel* label, const QImage& img) {
         QPixmap pm = QPixmap::fromImage(img.scaled(label->size(), Qt::KeepAspectRatio, Qt::SmoothTransformation));

@@ -2,9 +2,13 @@
 
 #include "core/FrameRenderer.h"
 
+#include <map>
 #include <memory>
 
 class QOffscreenSurface;
+namespace nodes {
+struct Graph;
+}
 
 // OpenGL 3.3 renderer with the same output as the CPU Compositor:
 // YUV->RGB conversion, scaling, pan/crop, blending, effects and transitions
@@ -18,12 +22,15 @@ public:
 
     QImage render(const ProjectSnapshot& snap, TimeUs t, QSize outSize) override;
     QImage renderLive(const QImage& frame, const EffectChain& chain, TimeUs t, double fps, bool keepAlpha = false) override;
-    QImage renderLiveChains(const QImage& frame, const std::vector<const EffectChain*>& chains, TimeUs t, double fps) override;
+    QImage renderLiveFrame(const LiveFrameJob& job, QImage* clean = nullptr) override;
     QString name() const override;
     bool isGpu() const override { return true; }
     bool renderYuv(const ProjectSnapshot& snap, TimeUs t, AVFrame* frame) override;
     // Effects run through their CPU code so far (download/upload round trips).
     int cpuFallbacks() const;
+    // The Effect Builder's preview: `graph` on `source` (each node's state kept from one call to the next), with each
+    // node's picture, at most `thumb` big, in `thumbs`.
+    QImage renderGraph(const nodes::Graph& graph, const QImage& source, const RenderContext& ctx, std::map<int, QImage>* thumbs, QSize thumb);
 
     struct Impl;
 

@@ -20,41 +20,6 @@ namespace {
 
 using Clock = std::chrono::steady_clock;
 
-// Blends two live pictures (same size) with a transition at progress p.
-QImage liveTransition(const QImage& from, const QImage& to, double p, const TransitionSpec& spec, double fps)
-{
-    const TransitionDef* def = findTransition(spec.type);
-    if (!def)
-        def = findTransition(QStringLiteral("dissolve"));
-    if (!def || from.size() != to.size())
-        return to;
-    QImage out(to.size(), QImage::Format_ARGB32_Premultiplied);
-    out.fill(Qt::transparent);
-    RenderContext ctx;
-    ctx.scale = double(to.width()) / 1920.0;
-    ctx.fps = fps;
-    ctx.contentRect = QRectF(out.rect());
-    def->apply(out, &from, &to, std::clamp(p, 0.0, 1.0), resolveParams(def->params, spec.params, 0), ctx);
-    QImage flat(to.size(), QImage::Format_ARGB32_Premultiplied);
-    flat.fill(Qt::black);
-    QPainter(&flat).drawImage(0, 0, out);
-    return flat;
-}
-
-QPainter::CompositionMode composition(int blend)
-{
-    switch (BlendMode(blend)) {
-    case BlendMode::Add: return QPainter::CompositionMode_Plus;
-    case BlendMode::Screen: return QPainter::CompositionMode_Screen;
-    case BlendMode::Multiply: return QPainter::CompositionMode_Multiply;
-    case BlendMode::Overlay: return QPainter::CompositionMode_Overlay;
-    case BlendMode::Lighten: return QPainter::CompositionMode_Lighten;
-    case BlendMode::Darken: return QPainter::CompositionMode_Darken;
-    case BlendMode::Difference: return QPainter::CompositionMode_Difference;
-    default: return QPainter::CompositionMode_SourceOver;
-    }
-}
-
 // Where the layer goes in a picture of `out` size.
 QRect layerRect(QSize out, QSize layer, const LiveLayerSettings& s)
 {
@@ -70,17 +35,6 @@ QRect layerRect(QSize out, QSize layer, const LiveLayerSettings& s)
     case 4: return QRect((out.width() - w) / 2, (out.height() - h) / 2, w, h);
     default: return QRect(out.width() - m - w, out.height() - m - h, w, h);
     }
-}
-
-// The layer at `size`: whole (picture in picture) or filling it, cropped (full).
-QImage fitLayer(const QImage& layer, QSize size, bool cover)
-{
-    if (layer.size() == size)
-        return layer;
-    if (!cover)
-        return layer.scaled(size, Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
-    const QImage s = layer.scaled(size, Qt::KeepAspectRatioByExpanding, Qt::SmoothTransformation);
-    return s.copy((s.width() - size.width()) / 2, (s.height() - size.height()) / 2, size.width(), size.height());
 }
 
 // What the visualiser overlays draw: the spectrum (64 bands, 0..1, smoothed)
@@ -1048,57 +1002,63 @@ void LiveEngine::threadMain(Options o)
         // Modulated settings take their values for this frame.
         const ModInputs inputs = modInputs();
         auto chainNow = [&](const EffectChain& chain) { return hasModulation(chain) ? applyModulation(chain, inputs) : chain; };
-        // The layer, with its own FX, over the main picture.
+        // The frame: the layer with its own FX over the picture, the Live FX, then the active pad's chain (or, while
+        // switching, the previous pad's fading into it), then the held (momentary) pads'. In one go: on the GPU,
+        // one upload and one read back.
+        LiveFrameJob job;
+        job.frame = img;
+        job.time = liveTime;
+        job.fps = fps;
+        EffectChain layerFx;
         if (layerOpen) {
             const QImage layerImg = layer.latest();
             if (!layerImg.isNull()) {
-                const QRect r = layerRect(img.size(), layerImg.size(), layerSettings);
-                const bool full = layerSettings.mode == LiveLayerSettings::Mode::Full;
-                QImage l = fitLayer(layerImg.format() == QImage::Format_ARGB32_Premultiplied ? layerImg
-                                                                                              : layerImg.convertToFormat(QImage::Format_ARGB32_Premultiplied),
-                                    r.size(), full);
-                if (snap && hasActiveEffects(snap->timeline.liveLayerEffects))
-                    l = renderer->renderLive(l, chainNow(snap->timeline.liveLayerEffects), liveTime, fps, true);
-                if (img.format() != QImage::Format_ARGB32_Premultiplied)
-                    img = img.convertToFormat(QImage::Format_ARGB32_Premultiplied);
-                QPainter p(&img);
-                p.setOpacity(std::clamp(layerSettings.opacity, 0.0, 1.0));
-                p.setCompositionMode(composition(layerSettings.blend));
-                p.drawImage(r.topLeft(), l);
+                job.layer = layerImg;
+                job.layerRect = layerRect(img.size(), layerImg.size(), layerSettings);
+                job.layerCover = layerSettings.mode == LiveLayerSettings::Mode::Full;
+                job.layerOpacity = layerSettings.opacity;
+                job.layerBlend = layerSettings.blend;
+                if (snap && hasActiveEffects(snap->timeline.liveLayerEffects)) {
+                    layerFx = chainNow(snap->timeline.liveLayerEffects);
+                    job.layerFx = &layerFx;
+                }
             }
         }
-        // The Live FX, then the active pad's chain on top (and, while switching, the previous pad's, blended with
-        // the transition), then the held (momentary) pads'. Without a switch: all in one go (on the GPU: one upload).
         auto padChain = [&](int p) -> EffectChain {
             if (p < 0 || !snap || !hasActiveEffects(snap->timeline.livePads[size_t(p)].effects))
                 return {};
             return chainNow(snap->timeline.livePads[size_t(p)].effects);
         };
         const EffectChain liveFx = snap ? chainNow(snap->timeline.liveEffects) : kNone;
-        if (fading && std::chrono::duration<double>(Clock::now() - fadeStart).count() >= fadeSeconds)
-            fading = false;
+        job.liveFx = &liveFx;
+        EffectChain fromFx, toFx;
+        if (fading) {
+            const double progress = std::chrono::duration<double>(Clock::now() - fadeStart).count() / std::max(0.001, fadeSeconds);
+            if (progress >= 1.0) {
+                fading = false;
+            } else {
+                fromFx = padChain(fromPad);
+                toFx = padChain(pad);
+                job.fadeProgress = progress;
+                job.fadeFrom = &fromFx;
+                job.fadeTo = &toFx;
+                job.fadeSpec = fadeSpec;
+            }
+        }
         std::vector<EffectChain> after; // (the pads after the Live FX)
         if (!fading)
             after.push_back(padChain(pad));
         for (int h : held) // momentary pads, while held
             if (h != pad)
                 after.push_back(padChain(h));
-        QImage out;
-        if (fading) {
-            const double progress = std::chrono::duration<double>(Clock::now() - fadeStart).count() / std::max(0.001, fadeSeconds);
-            const QImage base = renderer->renderLive(img, liveFx, liveTime, fps);
-            const EffectChain from = padChain(fromPad), to = padChain(pad);
-            out = liveTransition(renderer->renderLive(base, from, liveTime, fps), renderer->renderLive(base, to, liveTime, fps), progress, fadeSpec, fps);
-            std::vector<const EffectChain*> rest;
-            for (const EffectChain& c : after)
-                rest.push_back(&c);
-            out = renderer->renderLiveChains(out, rest, liveTime, fps);
-        } else {
-            std::vector<const EffectChain*> chains{&liveFx};
-            for (const EffectChain& c : after)
-                chains.push_back(&c);
-            out = renderer->renderLiveChains(img, chains, liveTime, fps);
-        }
+        for (const EffectChain& c : after)
+            job.after.push_back(&c);
+        // The picture before the effects (with the layer), when a recording or the replay keeps that one.
+        const bool wantClean = job.layer.isNull() ? false : (wantRecording && !recordEffects) || (replayWanted && !replayEffects);
+        QImage clean;
+        QImage out = renderer->renderLiveFrame(job, wantClean ? &clean : nullptr);
+        if (wantClean && !clean.isNull())
+            img = clean;
         if (snap && !snap->timeline.liveOverlays.empty()) {
             double bpm;
             {
@@ -1145,9 +1105,15 @@ void LiveEngine::threadMain(Options o)
                     cueRenderer = createFrameRenderer(false, m_gpuSurface.get());
                 }
                 QImage base = img.width() > 640 ? img.scaledToWidth(640, Qt::SmoothTransformation) : img;
-                QImage cue = cueRenderer->renderLive(base, chainNow(*fx), liveTime, fps);
-                if (cuePad >= 0 && hasActiveEffects(snap->timeline.livePads[size_t(cuePad)].effects))
-                    cue = cueRenderer->renderLive(cue, chainNow(snap->timeline.livePads[size_t(cuePad)].effects), liveTime, fps);
+                LiveFrameJob cueJob;
+                cueJob.frame = base;
+                cueJob.time = liveTime;
+                cueJob.fps = fps;
+                const EffectChain cueFx = chainNow(*fx);
+                const EffectChain cuePadFx = cuePad >= 0 ? chainNow(snap->timeline.livePads[size_t(cuePad)].effects) : EffectChain{};
+                cueJob.liveFx = &cueFx;
+                cueJob.after = {&cuePadFx};
+                QImage cue = cueRenderer->renderLiveFrame(cueJob);
                 if (!overlays->empty()) {
                     double bpm;
                     {

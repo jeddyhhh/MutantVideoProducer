@@ -406,6 +406,117 @@ void main() {
 }
 )";
 
+// The motion between two frames (as flow::estimate, OpticalFlow.cpp), worked out on the GPU: uMode 0 a grey copy (as
+// QImage's Grayscale8), 1 half its size, 2 block matches for each cell of 8 pixels around the coarser level's guess,
+// 3 the 3 x 3 median of the vectors, 4 the vectors as fractions of the picture. Pixels by texelFetch, in float targets.
+const char* kFragFlow = R"(
+uniform sampler2D uA;    // the grey picture (r), or the vectors (rg)
+uniform sampler2D uB;    // match: the other grey picture
+uniform sampler2D uPrev; // match: the coarser level's vectors
+uniform int uMode;
+uniform ivec4 uI;        // match: search radius, whether there is a coarser level, its size
+uniform ivec2 uOut;      // the size drawn
+uniform vec2 uScale;     // fractions: 1 / the picture's size
+float at(sampler2D t, int x, int y) {
+    ivec2 s = textureSize(t, 0);
+    return texelFetch(t, ivec2(clamp(x, 0, s.x - 1), clamp(y, 0, s.y - 1)), 0).r;
+}
+float roundAway(float v) { return v < 0.0 ? -floor(-v + 0.5) : floor(v + 0.5); }
+float median9(float n[9]) {
+    for (int i = 0; i < 5; ++i)
+        for (int j = i + 1; j < 9; ++j)
+            if (n[j] < n[i]) { float t = n[i]; n[i] = n[j]; n[j] = t; }
+    return n[4];
+}
+void main() {
+    ivec2 p = ivec2(gl_FragCoord.xy);
+    if (uMode == 0) {
+        vec3 q = floor(texelFetch(uA, p, 0).rgb * 255.0 + 0.5);
+        fragColor = vec4(floor((q.r * 11.0 + q.g * 16.0 + q.b * 5.0) / 32.0), 0.0, 0.0, 1.0);
+    } else if (uMode == 1) {
+        int x = 2 * p.x, y = 2 * p.y;
+        fragColor = vec4(0.25 * (at(uA, x, y) + at(uA, x + 1, y) + at(uA, x, y + 1) + at(uA, x + 1, y + 1)), 0.0, 0.0, 1.0);
+    } else if (uMode == 2) {
+        vec2 guess = vec2(0.0);
+        if (uI.y != 0) {
+            ivec2 from = ivec2(min(p.x * uI.z / uOut.x, uI.z - 1), min(p.y * uI.w / uOut.y, uI.w - 1));
+            guess = texelFetch(uPrev, from, 0).rg * 2.0;
+        }
+        int gx = int(roundAway(guess.x)), gy = int(roundAway(guess.y));
+        int x0 = p.x * 8, y0 = p.y * 8, r = uI.x;
+        float best = 1e30;
+        int bx = gx, by = gy;
+        for (int dy = gy - r; dy <= gy + r; ++dy)
+            for (int dx = gx - r; dx <= gx + r; ++dx) {
+                float sad = 0.0;
+                for (int y = 0; y < 8 && sad < best; ++y)
+                    for (int x = 0; x < 8; ++x)
+                        sad += abs(at(uA, x0 + x, y0 + y) - at(uB, x0 + x + dx, y0 + y + dy));
+                sad += 0.5 * float(abs(dx - gx) + abs(dy - gy)); // (a little against wandering from the guess)
+                if (sad < best) { best = sad; bx = dx; by = dy; }
+            }
+        fragColor = vec4(float(bx), float(by), 0.0, 1.0);
+    } else if (uMode == 3) {
+        ivec2 s = textureSize(uA, 0);
+        float nx[9], ny[9];
+        int k = 0;
+        for (int j = -1; j <= 1; ++j)
+            for (int i = -1; i <= 1; ++i) {
+                vec2 v = texelFetch(uA, ivec2(clamp(p.x + i, 0, s.x - 1), clamp(p.y + j, 0, s.y - 1)), 0).rg;
+                nx[k] = v.x; ny[k] = v.y; ++k;
+            }
+        fragColor = vec4(median9(nx), median9(ny), 0.0, 1.0);
+    } else {
+        fragColor = vec4(texelFetch(uA, p, 0).rg * uScale, 0.0, 1.0);
+    }
+}
+)";
+
+// Generators the GPU works out itself (GeneratorsAnimated.cpp, the same formulas, at a quarter of the size as there):
+// uMode 0 Plasma (uP: time, scale, aspect, the number of colour stops in uC), 1 Aurora (uP: time, aspect; uC: the light,
+// top, sky and horizon colours).
+const char* kFragGen = R"(
+uniform int uMode;
+uniform vec4 uP;
+uniform vec4 uC[6];
+uniform vec2 uSize;
+float hash01(uint x, uint y, uint seed) { return float(hash32(x, y, seed) & 0xffffffu) / 16777216.0; }
+float valueNoise1(float x, uint seed) {
+    float i = floor(x), f = x - i;
+    float u = f * f * (3.0 - 2.0 * f);
+    uint xi = uint(int(i));
+    float a = hash01(xi, 0u, seed), b = hash01(xi + 1u, 0u, seed);
+    return a + (b - a) * u;
+}
+void main() {
+    vec2 at = gl_FragCoord.xy / uSize; // ((x + 0.5) / w, (y + 0.5) / h)
+    if (uMode == 0) {
+        float T = uP.x, sc = uP.y, aspect = uP.z;
+        float X = at.x * aspect * 3.0 / sc, Y = at.y * 3.0 / sc;
+        float v = sin(X + T) + sin(Y * 1.3 - T * 0.7) + sin((X + Y) * 0.7 + T * 0.5)
+                + sin(length(vec2(X - 1.5 * aspect / sc + sin(T * 0.3), Y - 1.5 / sc + cos(T * 0.4))) * 2.0 - T * 1.3);
+        float f = fract(v / 8.0 + 0.5 + T * 0.03);
+        int n = int(uP.w);
+        float g = (f < 0.5 ? f * 2.0 : 2.0 - f * 2.0) * float(n - 1);
+        int i = clamp(int(g), 0, n - 2);
+        vec3 c = mix(uC[i].rgb, uC[i + 1].rgb, clamp(g - float(i), 0.0, 1.0));
+        fragColor = vec4(floor(c * 255.0 + 0.5) / 255.0, 1.0);
+    } else {
+        float T = uP.x, X = at.x * uP.y, Y = at.y;
+        vec3 col = mix(uC[2].rgb, uC[3].rgb, Y);
+        for (int k = 0; k < 3; ++k) {
+            float yc = 0.32 + 0.1 * float(k) + 0.3 * (valueNoise1(X * 1.4 + float(k) * 7.1 + T * 0.12, 30u + uint(k)) - 0.5);
+            yc += 0.04 * sin(X * 6.0 + T * 0.8 + float(k));
+            float d = Y - yc;
+            float shape = d < 0.0 ? exp(d / 0.16) : exp(-d * d / 0.0009);
+            float rays = 0.45 + 0.55 * valueNoise1(X * 45.0 + float(k) * 13.0 + T * 0.5, 40u + uint(k));
+            col += mix(uC[0].rgb, uC[1].rgb, clamp(-d * 3.5, 0.0, 1.0)) * (shape * rays * (0.85 - 0.2 * float(k)));
+        }
+        fragColor = vec4(floor(clamp(col, 0.0, 1.0) * 255.0) / 255.0, 1.0);
+    }
+}
+)";
+
 const char* kFragRackBlend = R"(
 uniform sampler2D uBase;
 uniform sampler2D uLayer;
@@ -915,7 +1026,7 @@ struct GpuCompositor::Impl : protected QOpenGLExtraFunctions {
     QSize uploadSize;
     std::unique_ptr<QOpenGLShaderProgram> progTex, progSolid, progYuv, progLut, progMatrix, progBlur, progSharpen,
         progBright, progScreen, progVignette, progKey, progNoise, progPixelate, progTransition, progTransitionFx, progRackBlend, progWarp,
-        progChroma, progRadialPass, progCrt, progPsy, progFx, progDiffuse, progConsole, progVgMesh, progLut3D, progEncodeYuv, progMaxAlpha, progFlowMix, progMatte, progDenoise, progNode;
+        progChroma, progRadialPass, progCrt, progPsy, progFx, progDiffuse, progConsole, progVgMesh, progLut3D, progEncodeYuv, progMaxAlpha, progFlowMix, progMatte, progDenoise, progNode, progFlow, progGen;
     // .cube LUTs as 3D textures, by the loaded table (kept while it is in the file cache).
     std::map<const CubeLut*, std::pair<std::shared_ptr<const CubeLut>, GLuint>> lut3dTextures;
     GLuint meshVao = 0, meshVbo = 0;
@@ -946,6 +1057,7 @@ struct GpuCompositor::Impl : protected QOpenGLExtraFunctions {
             return;
         for (auto& [id, cache] : sequenceResources) deleteSequenceResources(*cache);
         effectStates.clear(); // GPU effect states own textures
+        builderState.reset();
         for (auto& e : entries)
             deleteEntryGl(*e);
         for (auto& [id, g] : generators)
@@ -979,6 +1091,8 @@ struct GpuCompositor::Impl : protected QOpenGLExtraFunctions {
         progMatte.reset();
         progDenoise.reset();
         progNode.reset();
+        progFlow.reset();
+        progGen.reset();
         progWarp.reset();
         progChroma.reset();
         progRadialPass.reset();
@@ -1033,7 +1147,7 @@ struct GpuCompositor::Impl : protected QOpenGLExtraFunctions {
                         {&progRackBlend, kFragRackBlend}, {&progWarp, kFragWarp}, {&progChroma, kFragChroma},
                         {&progRadialPass, kFragRadialPass}, {&progCrt, kFragCrt}, {&progPsy, kFragPsy},
                         {&progFx, gpufx::kFragFx}, {&progLut3D, kFragLut3D}, {&progMaxAlpha, kFragMaxAlpha}, {&progFlowMix, kFragFlowMix},
-                        {&progMatte, kFragMatte}, {&progDenoise, kFragDenoise}, {&progNode, kFragNode}};
+                        {&progMatte, kFragMatte}, {&progDenoise, kFragDenoise}, {&progNode, kFragNode}, {&progFlow, kFragFlow}, {&progGen, kFragGen}};
         for (auto& p : programs) {
             auto prog = std::make_unique<QOpenGLShaderProgram>();
             if (!prog->addShaderFromSourceCode(QOpenGLShader::Vertex, kVertex)
@@ -1349,6 +1463,79 @@ struct GpuCompositor::Impl : protected QOpenGLExtraFunctions {
         return true;
     }
 
+    // The motion from picture a to b (as flow::estimate, on the GPU), into the RG texture `tex` (made, or remade at a
+    // new size, as needed). MVP_CPU_FLOW=1: worked out on the CPU from small copies read back, as before.
+    bool motion(const Target& a, const Target& b, GLuint& tex, QSize& size)
+    {
+        if (a.size() != b.size() || !a)
+            return false;
+        if (qEnvironmentVariableIsSet("MVP_CPU_FLOW"))
+            return uploadFlow(flow::estimate(smallCopy(a), smallCopy(b)), tex, size);
+        constexpr int kLevels = 3, kBlock = 8;
+        const QSize small = flow::analysisSize(a.size());
+        auto pass = [&](const Target& dst, int mode, const Target* t0, const Target* t1, const Target* t2) {
+            progFlow->bind();
+            bindTexture(0, t0 ? t0->tex : emptyTex);
+            bindTexture(1, t1 ? t1->tex : emptyTex);
+            bindTexture(2, t2 ? t2->tex : emptyTex);
+            progFlow->setUniformValue("uA", 0);
+            progFlow->setUniformValue("uB", 1);
+            progFlow->setUniformValue("uPrev", 2);
+            progFlow->setUniformValue("uMode", mode);
+            glUniform2i(progFlow->uniformLocation("uOut"), dst.w, dst.h);
+            fullscreen(*progFlow, dst);
+        };
+        // Grey copies at the analysis size, and their pyramids.
+        std::vector<Layer> pa, pb;
+        for (const Target* from : {&a, &b}) {
+            Layer copy = acquire(small, false);
+            drawTexture(*copy, from->tex, QSizeF(from->w, from->h),
+                        QTransform::fromScale(double(small.width()) / from->w, double(small.height()) / from->h), 1.0, QRectF(0, 0, 1, 1), false);
+            std::vector<Layer>& py = from == &a ? pa : pb;
+            py.push_back(acquire(small, false, GL_RGBA32F));
+            pass(*py.back(), 0, &*copy, nullptr, nullptr);
+            for (int l = 1; l < kLevels; ++l) {
+                const Target& up = *py.back();
+                Layer down = acquire(QSize(std::max(1, up.w / 2), std::max(1, up.h / 2)), false, GL_RGBA32F);
+                pass(*down, 1, &up, nullptr, nullptr);
+                py.push_back(std::move(down));
+            }
+        }
+        // Coarse to fine: the smallest level searches widest, each finer one refines the guess doubled up from the last.
+        Layer vectors;
+        for (int l = kLevels - 1; l >= 0; --l) {
+            const QSize cells(std::max(1, (pa[size_t(l)]->w + kBlock - 1) / kBlock), std::max(1, (pa[size_t(l)]->h + kBlock - 1) / kBlock));
+            Layer matched = acquire(cells, false, GL_RGBA32F);
+            progFlow->bind();
+            setI(*progFlow, "uI", l == kLevels - 1 ? 6 : 2, vectors ? 1 : 0, vectors ? vectors->w : 0, vectors ? vectors->h : 0);
+            pass(*matched, 2, &*pa[size_t(l)], &*pb[size_t(l)], vectors ? &*vectors : nullptr);
+            Layer smoothed = acquire(cells, false, GL_RGBA32F);
+            pass(*smoothed, 3, &*matched, nullptr, nullptr);
+            vectors = std::move(smoothed);
+        }
+        // As fractions of the picture, into the texture the shaders read.
+        if (!tex || size != vectors->size()) {
+            if (tex)
+                glDeleteTextures(1, &tex);
+            tex = makeTexture(vectors->w, vectors->h, GL_RG32F, GL_LINEAR);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+            size = vectors->size();
+        }
+        Target out;
+        out.tex = tex;
+        out.w = vectors->w;
+        out.h = vectors->h;
+        out.fmt = GL_RG32F;
+        glGenFramebuffers(1, &out.fbo);
+        glBindFramebuffer(GL_FRAMEBUFFER, out.fbo);
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, tex, 0);
+        progFlow->bind();
+        progFlow->setUniformValue("uScale", QVector2D(1.0f / float(small.width()), 1.0f / float(small.height())));
+        pass(out, 4, &*vectors, nullptr, nullptr);
+        glDeleteFramebuffers(1, &out.fbo);
+        return true;
+    }
+
     // The decoded frame with its noise reduced (flow::denoise), kept until the frame or the strength changes.
     Target* denoised(Entry& e, double strength)
     {
@@ -1360,9 +1547,8 @@ struct GpuCompositor::Impl : protected QOpenGLExtraFunctions {
         const AVFrame* next = e.decoder->nextFrame();
         const bool hasPrev = prev && convertFrame(e, prev, e.prevRgba, e.prevRgbaPts, pp) && e.prevRgba.size() == e.rgba.size();
         const bool hasNext = next && convertFrame(e, next, e.nextRgba, e.nextRgbaPts, e.decoder->nextPts()) && e.nextRgba.size() == e.rgba.size();
-        const QImage cur = hasPrev || hasNext ? smallCopy(e.rgba) : QImage();
-        const bool prevFlow = hasPrev && uploadFlow(flow::estimate(cur, smallCopy(e.prevRgba)), e.prevFlowTex, e.prevFlowSize);
-        const bool nextFlow = hasNext && uploadFlow(flow::estimate(cur, smallCopy(e.nextRgba)), e.nextFlowTex, e.nextFlowSize);
+        const bool prevFlow = hasPrev && motion(e.rgba, e.prevRgba, e.prevFlowTex, e.prevFlowSize);
+        const bool nextFlow = hasNext && motion(e.rgba, e.nextRgba, e.nextFlowTex, e.nextFlowSize);
         if (!e.denoised || e.denoised.size() != e.rgba.size()) {
             deleteTarget(e.denoised);
             e.denoised = createTarget(e.rgba.size());
@@ -1609,8 +1795,8 @@ struct GpuCompositor::Impl : protected QOpenGLExtraFunctions {
                 if (w > 0.02 && w < 0.98 && convertFrame(*e, next, e->nextRgba, e->nextRgbaPts, p1)
                     && e->nextRgba.size() == e->rgba.size()) {
                     if (e->flowPts != p0 || !e->flowTex) {
-                        // The motion, from small copies of the two read back (the same for every frame in between).
-                        if (uploadFlow(flow::estimate(smallCopy(e->rgba), smallCopy(e->nextRgba)), e->flowTex, e->flowSize))
+                        // The motion between the two (the same for every frame in between).
+                        if (motion(e->rgba, e->nextRgba, e->flowTex, e->flowSize))
                             e->flowPts = p0;
                     }
                     if (e->flowTex && e->flowPts == p0) {
@@ -1652,10 +1838,41 @@ struct GpuCompositor::Impl : protected QOpenGLExtraFunctions {
     bool paintGenerator(const GeneratorDef& def, Target& target, QSize size, int paintScale, const Params& params, const GeneratorContext& ctx)
     {
         bool painted = false;
+        if (def.gpuShader) { // worked out at a quarter of the size, as its render() does, then smoothed up
+            const QSize small(std::max(8, (size.width() + 3) / 4), std::max(8, (size.height() + 3) / 4));
+            Layer sky = acquire(small, false);
+            progGen->bind();
+            const double T = double(ctx.time) / double(kUsPerSecond) * params.num(QStringLiteral("speed"));
+            const double aspect = double(size.width()) / std::max(1, size.height());
+            QVector4D colours[6];
+            if (def.id == QLatin1String("plasma")) {
+                const std::vector<QColor> stops = plasmaPalette(params.choice(QStringLiteral("palette")));
+                for (size_t i = 0; i < stops.size() && i < 6; ++i)
+                    colours[i] = QVector4D(float(stops[i].redF()), float(stops[i].greenF()), float(stops[i].blueF()), 1);
+                progGen->setUniformValue("uMode", 0);
+                progGen->setUniformValue("uP", QVector4D(float(T), float(std::max(0.05, params.num(QStringLiteral("scale")))), float(aspect),
+                                                         float(std::min<size_t>(stops.size(), 6))));
+            } else {
+                int i = 0;
+                for (const char* id : {"color1", "color2", "sky", "horizon"}) {
+                    const QColor c = params.color(QLatin1String(id));
+                    colours[i++] = QVector4D(float(c.redF()), float(c.greenF()), float(c.blueF()), 1);
+                }
+                progGen->setUniformValue("uMode", 1);
+                progGen->setUniformValue("uP", QVector4D(float(T), float(aspect), 0, 0));
+            }
+            progGen->setUniformValueArray("uC", colours, 6);
+            progGen->setUniformValue("uSize", QVector2D(float(small.width()), float(small.height())));
+            fullscreen(*progGen, *sky);
+            drawTexture(target, sky->tex, QSizeF(target.size()), QTransform(), 1.0, QRectF(0, 0, 1, 1), false);
+            if (!def.paintOver)
+                return true;
+        }
         ensureStencil(target);
         glBindFramebuffer(GL_FRAMEBUFFER, target.fbo);
         if (glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE) {
-            clear(target, 0, 0, 0, 0);
+            if (!def.gpuShader)
+                clear(target, 0, 0, 0, 0);
             glStencilMask(0xffffffffu);
             glClearStencil(0);
             glClear(GL_STENCIL_BUFFER_BIT);
@@ -1667,7 +1884,7 @@ struct GpuCompositor::Impl : protected QOpenGLExtraFunctions {
             QPainter painter(&device);
             painter.scale(paintScale,paintScale);
             if (painter.isActive())
-                painted = def.paint(painter, size, params, ctx);
+                painted = def.gpuShader ? def.paintOver(painter, size, params, ctx) : def.paint(painter, size, params, ctx);
             painter.end();
             motion::setGpuPictures(nullptr);
         }
@@ -2088,6 +2305,30 @@ struct GpuCompositor::Impl : protected QOpenGLExtraFunctions {
         return out;
     }
 
+    std::unique_ptr<EffectState> builderState; // renderGraph's (the Effect Builder's preview)
+
+    QImage renderGraph(const nodes::Graph& graph, const QImage& source, const RenderContext& ctx, std::map<int, QImage>* thumbs, QSize thumb)
+    {
+        if (source.isNull() || !context->makeCurrent(surface))
+            return source;
+        ++tick;
+        auto* s = dynamic_cast<NodeGraphState*>(builderState.get());
+        if (!s) {
+            auto fresh = std::make_unique<NodeGraphState>();
+            fresh->owner = this;
+            s = fresh.get();
+            builderState = std::move(fresh);
+        }
+        s->graph = graph;
+        Layer layer = acquire(source.size(), false);
+        upload(*layer, source);
+        evalGraph(*s, layer, ctx, thumbs, thumb);
+        QImage img = download(*layer);
+        layer.reset();
+        evict();
+        return img;
+    }
+
     void nodeGraphEffect(const Params& p, Layer& layer, const RenderContext& ctx, std::unique_ptr<EffectState>& state)
     {
         auto* s = dynamic_cast<NodeGraphState*>(state.get());
@@ -2098,6 +2339,13 @@ struct GpuCompositor::Impl : protected QOpenGLExtraFunctions {
             state = std::move(fresh);
         }
         nodes::graphFor(p, s->text, s->graph);
+        evalGraph(*s, layer, ctx, nullptr, {});
+    }
+
+    // The graph in `s` on `layer` (its result replaces it); each node's picture, at most `thumb` big, into `thumbs`.
+    void evalGraph(NodeGraphState& state, Layer& layer, const RenderContext& ctx, std::map<int, QImage>* thumbs, QSize thumb)
+    {
+        NodeGraphState* s = &state;
         const nodes::Graph& g = s->graph;
         const nodes::Node* output = nullptr;
         for (const nodes::Node& n : g.nodes)
@@ -2142,6 +2390,13 @@ struct GpuCompositor::Impl : protected QOpenGLExtraFunctions {
                 out = gpuNode(*def, *n, in, pr, nc, *s, st.state);
             }
             visiting.erase(id);
+            if (thumbs && out) { // (drawn small on the GPU, so only that is read back)
+                const QSize ts = out->size().scaled(thumb, Qt::KeepAspectRatio).expandedTo(QSize(1, 1));
+                Layer small = acquire(ts);
+                ensureMipmaps(*out);
+                drawTexture(*small, out->tex, QSizeF(ts), QTransform(), 1.0, QRectF(0, 0, 1, 1), false);
+                (*thumbs)[id] = download(*small);
+            }
             return (done[id] = std::move(out)).get();
         };
         const Target* result = eval(output->id);
@@ -3889,18 +4144,16 @@ struct GpuCompositor::Impl : protected QOpenGLExtraFunctions {
     // The chains one after the other, each flattened onto black (unless keepAlpha), with one upload and one read back.
     QImage renderLive(const QImage& frame, const std::vector<const EffectChain*>& all, TimeUs t, double fps, bool keepAlpha)
     {
-        std::vector<const EffectChain*> chains;
-        for (const EffectChain* c : all)
-            if (c && hasActiveEffects(*c))
-                chains.push_back(c);
-        if (frame.isNull() || chains.empty())
-            return frame;
-        if (!context->makeCurrent(surface))
-            return {};
-        ++tick;
-        const QSize size = frame.size();
-        Layer canvas = acquire(size, false);
-        upload(*canvas, frame);
+        LiveFrameJob job;
+        job.frame = frame;
+        job.after = all;
+        job.time = t;
+        job.fps = fps;
+        return renderLiveFrame(job, nullptr, keepAlpha);
+    }
+
+    RenderContext liveContext(QSize size, TimeUs t, double fps) const
+    {
         RenderContext ctx;
         ctx.time = t; // (no events: local time is the Live tab's, so animated sources in user effects move)
         ctx.timelineTime = t;
@@ -3908,15 +4161,99 @@ struct GpuCompositor::Impl : protected QOpenGLExtraFunctions {
         ctx.fps = fps;
         ctx.highQuality = highQuality;
         ctx.contentRect = QRectF(0, 0, size.width(), size.height());
-        for (const EffectChain* c : chains) {
-            applyChain(*c, canvas, ctx);
-            if (keepAlpha)
-                continue;
-            Layer flat = acquire(size, false);
-            clear(*flat, 0, 0, 0, 1);
-            drawLayer(*flat, *canvas, 1.0);
-            canvas = std::move(flat);
+        return ctx;
+    }
+
+    // A chain on the picture, flattened onto black after (unless keepAlpha); nothing when it has nothing on.
+    void liveChain(const EffectChain* chain, Layer& canvas, const RenderContext& ctx, bool keepAlpha)
+    {
+        if (!chain || !hasActiveEffects(*chain))
+            return;
+        const QSize size = canvas->size();
+        applyChain(*chain, canvas, ctx);
+        if (keepAlpha)
+            return;
+        Layer flat = acquire(size, false);
+        clear(*flat, 0, 0, 0, 1);
+        drawLayer(*flat, *canvas, 1.0);
+        canvas = std::move(flat);
+    }
+
+    // As FrameRenderer::renderLiveFrame (the CPU's), with one upload (two with a layer) and one read back.
+    QImage renderLiveFrame(const LiveFrameJob& job, QImage* clean, bool keepAlpha = false)
+    {
+        auto active = [](const EffectChain* c) { return c && hasActiveEffects(*c); };
+        const bool layer = !job.layer.isNull() && !job.layerRect.isEmpty();
+        bool any = layer || job.fadeProgress >= 0 || active(job.liveFx);
+        for (const EffectChain* c : job.after)
+            any = any || active(c);
+        if (job.frame.isNull() || !any) {
+            if (clean)
+                *clean = job.frame;
+            return job.frame;
         }
+        if (!context->makeCurrent(surface))
+            return {};
+        ++tick;
+        const QSize size = job.frame.size();
+        const RenderContext ctx = liveContext(size, job.time, job.fps);
+        Layer canvas = acquire(size, false);
+        upload(*canvas, job.frame);
+        if (layer) {
+            // Fitted into its place (cropped to fill it, or squeezed in), its own FX, then laid over.
+            const QSize ls = job.layer.size(), rs = job.layerRect.size();
+            Layer src = acquire(ls, false);
+            upload(*src, job.layer);
+            QRectF uv(0, 0, 1, 1);
+            if (job.layerCover) {
+                const double k = std::max(double(rs.width()) / ls.width(), double(rs.height()) / ls.height());
+                const double vw = rs.width() / k / ls.width(), vh = rs.height() / k / ls.height();
+                uv = QRectF((1 - vw) / 2, (1 - vh) / 2, vw, vh);
+            }
+            Layer fitted = acquire(rs, false);
+            drawTexture(*fitted, src->tex, QSizeF(rs), QTransform(), 1.0, uv, false);
+            src.reset();
+            liveChain(job.layerFx, fitted, liveContext(rs, job.time, job.fps), true);
+            const float opacity = float(std::clamp(job.layerOpacity, 0.0, 1.0));
+            const QTransform at = QTransform::fromTranslate(job.layerRect.x(), job.layerRect.y());
+            if (BlendMode(job.layerBlend) == BlendMode::Normal) {
+                drawTexture(*canvas, fitted->tex, QSizeF(rs), at, opacity);
+            } else {
+                Layer placed = acquire(size); // (see-through around it: the blends leave the picture there)
+                drawTexture(*placed, fitted->tex, QSizeF(rs), at, 1.0, QRectF(0, 0, 1, 1), false);
+                Layer out = acquire(size, false); // (the rack's blends: QPainter's modes at an opacity)
+                progRackBlend->bind();
+                bindTexture(0, canvas->tex);
+                bindTexture(1, placed->tex);
+                progRackBlend->setUniformValue("uBase", 0);
+                progRackBlend->setUniformValue("uLayer", 1);
+                progRackBlend->setUniformValue("uOpacity", opacity);
+                progRackBlend->setUniformValue("uMode", job.layerBlend);
+                fullscreen(*progRackBlend, *out);
+                canvas = std::move(out);
+            }
+            if (clean)
+                *clean = download(*canvas);
+        } else if (clean) {
+            *clean = job.frame;
+        }
+        liveChain(job.liveFx, canvas, ctx, keepAlpha);
+        if (job.fadeProgress >= 0) {
+            Layer from = acquire(size, false), to = acquire(size, false);
+            drawLayerReplace(*from, *canvas);
+            drawLayerReplace(*to, *canvas);
+            liveChain(job.fadeFrom, from, ctx, false);
+            liveChain(job.fadeTo, to, ctx, false);
+            Layer mixed = acquire(size);
+            RenderContext tc = ctx;
+            tc.timelineTime = 0; // (its settings as liveTransition reads them)
+            applyTransition(job.fadeSpec, *mixed, &*from, &*to, job.fadeProgress, 1.0, tc);
+            canvas = acquire(size, false);
+            clear(*canvas, 0, 0, 0, 1);
+            drawLayer(*canvas, *mixed, 1.0);
+        }
+        for (const EffectChain* c : job.after)
+            liveChain(c, canvas, ctx, keepAlpha);
         QImage img = download(*canvas);
         canvas.reset();
         evict();
@@ -3951,9 +4288,9 @@ QImage GpuCompositor::renderLive(const QImage& frame, const EffectChain& chain, 
     return d->renderLive(frame, {&chain}, t, fps, keepAlpha);
 }
 
-QImage GpuCompositor::renderLiveChains(const QImage& frame, const std::vector<const EffectChain*>& chains, TimeUs t, double fps)
+QImage GpuCompositor::renderLiveFrame(const LiveFrameJob& job, QImage* clean)
 {
-    return d->renderLive(frame, chains, t, fps, false);
+    return d->renderLiveFrame(job, clean);
 }
 
 QImage GpuCompositor::render(const ProjectSnapshot& snap, TimeUs t, QSize outSize)
@@ -3965,6 +4302,12 @@ bool GpuCompositor::renderYuv(const ProjectSnapshot& snap, TimeUs t, AVFrame* fr
 {
     d->useProxies = m_useProxies;
     return d->renderYuv(snap, t, frame);
+}
+
+QImage GpuCompositor::renderGraph(const nodes::Graph& graph, const QImage& source, const RenderContext& ctx, std::map<int, QImage>* thumbs,
+                                  QSize thumb)
+{
+    return d->renderGraph(graph, source, ctx, thumbs, thumb);
 }
 
 int GpuCompositor::cpuFallbacks() const

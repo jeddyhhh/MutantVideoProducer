@@ -571,3 +571,81 @@ QImage Compositor::renderLive(const QImage& frame, const EffectChain& chain, Tim
     evict();
     return flat;
 }
+
+// ---- The Live tab's frame, on the CPU ----
+
+QImage fitLayer(const QImage& layer, QSize size, bool cover)
+{
+    if (layer.size() == size)
+        return layer;
+    if (!cover)
+        return layer.scaled(size, Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
+    const QImage s = layer.scaled(size, Qt::KeepAspectRatioByExpanding, Qt::SmoothTransformation);
+    return s.copy((s.width() - size.width()) / 2, (s.height() - size.height()) / 2, size.width(), size.height());
+}
+
+QImage liveTransition(const QImage& from, const QImage& to, double p, const TransitionSpec& spec, double fps)
+{
+    const TransitionDef* def = findTransition(spec.type);
+    if (!def)
+        def = findTransition(QStringLiteral("dissolve"));
+    if (!def || from.size() != to.size())
+        return to;
+    QImage out(to.size(), QImage::Format_ARGB32_Premultiplied);
+    out.fill(Qt::transparent);
+    RenderContext ctx;
+    ctx.scale = double(to.width()) / 1920.0;
+    ctx.fps = fps;
+    ctx.contentRect = QRectF(out.rect());
+    def->apply(out, &from, &to, std::clamp(p, 0.0, 1.0), resolveParams(def->params, spec.params, 0), ctx);
+    QImage flat(to.size(), QImage::Format_ARGB32_Premultiplied);
+    flat.fill(Qt::black);
+    QPainter(&flat).drawImage(0, 0, out);
+    return flat;
+}
+
+namespace {
+QPainter::CompositionMode composition(int blend)
+{
+    switch (BlendMode(blend)) {
+    case BlendMode::Add: return QPainter::CompositionMode_Plus;
+    case BlendMode::Screen: return QPainter::CompositionMode_Screen;
+    case BlendMode::Multiply: return QPainter::CompositionMode_Multiply;
+    case BlendMode::Overlay: return QPainter::CompositionMode_Overlay;
+    case BlendMode::Lighten: return QPainter::CompositionMode_Lighten;
+    case BlendMode::Darken: return QPainter::CompositionMode_Darken;
+    case BlendMode::Difference: return QPainter::CompositionMode_Difference;
+    default: return QPainter::CompositionMode_SourceOver;
+    }
+}
+QImage premultiplied(const QImage& img)
+{
+    return img.format() == QImage::Format_ARGB32_Premultiplied ? img : img.convertToFormat(QImage::Format_ARGB32_Premultiplied);
+}
+} // namespace
+
+QImage FrameRenderer::renderLiveFrame(const LiveFrameJob& job, QImage* clean)
+{
+    static const EffectChain kNone;
+    QImage img = job.frame;
+    if (!job.layer.isNull() && !img.isNull()) {
+        QImage l = fitLayer(premultiplied(job.layer), job.layerRect.size(), job.layerCover);
+        if (job.layerFx && hasActiveEffects(*job.layerFx))
+            l = renderLive(l, *job.layerFx, job.time, job.fps, true);
+        img = premultiplied(img);
+        QPainter p(&img);
+        p.setOpacity(std::clamp(job.layerOpacity, 0.0, 1.0));
+        p.setCompositionMode(composition(job.layerBlend));
+        p.drawImage(job.layerRect.topLeft(), l);
+    }
+    if (clean)
+        *clean = img;
+    QImage out = renderLive(img, job.liveFx ? *job.liveFx : kNone, job.time, job.fps);
+    if (job.fadeProgress >= 0)
+        out = liveTransition(renderLive(out, job.fadeFrom ? *job.fadeFrom : kNone, job.time, job.fps),
+                             renderLive(out, job.fadeTo ? *job.fadeTo : kNone, job.time, job.fps), job.fadeProgress, job.fadeSpec, job.fps);
+    for (const EffectChain* c : job.after)
+        if (c)
+            out = renderLive(out, *c, job.time, job.fps);
+    return out;
+}

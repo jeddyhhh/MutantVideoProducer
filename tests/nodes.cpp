@@ -5,6 +5,7 @@
 #include "core/Compositor.h"
 #include "core/FFmpeg.h"
 #include "core/FrameRenderer.h"
+#include "core/GpuCompositor.h"
 #include "core/NodeGraph.h"
 #include "core/Project.h"
 #include "core/TimelineOps.h"
@@ -265,6 +266,9 @@ int main(int argc, char** argv)
                                        {QStringLiteral("threshold"), {}}, {QStringLiteral("displace"), {}}, {QStringLiteral("displace"), {{QStringLiteral("use"), 1}}},
                                        {QStringLiteral("place"), {{QStringLiteral("x"), 0.2}, {QStringLiteral("rotation"), 30}}}, {QStringLiteral("delay"), {{QStringLiteral("frames"), 2}}},
                                        {QStringLiteral("fx.glow"), {}}, {QStringLiteral("gen.retro_grid"), {}}, {QStringLiteral("gen.hyperspace"), {}}};
+            for (const char* gen : {"plasma_neon", "aurora", "bokeh_warm", "digital_rain", "confetti", "progress_bar", "letterbox",
+                                    "shape_heart", "kinetic_text", "countdown", "bars_smpte"})
+                cases.push_back({QStringLiteral("gen.") + QLatin1String(gen), {}});
             for (int op = 0; op < 8; ++op)
                 cases.push_back({QStringLiteral("math"), {{QStringLiteral("op"), op}}});
             for (int ch = 0; ch < 5; ++ch)
@@ -313,9 +317,80 @@ int main(int argc, char** argv)
                 EffectChain padFx{makeEffect(*findEffect(QStringLiteral("rgb_split")), 12)};
                 auto one = createFrameRenderer(false, surface.get(), nullptr), both = createFrameRenderer(false, surface.get(), nullptr);
                 const QImage apart = one->renderLive(one->renderLive(pic, liveFx, 0, 30), padFx, 0, 30);
-                const QImage together = both->renderLiveChains(pic, {&liveFx, &kNoChain, &padFx}, 0, 30);
+                LiveFrameJob job;
+                job.frame = pic;
+                job.liveFx = &liveFx;
+                job.after = {&kNoChain, &padFx};
+                const QImage together = both->renderLiveFrame(job);
                 check(difference(apart, together) < 0.01, QStringLiteral("the Live FX and a pad in one go draw as one after the other (%1 off)")
                                                               .arg(difference(apart, together), 0, 'f', 3));
+            }
+            {
+                // The Live tab's whole frame in one go on the GPU as on the CPU: a layer in each blend mode (with its own
+                // FX, cropped to fill or squeezed into a corner), the Live FX, a pad switch half way, held pads, and the
+                // picture before the effects.
+                const QImage second = testPicture(QSize(320, 240)).mirrored(true, false);
+                const EffectChain liveFx{makeEffect(*findEffect(QStringLiteral("hsl")), 21)};
+                const EffectChain layerFx{makeEffect(*findEffect(QStringLiteral("gaussian_blur")), 22)};
+                const EffectChain padA{makeEffect(*findEffect(QStringLiteral("invert")), 23)};
+                const EffectChain padB{makeEffect(*findEffect(QStringLiteral("rgb_split")), 24)};
+                QStringList bad;
+                double worst = 0;
+                for (int blend = 0; blend < 8; ++blend)
+                    for (int fade = 0; fade < 2; ++fade) {
+                        LiveFrameJob job;
+                        job.frame = pic;
+                        job.layer = second;
+                        job.layerCover = blend % 2 == 1;
+                        job.layerRect = job.layerCover ? QRect(QPoint(0, 0), pic.size()) : QRect(400, 200, 200, 150);
+                        job.layerOpacity = 0.8;
+                        job.layerBlend = blend;
+                        job.layerFx = blend == 2 ? &layerFx : nullptr;
+                        job.liveFx = &liveFx;
+                        if (fade) {
+                            job.fadeProgress = 0.4;
+                            job.fadeFrom = &padA;
+                            job.fadeTo = &padB;
+                            job.fadeSpec.type = blend < 4 ? QStringLiteral("dissolve") : QStringLiteral("wipe");
+                        } else {
+                            job.after = {&padB};
+                        }
+                        Compositor cpu;
+                        auto g = createFrameRenderer(false, surface.get(), nullptr);
+                        QImage cleanCpu, cleanGpu;
+                        const double d = difference(cpu.renderLiveFrame(job, &cleanCpu), g->renderLiveFrame(job, &cleanGpu));
+                        const double dc = difference(cleanCpu, cleanGpu);
+                        worst = std::max({worst, d, dc});
+                        if (d > 2.0 || dc > 2.0)
+                            bad << QStringLiteral("blend %1%2 (%3, clean %4)").arg(blend).arg(fade ? " fading" : "").arg(d, 0, 'f', 1).arg(dc, 0, 'f', 1);
+                    }
+                check(bad.isEmpty(), QStringLiteral("the Live tab's frame (layer, Live FX, pad switch) on the GPU as on the CPU (worst %1; off: %2)")
+                                         .arg(worst, 0, 'f', 2)
+                                         .arg(bad.isEmpty() ? QStringLiteral("none") : bad.join(QStringLiteral(", "))));
+            }
+            {
+                // The Effect Builder's preview on the GPU: the result and each node's thumbnail as the CPU's evaluator.
+                auto g = createFrameRenderer(false, surface.get(), nullptr);
+                auto* gc = dynamic_cast<GpuCompositor*>(g.get());
+                nodes::Graph graph;
+                nodes::load(QDir(nodes::examplesFolder()).filePath(QStringLiteral("Split Reality.mvpfx")), &graph, nullptr);
+                RenderContext rc;
+                rc.scale = 640 / 1920.0;
+                rc.fps = 30;
+                rc.contentRect = QRectF(pic.rect());
+                nodes::Evaluator ev;
+                const QImage cpuOut = ev.run(graph, pic, rc, true);
+                std::map<int, QImage> thumbs;
+                const QImage gpuOut = gc ? gc->renderGraph(graph, pic, rc, &thumbs, QSize(164, 92)) : QImage();
+                double thumbOff = thumbs.size() == ev.outputs.size() ? 0 : 255;
+                for (const auto& [id, t] : thumbs)
+                    if (ev.outputs.count(id))
+                        thumbOff = std::max(thumbOff, difference(t, ev.outputs[id].scaled(t.size(), Qt::IgnoreAspectRatio, Qt::SmoothTransformation)));
+                check(gc && difference(cpuOut, gpuOut) < 3 && thumbOff < 8,
+                      QStringLiteral("the Effect Builder's preview on the GPU: as the CPU's (%1 off), %2 node pictures (worst %3 off)")
+                          .arg(difference(cpuOut, gpuOut), 0, 'f', 2)
+                          .arg(thumbs.size())
+                          .arg(thumbOff, 0, 'f', 1));
             }
             check(slowOrOff.isEmpty(), QStringLiteral("the example effects draw on the GPU as on the CPU, at 30 frames a second (not: %1)")
                                            .arg(slowOrOff.isEmpty() ? QStringLiteral("none") : slowOrOff.join(QStringLiteral(", "))));

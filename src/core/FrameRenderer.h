@@ -10,6 +10,32 @@
 class QOffscreenSurface;
 struct AVFrame;
 
+// The Live tab's picture for one frame: the captured picture (at the output size), the second source (the layer) with
+// its own FX laid over it, then the Live FX, the active pad's chain (or, while switching, the last pad's fading into
+// it with a transition) and the held pads'. Each chain's result is flattened onto black, as renderLive does.
+struct LiveFrameJob {
+    QImage frame;
+    QImage layer;                        // as captured (null: none); fitted into layerRect
+    QRect layerRect;
+    bool layerCover = false;             // fill layerRect, cropped (a full-frame layer), rather than squeezed in
+    double layerOpacity = 1.0;
+    int layerBlend = 0;                  // BlendMode
+    const EffectChain* layerFx = nullptr;
+    const EffectChain* liveFx = nullptr;
+    double fadeProgress = -1;            // switching pads (0..1): fadeFrom's picture into fadeTo's; < 0: not
+    const EffectChain* fadeFrom = nullptr;
+    const EffectChain* fadeTo = nullptr;
+    TransitionSpec fadeSpec;
+    std::vector<const EffectChain*> after; // the active pad's (when not switching), the held pads'
+    TimeUs time = 0;
+    double fps = 30;
+};
+
+// Live helpers (the CPU's way, which the GPU follows): a picture fitted to `size` (squeezed, or filling it and
+// cropped), and two pictures blended by a transition at progress p, flattened onto black.
+QImage fitLayer(const QImage& layer, QSize size, bool cover);
+QImage liveTransition(const QImage& from, const QImage& to, double p, const TransitionSpec& spec, double fps);
+
 // Renders composited timeline pictures. Implemented by the CPU Compositor
 // and the OpenGL GpuCompositor. Each instance belongs to one thread.
 class FrameRenderer {
@@ -21,15 +47,10 @@ public:
     // time-based effects, and keyframes). Returns an opaque image.
     // keepAlpha: leave transparency (a keyed layer) instead of flattening onto black.
     virtual QImage renderLive(const QImage& frame, const EffectChain& chain, TimeUs t, double fps, bool keepAlpha = false) = 0;
-    // Chains one after the other (the Live FX, then a pad's), as renderLive one at a time; the GPU sends the
-    // picture up and reads it back only once.
-    virtual QImage renderLiveChains(const QImage& frame, const std::vector<const EffectChain*>& chains, TimeUs t, double fps)
-    {
-        QImage img = frame;
-        for (const EffectChain* c : chains)
-            img = renderLive(img, *c, t, fps);
-        return img;
-    }
+    // The Live tab's whole picture for a frame (LiveFrameJob); `clean`, if given, gets the picture before the effects
+    // (with the layer). This one works on the CPU, a step at a time; the GPU's sends the picture up and reads it back
+    // once.
+    virtual QImage renderLiveFrame(const LiveFrameJob& job, QImage* clean = nullptr);
     virtual QString name() const = 0;
     virtual bool isGpu() const { return false; }
     // Optional direct encoder-plane output. Unsupported layouts use render().

@@ -57,9 +57,17 @@ MCP `generate_voice` accepts `device: auto|gpu|cpu` (default auto). The RVC obje
 also accepts its own `device`. Both auto and gpu prefer GPU with CPU fallback.
 `MVP_AI_DEVICE=cpu` forces CPU workers when no explicit request overrides it.
 For diagnostics, `MVP_CPU_GENERATORS=1` retains the previous CPU generator
-path, `MVP_CPU_LOOKAHEAD=1` keeps the preview's CPU look-ahead for scenes, and
-`MVP_CPU_COLOR=1` retains swscale conversion. These switches do not
-disable the rest of GPU compositing.
+path, `MVP_CPU_LOOKAHEAD=1` keeps the preview's CPU look-ahead for scenes,
+`MVP_CPU_COLOR=1` retains swscale conversion, and `MVP_CPU_FLOW=1` works out
+the motion for Optical Flow and Reduce Noise on the CPU again. These switches
+do not disable the rest of GPU compositing.
+
+On the GPU too: the animated backgrounds and overlays (Plasma and Aurora as
+shaders of their own, the rest painted by the GPU), the motion between frames
+for Optical Flow slow motion and Reduce Noise (a block-matching pyramid in
+shaders: no frames read back), effects made in the Effect Builder and its
+preview, and the Live tab's whole frame (the layer with its effects, the Live FX,
+a pad switch's transition and the pads) with one upload and one read back.
 
 ## Packaging
 

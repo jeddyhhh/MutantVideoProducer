@@ -10,7 +10,14 @@ What changed in each version of Mutant Video Producer. The newest is first.
   take 3 to 14 ms a frame instead of 45 to 170 ms, so they keep up on the Live tab (and play faster in the editor).
 - **Live tab**: the Live FX, the active pad and held pads go through the GPU in one go (one upload, one read back),
   instead of once each.
-- **Starfield / Hyperspace and Retro Grid** draw on the GPU (they were the slowest backgrounds).
+- **Animated backgrounds and overlays draw on the GPU**: Plasma and Aurora as shaders (12 and 18 ms a 1080p frame down
+  to 3 and 4), Starfield / Hyperspace (58 to 8), Retro Grid (31 to 6), Bokeh, Digital Rain, Confetti, Countdown, Progress
+  Bar, Letterbox, Shape, Kinetic Text and Color Bars on the GPU's painter.
+- **Reduce Noise and Optical Flow** work out the motion between frames on the GPU (no frames read back): Reduce Noise
+  15 ms a 1080p frame down to 6.
+- **Live tab**: the layer (fitted, with its own effects, blended) and the transition when switching pads run on the GPU
+  in the same single trip as the Live FX and pads.
+- **Effect Builder**: its preview runs on the GPU (each node's picture too), so heavy graphs play smoothly while you build.
 
 ### Fixed
 

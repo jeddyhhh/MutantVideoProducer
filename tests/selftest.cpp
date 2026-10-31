@@ -1741,6 +1741,15 @@ int cmdGpu(const QString& mediaDir, const QString& outDir)
         ops::insertGenerated(s.timeline, *findGeneratorPreset(QStringLiteral("lower_third")), 0, 0, fps);
         compare(QStringLiteral("generator_lower_third"), s, 2 * kUsPerSecond, 1.5);
     }
+    // The animated backgrounds and overlays the GPU draws itself (shaders for plasma and aurora, its painter for the
+    // rest, twice as big where edges must come out smooth).
+    for (const char* id : {"plasma_neon", "plasma_fire", "aurora", "bokeh_warm", "digital_rain", "confetti", "progress_bar", "letterbox",
+                           "shape_heart", "kinetic_text", "countdown", "hyperspace", "retro_grid", "bars_smpte"}) {
+        ProjectSnapshot s = withBackground(baseSnap(main));
+        s.timeline.tracks[0].clips.clear();
+        ops::insertGenerated(s.timeline, *findGeneratorPreset(QLatin1String(id)), 0, 0, fps);
+        compare(QStringLiteral("generator_") + QLatin1String(id), s, 2 * kUsPerSecond + 400000, 3.0);
+    }
     // Animation scenes: motion blur (the scene's and a layer's), soft layers (blur, depth of field), a layer's own effects
     // and groups seen through as one, all painted on the GPU (no picture of theirs made on the CPU).
     {

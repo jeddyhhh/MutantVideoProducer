@@ -21,6 +21,9 @@ class QTreeWidget;
 class QVBoxLayout;
 class QWidget;
 class VideoDecoder;
+class GpuCompositor;
+class FrameRenderer;
+class QOffscreenSurface;
 
 namespace nodeui {
 class GraphView;
@@ -76,7 +79,11 @@ private:
     void tick();
 
     nodes::Graph m_graph;
-    nodes::Evaluator m_eval;
+    nodes::Evaluator m_eval; // (its outputs: the nodes' pictures, from the GPU too)
+    // The preview on the GPU (Options > GPU Acceleration); null: the CPU's evaluator.
+    std::unique_ptr<QOffscreenSurface> m_gpuSurface;
+    std::unique_ptr<FrameRenderer> m_renderer;
+    GpuCompositor* m_gpu = nullptr;
     QString m_path;
     bool m_modified = false;
     std::vector<QJsonObject> m_undo, m_redo;

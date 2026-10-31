@@ -41,6 +41,10 @@ struct GeneratorDef {
     // device; CPU compositing continues to use render(). False requests fallback.
     std::function<bool(QPainter&, QSize, const Params&, const GeneratorContext&)> paint;
     int paintScale = 1; // GPU supersampling for dense, thin primitives
+    // The GPU draws this one with a shader of its own (GpuCompositor: plasma, aurora; the same formulas, worked out at a
+    // quarter of the size and smoothed up as render() does), then paintOver, if set, paints the rest on top.
+    bool gpuShader = false;
+    std::function<bool(QPainter&, QSize, const Params&, const GeneratorContext&)> paintOver;
     // True when the picture changes with time even if the parameters don't
     // (built-in animations, credits, timecode). Null = static, cacheable.
     std::function<bool(const Params&, const GeneratorContext&)> isAnimating;
@@ -63,6 +67,8 @@ const std::vector<GeneratorPreset>& generatorPresets();
 const GeneratorPreset* findGeneratorPreset(const QString& id);
 
 GeneratorSpec makeGenerator(const GeneratorPreset& preset);
+// The Plasma generator's colour stops for its "palette" choice (its GPU shader goes through them as render() does).
+std::vector<QColor> plasmaPalette(int which);
 // Short description for the timeline, e.g. "Text: Your Title".
 QString generatorLabel(const GeneratorSpec& spec);
 
