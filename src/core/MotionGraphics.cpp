@@ -2040,12 +2040,12 @@ public:
       if (!dashes.isEmpty())
         pen.setDashPattern(dashes);
       pen.setDashOffset(number(o, "dash_offset", 0, t, scene));
+      // Trimmed: only part of the stroke shows (and so no fill). A trim over the whole of it, the end of a reveal,
+      // is the shape as it is, filled.
+      const double trimStart = number(o, "trim_start", 0, t, scene), trimEnd = number(o, "trim_end", 1, t, scene);
       bool trimmed = type == "path" &&
-                     (o.contains("trim_start") || o.contains("trim_end"));
-      auto painted = trimmed
-                         ? portion(body, number(o, "trim_start", 0, t, scene),
-                                   number(o, "trim_end", 1, t, scene))
-                         : body;
+                     (o.contains("trim_start") || o.contains("trim_end")) && (trimStart > 0 || trimEnd < 1);
+      auto painted = trimmed ? portion(body, trimStart, trimEnd) : body;
       // The outline a shadow or glow follows (only then: uniting paths is slow).
       const QJsonObject shadow = o["shadow"_L1].toObject(), glow = o["glow"_L1].toObject();
       QPainterPath silhouette;

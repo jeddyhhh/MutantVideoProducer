@@ -1041,6 +1041,11 @@ QJsonArray McpServer::toolList()
                    {QStringLiteral("name"), prop("string", "Label")},
                    {QStringLiteral("length"), prop("number", "Region length, seconds (0 = a marker)")}},
                   {QStringLiteral("time")}));
+    t.append(tool("remove_markers", "Removes the markers between two times (e.g. the beat markers once a montage is cut); regions "
+                                    "too with regions: true.",
+                  {{QStringLiteral("from"), prop("number", "Seconds (default 0)")},
+                   {QStringLiteral("to"), prop("number", "Seconds (default: the end)")},
+                   {QStringLiteral("regions"), prop("boolean", "Also regions (markers with a length; default false)")}}));
     t.append(tool("detect_beats", "Finds the beat of the music on the timeline and puts a marker on every beat or bar. Returns the tempo.",
                   {{QStringLiteral("every"), prop("integer", "Marker every N beats: 1, 2, 4 (a bar), 8, 16 (default 4)")},
                    {QStringLiteral("from"), prop("number", "Seconds (default 0)")},
@@ -1611,6 +1616,7 @@ struct McpServer::ToolCall {
     QJsonObject tool_set_effect();
     QJsonObject tool_remove_effect();
     QJsonObject tool_add_marker();
+    QJsonObject tool_remove_markers();
     QJsonObject tool_detect_beats();
     QJsonObject tool_get_frame();
     QJsonObject tool_transport();
@@ -1912,6 +1918,7 @@ QJsonObject McpServer::ToolCall::tool_get_project()
 QJsonObject McpServer::ToolCall::tool_import_media()
 {
     QJsonArray ids, problems;
+    std::optional<Project::MediaBatch> batch(project); // (the bins and the profile library: once for all the files)
     for (const QJsonValue& v : a.value(QStringLiteral("paths")).toArray()) {
         const QString path = QFileInfo(v.toString()).absoluteFilePath();
         int existing = 0;
@@ -1932,6 +1939,7 @@ QJsonObject McpServer::ToolCall::tool_import_media()
         if (QSettings().value(QStringLiteral("proxy/auto"), true).toBool() && proxy::recommended(info))
             w->createProxies({id}, true);
     }
+    batch.reset();
     QJsonObject out{{QStringLiteral("media_ids"), ids}};
     if (!problems.isEmpty())
         out[QStringLiteral("problems")] = problems;
@@ -2764,6 +2772,17 @@ QJsonObject McpServer::ToolCall::tool_add_marker()
     tl.sortMarkers();
     apply(tl, m.length > 0 ? QStringLiteral("Add Region") : QStringLiteral("Add Marker"));
     return jsonResult({{QStringLiteral("marker_id"), m.id}});
+}
+
+QJsonObject McpServer::ToolCall::tool_remove_markers()
+{
+    Timeline tl = project->timeline();
+    const TimeUs from = has("from") ? us(num("from")) : 0, to = has("to") ? us(num("to")) : std::numeric_limits<TimeUs>::max();
+    const bool regions = a.value(QStringLiteral("regions")).toBool(false);
+    const auto removed = std::erase_if(tl.markers, [&](const Marker& m) { return m.time >= from && m.time <= to && (regions || !m.isRegion()); });
+    if (removed)
+        apply(tl, QStringLiteral("Remove Markers"));
+    return jsonResult({{QStringLiteral("removed"), qint64(removed)}});
 }
 
 QJsonObject McpServer::ToolCall::tool_detect_beats()
@@ -4844,6 +4863,7 @@ QJsonObject McpServer::callTool(const QString& name, const QJsonObject& a)
         {QStringLiteral("set_effect"), {&ToolCall::tool_set_effect, false}},
         {QStringLiteral("remove_effect"), {&ToolCall::tool_remove_effect, false}},
         {QStringLiteral("add_marker"), {&ToolCall::tool_add_marker, false}},
+        {QStringLiteral("remove_markers"), {&ToolCall::tool_remove_markers, false}},
         {QStringLiteral("detect_beats"), {&ToolCall::tool_detect_beats, false}},
         {QStringLiteral("get_frame"), {&ToolCall::tool_get_frame, false}},
         {QStringLiteral("transport"), {&ToolCall::tool_transport, false}},

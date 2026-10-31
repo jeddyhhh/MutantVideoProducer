@@ -59,7 +59,7 @@ for each step and the checks that catch mistakes. It is how the *Snowbank* episo
 | list_effects | Lists every effect with its settings. |
 | add_effect, set_effect, remove_effect | Effects (with keyframes and masks) on events, tracks, the output, the audio master, the Live FX, pads and the layer. Remove Background, freehand masks and VST3 plugins work through these. |
 | list_vst3_plugins | The VST3 plugins installed. |
-| add_marker, detect_beats | Markers, and markers on the beat. |
+| add_marker, remove_markers, detect_beats | Markers (added, or taken out of a stretch of time), and markers on the beat. |
 | captions | Auto Captions (any model on this computer, translation, speakers), and importing or exporting SRT / WebVTT. |
 | list_voices | Curated Kokoro voices, metadata, installed status, and local worker/model availability. |
 | list_sound_effects | The built-in sound effects library (CC0): category, name and file path of each sound, optionally filtered by `search`; add one with `import_media`. |

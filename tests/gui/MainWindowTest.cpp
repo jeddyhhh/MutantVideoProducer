@@ -1302,6 +1302,15 @@ int MainWindow::runEditorTest(QStringList& log)
         call(QStringLiteral("add_marker"), {{QStringLiteral("time"), 33}, {QStringLiteral("name"), QStringLiteral("from AI")}});
         const bool marker = std::any_of(m_project->timeline().markers.begin(), m_project->timeline().markers.end(),
                                         [](const Marker& m) { return m.name == QLatin1String("from AI"); });
+        {
+            // remove_markers takes it away again (then undone, so the steps below are as they were).
+            const int removed = content(call(QStringLiteral("remove_markers"), {{QStringLiteral("from"), 32.5}, {QStringLiteral("to"), 33.5}}))
+                                    [QStringLiteral("removed")].toInt();
+            const bool gone = std::none_of(m_project->timeline().markers.begin(), m_project->timeline().markers.end(),
+                                           [](const Marker& m) { return m.name == QLatin1String("from AI"); });
+            call(QStringLiteral("undo"), {});
+            check(removed == 1 && gone, QStringLiteral("AI control: remove_markers takes markers out of a stretch of time (%1 removed)").arg(removed));
+        }
         const QJsonObject blur =
             content(call(QStringLiteral("list_effects"),
                       {{QStringLiteral("kind"), QStringLiteral("video")}, {QStringLiteral("search"), QStringLiteral("blur")}}));

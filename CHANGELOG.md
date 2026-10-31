@@ -23,6 +23,17 @@ What changed in each version of Mutant Video Producer. The newest is first.
 
 - **Live tab**: animated sources inside a user effect (plasma, starfield, titles...) stood still there.
 - Effects on the CPU renderer could crash or tear on the Live tab: the picture they changed was shared with the capture.
+- **Generate Dialogue** with a long script froze the program for many minutes once the voices were done: each line's
+  file rebuilt the media lists and the profile library again. Importing many files at once had the same cost.
+- **Auto Captions**: a caption could stay on screen through a long pause (the music turned down under the voice was
+  heard as speech, and a caption could reach into the next line); after a long silence captions could drift seconds
+  early; silences came out as "[BLANK_AUDIO]" captions.
+- **Beat Montage** takes each file's clips from its Mark In / Out (Project Media), not from anywhere in the file.
+- **Animation scenes**: a path drawn on with trim_end lost its fill even once the whole stroke showed.
+
+### Added
+
+- **AI control**: remove_markers takes the markers out of a stretch of time (the beat markers once a montage is cut).
 
 ## 0.9.2 (2026-10-31)
 

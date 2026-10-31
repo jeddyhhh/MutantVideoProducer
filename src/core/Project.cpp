@@ -482,7 +482,7 @@ int Project::addMedia(const MediaInfo& info)
     m_media[item->id] = item;
     m_dirtyExtra = true;
     m_snapshot.reset();
-    emit mediaChanged();
+    mediaChangedNow();
     return item->id;
 }
 
@@ -500,7 +500,7 @@ void Project::setMediaDetails(int id, const QString& folder, int rating, TimeUs 
     it->second = std::move(item);
     m_dirtyExtra = true;
     m_snapshot.reset();
-    emit mediaChanged();
+    mediaChangedNow();
 }
 
 bool Project::isMediaUsed(int id) const
@@ -520,7 +520,7 @@ bool Project::removeMedia(int id)
         return false;
     m_dirtyExtra = true;
     m_snapshot.reset();
-    emit mediaChanged();
+    mediaChangedNow();
     return true;
 }
 
@@ -573,7 +573,7 @@ bool Project::relinkMedia(int id, const QString& path, QString* error)
     m_dirtyExtra = true;
     m_snapshot.reset();
     emit mediaRelinked(id);
-    emit mediaChanged();
+    mediaChangedNow();
     if (streamsChanged)
         applyEdit(tl, QStringLiteral("Relink Media"));
     else
@@ -651,7 +651,7 @@ void Project::clear(const ProjectSettings& settings)
     m_deliver = {};
     m_dirtyExtra = false;
     m_snapshot.reset();
-    emit mediaChanged();
+    mediaChangedNow();
     emit settingsChanged();
     emit changed();
 }
@@ -1444,7 +1444,7 @@ bool Project::loadFile(const QString& path, QString* error, QStringList* missing
     m_deliver = root[QStringLiteral("deliver")].toObject();
     m_dirtyExtra = false;
     m_snapshot.reset();
-    emit mediaChanged();
+    mediaChangedNow();
     emit settingsChanged();
     emit changed();
     return true;
@@ -1603,5 +1603,5 @@ void Project::shareMediaPool(const MediaMap& media)
 {
     m_media = media; m_nextMediaId = 1;
     for(const auto& [id,item]:media) m_nextMediaId = std::max(m_nextMediaId,id+1);
-    m_snapshot.reset(); emit mediaChanged();
+    m_snapshot.reset(); mediaChangedNow();
 }

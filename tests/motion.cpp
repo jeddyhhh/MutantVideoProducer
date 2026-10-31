@@ -271,6 +271,15 @@ int main(int argc, char **argv) {
   check(ri.pixelColor(30, 50).blue() > 200 &&
             ri.pixelColor(175, 50).alpha() == 0,
         "stroke reveal trims real path length");
+  auto filled = rect("filled", 0, 0, 1, 1);
+  filled["type"] = "path";
+  filled["commands"] = QJsonArray{QJsonArray{"M", .1, .1}, QJsonArray{"L", .9, .1}, QJsonArray{"L", .9, .9},
+                                  QJsonArray{"L", .1, .9}, QJsonArray{"Z"}};
+  filled["fill"] = "#ff0000";
+  filled["trim_end"] = keys(0, 1);
+  check(picture(scene({filled}), .5).pixelColor(100, 50).alpha() == 0 &&
+            picture(scene({filled}), 1.5).pixelColor(100, 50).red() > 200,
+        "a revealed path is filled once the whole stroke shows");
   auto moving = rect("moving", 0, .3, .1, .3);
   moving["x"] = keys(0, .8);
   moving["trail"] =

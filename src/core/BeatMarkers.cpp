@@ -122,10 +122,15 @@ std::vector<int> beatMontage(Timeline& tl, const std::vector<std::shared_ptr<con
         c.streamIndex = m->info.video.front().index;
         c.start = cuts[i];
         c.length = length;
-        if (!m->info.isStill && m->info.duration > length) // a random part of the file
-            c.sourceIn = TimeUs(std::uniform_int_distribution<int64_t>(0, m->info.duration - length)(rng));
-        else if (!m->info.isStill)
-            c.length = std::max<TimeUs>(1, std::min(length, m->info.duration));
+        // A random part of the file: of its marked part, when it has one (Mark In / Out in Project Media).
+        const bool marked = m->markOut > m->markIn;
+        const TimeUs from = marked ? m->markIn : 0, to = marked ? std::min(m->markOut, m->info.duration) : m->info.duration;
+        if (!m->info.isStill && to - from > length)
+            c.sourceIn = from + TimeUs(std::uniform_int_distribution<int64_t>(0, to - from - length)(rng));
+        else if (!m->info.isStill) {
+            c.sourceIn = from;
+            c.length = std::max<TimeUs>(1, std::min(length, to - from));
+        }
         t->clips.push_back(c);
         ids.push_back(c.id);
     }

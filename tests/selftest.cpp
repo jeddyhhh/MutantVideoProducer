@@ -6061,6 +6061,31 @@ int cmdCaptions(const QString& speech, const QString& model, const QString& dial
     a.clips.push_back(c);
     s.timeline.tracks.push_back(a);
     const std::vector<float> audio = timelineSpeechAudio(s, 0, c.end());
+    {
+        // Music ducked under the voice: the speech is the voice alone (the music between lines isn't words).
+        ProjectSnapshot m = s;
+        Track music;
+        music.id = 4;
+        music.type = TrackType::Audio;
+        Clip after = c;
+        after.id = 5;
+        after.start = c.end();
+        after.length = std::min<TimeUs>(item->info.duration, 3 * kUsPerSecond);
+        music.clips.push_back(after);
+        m.timeline.tracks.push_back(music);
+        auto energy = [&](const ProjectSnapshot& snap) {
+            const std::vector<float> a = timelineSpeechAudio(snap, c.end(), after.end());
+            double e = 0;
+            for (float v : a)
+                e += double(v) * v;
+            return e;
+        };
+        const double plain = energy(m);
+        m.timeline.tracks.back().duckUnder = 2;
+        const double ducked = energy(m);
+        check(plain > 1.0 && ducked < plain * 1e-3,
+              QStringLiteral("speech for captions: music ducked under the voice is left out (%1 -> %2)").arg(plain, 0, 'g', 3).arg(ducked, 0, 'g', 3));
+    }
     QElapsedTimer timer;
     timer.start();
     std::vector<Caption> caps;
@@ -7070,6 +7095,16 @@ int cmdTools(const QString& mediaDir, const QString& outDir)
         }
         check(ids.size() == cuts.size() - 1 && top.name == QLatin1String("Beat montage") && contiguous && inMedia,
               QStringLiteral("Beat Montage: %1 clips on a new top track, one per bar, files in turn, each from inside its file").arg(ids.size()));
+        // A file with Mark In / Out: its clips come from the marked part.
+        auto marked = std::make_shared<MediaItem>(*video2);
+        marked->markIn = marked->info.duration / 4;
+        marked->markOut = marked->info.duration / 2;
+        Timeline mvp2 = tl;
+        ops::beatMontage(mvp2, {marked}, cuts, false, 7);
+        bool inMarks = !mvp2.tracks.front().clips.empty();
+        for (const Clip& m : mvp2.tracks.front().clips)
+            inMarks &= m.sourceIn >= marked->markIn && m.sourceIn + m.length <= marked->markOut;
+        check(inMarks, QStringLiteral("Beat Montage takes a file's clips from its marked part"));
     }
     // ---- Effect masks: inside / outside, rotated, feathered; CPU and GPU the same ----
     {

@@ -354,6 +354,7 @@ void VoiceJob::finish(const QString& failure)
             track.name = tr("Voice — %1").arg(m_voiceName);
             const auto fps = m_settings.fps;
             TimeUs lastEnd = 0;
+            Project::MediaBatch batch(m_project); // (each take is a file: one change for all of them)
             for (size_t i = 0; i < takes.size(); ++i) {
                 const auto& take = takes[i];
                 Clip clip;

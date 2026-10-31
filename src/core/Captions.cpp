@@ -9,6 +9,7 @@
 #include <QThread>
 #include <algorithm>
 #include <cmath>
+#include <set>
 
 #ifdef MVP_WHISPER
 #include <whisper.h>
@@ -116,8 +117,19 @@ QString writeVtt(const std::vector<Caption>& captions)
     return s;
 }
 
-std::vector<float> timelineSpeechAudio(const ProjectSnapshot& snap, TimeUs from, TimeUs to)
+std::vector<float> timelineSpeechAudio(const ProjectSnapshot& snap0, TimeUs from, TimeUs to)
 {
+    // When tracks duck under others (music under a voice), the speech is on the tracks ducked under: only those, so
+    // the music rising between lines is not taken for words still being spoken.
+    ProjectSnapshot snap = snap0;
+    std::set<int> speech;
+    for (const Track& t : snap.timeline.tracks)
+        if (t.duckUnder)
+            speech.insert(t.duckUnder);
+    if (!speech.empty())
+        for (Track& t : snap.timeline.tracks)
+            if (t.type == TrackType::Audio)
+                t.solo = speech.count(t.id) > 0;
     // Nothing to hear after the last audio event; at most kMaxSpeech at a time
     // (held in memory: 2 hours is 460 MB).
     constexpr TimeUs kMaxSpeech = 2 * 3600 * kUsPerSecond;
@@ -196,8 +208,44 @@ bool transcribe(const QString& modelPath, const std::vector<float>& mono16k, con
             *error = QStringLiteral("could not load the speech model %1").arg(modelPath);
         return false;
     }
+    // The stretches of sound between long silences (2 s), heard one at a time: across a long silence Whisper's times
+    // drift (a caption seconds before its words). Loud: above 2% of the loudest 20 ms.
+    constexpr int kWin = 320; // 20 ms
+    const int64_t windows = int64_t(mono16k.size()) / kWin;
+    std::vector<float> level(size_t(std::max<int64_t>(0, windows)));
+    float loudest = 0;
+    for (int64_t w = 0; w < windows; ++w) {
+        double sum = 0;
+        for (int64_t i = w * kWin; i < (w + 1) * kWin; ++i)
+            sum += double(mono16k[size_t(i)]) * mono16k[size_t(i)];
+        level[size_t(w)] = float(std::sqrt(sum / kWin));
+        loudest = std::max(loudest, level[size_t(w)]);
+    }
+    std::vector<std::pair<int64_t, int64_t>> stretches; // samples
+    {
+        constexpr int64_t kSilence = 100, kPad = 15; // windows: 2 s, 0.3 s
+        int64_t start = -1, lastLoud = -1;
+        for (int64_t w = 0; w <= windows; ++w) {
+            const bool loud = w < windows && level[size_t(w)] > std::max(1e-4f, loudest * 0.02f);
+            if (start >= 0 && (w == windows || (!loud && w - lastLoud > kSilence))) {
+                stretches.push_back({std::max<int64_t>(0, start - kPad) * kWin, std::min(windows, lastLoud + 1 + kPad) * kWin});
+                start = -1;
+            }
+            if (loud) {
+                if (start < 0)
+                    start = w;
+                lastLoud = w;
+            }
+        }
+    }
+    if (stretches.empty() || options.speakerTurns) // (nothing loud: as it is; speaker turns: the whole conversation at once)
+        stretches = {{0, int64_t(mono16k.size())}};
+    int64_t total = 0, heard = 0;
+    for (const auto& [a, b] : stretches)
+        total += b - a;
     struct Callbacks {
         const std::function<bool(double)>* progress;
+        double from = 0, share = 1;
         bool cancelled = false;
     } cb{&progress};
     whisper_full_params p = whisper_full_default_params(options.speakerTurns ? WHISPER_SAMPLING_GREEDY : WHISPER_SAMPLING_BEAM_SEARCH);
@@ -220,15 +268,23 @@ bool transcribe(const QString& modelPath, const std::vector<float>& mono16k, con
     p.split_on_word = true;
     p.progress_callback = [](whisper_context*, whisper_state*, int percent, void* user) {
         auto* c = static_cast<Callbacks*>(user);
-        if (*c->progress && !(*c->progress)(percent / 100.0))
+        if (*c->progress && !(*c->progress)(c->from + c->share * percent / 100.0))
             c->cancelled = true;
     };
     p.progress_callback_user_data = &cb;
     p.abort_callback = [](void* user) { return static_cast<Callbacks*>(user)->cancelled; };
     p.abort_callback_user_data = &cb;
-    const int rc = whisper_full(ctx, p, mono16k.data(), int(mono16k.size()));
-    int speaker = 0;
-    if (rc == 0 && !cb.cancelled)
+    int rc = 0, speaker = 0;
+    for (const auto& [first, last] : stretches) {
+        if (cb.cancelled || rc != 0)
+            break;
+        cb.from = double(heard) / double(std::max<int64_t>(1, total));
+        cb.share = double(last - first) / double(std::max<int64_t>(1, total));
+        heard += last - first;
+        rc = whisper_full(ctx, p, mono16k.data() + first, int(last - first));
+        const TimeUs offset = first * 1000 / 16; // (samples at 16 kHz to microseconds)
+        const size_t before = out.size();
+        if (rc == 0 && !cb.cancelled)
         for (int i = 0; i < whisper_full_n_segments(ctx); ++i) {
             if (options.wordTimestamps) {
                 Caption word;
@@ -255,6 +311,11 @@ bool transcribe(const QString& modelPath, const std::vector<float>& mono16k, con
             if (!c.text.isEmpty() && c.end > c.start)
                 out.push_back(c);
         }
+        for (size_t k = before; k < out.size(); ++k) {
+            out[k].start += offset;
+            out[k].end += offset;
+        }
+    }
     whisper_free(ctx);
     // Whisper's segment times can include the silence before (and after) the
     // words: start each caption where the sound starts, end it where it stops.
@@ -270,16 +331,34 @@ bool transcribe(const QString& modelPath, const std::vector<float>& mono16k, con
         double peak = 0;
         for (int64_t w = first; w < last; ++w)
             peak = std::max(peak, loudness(w));
-        int64_t a = first, b = last;
-        while (a < b && loudness(a) < peak * 0.1)
-            ++a;
-        while (b > a + 1 && loudness(b - 1) < peak * 0.1)
-            --b;
+        // The sound in it, in runs apart by a long silence (1.5 s): a segment can reach over a pause into the start
+        // of the next line, so it is the longest run, not the first to the last sound.
+        constexpr int64_t kGap = 75; // windows: 1.5 s
+        int64_t a = first, b = first, runStart = -1, lastLoud = -1, best = 0;
+        for (int64_t w = first; w <= last; ++w) {
+            const bool loud = w < last && loudness(w) >= peak * 0.1;
+            if (runStart >= 0 && (w == last || (!loud && w - lastLoud > kGap))) {
+                if (lastLoud + 1 - runStart > best) {
+                    best = lastLoud + 1 - runStart;
+                    a = runStart;
+                    b = lastLoud + 1;
+                }
+                runStart = -1;
+            }
+            if (loud) {
+                if (runStart < 0)
+                    runStart = w;
+                lastLoud = w;
+            }
+        }
         if (b > a && peak > 1e-4) {
             c.start = std::max<TimeUs>(c.start, a * kWindow * 1000 / 16 - 100000); // (a little lead-in)
             c.end = std::min<TimeUs>(c.end, b * kWindow * 1000 / 16 + 200000);
         }
     }
+    // Whisper's notes on what isn't speech ([BLANK_AUDIO], [Music], (silence)...) are not captions.
+    static const QRegularExpression note(QStringLiteral("^\\s*(\\[[^\\]]*\\]|\\([^)]*\\)|\\*[^*]*\\*)\\s*$"));
+    std::erase_if(out, [](const Caption& c) { return note.match(c.text).hasMatch(); });
     if (options.speakerTurns) // (a whole turn came as one caption, 140 characters on one line)
         splitLongCaptions(out, options.maxChars);
     if (cb.cancelled || rc != 0) {

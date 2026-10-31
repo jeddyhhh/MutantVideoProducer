@@ -344,6 +344,24 @@ public:
     std::shared_ptr<const MediaItem> mediaItem(int id) const;
     // Adds probed media to the pool; returns its id.
     int addMedia(const MediaInfo& info);
+    // While one of these lives, media changes are told (mediaChanged) once, when the last one ends: a hundred files
+    // added at once rebuild the media bins and the profile library once, not a hundred times.
+    class MediaBatch {
+    public:
+        explicit MediaBatch(Project* project) : m_project(project) { ++project->m_mediaBatch; }
+        ~MediaBatch()
+        {
+            if (--m_project->m_mediaBatch == 0 && m_project->m_mediaPending) {
+                m_project->m_mediaPending = false;
+                emit m_project->mediaChanged();
+            }
+        }
+        MediaBatch(const MediaBatch&) = delete;
+        MediaBatch& operator=(const MediaBatch&) = delete;
+
+    private:
+        Project* m_project;
+    };
     bool removeMedia(int id);   // fails if used on the timeline
     // Project Media's folder, rating and in / out marks of a file (see MediaItem).
     void setMediaDetails(int id, const QString& folder, int rating, TimeUs markIn, TimeUs markOut, const QString& origin = {});
@@ -405,6 +423,9 @@ private:
     std::shared_ptr<const int> m_session = std::make_shared<const int>(0);
     ProjectSettings m_settings;
     MediaMap m_media;
+    int m_mediaBatch = 0;        // MediaBatch
+    bool m_mediaPending = false; // a change told when the batch ends
+    void mediaChangedNow() { if (m_mediaBatch) m_mediaPending = true; else emit mediaChanged(); }
     int m_nextMediaId = 1;
     Timeline m_timeline;
     QUndoStack m_undo;

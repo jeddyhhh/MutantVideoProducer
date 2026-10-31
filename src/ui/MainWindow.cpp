@@ -352,6 +352,7 @@ void MainWindow::importFiles(const QStringList& paths, std::optional<TimeUs> at,
     QStringList failures;
     std::vector<int> imported;
     QApplication::setOverrideCursor(Qt::WaitCursor);
+    std::optional<Project::MediaBatch> batch(m_project); // (the bins and the profile library: once for all the files)
     for (const QString& path : paths) {
         const QString clean = QFileInfo(path).absoluteFilePath();
         int existing = 0;
@@ -375,6 +376,7 @@ void MainWindow::importFiles(const QStringList& paths, std::optional<TimeUs> at,
             TimeUs(shared.value("in").toDouble()), TimeUs(shared.value("out").toDouble()), shared.value("origin").toString());
         imported.push_back(id);
     }
+    batch.reset();
     QApplication::restoreOverrideCursor();
     statusBar()->showMessage(tr("Imported %1 file(s)").arg(imported.size()), 4000);
     if (QSettings().value(QStringLiteral("proxy/auto"), true).toBool()) { // heavy files get a proxy in the background
