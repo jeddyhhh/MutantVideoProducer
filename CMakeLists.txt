@@ -274,6 +274,7 @@ add_executable(mvp WIN32
     src/ui/BeatTuner.h           src/ui/BeatTuner.cpp
     src/ui/MidiHub.h             src/ui/MidiHub.cpp
     src/ui/ProxyQueue.h          src/ui/ProxyQueue.cpp
+    src/ui/SystemStats.h         src/ui/SystemStats.cpp
     src/ui/ScopesWidget.h        src/ui/ScopesWidget.cpp
     src/ui/SetlistDialog.h       src/ui/SetlistDialog.cpp
     src/ui/StreamDialog.h        src/ui/StreamDialog.cpp
@@ -301,7 +302,7 @@ target_link_libraries(mvp PRIVATE mvp_core Qt6::Widgets Qt6::Multimedia Qt6::Net
 if(WIN32)
     # VS2019's CMake autogen worker can stall with concurrent parsing of this target.
     set_property(TARGET mvp PROPERTY AUTOGEN_PARALLEL 1)
-    target_link_libraries(mvp PRIVATE crypt32 dbghelp) # the stream key (DPAPI); crash minidumps
+    target_link_libraries(mvp PRIVATE crypt32 dbghelp pdh) # the stream key (DPAPI); crash minidumps; GPU load in the status bar
 endif()
 target_compile_definitions(mvp PRIVATE MVP_VERSION="${MVP_VERSION}")
 if(MVP_VERSION MATCHES "^([0-9]+)\\.([0-9]+)\\.([0-9]+)")

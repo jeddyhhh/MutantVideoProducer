@@ -627,17 +627,22 @@ QImage premultiplied(const QImage& img)
 QImage FrameRenderer::renderLiveFrame(const LiveFrameJob& job, QImage* clean)
 {
     static const EffectChain kNone;
+    auto layOver = [&](QImage& img, bool overEffects) {
+        for (const LiveFrameLayer& layer : job.layers) {
+            if (layer.overEffects != overEffects || layer.image.isNull() || img.isNull())
+                continue;
+            QImage l = fitLayer(premultiplied(layer.image), layer.rect.size(), layer.cover);
+            if (layer.fx && hasActiveEffects(*layer.fx))
+                l = renderLive(l, *layer.fx, job.time, job.fps, true);
+            img = premultiplied(img);
+            QPainter p(&img);
+            p.setOpacity(std::clamp(layer.opacity, 0.0, 1.0));
+            p.setCompositionMode(composition(layer.blend));
+            p.drawImage(layer.rect.topLeft(), l);
+        }
+    };
     QImage img = job.frame;
-    if (!job.layer.isNull() && !img.isNull()) {
-        QImage l = fitLayer(premultiplied(job.layer), job.layerRect.size(), job.layerCover);
-        if (job.layerFx && hasActiveEffects(*job.layerFx))
-            l = renderLive(l, *job.layerFx, job.time, job.fps, true);
-        img = premultiplied(img);
-        QPainter p(&img);
-        p.setOpacity(std::clamp(job.layerOpacity, 0.0, 1.0));
-        p.setCompositionMode(composition(job.layerBlend));
-        p.drawImage(job.layerRect.topLeft(), l);
-    }
+    layOver(img, false);
     if (clean)
         *clean = img;
     QImage out = renderLive(img, job.liveFx ? *job.liveFx : kNone, job.time, job.fps);
@@ -647,5 +652,6 @@ QImage FrameRenderer::renderLiveFrame(const LiveFrameJob& job, QImage* clean)
     for (const EffectChain* c : job.after)
         if (c)
             out = renderLive(out, *c, job.time, job.fps);
+    layOver(out, true);
     return out;
 }

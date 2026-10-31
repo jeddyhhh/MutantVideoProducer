@@ -19,13 +19,13 @@
 class LiveRecorder;
 class QOffscreenSurface;
 
-// Drives the Live tab: a thread opens the capture source (and a second one,
-// the layer, if chosen), then renders the project's Live FX chain over the
+// Drives the Live tab: a thread opens the capture source (and the layers'
+// sources, if chosen), then renders the project's Live FX chain over the
 // newest captured picture at a steady frame rate (so animated effects keep
 // moving when the source is still) and hands the results to the UI, dropping
-// frames the UI has not shown yet. Per frame: the layer (with its own FX) is
-// laid over the main picture, then the Live FX, the active pad and any held
-// (momentary) pads are applied, with modulated settings moved by the beat
+// frames the UI has not shown yet. Per frame: the layers (each with its own FX)
+// are laid over the main picture, then the Live FX, the active pad and any held
+// (momentary) pads are applied (No Effects layers are laid over after them), with modulated settings moved by the beat
 // clock, the audio levels and MIDI controllers, and the overlays drawn on top.
 // The result can be recorded, and kept in a replay buffer of the last seconds.
 class LiveEngine : public QObject {
@@ -41,8 +41,8 @@ public:
         int pad = -1;          // active pad (0..15) on start, -1 = none
         QSize canvas;          // a fixed output shape (portrait, square...); empty = the source's shape, fitted in maxSize
         LiveFraming framing = LiveFraming::CropFill;
-        LiveSource layer;      // second source (empty name = none)
-        LiveLayerSettings layerSettings;
+        std::array<LiveSource, kLiveLayers> layers; // sources laid over the main one (empty name = none)
+        std::array<LiveLayerSettings, kLiveLayers> layerSettings;
         std::vector<LiveSource> inputs; // the switcher's other inputs (2, 3...; empty names = unused)
         int program = 0;                // the input on air: 0 = the source above, 1.. = inputs
     };
@@ -83,11 +83,11 @@ public:
     // Momentary pads held down now, in the order they were pressed: their
     // chains go on top of the active pad's, straight away.
     void setHeldPads(const std::vector<int>& pads);
-    // The second source (empty name = none), opened or closed without touching the main one.
-    void setLayer(const LiveSource& source);
-    void setLayerSettings(const LiveLayerSettings& settings);
-    // Video files: the next one in the playlist (of the main source, or the layer's).
-    void nextFile(bool layer);
+    // A layer's source (empty name = none), opened or closed without touching the main one.
+    void setLayer(int layer, const LiveSource& source);
+    void setLayerSettings(int layer, const LiveLayerSettings& settings);
+    // Video files: the next one in the playlist (of the main source: -1, or a layer's).
+    void nextFile(int layer);
     // The switcher: other inputs kept open beside the main source (each fitted
     // to its picture), and which one is on air (0 = the main source), switched
     // with `transition` over `seconds` (0 = a cut). Effects, pads and overlays
@@ -149,8 +149,8 @@ signals:
     void recordingProgress(double seconds, qint64 droppedFrames);
     // The file is complete (or failed); its thumbnail is at liveThumbnailPath(path).
     void recordingFinished(const QString& path, bool ok, const QString& error, double seconds);
-    // The layer source opened (description), failed (error), or was closed (both empty).
-    void layerStatus(const QString& description, const QString& error);
+    // A layer's source opened (description), failed (error), or was closed (both empty).
+    void layerStatus(int layer, const QString& description, const QString& error);
     // The replay buffer started (encoder) or stopped / failed (error; both empty = off).
     void replayStatus(bool running, const QString& encoder, const QString& error);
     void replaySaved(const QString& path, bool ok, const QString& error, double seconds);
@@ -196,10 +196,11 @@ private:
     double m_padSeconds = 0;
     bool m_padChange = false;
     std::vector<int> m_held;           // guarded by m_mutex
-    LiveSource m_layerRequest;         // guarded by m_mutex
-    bool m_layerChange = false;
-    LiveLayerSettings m_layerSettings; // guarded by m_mutex
-    bool m_nextFile = false, m_nextLayerFile = false;
+    std::array<LiveSource, kLiveLayers> m_layerRequest;         // guarded by m_mutex
+    std::array<bool, kLiveLayers> m_layerChange{};
+    std::array<LiveLayerSettings, kLiveLayers> m_layerSettings; // guarded by m_mutex
+    bool m_nextFile = false;
+    std::array<bool, kLiveLayers> m_nextLayerFile{};
     std::vector<LiveSource> m_inputsRequest; // guarded by m_mutex
     bool m_inputsChange = false;
     int m_programRequest = 0; // guarded by m_mutex

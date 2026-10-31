@@ -561,6 +561,8 @@ void MainWindow::about()
                           "Registered to: <i>%5</i><br><br>"
                           "Free software under the GNU General Public License, version 3 or later, "
                           "with no warranty. <a href=\"https://github.com/jeddyhhh/MutantVideoProducer\">Source code</a><br><br>"
+                          "<a href=\"https://jeddyh.fyi\">jeddyh.fyi</a><br>"
+                          "<a href=\"https://www.youtube.com/forgottenuploads\">youtube.com/forgottenuploads</a><br><br>"
                           "Media I/O by FFmpeg %2 (libavcodec %3)<br>UI by Qt %4")
                            .arg(QApplication::applicationVersion(), QString::fromUtf8(av_version_info()))
                            .arg(QStringLiteral("%1.%2.%3")

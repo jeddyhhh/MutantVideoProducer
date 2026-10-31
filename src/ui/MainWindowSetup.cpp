@@ -42,6 +42,7 @@
 #include "ui/ProjectSettingsDialog.h"
 #include "ui/RelinkDialog.h"
 #include "ui/ShortcutsDialog.h"
+#include "ui/SystemStats.h"
 #include "ui/Theme.h"
 #include "ui/TimelineWidget.h"
 #include <QAction>
@@ -356,6 +357,34 @@ void MainWindow::createLayout()
     statusBar()->addPermanentWidget(m_proxyStatus);
     statusBar()->addPermanentWidget(m_proxyCancel);
     statusBar()->addPermanentWidget(m_rendererLabel);
+    // The computer's load, once a second.
+    auto* systemLabel = new QLabel;
+    systemLabel->setObjectName(QStringLiteral("systemStats"));
+    theme::style(systemLabel, QStringLiteral("color: @dim; padding: 0 6px;"));
+    statusBar()->addPermanentWidget(systemLabel);
+    auto* systemTimer = new QTimer(this);
+    connect(systemTimer, &QTimer::timeout, this, [this, systemLabel, stats = std::make_shared<SystemStats>()] {
+        if (isMinimized())
+            return;
+        const SystemStats::Reading r = stats->read();
+        QStringList parts, tip;
+        if (r.cpu >= 0)
+            parts << tr("CPU %1%").arg(qRound(r.cpu));
+        if (r.ramTotal > 0)
+            parts << tr("RAM %1/%2 GB").arg(r.ramUsed, 0, 'f', 1).arg(r.ramTotal, 0, 'f', 1);
+        if (r.gpu >= 0)
+            parts << (r.gpuTemp >= 0 ? tr("GPU %1% %2°C").arg(qRound(r.gpu)).arg(qRound(r.gpuTemp)) : tr("GPU %1%").arg(qRound(r.gpu)));
+        if (r.vramTotal > 0)
+            parts << tr("VRAM %1/%2 GB").arg(r.vramUsed, 0, 'f', 1).arg(r.vramTotal, 0, 'f', 1);
+        if (!r.gpuName.isEmpty())
+            tip << r.gpuName;
+        if (r.gpuWatts >= 0)
+            tip << tr("GPU power %1 W").arg(qRound(r.gpuWatts));
+        tip << tr("CPU temperature isn't shown: Windows only gives it to programs with a driver of their own.");
+        systemLabel->setText(parts.join(QStringLiteral("   ")));
+        systemLabel->setToolTip(tip.join(QLatin1Char('\n')));
+    });
+    systemTimer->start(1000);
     connect(m_proxyCancel, &QToolButton::clicked, m_proxies, &ProxyQueue::cancelAll);
     connect(m_proxies, &ProxyQueue::progress, this, [this](const QString& name, double f, int left) {
         m_proxyStatus->setText(left > 0 ? tr("Proxy: %1 %2% (%3 more)").arg(name).arg(int(f * 100)).arg(left)

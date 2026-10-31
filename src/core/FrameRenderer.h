@@ -13,14 +13,18 @@ struct AVFrame;
 // The Live tab's picture for one frame: the captured picture (at the output size), the second source (the layer) with
 // its own FX laid over it, then the Live FX, the active pad's chain (or, while switching, the last pad's fading into
 // it with a transition) and the held pads'. Each chain's result is flattened onto black, as renderLive does.
+struct LiveFrameLayer {
+    QImage image;                        // as captured; fitted into rect
+    QRect rect;
+    bool cover = false;                  // fill rect, cropped (a full-frame layer), rather than squeezed in
+    double opacity = 1.0;
+    int blend = 0;                       // BlendMode
+    const EffectChain* fx = nullptr;
+    bool overEffects = false;            // laid over after every chain, rather than under the Live FX
+};
 struct LiveFrameJob {
     QImage frame;
-    QImage layer;                        // as captured (null: none); fitted into layerRect
-    QRect layerRect;
-    bool layerCover = false;             // fill layerRect, cropped (a full-frame layer), rather than squeezed in
-    double layerOpacity = 1.0;
-    int layerBlend = 0;                  // BlendMode
-    const EffectChain* layerFx = nullptr;
+    std::vector<LiveFrameLayer> layers;  // lowest first
     const EffectChain* liveFx = nullptr;
     double fadeProgress = -1;            // switching pads (0..1): fadeFrom's picture into fadeTo's; < 0: not
     const EffectChain* fadeFrom = nullptr;

@@ -421,8 +421,11 @@ void forEachChain(Timeline& tl, const std::function<bool(EffectChain&, const QSt
                 return;
     }
     if (walk(tl.outputEffects, QStringLiteral("video output")) || walk(tl.audioMasterEffects, QStringLiteral("audio master"))
-        || walk(tl.liveEffects, QStringLiteral("Live FX")) || walk(tl.liveLayerEffects, QStringLiteral("Live layer")))
+        || walk(tl.liveEffects, QStringLiteral("Live FX")))
         return;
+    for (int i = 0; i < kLiveLayers; ++i)
+        if (walk(tl.liveLayerEffects[size_t(i)], QStringLiteral("Live layer %1").arg(i + 1)))
+            return;
     for (int i = 0; i < kLivePads; ++i)
         if (walk(tl.livePads[size_t(i)].effects, QStringLiteral("pad %1").arg(i + 1)))
             return;
@@ -928,6 +931,7 @@ QJsonArray McpServer::toolList()
                                          "spin, jump, squash, arms up, shake)")},
          {"moves", arrayProp("string", "dance: the moves, in turn")},
          {"every", prop("integer", "dance: a move every this many beats (default 1)")},
+         {"from", prop("number", "dance: event-local seconds to start from (default 0)")},
          {"set", prop("string", "add_set: a name or file from action sets")},
          {"prop", prop("string", "add_prop: a name or file from action props, put in character layer_id's hand")},
          {"hand", prop("string", "add_prop: R (default) or L")},
@@ -1025,7 +1029,7 @@ QJsonArray McpServer::toolList()
              "remove_bg removes the background with AI (model Fast or Quality); a_vst3 runs a VST3 plugin: params plugin (its file, "
              "see list_vst3_plugins) and class (for shells). Returns the effect id.",
              {{QStringLiteral("target"), enumProp(targets, "Which chain")},
-              {QStringLiteral("id"), prop("integer", "Event id (event), track index (track) or pad number 1-16 (pad)")},
+              {QStringLiteral("id"), prop("integer", "Event id (event), track index (track), pad number 1-16 (pad) or layer 1-4 (layer, default 1)")},
               {QStringLiteral("effect"), prop("string", "Effect type id from list_effects")},
               {QStringLiteral("params"), prop("object", "Settings to change from the defaults")}},
              {QStringLiteral("target"), QStringLiteral("effect")}));
@@ -1331,7 +1335,7 @@ QJsonArray McpServer::toolList()
                    {QStringLiteral("target"), enumProp({QStringLiteral("event"), QStringLiteral("track"), QStringLiteral("output"), QStringLiteral("audio_master"),
                                                         QStringLiteral("live"), QStringLiteral("pad"), QStringLiteral("layer")},
                                                        "apply / save: the chain")},
-                   {QStringLiteral("id"), prop("integer", "apply / save: event id, track index or pad number")},
+                   {QStringLiteral("id"), prop("integer", "apply / save: event id, track index, pad number or layer number")},
                    {QStringLiteral("effect_id"), prop("integer", "apply / save: one effect")},
                    {QStringLiteral("name"), prop("string", "save: the preset's name")}},
                   {QStringLiteral("action")}));
@@ -3938,8 +3942,12 @@ EffectChain* McpServer::ToolCall::chainFor(Timeline& tl, bool* audio, QString* e
     }
     if (target == QLatin1String("live"))
         return &tl.liveEffects;
-    if (target == QLatin1String("layer"))
-        return &tl.liveLayerEffects;
+    if (target == QLatin1String("layer")) { // (id: the layer, 1-4; default 1)
+        const int layer = id < 0 ? 1 : id;
+        if (layer < 1 || layer > kLiveLayers)
+            return fail(QStringLiteral("layers are 1-%1").arg(kLiveLayers));
+        return &tl.liveLayerEffects[size_t(layer - 1)];
+    }
     if (target == QLatin1String("pad")) {
         if (id < 1 || id > kLivePads)
             return fail(QStringLiteral("pads are 1-16"));
@@ -4900,6 +4908,19 @@ QJsonObject McpServer::callTool(const QString& name, const QJsonObject& a)
     const auto it = tools.constFind(name);
     if (it == tools.cend())
         return errorResult(QStringLiteral("no tool \"%1\"").arg(name));
+    // An argument the tool doesn't take is refused, not ignored: a misspelt or invented one would otherwise do nothing and the call
+    // something else than meant.
+    static const QHash<QString, QJsonObject> takes = [] {
+        QHash<QString, QJsonObject> h;
+        for (const auto& t : toolList())
+            h[t[QStringLiteral("name")].toString()] = t[QStringLiteral("inputSchema")][QStringLiteral("properties")].toObject();
+        return h;
+    }();
+    const QJsonObject properties = takes.value(name);
+    for (auto arg = a.begin(); arg != a.end(); ++arg)
+        if (!properties.contains(arg.key()))
+            return errorResult(QStringLiteral("%1 doesn't take \"%2\" (it takes: %3)")
+                                   .arg(name, arg.key(), properties.isEmpty() ? QStringLiteral("nothing") : properties.keys().join(QStringLiteral(", "))));
     LiveView* live = w->m_live;
     if (it->live && !live)
         return errorResult(QStringLiteral("no Live tab"));

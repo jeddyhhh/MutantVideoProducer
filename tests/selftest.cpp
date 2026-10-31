@@ -5617,17 +5617,25 @@ int cmdLive(const QString& outDir)
         tl.liveScenes[2].used = true;
         tl.liveScenes[2].name = QStringLiteral("Drop");
         tl.liveScenes[2].pad = 5;
-        tl.liveScenes[2].layerSource = QStringLiteral("Camera");
-        tl.liveScenes[2].layer.mode = LiveLayerSettings::Mode::Full;
-        tl.liveScenes[2].layer.blend = 3;
+        tl.liveScenes[2].layers[0].source = QStringLiteral("Camera");
+        tl.liveScenes[2].layers[0].settings.mode = LiveLayerSettings::Mode::Full;
+        tl.liveScenes[2].layers[0].settings.blend = 3;
+        tl.liveScenes[2].layers[2].source = QStringLiteral("Logo loop");
+        tl.liveScenes[2].layers[2].settings.size = 0.17;
+        tl.liveScenes[2].layers[2].settings.noEffects = true;
+        tl.liveScenes[2].layers[2].effects = {makeEffectOfType(QStringLiteral("hsl"), 8)};
         tl.liveScenes[2].liveEffects = {makeEffectOfType(QStringLiteral("invert"), 7)};
         LiveOverlay spectrum;
         spectrum.kind = LiveOverlay::Kind::Spectrum;
         spectrum.width = 42;
         tl.liveScenes[2].overlays = {spectrum};
         const LiveScenes back = liveScenesFromJson(liveScenesToJson(tl.liveScenes));
-        check(back == tl.liveScenes && back[2].overlays[0].kind == LiveOverlay::Kind::Spectrum && back[2].overlays[0].width == 42,
-              QStringLiteral("scenes (Live FX, pad, layer, overlays) and a spectrum overlay come back from the project file"));
+        const QJsonObject json = liveScenesToJson(tl.liveScenes)[2].toObject();
+        check(back == tl.liveScenes && back[2].overlays[0].kind == LiveOverlay::Kind::Spectrum && back[2].overlays[0].width == 42
+                  && json[QStringLiteral("layerSource")].toString() == QStringLiteral("Camera") && json.contains(QStringLiteral("layer3NoEffects"))
+                  && !json.contains(QStringLiteral("layer2Source")),
+              QStringLiteral("scenes (Live FX, pad, layers with No Effects, overlays) and a spectrum overlay come back from the project file "
+                             "(layer 1 under the keys one layer had)"));
     }
     // ---- Portrait / square output: a landscape picture framed into it ----
     {
@@ -6988,8 +6996,8 @@ int cmdExamples(const QString& outDir, const QString& narrationWav)
         bars.size = 14;
         bars.opacity = 0.8;
         tl.liveOverlays = {title, bars};
-        tl.liveScenes[0] = LiveScene{QStringLiteral("Intro"), tl.liveEffects, 0, {}, {}, {}, {title}, true};
-        tl.liveScenes[1] = LiveScene{QStringLiteral("Drop"), tl.liveEffects, 3, {}, {}, {}, {title, bars}, true};
+        tl.liveScenes[0] = LiveScene{QStringLiteral("Intro"), tl.liveEffects, 0, {}, {title}, true};
+        tl.liveScenes[1] = LiveScene{QStringLiteral("Drop"), tl.liveEffects, 3, {}, {title, bars}, true};
         tl.liveSetlist = {LiveSong{QStringLiteral("Warm-up"), {}, 120, true, 0, QStringLiteral("Slow pads, let it breathe")},
                           LiveSong{QStringLiteral("Peak"), {}, 128, true, 1, QStringLiteral("Momentary pads on the drops")}};
         save(p, tl, QStringLiteral("live-set"));

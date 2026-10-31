@@ -66,10 +66,12 @@ Effects, pads, overlays, recording and streaming follow whatever is on air.
 
 ## 7. A layer
 
-1. In **Setup > Layer**, choose a second source, for example your webcam.
-2. Choose **Picture in picture**, the bottom-right corner, and 25% wide.
-3. In the pads panel, set **Edit** to **Layer FX (the second source)** and drop **Remove Background
-   (AI)** in: the webcam's background disappears, and you appear over the main picture.
+1. In **Setup > Layer**, leave **Layer 1** picked and choose a source for it, for example your webcam.
+2. Choose **Picture in picture**, the bottom-right corner, and drag **Size** to 25%.
+3. In the pads panel, set **Edit** to **Layer 1 FX** and drop **Remove Background (AI)** in: the
+   webcam's background disappears, and you appear over the main picture.
+4. Tick **No Effects** to keep yourself out of the Live FX and pads (the picture under you still gets them).
+   Pick **Layer 2** to lay another source over both, a logo loop for example.
 
 ## 8. A MIDI controller
 

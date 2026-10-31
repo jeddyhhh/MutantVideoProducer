@@ -821,13 +821,17 @@ void repairTimeline(Timeline& tl)
         note(m.id);
         ids.push_back(&m.id);
     }
-    for (EffectChain* chain : {&tl.outputEffects, &tl.audioMasterEffects, &tl.liveEffects, &tl.liveLayerEffects})
+    for (EffectChain* chain : {&tl.outputEffects, &tl.audioMasterEffects, &tl.liveEffects})
         chainIds(*chain, true);
+    for (EffectChain& chain : tl.liveLayerEffects)
+        chainIds(chain, true);
     for (LivePad& pad : tl.livePads)
         chainIds(pad.effects, true);
-    for (LiveScene& scene : tl.liveScenes) // copies of the Live chains: their ids repeat on purpose
-        for (EffectChain* chain : {&scene.liveEffects, &scene.layerEffects})
-            chainIds(*chain, false);
+    for (LiveScene& scene : tl.liveScenes) { // copies of the Live chains: their ids repeat on purpose
+        chainIds(scene.liveEffects, false);
+        for (LiveLayer& layer : scene.layers)
+            chainIds(layer.effects, false);
+    }
     tl.nextId = std::clamp(tl.nextId, maxId + 1, kMaxId);
     std::map<int, int> occurrences;
     std::vector<std::pair<int, int*>> originals;
@@ -984,6 +988,11 @@ std::vector<LiveOverlay> liveOverlaysFromJson(const QJsonArray& a)
     return out;
 }
 
+QString liveLayerKey(const QString& name, int layer)
+{
+    return layer == 0 ? name : name + QString::number(layer + 1);
+}
+
 QJsonArray liveScenesToJson(const LiveScenes& scenes)
 {
     QJsonArray a;
@@ -993,13 +1002,21 @@ QJsonArray liveScenesToJson(const LiveScenes& scenes)
             o[QStringLiteral("name")] = s.name;
             o[QStringLiteral("liveEffects")] = chainToJson(s.liveEffects);
             o[QStringLiteral("pad")] = s.pad;
-            o[QStringLiteral("layerSource")] = s.layerSource;
-            o[QStringLiteral("layerMode")] = int(s.layer.mode);
-            o[QStringLiteral("layerCorner")] = s.layer.corner;
-            o[QStringLiteral("layerSize")] = s.layer.size;
-            o[QStringLiteral("layerOpacity")] = s.layer.opacity;
-            o[QStringLiteral("layerBlend")] = s.layer.blend;
-            o[QStringLiteral("layerEffects")] = chainToJson(s.layerEffects);
+            for (int i = 0; i < kLiveLayers; ++i) { // ("layerSource", "layer2Source"...)
+                const LiveLayer& l = s.layers[size_t(i)];
+                auto key = [i](const char* what) { return liveLayerKey(QStringLiteral("layer"), i) + QLatin1String(what); };
+                if (i > 0 && l == LiveLayer())
+                    continue;
+                o[key("Source")] = l.source;
+                o[key("Mode")] = int(l.settings.mode);
+                o[key("Corner")] = l.settings.corner;
+                o[key("Size")] = l.settings.size;
+                o[key("Opacity")] = l.settings.opacity;
+                o[key("Blend")] = l.settings.blend;
+                if (l.settings.noEffects)
+                    o[key("NoEffects")] = true;
+                o[key("Effects")] = chainToJson(l.effects);
+            }
             o[QStringLiteral("overlays")] = liveOverlaysToJson(s.overlays);
         }
         a.append(o);
@@ -1054,13 +1071,18 @@ LiveScenes liveScenesFromJson(const QJsonArray& a)
         s.name = o[QStringLiteral("name")].toString();
         s.liveEffects = chainFromJson(o[QStringLiteral("liveEffects")]);
         s.pad = std::clamp(o[QStringLiteral("pad")].toInt(-1), -1, kLivePads - 1);
-        s.layerSource = o[QStringLiteral("layerSource")].toString();
-        s.layer.mode = LiveLayerSettings::Mode(std::clamp(o[QStringLiteral("layerMode")].toInt(), 0, 1));
-        s.layer.corner = std::clamp(o[QStringLiteral("layerCorner")].toInt(3), 0, 4);
-        s.layer.size = std::clamp(o[QStringLiteral("layerSize")].toDouble(0.3), 0.05, 1.0);
-        s.layer.opacity = std::clamp(o[QStringLiteral("layerOpacity")].toDouble(1), 0.0, 1.0);
-        s.layer.blend = std::clamp(o[QStringLiteral("layerBlend")].toInt(), 0, 7);
-        s.layerEffects = chainFromJson(o[QStringLiteral("layerEffects")]);
+        for (int i = 0; i < kLiveLayers; ++i) {
+            LiveLayer& l = s.layers[size_t(i)];
+            auto at = [&](const char* what) { return o[liveLayerKey(QStringLiteral("layer"), i) + QLatin1String(what)]; };
+            l.source = at("Source").toString();
+            l.settings.mode = LiveLayerSettings::Mode(std::clamp(at("Mode").toInt(), 0, 1));
+            l.settings.corner = std::clamp(at("Corner").toInt(3), 0, 4);
+            l.settings.size = std::clamp(at("Size").toDouble(0.3), 0.05, 1.0);
+            l.settings.opacity = std::clamp(at("Opacity").toDouble(1), 0.0, 1.0);
+            l.settings.blend = std::clamp(at("Blend").toInt(), 0, 7);
+            l.settings.noEffects = at("NoEffects").toBool();
+            l.effects = chainFromJson(at("Effects"));
+        }
         s.overlays = liveOverlaysFromJson(o[QStringLiteral("overlays")].toArray());
     }
     return scenes;
@@ -1181,8 +1203,9 @@ QByteArray Project::toJson(const QString& baseDir, const QString& backupOf, bool
         root[QStringLiteral("liveEffects")] = chainToJson(m_timeline.liveEffects);
     if (std::any_of(m_timeline.livePads.begin(), m_timeline.livePads.end(), [](const LivePad& p) { return !p.isEmpty(); }))
         root[QStringLiteral("livePads")] = livePadsToJson(m_timeline.livePads);
-    if (!m_timeline.liveLayerEffects.empty())
-        root[QStringLiteral("liveLayerEffects")] = chainToJson(m_timeline.liveLayerEffects);
+    for (int i = 0; i < kLiveLayers; ++i) // ("liveLayerEffects", "liveLayerEffects2"...)
+        if (!m_timeline.liveLayerEffects[size_t(i)].empty())
+            root[liveLayerKey(QStringLiteral("liveLayerEffects"), i)] = chainToJson(m_timeline.liveLayerEffects[size_t(i)]);
     if (!m_timeline.liveOverlays.empty())
         root[QStringLiteral("liveOverlays")] = liveOverlaysToJson(m_timeline.liveOverlays);
     if (std::any_of(m_timeline.liveScenes.begin(), m_timeline.liveScenes.end(), [](const LiveScene& s) { return s.used; }))
@@ -1424,7 +1447,8 @@ bool Project::loadFile(const QString& path, QString* error, QStringList* missing
     timeline.audioMasterLevel = float(std::clamp(root[QStringLiteral("audioMasterLevel")].toDouble(1.0), 0.0, 1.0));
     timeline.liveEffects = chainFromJson(root[QStringLiteral("liveEffects")]);
     timeline.livePads = livePadsFromJson(root[QStringLiteral("livePads")].toArray());
-    timeline.liveLayerEffects = chainFromJson(root[QStringLiteral("liveLayerEffects")]);
+    for (int i = 0; i < kLiveLayers; ++i)
+        timeline.liveLayerEffects[size_t(i)] = chainFromJson(root[liveLayerKey(QStringLiteral("liveLayerEffects"), i)]);
     timeline.liveOverlays = liveOverlaysFromJson(root[QStringLiteral("liveOverlays")].toArray());
     timeline.liveScenes = liveScenesFromJson(root[QStringLiteral("liveScenes")].toArray());
     timeline.liveSetlist = liveSetlistFromJson(root[QStringLiteral("liveSetlist")].toArray());
@@ -1489,7 +1513,8 @@ QString timelineProblem(const Timeline& tl)
     collectIds(tl.outputEffects, QStringLiteral("the video output"));
     collectIds(tl.audioMasterEffects, QStringLiteral("the audio master"));
     collectIds(tl.liveEffects, QStringLiteral("Live FX"));
-    collectIds(tl.liveLayerEffects, QStringLiteral("the Live layer"));
+    for (int i = 0; i < kLiveLayers; ++i)
+        collectIds(tl.liveLayerEffects[size_t(i)], QStringLiteral("Live layer %1").arg(i + 1));
     for (const LivePad& p : tl.livePads)
         collectIds(p.effects, QStringLiteral("a pad"));
     std::map<int, QString> seen;

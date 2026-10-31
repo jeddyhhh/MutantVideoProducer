@@ -107,8 +107,8 @@ private:
     void updateSwitcher();
     void chooseVideoFiles(QComboBox* combo);
     void addPlaylist(const QStringList& paths);
-    LiveSource layerSource() const;
-    LiveLayerSettings layerSettings() const;
+    LiveSource layerSource(int layer) const;
+    void showLayer(); // the controls show layer m_layerIndex's source and settings
     void updateLayerControls();
     void refreshMidi();
     void learnMidi(const QString& action, const QString& label);
@@ -182,7 +182,8 @@ private:
     QLabel* m_recTime;
     QLabel* m_status;
     QToolButton* m_nextFile;
-    // Second bar: the layer, the replay buffer, MIDI, overlays.
+    // Second bar: the layers, the replay buffer, MIDI, overlays.
+    QComboBox* m_layerPick; // which layer the controls below show
     QComboBox* m_layer;
     std::array<QComboBox*, LiveEngine::kMaxInputs> m_inputs{};
     std::array<QToolButton*, LiveEngine::kMaxInputs + 1> m_inputTiles{};
@@ -191,9 +192,14 @@ private:
     QToolButton* m_nextLayerFile;
     QComboBox* m_layerMode;
     QComboBox* m_layerCorner;
-    QComboBox* m_layerSize;
+    QSlider* m_layerSize;
+    QLabel* m_layerSizeLabel;
     QComboBox* m_layerBlend;
     QSlider* m_layerOpacity;
+    QCheckBox* m_layerNoFx;
+    int m_layerIndex = 0;
+    std::array<QString, kLiveLayers> m_layerNames;          // each layer's source by name (empty: none)
+    std::array<LiveLayerSettings, kLiveLayers> m_layerSets; // and how it is laid over
     QCheckBox* m_replay;
     QComboBox* m_replayLength;
     QPushButton* m_saveReplay;

@@ -163,7 +163,7 @@ using LivePads = std::array<LivePad, kLivePads>;
 QJsonArray livePadsToJson(const LivePads& pads);
 LivePads livePadsFromJson(const QJsonArray& a);
 
-// How the Live tab's second source (the layer) is laid over the main one.
+// How a Live tab layer (another source) is laid over the main one.
 struct LiveLayerSettings {
     enum class Mode { PictureInPicture, Full };
     Mode mode = Mode::PictureInPicture;
@@ -171,7 +171,16 @@ struct LiveLayerSettings {
     double size = 0.3;    // picture in picture: its width, as a share of the picture's
     double opacity = 1.0; // 0..1
     int blend = 0;        // BlendMode
+    bool noEffects = false; // laid over after the Live FX and the pads, which leave it as it is (its own FX still apply)
     bool operator==(const LiveLayerSettings&) const = default;
+};
+inline constexpr int kLiveLayers = 4; // laid over in order: layer 1 lowest
+// A layer as a scene keeps it: its source by name (empty: none), how it is laid over, its own FX.
+struct LiveLayer {
+    QString source;
+    LiveLayerSettings settings;
+    EffectChain effects;
+    bool operator==(const LiveLayer&) const = default;
 };
 
 // Something drawn on top of the Live output: text, a picture (a logo), the
@@ -199,9 +208,7 @@ struct LiveScene {
     QString name;
     EffectChain liveEffects;
     int pad = -1;
-    QString layerSource; // the layer's source by name (empty: no layer)
-    LiveLayerSettings layer;
-    EffectChain layerEffects;
+    std::array<LiveLayer, kLiveLayers> layers;
     std::vector<LiveOverlay> overlays;
     bool used = false;
     bool operator==(const LiveScene&) const = default;
@@ -209,6 +216,8 @@ struct LiveScene {
 inline constexpr int kLiveScenes = 8;
 using LiveScenes = std::array<LiveScene, kLiveScenes>;
 QJsonArray liveScenesToJson(const LiveScenes& scenes);
+// A Live layer's JSON / settings key: the name for layer 1 (as files had it with one layer), name2, name3... for the others.
+QString liveLayerKey(const QString& name, int layer);
 LiveScenes liveScenesFromJson(const QJsonArray& a);
 
 // A Live tab setlist entry: what a song needs, recalled with one press
@@ -251,7 +260,7 @@ struct Timeline {
     float audioMasterLevel = 1.0f; // master volume (linear, 0..1), after the master FX
     EffectChain liveEffects; // Live tab FX, applied to the captured picture
     LivePads livePads; // Live tab pads, applied after liveEffects
-    EffectChain liveLayerEffects; // Live tab: FX on the second source (the layer) before it is laid over
+    std::array<EffectChain, kLiveLayers> liveLayerEffects; // Live tab: FX on each layer before it is laid over
     std::vector<LiveOverlay> liveOverlays; // Live tab: drawn over the output
     LiveScenes liveScenes; // Live tab: saved looks
     std::vector<LiveSong> liveSetlist; // Live tab: the songs of a set, in order

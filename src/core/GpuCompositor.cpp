@@ -4179,12 +4179,49 @@ struct GpuCompositor::Impl : protected QOpenGLExtraFunctions {
         canvas = std::move(flat);
     }
 
-    // As FrameRenderer::renderLiveFrame (the CPU's), with one upload (two with a layer) and one read back.
+    // A Live layer fitted into its place (cropped to fill it, or squeezed in), its own FX, then laid over the canvas.
+    void layOver(Layer& canvas, const LiveFrameLayer& layer, TimeUs t, double fps)
+    {
+        const QSize size = canvas->size(), ls = layer.image.size(), rs = layer.rect.size();
+        Layer src = acquire(ls, false);
+        upload(*src, layer.image);
+        QRectF uv(0, 0, 1, 1);
+        if (layer.cover) {
+            const double k = std::max(double(rs.width()) / ls.width(), double(rs.height()) / ls.height());
+            const double vw = rs.width() / k / ls.width(), vh = rs.height() / k / ls.height();
+            uv = QRectF((1 - vw) / 2, (1 - vh) / 2, vw, vh);
+        }
+        Layer fitted = acquire(rs, false);
+        drawTexture(*fitted, src->tex, QSizeF(rs), QTransform(), 1.0, uv, false);
+        src.reset();
+        liveChain(layer.fx, fitted, liveContext(rs, t, fps), true);
+        const float opacity = float(std::clamp(layer.opacity, 0.0, 1.0));
+        const QTransform at = QTransform::fromTranslate(layer.rect.x(), layer.rect.y());
+        if (BlendMode(layer.blend) == BlendMode::Normal) {
+            drawTexture(*canvas, fitted->tex, QSizeF(rs), at, opacity);
+            return;
+        }
+        Layer placed = acquire(size); // (see-through around it: the blends leave the picture there)
+        drawTexture(*placed, fitted->tex, QSizeF(rs), at, 1.0, QRectF(0, 0, 1, 1), false);
+        Layer out = acquire(size, false); // (the rack's blends: QPainter's modes at an opacity)
+        progRackBlend->bind();
+        bindTexture(0, canvas->tex);
+        bindTexture(1, placed->tex);
+        progRackBlend->setUniformValue("uBase", 0);
+        progRackBlend->setUniformValue("uLayer", 1);
+        progRackBlend->setUniformValue("uOpacity", opacity);
+        progRackBlend->setUniformValue("uMode", layer.blend);
+        fullscreen(*progRackBlend, *out);
+        canvas = std::move(out);
+    }
+
+    // As FrameRenderer::renderLiveFrame (the CPU's), with one upload (and one per layer) and one read back.
     QImage renderLiveFrame(const LiveFrameJob& job, QImage* clean, bool keepAlpha = false)
     {
         auto active = [](const EffectChain* c) { return c && hasActiveEffects(*c); };
-        const bool layer = !job.layer.isNull() && !job.layerRect.isEmpty();
-        bool any = layer || job.fadeProgress >= 0 || active(job.liveFx);
+        auto shown = [](const LiveFrameLayer& l) { return !l.image.isNull() && !l.rect.isEmpty(); };
+        const bool under = std::any_of(job.layers.begin(), job.layers.end(), [&](const LiveFrameLayer& l) { return shown(l) && !l.overEffects; });
+        bool any = std::any_of(job.layers.begin(), job.layers.end(), shown) || job.fadeProgress >= 0 || active(job.liveFx);
         for (const EffectChain* c : job.after)
             any = any || active(c);
         if (job.frame.isNull() || !any) {
@@ -4199,39 +4236,10 @@ struct GpuCompositor::Impl : protected QOpenGLExtraFunctions {
         const RenderContext ctx = liveContext(size, job.time, job.fps);
         Layer canvas = acquire(size, false);
         upload(*canvas, job.frame);
-        if (layer) {
-            // Fitted into its place (cropped to fill it, or squeezed in), its own FX, then laid over.
-            const QSize ls = job.layer.size(), rs = job.layerRect.size();
-            Layer src = acquire(ls, false);
-            upload(*src, job.layer);
-            QRectF uv(0, 0, 1, 1);
-            if (job.layerCover) {
-                const double k = std::max(double(rs.width()) / ls.width(), double(rs.height()) / ls.height());
-                const double vw = rs.width() / k / ls.width(), vh = rs.height() / k / ls.height();
-                uv = QRectF((1 - vw) / 2, (1 - vh) / 2, vw, vh);
-            }
-            Layer fitted = acquire(rs, false);
-            drawTexture(*fitted, src->tex, QSizeF(rs), QTransform(), 1.0, uv, false);
-            src.reset();
-            liveChain(job.layerFx, fitted, liveContext(rs, job.time, job.fps), true);
-            const float opacity = float(std::clamp(job.layerOpacity, 0.0, 1.0));
-            const QTransform at = QTransform::fromTranslate(job.layerRect.x(), job.layerRect.y());
-            if (BlendMode(job.layerBlend) == BlendMode::Normal) {
-                drawTexture(*canvas, fitted->tex, QSizeF(rs), at, opacity);
-            } else {
-                Layer placed = acquire(size); // (see-through around it: the blends leave the picture there)
-                drawTexture(*placed, fitted->tex, QSizeF(rs), at, 1.0, QRectF(0, 0, 1, 1), false);
-                Layer out = acquire(size, false); // (the rack's blends: QPainter's modes at an opacity)
-                progRackBlend->bind();
-                bindTexture(0, canvas->tex);
-                bindTexture(1, placed->tex);
-                progRackBlend->setUniformValue("uBase", 0);
-                progRackBlend->setUniformValue("uLayer", 1);
-                progRackBlend->setUniformValue("uOpacity", opacity);
-                progRackBlend->setUniformValue("uMode", job.layerBlend);
-                fullscreen(*progRackBlend, *out);
-                canvas = std::move(out);
-            }
+        if (under) {
+            for (const LiveFrameLayer& l : job.layers)
+                if (shown(l) && !l.overEffects)
+                    layOver(canvas, l, job.time, job.fps);
             if (clean)
                 *clean = download(*canvas);
         } else if (clean) {
@@ -4254,6 +4262,9 @@ struct GpuCompositor::Impl : protected QOpenGLExtraFunctions {
         }
         for (const EffectChain* c : job.after)
             liveChain(c, canvas, ctx, keepAlpha);
+        for (const LiveFrameLayer& l : job.layers)
+            if (shown(l) && l.overEffects)
+                layOver(canvas, l, job.time, job.fps);
         QImage img = download(*canvas);
         canvas.reset();
         evict();

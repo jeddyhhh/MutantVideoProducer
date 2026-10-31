@@ -609,7 +609,7 @@ int LiveView::runSelfTest(QStringList& log)
         const QString video = QDir(QStringLiteral("testmedia")).absoluteFilePath(QStringLiteral("h264_aac.mp4"));
         if (QFileInfo::exists(video)) {
             QString layerDesc, layerErr;
-            connect(m_engine, &LiveEngine::layerStatus, &featCtx, [&](const QString& d, const QString& e) {
+            connect(m_engine, &LiveEngine::layerStatus, &featCtx, [&](int, const QString& d, const QString& e) {
                 layerDesc = d;
                 layerErr = e;
             });
@@ -621,8 +621,8 @@ int LiveView::runSelfTest(QStringList& log)
             ls.mode = LiveLayerSettings::Mode::PictureInPicture;
             ls.corner = 3;
             ls.size = 0.33;
-            m_engine->setLayerSettings(ls);
-            m_engine->setLayer(file);
+            m_engine->setLayerSettings(0, ls);
+            m_engine->setLayer(0, file);
             wait(3000, [&] { return !layerDesc.isEmpty() || !layerErr.isEmpty(); });
             settle(10);
             const QImage withLayer = last.copy();
@@ -631,7 +631,7 @@ int LiveView::runSelfTest(QStringList& log)
             const double cornerDiff = diffIn(plain, withLayer, corner);
             {
                 Timeline tl = m_project->timeline();
-                tl.liveLayerEffects = {makeEffectOfType(QStringLiteral("invert"), tl.allocId())};
+                tl.liveLayerEffects[0] = {makeEffectOfType(QStringLiteral("invert"), tl.allocId())};
                 m_project->applyEdit(tl, QStringLiteral("Test layer FX"));
             }
             settle(5);
@@ -639,9 +639,34 @@ int LiveView::runSelfTest(QStringList& log)
             check(!layerDesc.isEmpty() && cornerDiff > 15 && fxDiff > 30,
                   QStringLiteral("a video file as the layer shows in the bottom-right corner (changed by %1), with its own FX (invert: %2)%3")
                       .arg(cornerDiff, 0, 'f', 0).arg(fxDiff, 0, 'f', 0).arg(layerErr.isEmpty() ? QString() : QStringLiteral(": ") + layerErr));
-            m_engine->setLayer(LiveSource());
+            {
+                Timeline tl = m_project->timeline();
+                tl.liveLayerEffects[0].clear();
+                m_project->applyEdit(tl, QStringLiteral("Test layer FX"));
+            }
+            // A second layer at top left, No Effects: an inverting Live FX changes the picture but not that layer.
+            ls.corner = 0;
+            ls.noEffects = true;
+            m_engine->setLayerSettings(1, ls);
+            m_engine->setLayer(1, file);
+            settle(10);
+            const QRect topLeft(m + 6, m + 6, int(w * 0.33) - 12, int(w * 0.33 * 9 / 16) - 12);
+            const QRect middle(w / 2 - 40, h / 2 - 40, 80, 80);
+            const QImage twoLayers = last.copy();
+            {
+                Timeline tl = m_project->timeline();
+                tl.liveEffects = {makeEffectOfType(QStringLiteral("invert"), tl.allocId())};
+                m_project->applyEdit(tl, QStringLiteral("Test No Effects"));
+            }
+            settle(5);
+            const double layerDiff = diffIn(twoLayers, last, topLeft), pictureDiff = diffIn(twoLayers, last, middle);
+            check(pictureDiff > 60 && layerDiff < pictureDiff / 2,
+                  QStringLiteral("a second layer with No Effects is laid over after the Live FX (it changed by %1, the picture by %2)")
+                      .arg(layerDiff, 0, 'f', 0).arg(pictureDiff, 0, 'f', 0));
+            m_engine->setLayer(0, LiveSource());
+            m_engine->setLayer(1, LiveSource());
             Timeline tl = m_project->timeline();
-            tl.liveLayerEffects.clear();
+            tl.liveEffects.clear();
             m_project->applyEdit(tl, QStringLiteral("Test layer FX"));
             settle(5);
         } else {

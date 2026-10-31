@@ -1098,13 +1098,13 @@ EffectChain* DeviceChainView::root(Timeline& tl) const
         return nullptr;
     case FxTarget::Kind::Output: return &tl.outputEffects;
     case FxTarget::Kind::AudioMaster: return &tl.audioMasterEffects;
-    case FxTarget::Kind::Live: // id 0: the Live FX chain; 1..16: a pad; 17: the layer's FX
+    case FxTarget::Kind::Live: // id 0: the Live FX chain; 1..16: a pad; 17..20: a layer's FX
         if (m_target.id == 0)
             return &tl.liveEffects;
         if (m_target.id >= 1 && m_target.id <= kLivePads)
             return &tl.livePads[size_t(m_target.id - 1)].effects;
-        if (m_target.id == kLivePads + 1)
-            return &tl.liveLayerEffects;
+        if (m_target.id > kLivePads && m_target.id <= kLivePads + kLiveLayers)
+            return &tl.liveLayerEffects[size_t(m_target.id - kLivePads - 1)];
         return nullptr;
     default: return nullptr;
     }
@@ -2572,7 +2572,7 @@ void DeviceChainView::rebuild()
             const QString& name = tl.livePads[size_t(m_target.id - 1)].name;
             title = name.isEmpty() ? tr("Pad %1 FX").arg(m_target.id) : tr("Pad %1 FX: %2").arg(m_target.id).arg(name);
         } else {
-            title = tr("Layer FX (the second source, before it is laid over: e.g. a Chroma Keyer)");
+            title = tr("Layer %1 FX (before it is laid over: e.g. a Chroma Keyer)").arg(m_target.id - kLivePads);
         }
         break;
     default: break;

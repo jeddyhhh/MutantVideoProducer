@@ -40,7 +40,7 @@ public:
     void setHeldPads(const std::vector<int>& pads);
     bool isMomentary(int pad) const;
     void setMomentary(int pad, bool momentary);
-    // Chain shown in the device chain panel: 0 = Live FX, 1..16 = pad, 17 = the layer's FX.
+    // Chain shown in the device chain panel: 0 = Live FX, 1..16 = pad, 17.. = the layers' FX (layer 1 first).
     static constexpr int kLayerTarget = kLivePads + 1;
     int editing() const { return m_editing; }
     void setEditing(int target);

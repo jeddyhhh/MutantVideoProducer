@@ -264,8 +264,11 @@ EffectInstance* findInstance(Timeline& tl, int id)
     for (LivePad& pad : tl.livePads)
         if (EffectInstance* found = in(pad.effects))
             return found;
-    for (EffectChain* chain : {&tl.outputEffects, &tl.liveEffects, &tl.liveLayerEffects})
+    for (EffectChain* chain : {&tl.outputEffects, &tl.liveEffects})
         if (EffectInstance* found = in(*chain))
+            return found;
+    for (EffectChain& chain : tl.liveLayerEffects)
+        if (EffectInstance* found = in(chain))
             return found;
     return nullptr;
 }

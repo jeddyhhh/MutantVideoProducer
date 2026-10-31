@@ -327,8 +327,8 @@ int main(int argc, char** argv)
             }
             {
                 // The Live tab's whole frame in one go on the GPU as on the CPU: a layer in each blend mode (with its own
-                // FX, cropped to fill or squeezed into a corner), the Live FX, a pad switch half way, held pads, and the
-                // picture before the effects.
+                // FX, cropped to fill or squeezed into a corner), a second one over every effect (No Effects), the Live FX,
+                // a pad switch half way, held pads, and the picture before the effects.
                 const QImage second = testPicture(QSize(320, 240)).mirrored(true, false);
                 const EffectChain liveFx{makeEffect(*findEffect(QStringLiteral("hsl")), 21)};
                 const EffectChain layerFx{makeEffect(*findEffect(QStringLiteral("gaussian_blur")), 22)};
@@ -340,12 +340,19 @@ int main(int argc, char** argv)
                     for (int fade = 0; fade < 2; ++fade) {
                         LiveFrameJob job;
                         job.frame = pic;
-                        job.layer = second;
-                        job.layerCover = blend % 2 == 1;
-                        job.layerRect = job.layerCover ? QRect(QPoint(0, 0), pic.size()) : QRect(400, 200, 200, 150);
-                        job.layerOpacity = 0.8;
-                        job.layerBlend = blend;
-                        job.layerFx = blend == 2 ? &layerFx : nullptr;
+                        LiveFrameLayer layer;
+                        layer.image = second;
+                        layer.cover = blend % 2 == 1;
+                        layer.rect = layer.cover ? QRect(QPoint(0, 0), pic.size()) : QRect(400, 200, 200, 150);
+                        layer.opacity = 0.8;
+                        layer.blend = blend;
+                        layer.fx = blend == 2 ? &layerFx : nullptr;
+                        LiveFrameLayer top = layer;
+                        top.rect = QRect(20, 20, 160, 120);
+                        top.cover = false;
+                        top.blend = 7 - blend;
+                        top.overEffects = true;
+                        job.layers = {layer, top};
                         job.liveFx = &liveFx;
                         if (fade) {
                             job.fadeProgress = 0.4;

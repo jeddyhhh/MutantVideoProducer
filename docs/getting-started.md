@@ -31,7 +31,11 @@ The Editor has four areas. Drag the dividers between them to resize them.
 Grid and Night City, and a light one (see [Themes](options.md#themes)).
 
 The status bar at the bottom says what the computer is using, for example
-`Render: GPU (NVIDIA GeForce RTX 5070) Decode: D3D11VA`.
+`Render: GPU (NVIDIA GeForce RTX 5070) Decode: D3D11VA`, and how busy it is, once a second:
+`CPU 12%   RAM 9.1/31.9 GB   GPU 40% 61°C   VRAM 3.2/12.0 GB`. The GPU's temperature and memory
+show with an NVIDIA card; other cards show their load. Hold the mouse over it for the card's name
+and power. Windows doesn't let programs read the CPU's temperature without a driver of their own,
+so it isn't shown.
 
 ## The welcome window
 

@@ -6,6 +6,9 @@ What changed in each version of Mutant Video Producer. The newest is first.
 
 ### Changed
 
+- **AI control**: a tool called with an argument it doesn't take is refused, naming the ones it takes. It was ignored,
+  so a misspelt or invented argument could quietly do something else than meant.
+
 - **Effect Builder effects run on the GPU**: node by node on the graphics card instead of the CPU. The examples at 720p
   take 3 to 14 ms a frame instead of 45 to 170 ms, so they keep up on the Live tab (and play faster in the editor).
 - **Live tab**: the Live FX, the active pad and held pads go through the GPU in one go (one upload, one read back),
@@ -34,6 +37,11 @@ What changed in each version of Mutant Video Producer. The newest is first.
 ### Added
 
 - **AI control**: remove_markers takes the markers out of a stretch of time (the beat markers once a montage is cut).
+- **Live tab**: four layers instead of one, each with its own source, settings and Layer FX (pick it in the Layer
+  section's Layer list; Layer 1-4 FX in the pads' Edit list). A **Size** slider (5-100%) for picture in picture, and
+  **No Effects**: the layer is laid over after the Live FX and pads, which leave it as it is.
+- **Status bar**: CPU and GPU load, RAM, the GPU's temperature and memory (NVIDIA), once a second.
+- **Help > About**: links to jeddyh.fyi and the YouTube channel.
 
 ## 0.9.2 (2026-10-31)
 

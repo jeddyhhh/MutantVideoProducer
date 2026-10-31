@@ -21,7 +21,8 @@ client. The assistant sees the project and edits it with you, step by step, whil
    first track"* or *"add captions and make them yellow"*.
 
 Every edit the assistant makes is one *AI: ...* step on the undo stack, so **Ctrl+Z** takes it back.
-The status bar shows each tool it uses.
+The status bar shows each tool it uses. A tool called with an argument it doesn't take is refused (the
+answer lists the ones it takes), so a misspelt or invented argument can't quietly do something else.
 
 `collect_project` takes `destination` (a new folder), `include_unused_media` and `include_voice_models` (both default true). It includes unsaved edits without changing the open project and returns `project`, `report`, `copied_files`, `copied_bytes`, `missing` and `warnings`. Its copying progress window appears even for MCP calls and can cancel the operation.
 

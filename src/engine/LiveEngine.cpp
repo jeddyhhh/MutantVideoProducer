@@ -346,26 +346,33 @@ void LiveEngine::setHeldPads(const std::vector<int>& pads)
             m_held.push_back(p);
 }
 
-void LiveEngine::setLayer(const LiveSource& source)
+void LiveEngine::setLayer(int layer, const LiveSource& source)
 {
+    if (layer < 0 || layer >= kLiveLayers)
+        return;
     {
         std::lock_guard lock(m_mutex);
-        m_layerRequest = source;
-        m_layerChange = true;
+        m_layerRequest[size_t(layer)] = source;
+        m_layerChange[size_t(layer)] = true;
     }
     m_cv.notify_all();
 }
 
-void LiveEngine::setLayerSettings(const LiveLayerSettings& settings)
+void LiveEngine::setLayerSettings(int layer, const LiveLayerSettings& settings)
 {
+    if (layer < 0 || layer >= kLiveLayers)
+        return;
     std::lock_guard lock(m_mutex);
-    m_layerSettings = settings;
+    m_layerSettings[size_t(layer)] = settings;
 }
 
-void LiveEngine::nextFile(bool layer)
+void LiveEngine::nextFile(int layer)
 {
     std::lock_guard lock(m_mutex);
-    (layer ? m_nextLayerFile : m_nextFile) = true;
+    if (layer < 0)
+        m_nextFile = true;
+    else if (layer < kLiveLayers)
+        m_nextLayerFile[size_t(layer)] = true;
 }
 
 void LiveEngine::noteBeat(double bpm, int barBeat)
@@ -527,12 +534,13 @@ void LiveEngine::threadMain(Options o)
     }
     QMetaObject::invokeMethod(this, [this, d = capture.description()] { emit started(d); }, Qt::QueuedConnection);
 
-    // The second source, laid over the first.
-    LiveCapture layer;
-    bool layerOpen = false;
-    auto openLayer = [&](const LiveSource& src) {
+    // The layers' sources, laid over the first.
+    std::array<LiveCapture, kLiveLayers> layers;
+    std::array<bool, kLiveLayers> layerOpen{};
+    auto openLayer = [&](int i, const LiveSource& src) {
+        LiveCapture& layer = layers[size_t(i)];
         layer.stop();
-        layerOpen = false;
+        layerOpen[size_t(i)] = false;
         QString desc, err;
         if (!src.name.isEmpty()) {
             QSize box;
@@ -540,18 +548,21 @@ void LiveEngine::threadMain(Options o)
                 std::lock_guard lock(m_mutex);
                 box = m_canvas.isValid() ? m_canvas : m_maxSize;
             }
-            layerOpen = layer.start(src, LiveFormat(), box, &err);
-            if (layerOpen)
+            layerOpen[size_t(i)] = layer.start(src, LiveFormat(), box, &err);
+            if (layerOpen[size_t(i)])
                 desc = layer.description();
         }
-        QMetaObject::invokeMethod(this, [this, desc, err] { emit layerStatus(desc, err); }, Qt::QueuedConnection);
+        QMetaObject::invokeMethod(this, [this, i, desc, err] { emit layerStatus(i, desc, err); }, Qt::QueuedConnection);
     };
     {
         std::lock_guard lock(m_mutex);
-        m_layerChange = false;
-        m_nextFile = m_nextLayerFile = false;
+        m_layerChange = {};
+        m_nextFile = false;
+        m_nextLayerFile = {};
     }
-    openLayer(o.layer);
+    for (int i = 0; i < kLiveLayers; ++i)
+        if (!o.layers[size_t(i)].name.isEmpty())
+            openLayer(i, o.layers[size_t(i)]);
 
     // The switcher's other inputs, and the one on air (blended from the one before while switching).
     std::vector<std::unique_ptr<LiveCapture>> inputs;
@@ -667,9 +678,9 @@ void LiveEngine::threadMain(Options o)
     Clock::time_point fadeStart;
     double fadeSeconds = 0;
     TransitionSpec fadeSpec;
-    LiveLayerSettings layerSettings = o.layerSettings;
-    LiveSource layerChange;
-    bool changeLayer = false;
+    std::array<LiveLayerSettings, kLiveLayers> layerSettings = o.layerSettings;
+    std::array<LiveSource, kLiveLayers> layerChange;
+    std::array<bool, kLiveLayers> changeLayer{};
     std::map<QString, QImage> overlayPictures;
     AudioView audioView;
     // A fixed output shape (portrait...), the size limit otherwise, the pan and zoom.
@@ -767,7 +778,8 @@ void LiveEngine::threadMain(Options o)
                 framing = m_framing;
                 maxSize = m_maxSize;
                 captureBox = QSize(-1, -1); // chosen again below
-                layer.setMaxSize(canvas.isValid() ? canvas : m_maxSize);
+                for (LiveCapture& layer : layers)
+                    layer.setMaxSize(canvas.isValid() ? canvas : m_maxSize);
                 m_maxSizeChanged = false;
             }
             panZoom = m_panZoom;
@@ -798,11 +810,12 @@ void LiveEngine::threadMain(Options o)
             }
             held = m_held;
             layerSettings = m_layerSettings;
-            if (m_layerChange) {
-                m_layerChange = false;
-                layerChange = m_layerRequest;
-                changeLayer = true;
-            }
+            for (int i = 0; i < kLiveLayers; ++i)
+                if (m_layerChange[size_t(i)]) {
+                    m_layerChange[size_t(i)] = false;
+                    layerChange[size_t(i)] = m_layerRequest[size_t(i)];
+                    changeLayer[size_t(i)] = true;
+                }
             if (m_nextFile) {
                 m_nextFile = false;
                 capture.nextFile();
@@ -823,11 +836,12 @@ void LiveEngine::threadMain(Options o)
                     program = m_programRequest;
                 }
             }
-            if (m_nextLayerFile) {
-                m_nextLayerFile = false;
-                if (layerOpen)
-                    layer.nextFile();
-            }
+            for (int i = 0; i < kLiveLayers; ++i)
+                if (m_nextLayerFile[size_t(i)]) {
+                    m_nextLayerFile[size_t(i)] = false;
+                    if (layerOpen[size_t(i)])
+                        layers[size_t(i)].nextFile();
+                }
             if (m_streamStart) {
                 m_streamStart = false;
                 wantStream = true;
@@ -865,10 +879,11 @@ void LiveEngine::threadMain(Options o)
             if (replay) // the sound track appears or goes: start the buffer again
                 restartReplay = true;
         }
-        if (changeLayer) {
-            changeLayer = false;
-            openLayer(layerChange);
-        }
+        for (int i = 0; i < kLiveLayers; ++i)
+            if (changeLayer[size_t(i)]) {
+                changeLayer[size_t(i)] = false;
+                openLayer(i, layerChange[size_t(i)]);
+            }
         if (changeInputs) {
             changeInputs = false;
             openInputs(inputsChange);
@@ -881,10 +896,12 @@ void LiveEngine::threadMain(Options o)
             audioFailureShown = true;
             QMetaObject::invokeMethod(this, [this, err = audio.failure()] { emit audioStatus(QString(), err); }, Qt::QueuedConnection);
         }
-        if (layerOpen && !layer.failure().isEmpty()) {
-            layerOpen = false;
-            QMetaObject::invokeMethod(this, [this, err = layer.failure()] { emit layerStatus(QString(), err); }, Qt::QueuedConnection);
-        }
+        for (int i = 0; i < kLiveLayers; ++i)
+            if (layerOpen[size_t(i)] && !layers[size_t(i)].failure().isEmpty()) {
+                layerOpen[size_t(i)] = false;
+                QMetaObject::invokeMethod(this, [this, i, err = layers[size_t(i)].failure()] { emit layerStatus(i, QString(), err); },
+                                          Qt::QueuedConnection);
+            }
         if (restartRecording) { // a new file: close the current one first
             restartRecording = false;
             finishRecording();
@@ -1002,27 +1019,31 @@ void LiveEngine::threadMain(Options o)
         // Modulated settings take their values for this frame.
         const ModInputs inputs = modInputs();
         auto chainNow = [&](const EffectChain& chain) { return hasModulation(chain) ? applyModulation(chain, inputs) : chain; };
-        // The frame: the layer with its own FX over the picture, the Live FX, then the active pad's chain (or, while
-        // switching, the previous pad's fading into it), then the held (momentary) pads'. In one go: on the GPU,
-        // one upload and one read back.
+        // The frame: the layers with their own FX over the picture, the Live FX, then the active pad's chain (or, while
+        // switching, the previous pad's fading into it), then the held (momentary) pads', then the No Effects layers.
+        // In one go: on the GPU, one upload (and one per layer) and one read back.
         LiveFrameJob job;
         job.frame = img;
         job.time = liveTime;
         job.fps = fps;
-        EffectChain layerFx;
-        if (layerOpen) {
-            const QImage layerImg = layer.latest();
-            if (!layerImg.isNull()) {
-                job.layer = layerImg;
-                job.layerRect = layerRect(img.size(), layerImg.size(), layerSettings);
-                job.layerCover = layerSettings.mode == LiveLayerSettings::Mode::Full;
-                job.layerOpacity = layerSettings.opacity;
-                job.layerBlend = layerSettings.blend;
-                if (snap && hasActiveEffects(snap->timeline.liveLayerEffects)) {
-                    layerFx = chainNow(snap->timeline.liveLayerEffects);
-                    job.layerFx = &layerFx;
-                }
+        std::array<EffectChain, kLiveLayers> layerFx;
+        for (int i = 0; i < kLiveLayers; ++i) {
+            const QImage layerImg = layerOpen[size_t(i)] ? layers[size_t(i)].latest() : QImage();
+            if (layerImg.isNull())
+                continue;
+            const LiveLayerSettings& ls = layerSettings[size_t(i)];
+            LiveFrameLayer l;
+            l.image = layerImg;
+            l.rect = layerRect(img.size(), layerImg.size(), ls);
+            l.cover = ls.mode == LiveLayerSettings::Mode::Full;
+            l.opacity = ls.opacity;
+            l.blend = ls.blend;
+            l.overEffects = ls.noEffects;
+            if (snap && hasActiveEffects(snap->timeline.liveLayerEffects[size_t(i)])) {
+                layerFx[size_t(i)] = chainNow(snap->timeline.liveLayerEffects[size_t(i)]);
+                l.fx = &layerFx[size_t(i)];
             }
+            job.layers.push_back(l);
         }
         auto padChain = [&](int p) -> EffectChain {
             if (p < 0 || !snap || !hasActiveEffects(snap->timeline.livePads[size_t(p)].effects))
@@ -1053,8 +1074,9 @@ void LiveEngine::threadMain(Options o)
                 after.push_back(padChain(h));
         for (const EffectChain& c : after)
             job.after.push_back(&c);
-        // The picture before the effects (with the layer), when a recording or the replay keeps that one.
-        const bool wantClean = job.layer.isNull() ? false : (wantRecording && !recordEffects) || (replayWanted && !replayEffects);
+        // The picture before the effects (with the layers under them), when a recording or the replay keeps that one.
+        const bool wantClean = std::any_of(job.layers.begin(), job.layers.end(), [](const LiveFrameLayer& l) { return !l.overEffects; })
+                               && ((wantRecording && !recordEffects) || (replayWanted && !replayEffects));
         QImage clean;
         QImage out = renderer->renderLiveFrame(job, wantClean ? &clean : nullptr);
         if (wantClean && !clean.isNull())
@@ -1327,7 +1349,8 @@ void LiveEngine::threadMain(Options o)
         shareStatus();
     }
     audio.stop();
-    layer.stop();
+    for (LiveCapture& layer : layers)
+        layer.stop();
     capture.stop();
     cueRenderer.reset();
     renderer.reset();

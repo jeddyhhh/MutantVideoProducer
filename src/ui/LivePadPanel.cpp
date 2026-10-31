@@ -366,7 +366,7 @@ void LivePadPanel::setActivePad(int pad)
 
 void LivePadPanel::setEditing(int target)
 {
-    m_editing = std::clamp(target, 0, kLayerTarget);
+    m_editing = std::clamp(target, 0, kLayerTarget + kLiveLayers - 1);
     refresh();
 }
 
@@ -457,7 +457,8 @@ void LivePadPanel::refresh()
                 text += QStringLiteral(" ") + kLock;
             m_edit->addItem(text);
         }
-        m_edit->addItem(tr("Layer FX (the second source)"));
+        for (int i = 0; i < kLiveLayers; ++i)
+            m_edit->addItem(tr("Layer %1 FX").arg(i + 1));
         m_edit->setCurrentIndex(m_editing);
     }
     // The set's name, starred when the pads differ from it.

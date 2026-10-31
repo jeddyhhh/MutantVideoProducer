@@ -524,12 +524,17 @@ LiveView::LiveView(Project* project, QWidget* parent) : QWidget(parent), m_proje
     theme::style(m_status, QStringLiteral("color: @dim;"));
     m_status->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred); // long messages don't widen the window
 
-    // Layer, replay, MIDI, scenes, overlays.
+    // Layers, replay, MIDI, scenes, overlays.
+    m_layerPick = new QComboBox;
+    m_layerPick->setObjectName(QStringLiteral("liveLayerPick"));
+    for (int i = 0; i < kLiveLayers; ++i)
+        m_layerPick->addItem(tr("Layer %1").arg(i + 1));
+    m_layerPick->setToolTip(tr("The layer the settings below are for. Layers are laid over in order: layer 1 lowest"));
     m_layer = new QComboBox;
     m_layer->setObjectName(QStringLiteral("liveLayer"));
     m_layer->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
     m_layer->setMinimumContentsLength(12);
-    m_layer->setToolTip(tr("A second source laid over the first: a camera over a screen, a video loop over a camera...\n"
+    m_layer->setToolTip(tr("A source laid over the first: a camera over a screen, a video loop over a camera...\n"
                            "Give it its own effects (a Chroma Keyer for a green screen) in the pads' Edit list > Layer FX."));
     for (int k = 0; k < LiveEngine::kMaxInputs; ++k) {
         auto* c = new QComboBox;
@@ -581,15 +586,19 @@ LiveView::LiveView(Project* project, QWidget* parent) : QWidget(parent), m_proje
     m_nextLayerFile = new QToolButton;
     m_nextLayerFile->setText(QStringLiteral("⏭"));
     m_nextLayerFile->setToolTip(tr("Next video in the layer's playlist"));
+    m_layerNoFx = new QCheckBox(tr("No Effects"));
+    m_layerNoFx->setToolTip(tr("Lay this layer over after the Live FX and the pads, so they don't change it (its own Layer FX still do)"));
     m_layerMode = new QComboBox;
     m_layerMode->addItems({tr("Picture in picture"), tr("Full frame")});
     m_layerMode->setToolTip(tr("A small picture in a corner, or over the whole picture (blended)"));
     m_layerCorner = new QComboBox;
     m_layerCorner->addItems({tr("Top left"), tr("Top right"), tr("Bottom left"), tr("Bottom right"), tr("Centre")});
-    m_layerSize = new QComboBox;
-    for (int s : {15, 20, 25, 33, 40, 50, 66})
-        m_layerSize->addItem(QStringLiteral("%1%").arg(s), s / 100.0);
+    m_layerSize = new QSlider(Qt::Horizontal);
+    m_layerSize->setRange(5, 100);
+    m_layerSize->setMinimumWidth(90);
     m_layerSize->setToolTip(tr("Width of the picture in picture"));
+    m_layerSizeLabel = new QLabel;
+    m_layerSizeLabel->setMinimumWidth(QFontMetrics(m_layerSizeLabel->font()).horizontalAdvance(QStringLiteral("100%")));
     m_layerBlend = new QComboBox;
     m_layerBlend->addItems(blendModeNames());
     m_layerBlend->setToolTip(tr("How the layer mixes with the picture under it"));
@@ -905,11 +914,14 @@ LiveView::LiveView(Project* project, QWidget* parent) : QWidget(parent), m_proje
     }
     {
         auto* f = form();
+        f->addRow(tr("Layer"), m_layerPick);
         f->addRow(tr("Source"), row({m_layer, m_nextLayerFile}));
         f->addRow(tr("Mode"), m_layerMode);
-        f->addRow(tr("Where"), row({m_layerCorner, m_layerSize}));
+        f->addRow(tr("Where"), m_layerCorner);
+        f->addRow(tr("Size"), row({m_layerSize, m_layerSizeLabel}));
         f->addRow(tr("Blend"), m_layerBlend);
         f->addRow(tr("Opacity"), m_layerOpacity);
+        f->addRow(QString(), m_layerNoFx);
         sv->addWidget(new LiveSection(tr("Layer"), QStringLiteral("layer"), f));
     }
     {
@@ -979,11 +991,20 @@ LiveView::LiveView(Project* project, QWidget* parent) : QWidget(parent), m_proje
         m_panZoom = pz; // checked against the framing once the source's size is known
         m_engine->setPanZoom(pz);
     }
-    m_layerMode->setCurrentIndex(std::clamp(settings.value(QStringLiteral("live/layerMode"), 0).toInt(), 0, 1));
-    m_layerCorner->setCurrentIndex(std::clamp(settings.value(QStringLiteral("live/layerCorner"), 3).toInt(), 0, 4));
-    m_layerSize->setCurrentIndex(std::max(0, m_layerSize->findData(settings.value(QStringLiteral("live/layerSize"), 0.25).toDouble())));
-    m_layerBlend->setCurrentIndex(std::clamp(settings.value(QStringLiteral("live/layerBlend"), 0).toInt(), 0, m_layerBlend->count() - 1));
-    m_layerOpacity->setValue(settings.value(QStringLiteral("live/layerOpacity"), 100).toInt());
+    for (int i = 0; i < kLiveLayers; ++i) { // ("live/layer", "live/layerMode"..., "live/layer2", "live/layer2Mode"...)
+        auto value = [&](const char* what, const QVariant& def) {
+            return settings.value(liveLayerKey(QStringLiteral("live/layer"), i) + QLatin1String(what), def);
+        };
+        LiveLayerSettings& s = m_layerSets[size_t(i)];
+        m_layerNames[size_t(i)] = value("", QString()).toString();
+        s.mode = LiveLayerSettings::Mode(std::clamp(value("Mode", 0).toInt(), 0, 1));
+        s.corner = std::clamp(value("Corner", 3).toInt(), 0, 4);
+        s.size = std::clamp(value("Size", 0.25).toDouble(), 0.05, 1.0);
+        s.blend = std::clamp(value("Blend", 0).toInt(), 0, m_layerBlend->count() - 1);
+        s.opacity = std::clamp(value("Opacity", 100).toInt(), 0, 100) / 100.0;
+        s.noEffects = value("NoEffects", false).toBool();
+    }
+    showLayer();
     m_replayLength->setCurrentIndex(std::max(0, m_replayLength->findData(settings.value(QStringLiteral("live/replaySeconds"), 30).toInt())));
     m_spoutBox->setChecked(m_spoutBox->isEnabled() && settings.value(QStringLiteral("live/spout"), false).toBool());
     m_cameraBox->setChecked(m_cameraBox->isEnabled() && settings.value(QStringLiteral("live/virtualCamera"), false).toBool());
@@ -1127,11 +1148,22 @@ LiveView::LiveView(Project* project, QWidget* parent) : QWidget(parent), m_proje
     connect(m_pads, &LivePadPanel::padHeld, this, &LiveView::holdPad);
     connect(m_pads, &LivePadPanel::midiLearnRequested, this, &LiveView::learnMidi);
     // Files: the next one in the playlist.
-    connect(m_nextFile, &QToolButton::clicked, this, [this] { m_engine->nextFile(false); });
-    connect(m_nextLayerFile, &QToolButton::clicked, this, [this] { m_engine->nextFile(true); });
-    // The layer.
+    connect(m_nextFile, &QToolButton::clicked, this, [this] { m_engine->nextFile(-1); });
+    connect(m_nextLayerFile, &QToolButton::clicked, this, [this] { m_engine->nextFile(m_layerIndex); });
+    // The layers: the controls show one at a time.
+    connect(m_layerPick, qOverload<int>(&QComboBox::currentIndexChanged), this, [this](int i) {
+        m_layerIndex = std::clamp(i, 0, kLiveLayers - 1);
+        showLayer();
+    });
     auto layerChanged = [this] {
-        m_engine->setLayerSettings(layerSettings());
+        LiveLayerSettings& s = m_layerSets[size_t(m_layerIndex)];
+        s.mode = LiveLayerSettings::Mode(m_layerMode->currentIndex());
+        s.corner = m_layerCorner->currentIndex();
+        s.size = m_layerSize->value() / 100.0;
+        s.blend = m_layerBlend->currentIndex();
+        s.opacity = m_layerOpacity->value() / 100.0;
+        s.noEffects = m_layerNoFx->isChecked();
+        m_engine->setLayerSettings(m_layerIndex, s);
         updateLayerControls();
         saveSettings();
     };
@@ -1140,16 +1172,19 @@ LiveView::LiveView(Project* project, QWidget* parent) : QWidget(parent), m_proje
             chooseVideoFiles(m_layer);
             return;
         }
+        const int i = m_layer->currentData().toInt();
+        m_layerNames[size_t(m_layerIndex)] = i >= 0 && i < int(m_sources.size()) ? m_sources[size_t(i)].name : QString();
         if (m_engine->isRunning())
-            m_engine->setLayer(layerSource());
+            m_engine->setLayer(m_layerIndex, layerSource(m_layerIndex));
         updateLayerControls();
         saveSettings();
     });
     connect(m_layerMode, qOverload<int>(&QComboBox::currentIndexChanged), this, layerChanged);
     connect(m_layerCorner, qOverload<int>(&QComboBox::currentIndexChanged), this, layerChanged);
-    connect(m_layerSize, qOverload<int>(&QComboBox::currentIndexChanged), this, layerChanged);
+    connect(m_layerSize, &QSlider::valueChanged, this, layerChanged);
     connect(m_layerBlend, qOverload<int>(&QComboBox::currentIndexChanged), this, layerChanged);
     connect(m_layerOpacity, &QSlider::valueChanged, this, layerChanged);
+    connect(m_layerNoFx, &QCheckBox::toggled, this, layerChanged);
     for (QComboBox* c : m_inputs)
         connect(c, qOverload<int>(&QComboBox::activated), this, [this] {
             if (m_engine->isRunning())
@@ -1161,11 +1196,11 @@ LiveView::LiveView(Project* project, QWidget* parent) : QWidget(parent), m_proje
         for (int k = 0; k < int(pictures.size()) && k <= LiveEngine::kMaxInputs; ++k)
             m_inputTiles[size_t(k)]->setIcon(pictures[k].isNull() ? QIcon() : QIcon(QPixmap::fromImage(pictures[k])));
     });
-    connect(m_engine, &LiveEngine::layerStatus, this, [this](const QString& description, const QString& error) {
+    connect(m_engine, &LiveEngine::layerStatus, this, [this](int layer, const QString& description, const QString& error) {
         if (!error.isEmpty())
-            m_status->setText(tr("Layer: %1").arg(error));
+            m_status->setText(tr("Layer %1: %2").arg(layer + 1).arg(error));
         else if (!description.isEmpty())
-            m_status->setText(tr("Layer: %1").arg(description));
+            m_status->setText(tr("Layer %1: %2").arg(layer + 1).arg(description));
     });
     // The replay buffer.
     auto replayChanged = [this] {
@@ -1502,9 +1537,8 @@ void LiveView::saveScene(int scene)
     s.name = name;
     s.liveEffects = tl.liveEffects;
     s.pad = m_activePad;
-    s.layerSource = layerSource().name;
-    s.layer = layerSettings();
-    s.layerEffects = tl.liveLayerEffects;
+    for (int i = 0; i < kLiveLayers; ++i)
+        s.layers[size_t(i)] = {layerSource(i).name, m_layerSets[size_t(i)], tl.liveLayerEffects[size_t(i)]};
     s.overlays = tl.liveOverlays;
     m_activeScene = scene;
     m_project->applyEdit(tl, tr("Save Scene %1").arg(scene + 1));
@@ -1523,7 +1557,8 @@ void LiveView::recallScene(int scene)
     m_activeScene = scene;
     Timeline tl = m_project->timeline();
     tl.liveEffects = s.liveEffects;
-    tl.liveLayerEffects = s.layerEffects;
+    for (int i = 0; i < kLiveLayers; ++i)
+        tl.liveLayerEffects[size_t(i)] = s.layers[size_t(i)].effects;
     tl.liveOverlays = s.overlays;
     if (tl != m_project->timeline())
         m_project->applyEdit(tl, tr("Recall Scene %1").arg(scene + 1));
@@ -1534,28 +1569,18 @@ void LiveView::recallScene(int scene)
         m_engine->setPad(m_activePad, m_pads->transition(), m_pads->transitionSeconds());
         followPad(before);
     }
-    // The layer: its source (if it is still there) and how it is laid over.
-    int layer = 0;
-    if (!s.layerSource.isEmpty()) {
-        layer = std::max(0, m_layer->findText(s.layerSource));
-        if (layer == 0)
-            m_status->setText(tr("Scene %1: the layer's source \"%2\" isn't available").arg(scene + 1).arg(s.layerSource));
+    // The layers: their sources (if they are still there) and how they are laid over.
+    for (int i = 0; i < kLiveLayers; ++i) {
+        const LiveLayer& l = s.layers[size_t(i)];
+        m_layerNames[size_t(i)] = l.source;
+        m_layerSets[size_t(i)] = l.settings;
+        if (!l.source.isEmpty() && layerSource(i).name.isEmpty())
+            m_status->setText(tr("Scene %1: layer %2's source \"%3\" isn't available").arg(scene + 1).arg(i + 1).arg(l.source));
+        m_engine->setLayerSettings(i, l.settings);
+        if (m_engine->isRunning())
+            m_engine->setLayer(i, layerSource(i));
     }
-    {
-        QSignalBlocker b1(m_layer), b2(m_layerMode), b3(m_layerCorner), b4(m_layerSize), b5(m_layerBlend), b6(m_layerOpacity);
-        m_layer->setCurrentIndex(layer);
-        m_layerMode->setCurrentIndex(int(s.layer.mode));
-        m_layerCorner->setCurrentIndex(s.layer.corner);
-        const int size = m_layerSize->findData(s.layer.size);
-        if (size >= 0)
-            m_layerSize->setCurrentIndex(size);
-        m_layerBlend->setCurrentIndex(s.layer.blend);
-        m_layerOpacity->setValue(int(std::lround(s.layer.opacity * 100)));
-    }
-    m_engine->setLayerSettings(layerSettings());
-    if (m_engine->isRunning())
-        m_engine->setLayer(layerSource());
-    updateLayerControls();
+    showLayer();
     refreshScenes();
     saveSettings();
     const QString name = s.name.isEmpty() ? tr("scene %1").arg(scene + 1) : s.name;
@@ -1590,19 +1615,23 @@ void LiveView::saveSettings() const
         settings.setValue(QStringLiteral("live/source"), m_sources[size_t(i)].name);
     if (m_audio->count() > 0)
         settings.setValue(QStringLiteral("live/audio"), audioSource().name);
-    if (m_layer->count() > 0)
-        settings.setValue(QStringLiteral("live/layer"), layerSource().name);
     if (m_inputs[0]->count() > 0) {
         QStringList inputs;
         for (const LiveSource& s : inputSources())
             inputs << s.name;
         settings.setValue(QStringLiteral("live/inputs"), inputs);
     }
-    settings.setValue(QStringLiteral("live/layerMode"), m_layerMode->currentIndex());
-    settings.setValue(QStringLiteral("live/layerCorner"), m_layerCorner->currentIndex());
-    settings.setValue(QStringLiteral("live/layerSize"), m_layerSize->currentData().toDouble());
-    settings.setValue(QStringLiteral("live/layerBlend"), m_layerBlend->currentIndex());
-    settings.setValue(QStringLiteral("live/layerOpacity"), m_layerOpacity->value());
+    for (int i = 0; i < kLiveLayers; ++i) {
+        const QString key = liveLayerKey(QStringLiteral("live/layer"), i);
+        const LiveLayerSettings& s = m_layerSets[size_t(i)];
+        settings.setValue(key, m_layerNames[size_t(i)]);
+        settings.setValue(key + QLatin1String("Mode"), int(s.mode));
+        settings.setValue(key + QLatin1String("Corner"), s.corner);
+        settings.setValue(key + QLatin1String("Size"), s.size);
+        settings.setValue(key + QLatin1String("Blend"), s.blend);
+        settings.setValue(key + QLatin1String("Opacity"), int(std::lround(s.opacity * 100)));
+        settings.setValue(key + QLatin1String("NoEffects"), s.noEffects);
+    }
     settings.setValue(QStringLiteral("live/replaySeconds"), m_replayLength->currentData().toInt());
 }
 
@@ -1637,8 +1666,6 @@ void LiveView::refreshSources()
     const QString current = m_source->currentIndex() >= 0 && m_source->currentData().toInt() >= 0
                                 ? m_source->currentText()
                                 : QSettings().value(QStringLiteral("live/source")).toString();
-    const QString currentLayer = m_layer->count() > 0 && m_layer->currentData().toInt() != -2 ? layerSource().name
-                                                                                             : QSettings().value(QStringLiteral("live/layer")).toString();
     QSignalBlocker block(m_source);
     m_source->clear();
     m_sources = listLiveSources();
@@ -1694,20 +1721,16 @@ void LiveView::refreshSources()
         select = firstScreen;
     if (select >= 0)
         m_source->setCurrentIndex(select);
-    // The layer: none, or any of the same sources.
+    // A layer: none, or any of the same sources.
     {
         QSignalBlocker blockLayer(m_layer);
         m_layer->clear();
         m_layer->addItem(tr("No layer"), -3);
-        int layerSelect = 0;
-        for (size_t i = 0; i < m_sources.size(); ++i) {
+        for (size_t i = 0; i < m_sources.size(); ++i)
             m_layer->addItem(m_sources[i].name, int(i));
-            if (m_sources[i].name == currentLayer)
-                layerSelect = m_layer->count() - 1;
-        }
         m_layer->addItem(tr("Choose video files..."), -2);
-        m_layer->setCurrentIndex(layerSelect);
     }
+    showLayer();
     // The switcher's inputs: off, or any of the same sources.
     {
         const QStringList saved = QSettings().value(QStringLiteral("live/inputs")).toStringList();
@@ -1755,7 +1778,7 @@ void LiveView::chooseVideoFiles(QComboBox* combo)
         const QString name = paths.size() == 1 ? tr("Video: %1").arg(QFileInfo(paths.front()).fileName())
                                                : tr("Videos: %1 + %2 more").arg(QFileInfo(paths.front()).fileName()).arg(paths.size() - 1);
         if (combo == m_layer)
-            settings.setValue(QStringLiteral("live/layer"), name);
+            m_layerNames[size_t(m_layerIndex)] = name;
         else
             settings.setValue(QStringLiteral("live/source"), name);
     }
@@ -1765,7 +1788,7 @@ void LiveView::chooseVideoFiles(QComboBox* combo)
         if (combo == m_source)
             m_engine->start(options());
         else
-            m_engine->setLayer(layerSource());
+            m_engine->setLayer(m_layerIndex, layerSource(m_layerIndex));
     }
     saveSettings();
 }
@@ -1812,35 +1835,51 @@ void LiveView::cutTo(int input, bool withTransition)
     updateSwitcher();
 }
 
-LiveSource LiveView::layerSource() const
+LiveSource LiveView::layerSource(int layer) const
 {
-    const int i = m_layer->currentData().toInt();
-    return i >= 0 && i < int(m_sources.size()) ? m_sources[size_t(i)] : LiveSource();
+    const QString& name = m_layerNames[size_t(std::clamp(layer, 0, kLiveLayers - 1))];
+    if (!name.isEmpty())
+        for (const LiveSource& s : m_sources)
+            if (s.name == name)
+                return s;
+    return {};
 }
 
-LiveLayerSettings LiveView::layerSettings() const
+void LiveView::showLayer()
 {
-    LiveLayerSettings s;
-    s.mode = LiveLayerSettings::Mode(m_layerMode->currentIndex());
-    s.corner = m_layerCorner->currentIndex();
-    s.size = m_layerSize->currentData().toDouble();
-    s.blend = m_layerBlend->currentIndex();
-    s.opacity = m_layerOpacity->value() / 100.0;
-    return s;
+    const LiveLayerSettings& s = m_layerSets[size_t(m_layerIndex)];
+    {
+        QSignalBlocker b1(m_layer), b2(m_layerMode), b3(m_layerCorner), b4(m_layerSize), b5(m_layerBlend), b6(m_layerOpacity), b7(m_layerNoFx),
+            b8(m_layerPick);
+        m_layerPick->setCurrentIndex(m_layerIndex);
+        const int source = m_layer->findText(layerSource(m_layerIndex).name);
+        m_layer->setCurrentIndex(layerSource(m_layerIndex).name.isEmpty() || source < 0 ? 0 : source);
+        m_layerMode->setCurrentIndex(int(s.mode));
+        m_layerCorner->setCurrentIndex(s.corner);
+        m_layerSize->setValue(int(std::lround(s.size * 100)));
+        m_layerBlend->setCurrentIndex(s.blend);
+        m_layerOpacity->setValue(int(std::lround(s.opacity * 100)));
+        m_layerNoFx->setChecked(s.noEffects);
+    }
+    updateLayerControls();
 }
 
 void LiveView::updateLayerControls()
 {
-    const LiveSource layer = layerSource();
+    const LiveSource layer = layerSource(m_layerIndex);
     const bool on = !layer.name.isEmpty();
     const bool pip = m_layerMode->currentIndex() == 0;
-    for (QWidget* w : {static_cast<QWidget*>(m_layerMode), static_cast<QWidget*>(m_layerBlend), static_cast<QWidget*>(m_layerOpacity)})
+    for (QWidget* w : {static_cast<QWidget*>(m_layerMode), static_cast<QWidget*>(m_layerBlend), static_cast<QWidget*>(m_layerOpacity),
+                       static_cast<QWidget*>(m_layerNoFx)})
         w->setEnabled(on);
-    m_layerCorner->setVisible(pip);
-    m_layerSize->setVisible(pip);
-    m_layerCorner->setEnabled(on);
-    m_layerSize->setEnabled(on);
+    m_layerCorner->setEnabled(on && pip);
+    m_layerSize->setEnabled(on && pip);
+    m_layerSizeLabel->setText(QStringLiteral("%1%").arg(m_layerSize->value()));
     m_nextLayerFile->setVisible(layer.kind == LiveSource::Kind::File && on);
+    for (int i = 0; i < kLiveLayers; ++i) { // ("Layer 2: Camera")
+        const QString name = layerSource(i).name;
+        m_layerPick->setItemText(i, name.isEmpty() ? tr("Layer %1").arg(i + 1) : tr("Layer %1: %2").arg(i + 1).arg(name));
+    }
 }
 
 void LiveView::refreshMidi()
@@ -2098,8 +2137,9 @@ LiveEngine::Options LiveView::options() const
     o.mirror = m_mirror->isChecked();
     o.audio = audioSource();
     o.pad = m_activePad;
-    o.layer = layerSource();
-    o.layerSettings = layerSettings();
+    for (int i = 0; i < kLiveLayers; ++i)
+        o.layers[size_t(i)] = layerSource(i);
+    o.layerSettings = m_layerSets;
     o.inputs = inputSources();
     o.program = m_program;
     return o;

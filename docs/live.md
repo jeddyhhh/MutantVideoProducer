@@ -96,16 +96,21 @@ Source, for multi-camera shows.
 
 Effects, pads, overlays, recording and streaming follow whatever is on air, at the output's size.
 
-## The layer
+## Layers
 
-The **Layer** is a second source laid over the first: any camera, screen, window or video files.
+A **layer** is another source laid over the first: any camera, screen, window or video files. There
+are four. Pick one in the Layer section's **Layer** list; the settings under it are that layer's.
+Layer 1 is laid over first, layer 4 last (on top).
 
-- **Picture in picture** in a corner (15-66% wide), or over the **full frame**.
+- **Picture in picture** in a corner or the centre, its **Size** from 5% to 100% of the width, or
+  over the **full frame**.
 - A **blend mode** (Normal, Add, Screen, Multiply, Overlay, Lighten, Darken, Difference) and **opacity**.
-- Its own effect chain, applied before it is laid over: pick **Layer FX** in the pads' Edit list.
-  A Chroma Keyer or Remove Background there gives a green-screen look.
+- Its own effect chain, applied before it is laid over: pick **Layer 1 FX** (2, 3, 4) in the pads'
+  Edit list. A Chroma Keyer or Remove Background there gives a green-screen look.
+- **No Effects**: the layer is laid over after the Live FX and the pads, so they don't change it (a
+  logo or a face cam stays as it is). Its own Layer FX still apply.
 
-The Live FX and pads then apply to both.
+The Live FX and pads apply to the picture and every other layer.
 
 ## Pads
 
@@ -159,8 +164,8 @@ says so. Cueing it again, or **Close**, closes the cue.
 
 ## Scenes
 
-A scene is the whole look at one moment: the Live FX, the active pad, the layer (its source, how it
-is laid over, its effects) and the overlays.
+A scene is the whole look at one moment: the Live FX, the active pad, the layers (their sources, how
+they are laid over, their effects) and the overlays.
 
 - Right-click a scene button > **Save the Current Look Here**.
 - Click it (or press **F1-F8**, or MIDI) to bring the look back, the pad with its transition.

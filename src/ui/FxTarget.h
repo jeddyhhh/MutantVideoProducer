@@ -6,7 +6,7 @@
 struct FxTarget {
     enum class Kind { None, Clip, Track, Output, TransitionIn, TransitionOut, Generator, PanCrop, AudioMaster, Live };
     Kind kind = Kind::None;
-    int id = 0; // clip id (Clip, Transition*, Generator, PanCrop), track id (Track), Live: 0 = Live FX, 1..16 = pad
+    int id = 0; // clip id (Clip, Transition*, Generator, PanCrop), track id (Track), Live: 0 = Live FX, 1..16 = pad, 17..20 = layer
 
     bool isChain() const
     {
