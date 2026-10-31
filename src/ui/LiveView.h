@@ -159,6 +159,9 @@ private:
     QWidget* m_framingRow = nullptr;
     QWidget* m_formatRow = nullptr; // cameras only
     LivePanZoom m_panZoom, m_panStart;
+    int m_dragLayer = -1;     // the layer being dragged on the picture (-1: the drag pans the source)
+    QPointF m_dragLayerStart; // its centre when the drag began (shares of the picture)
+    int layerAt(QPointF at) const; // the topmost picture-in-picture layer at a point of the picture (output pixels), or -1
     QSize m_sourceSize;
     QLabel* m_panZoomLabel = nullptr;
     // The pieces the layouts arrange, and the frame they are in now.

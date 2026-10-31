@@ -663,6 +663,30 @@ int LiveView::runSelfTest(QStringList& log)
             check(pictureDiff > 60 && layerDiff < pictureDiff / 2,
                   QStringLiteral("a second layer with No Effects is laid over after the Live FX (it changed by %1, the picture by %2)")
                       .arg(layerDiff, 0, 'f', 0).arg(pictureDiff, 0, 'f', 0));
+            {
+                // Dragging layer 2 on the picture puts it where it is dropped, and its settings show (Where: Where dragged).
+                auto mouse = [&](QEvent::Type type, QPointF pos) {
+                    QMouseEvent ev(type, pos, m_display->mapToGlobal(pos), Qt::LeftButton,
+                                   type == QEvent::MouseButtonRelease ? Qt::NoButton : Qt::MouseButtons(Qt::LeftButton), Qt::NoModifier);
+                    QApplication::sendEvent(m_display, &ev);
+                };
+                m_layerPick->setCurrentIndex(0);
+                const QRectF pic = m_display->pictureRect();
+                const QPointF start = m_engine->layerRects()[1].center();
+                const QPointF from(pic.x() + start.x() * pic.width(), pic.y() + start.y() * pic.height());
+                const QPointF by(pic.width() * 0.3, pic.height() * 0.2);
+                const LivePanZoom panBefore = m_panZoom;
+                mouse(QEvent::MouseButtonPress, from);
+                mouse(QEvent::MouseMove, from + by / 2);
+                mouse(QEvent::MouseMove, from + by);
+                mouse(QEvent::MouseButtonRelease, from + by);
+                settle(5);
+                const QPointF end = m_engine->layerRects()[1].center();
+                check(std::abs(end.x() - start.x() - 0.3) < 0.02 && std::abs(end.y() - start.y() - 0.2) < 0.02 && m_layerPick->currentIndex() == 1
+                          && m_layerCorner->currentIndex() == 5 && m_panZoom == panBefore,
+                      QStringLiteral("dragging a layer on the Live picture moves it there (centre %1,%2 to %3,%4), not the source")
+                          .arg(start.x(), 0, 'f', 2).arg(start.y(), 0, 'f', 2).arg(end.x(), 0, 'f', 2).arg(end.y(), 0, 'f', 2));
+            }
             m_engine->setLayer(0, LiveSource());
             m_engine->setLayer(1, LiveSource());
             Timeline tl = m_project->timeline();

@@ -1010,6 +1010,10 @@ QJsonArray liveScenesToJson(const LiveScenes& scenes)
                 o[key("Source")] = l.source;
                 o[key("Mode")] = int(l.settings.mode);
                 o[key("Corner")] = l.settings.corner;
+                if (l.settings.corner == 5) {
+                    o[key("X")] = l.settings.x;
+                    o[key("Y")] = l.settings.y;
+                }
                 o[key("Size")] = l.settings.size;
                 o[key("Opacity")] = l.settings.opacity;
                 o[key("Blend")] = l.settings.blend;
@@ -1076,7 +1080,9 @@ LiveScenes liveScenesFromJson(const QJsonArray& a)
             auto at = [&](const char* what) { return o[liveLayerKey(QStringLiteral("layer"), i) + QLatin1String(what)]; };
             l.source = at("Source").toString();
             l.settings.mode = LiveLayerSettings::Mode(std::clamp(at("Mode").toInt(), 0, 1));
-            l.settings.corner = std::clamp(at("Corner").toInt(3), 0, 4);
+            l.settings.corner = std::clamp(at("Corner").toInt(3), 0, 5);
+            l.settings.x = std::clamp(at("X").toDouble(0.5), 0.0, 1.0);
+            l.settings.y = std::clamp(at("Y").toDouble(0.5), 0.0, 1.0);
             l.settings.size = std::clamp(at("Size").toDouble(0.3), 0.05, 1.0);
             l.settings.opacity = std::clamp(at("Opacity").toDouble(1), 0.0, 1.0);
             l.settings.blend = std::clamp(at("Blend").toInt(), 0, 7);

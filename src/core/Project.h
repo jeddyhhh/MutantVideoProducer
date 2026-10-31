@@ -167,7 +167,8 @@ LivePads livePadsFromJson(const QJsonArray& a);
 struct LiveLayerSettings {
     enum class Mode { PictureInPicture, Full };
     Mode mode = Mode::PictureInPicture;
-    int corner = 3;       // picture in picture: 0 top-left, 1 top-right, 2 bottom-left, 3 bottom-right, 4 centre
+    int corner = 3;       // picture in picture: 0 top-left, 1 top-right, 2 bottom-left, 3 bottom-right, 4 centre, 5 at x, y
+    double x = 0.5, y = 0.5; // corner 5 (dragged on the Live picture): its centre, as shares of the picture's width and height
     double size = 0.3;    // picture in picture: its width, as a share of the picture's
     double opacity = 1.0; // 0..1
     int blend = 0;        // BlendMode

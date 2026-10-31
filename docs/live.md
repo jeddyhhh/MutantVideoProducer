@@ -103,7 +103,9 @@ are four. Pick one in the Layer section's **Layer** list; the settings under it 
 Layer 1 is laid over first, layer 4 last (on top).
 
 - **Picture in picture** in a corner or the centre, its **Size** from 5% to 100% of the width, or
-  over the **full frame**.
+  over the **full frame**. Or drag it on the big Live picture to put it anywhere (the pointer becomes
+  a four-way arrow over a layer; **Where** then says *Where dragged*). Dragging a layer picks it in
+  the Layer list. Dragging anywhere else pans the source, as before.
 - A **blend mode** (Normal, Add, Screen, Multiply, Overlay, Lighten, Darken, Difference) and **opacity**.
 - Its own effect chain, applied before it is laid over: pick **Layer 1 FX** (2, 3, 4) in the pads'
   Edit list. A Chroma Keyer or Remove Background there gives a green-screen look.

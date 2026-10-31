@@ -143,10 +143,12 @@ private:
 class LiveDisplay : public PreviewWidget {
 public:
     std::function<void()> onDoubleClick;
-    // Pan and zoom of the output, in output pixels: a drag (from its start), a wheel turn at a point, the menu.
+    // Pan and zoom of the output, in output pixels: a drag (its start point, then how far from it), a wheel turn at a
+    // point, the menu.
     std::function<void(QPointF delta, bool start)> onPan;
     std::function<void(double steps, QPointF at)> onZoom;
     std::function<void(QPoint globalPos)> onMenu;
+    std::function<bool(QPointF at)> onLayer; // a layer is at this point (output pixels): it can be dragged
     QString hint; // shown while there is no picture
     QString info; // shown in a corner while zoomed / panned
     using PreviewWidget::PreviewWidget;
@@ -187,8 +189,8 @@ protected:
         if (e->button() == Qt::LeftButton && !image().isNull() && onPan) {
             m_dragging = true;
             m_dragFrom = toImage(e->position());
-            setCursor(Qt::ClosedHandCursor);
-            onPan({}, true);
+            setCursor(onLayer && onLayer(m_dragFrom) ? Qt::SizeAllCursor : Qt::ClosedHandCursor);
+            onPan(m_dragFrom, true);
             return;
         }
         PreviewWidget::mousePressEvent(e);
@@ -199,7 +201,9 @@ protected:
             onPan(toImage(e->position()) - m_dragFrom, false);
             return;
         }
-        setCursor(image().isNull() ? Qt::ArrowCursor : Qt::OpenHandCursor);
+        setCursor(image().isNull()                                 ? Qt::ArrowCursor
+                  : onLayer && onLayer(toImage(e->position())) ? Qt::SizeAllCursor
+                                                               : Qt::OpenHandCursor);
         PreviewWidget::mouseMoveEvent(e);
     }
     void mouseReleaseEvent(QMouseEvent* e) override
@@ -592,7 +596,8 @@ LiveView::LiveView(Project* project, QWidget* parent) : QWidget(parent), m_proje
     m_layerMode->addItems({tr("Picture in picture"), tr("Full frame")});
     m_layerMode->setToolTip(tr("A small picture in a corner, or over the whole picture (blended)"));
     m_layerCorner = new QComboBox;
-    m_layerCorner->addItems({tr("Top left"), tr("Top right"), tr("Bottom left"), tr("Bottom right"), tr("Centre")});
+    m_layerCorner->addItems({tr("Top left"), tr("Top right"), tr("Bottom left"), tr("Bottom right"), tr("Centre"), tr("Where dragged")});
+    m_layerCorner->setToolTip(tr("Where the picture in picture goes. Or drag it on the Live picture"));
     m_layerSize = new QSlider(Qt::Horizontal);
     m_layerSize->setRange(5, 100);
     m_layerSize->setMinimumWidth(90);
@@ -715,10 +720,30 @@ LiveView::LiveView(Project* project, QWidget* parent) : QWidget(parent), m_proje
     // ---- Picture over the effects section ----
     auto* display = new LiveDisplay;
     display->onDoubleClick = [this] { showFullScreenOutput(); };
-    // Drag to pan, scroll to zoom: the source in the output (framing it for a phone, say).
+    // Drag a layer to move it; elsewhere drag to pan, scroll to zoom: the source in the output (framing it for a phone, say).
+    display->onLayer = [this](QPointF at) { return layerAt(at) >= 0; };
     display->onPan = [this](QPointF delta, bool start) {
         if (start) {
             m_panStart = m_panZoom;
+            m_dragLayer = layerAt(delta); // (at the start: where the drag began)
+            if (m_dragLayer >= 0) {
+                m_dragLayerStart = m_engine->layerRects()[size_t(m_dragLayer)].center();
+                m_layerIndex = m_dragLayer; // its settings show
+                showLayer();
+            }
+            return;
+        }
+        if (m_dragLayer >= 0) {
+            const QSize out = m_display->image().size();
+            if (out.isEmpty())
+                return;
+            LiveLayerSettings& s = m_layerSets[size_t(m_dragLayer)];
+            s.corner = 5;
+            s.x = std::clamp(m_dragLayerStart.x() + delta.x() / out.width(), 0.0, 1.0);
+            s.y = std::clamp(m_dragLayerStart.y() + delta.y() / out.height(), 0.0, 1.0);
+            m_engine->setLayerSettings(m_dragLayer, s);
+            showLayer();
+            saveSettings();
             return;
         }
         QSizeF canvas;
@@ -998,7 +1023,9 @@ LiveView::LiveView(Project* project, QWidget* parent) : QWidget(parent), m_proje
         LiveLayerSettings& s = m_layerSets[size_t(i)];
         m_layerNames[size_t(i)] = value("", QString()).toString();
         s.mode = LiveLayerSettings::Mode(std::clamp(value("Mode", 0).toInt(), 0, 1));
-        s.corner = std::clamp(value("Corner", 3).toInt(), 0, 4);
+        s.corner = std::clamp(value("Corner", 3).toInt(), 0, 5);
+        s.x = std::clamp(value("X", 0.5).toDouble(), 0.0, 1.0);
+        s.y = std::clamp(value("Y", 0.5).toDouble(), 0.0, 1.0);
         s.size = std::clamp(value("Size", 0.25).toDouble(), 0.05, 1.0);
         s.blend = std::clamp(value("Blend", 0).toInt(), 0, m_layerBlend->count() - 1);
         s.opacity = std::clamp(value("Opacity", 100).toInt(), 0, 100) / 100.0;
@@ -1627,6 +1654,8 @@ void LiveView::saveSettings() const
         settings.setValue(key, m_layerNames[size_t(i)]);
         settings.setValue(key + QLatin1String("Mode"), int(s.mode));
         settings.setValue(key + QLatin1String("Corner"), s.corner);
+        settings.setValue(key + QLatin1String("X"), s.x);
+        settings.setValue(key + QLatin1String("Y"), s.y);
         settings.setValue(key + QLatin1String("Size"), s.size);
         settings.setValue(key + QLatin1String("Blend"), s.blend);
         settings.setValue(key + QLatin1String("Opacity"), int(std::lround(s.opacity * 100)));
@@ -1833,6 +1862,19 @@ void LiveView::cutTo(int input, bool withTransition)
     m_preview = m_program; // what was on air waits in preview
     m_program = input;
     updateSwitcher();
+}
+
+int LiveView::layerAt(QPointF at) const
+{
+    const QSize out = m_display->image().size();
+    if (out.isEmpty())
+        return -1;
+    const QPointF p(at.x() / out.width(), at.y() / out.height());
+    const std::array<QRectF, kLiveLayers> rects = m_engine->layerRects();
+    for (int i = kLiveLayers - 1; i >= 0; --i) // (the topmost first)
+        if (rects[size_t(i)].contains(p))
+            return i;
+    return -1;
 }
 
 LiveSource LiveView::layerSource(int layer) const

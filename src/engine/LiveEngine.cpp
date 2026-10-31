@@ -33,6 +33,7 @@ QRect layerRect(QSize out, QSize layer, const LiveLayerSettings& s)
     case 1: return QRect(out.width() - m - w, m, w, h);
     case 2: return QRect(m, out.height() - m - h, w, h);
     case 4: return QRect((out.width() - w) / 2, (out.height() - h) / 2, w, h);
+    case 5: return QRect(int(std::lround(s.x * out.width())) - w / 2, int(std::lround(s.y * out.height())) - h / 2, w, h);
     default: return QRect(out.width() - m - w, out.height() - m - h, w, h);
     }
 }
@@ -282,6 +283,14 @@ void LiveEngine::setCanvas(QSize canvas, LiveFraming framing)
     m_canvas = canvas;
     m_framing = framing;
     m_maxSizeChanged = true;
+}
+
+std::array<QRectF, kLiveLayers> LiveEngine::layerRects() const
+{
+    if (!m_running)
+        return {};
+    std::lock_guard lock(m_mutex);
+    return m_layerRects;
 }
 
 QImage LiveEngine::cleanFrame() const
@@ -1027,6 +1036,7 @@ void LiveEngine::threadMain(Options o)
         job.time = liveTime;
         job.fps = fps;
         std::array<EffectChain, kLiveLayers> layerFx;
+        std::array<QRectF, kLiveLayers> placed; // (for dragging them on the picture)
         for (int i = 0; i < kLiveLayers; ++i) {
             const QImage layerImg = layerOpen[size_t(i)] ? layers[size_t(i)].latest() : QImage();
             if (layerImg.isNull())
@@ -1044,6 +1054,13 @@ void LiveEngine::threadMain(Options o)
                 l.fx = &layerFx[size_t(i)];
             }
             job.layers.push_back(l);
+            if (!l.cover)
+                placed[size_t(i)] = QRectF(double(l.rect.x()) / img.width(), double(l.rect.y()) / img.height(),
+                                           double(l.rect.width()) / img.width(), double(l.rect.height()) / img.height());
+        }
+        {
+            std::lock_guard lock(m_mutex);
+            m_layerRects = placed;
         }
         auto padChain = [&](int p) -> EffectChain {
             if (p < 0 || !snap || !hasActiveEffects(snap->timeline.livePads[size_t(p)].effects))

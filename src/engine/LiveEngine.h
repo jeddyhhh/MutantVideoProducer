@@ -58,6 +58,8 @@ public:
     bool isRunning() const { return m_running; }
     // The latest picture before the effects (as the clean recording has it); null when not running.
     QImage cleanFrame() const;
+    // Where each picture-in-picture layer was in the last frame, as shares of the picture (empty: not shown, or full frame).
+    std::array<QRectF, kLiveLayers> layerRects() const;
 
     // While running.
     void setMirror(bool on) { m_mirror = on; }
@@ -183,6 +185,7 @@ private:
     bool m_maxSizeChanged = false;
     QSize m_canvas; // guarded by m_mutex
     QImage m_clean; // guarded by m_mutex
+    std::array<QRectF, kLiveLayers> m_layerRects; // guarded by m_mutex
     LiveFraming m_framing = LiveFraming::CropFill;
     LivePanZoom m_panZoom; // guarded by m_mutex
     // Recording requests (guarded by m_mutex).

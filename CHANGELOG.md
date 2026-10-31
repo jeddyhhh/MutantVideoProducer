@@ -39,7 +39,8 @@ What changed in each version of Mutant Video Producer. The newest is first.
 - **AI control**: remove_markers takes the markers out of a stretch of time (the beat markers once a montage is cut).
 - **Live tab**: four layers instead of one, each with its own source, settings and Layer FX (pick it in the Layer
   section's Layer list; Layer 1-4 FX in the pads' Edit list). A **Size** slider (5-100%) for picture in picture, and
-  **No Effects**: the layer is laid over after the Live FX and pads, which leave it as it is.
+  **No Effects**: the layer is laid over after the Live FX and pads, which leave it as it is. Drag a picture-in-picture
+  layer on the big Live picture to put it anywhere.
 - **Status bar**: CPU and GPU load, RAM, the GPU's temperature and memory (NVIDIA), once a second.
 - **Help > About**: links to jeddyh.fyi and the YouTube channel.
 
