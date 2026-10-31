@@ -6,6 +6,7 @@
 #include "core/Presets.h"
 #include "ui/EffectsBrowser.h"
 #include "ui/Knob.h"
+#include "ui/ParamDisplay.h"
 #include "ui/ModulationDialog.h"
 #include "ui/PreviewWidget.h"
 #include "core/EffectMask.h"
@@ -95,6 +96,23 @@ QToolButton* smallButton(const QString& text, const QString& tip, bool checkable
     return b;
 }
 
+// A short choice as a row of buttons, one lit (Peak | RMS); longer ones stay menus.
+bool segmented(const ParamDef& def)
+{
+    if (def.choices.size() < 2 || def.choices.size() > 4)
+        return false;
+    int chars = 0;
+    for (const QString& c : def.choices)
+        chars += int(c.size());
+    return chars <= 26;
+}
+
+QString segmentStyle()
+{
+    return QStringLiteral("QToolButton { color: @text; border: 1px solid @deep; background: @hover; padding: 1px 5px; margin: 0; }"
+                          "QToolButton:checked { color: @onAccent; background: @accent; }");
+}
+
 QString toggleStyle()
 {
     return QStringLiteral("QToolButton { color: @text; border: 1px solid @deep; background: @hover; padding: 1px 4px; }"
@@ -165,6 +183,25 @@ public:
             break;
         case ParamType::Choice:
             label();
+            if (segmented(def)) {
+                auto* row = new QHBoxLayout;
+                row->setSpacing(0);
+                for (int i = 0; i < int(def.choices.size()); ++i) {
+                    auto* b = new QToolButton;
+                    b->setText(def.choices[i]);
+                    b->setCheckable(true);
+                    b->setFocusPolicy(Qt::NoFocus);
+                    theme::style(b, segmentStyle());
+                    row->addWidget(b);
+                    m_segments.push_back(b);
+                    QObject::connect(b, &QToolButton::clicked, this, [this, id, i] {
+                        m_view->setParam(m_ref, id, i);
+                        refreshSegments(i); // (lit at once, as a menu shows its choice)
+                    });
+                }
+                l->addLayout(row);
+                break;
+            }
             m_combo = new QComboBox;
             m_combo->addItems(def.choices);
             m_combo->setFocusPolicy(Qt::NoFocus);
@@ -237,7 +274,7 @@ public:
         if (def.animatable() && !compact && m_view->m_target.kind != FxTarget::Kind::Live) { // live: no timeline to key on
             m_key = new KeyButton(this);
             m_key->setToolTip(QObject::tr("Add / remove a keyframe at the cursor (right-click the control for more)"));
-            m_key->move(0, m_knob ? 24 : 0); // beside the knob, clear of its name
+            m_key->move(0, m_knob ? m_knob->sizeHint().height() - 42 : 0); // beside the knob, clear of its name
             m_key->raise();
             QObject::connect(m_key, &QAbstractButton::clicked, this, [this] { m_view->toggleKey(m_ref, m_def); });
         }
@@ -272,6 +309,7 @@ public:
             QSignalBlocker block(m_combo);
             m_combo->setCurrentIndex(int(std::lround(v)));
         }
+        refreshSegments(int(std::lround(v)));
         if (m_toggle)
             m_toggle->setChecked(v >= 0.5);
         if (m_color) {
@@ -285,6 +323,11 @@ public:
     }
 
 private:
+    void refreshSegments(int on)
+    {
+        for (int i = 0; i < int(m_segments.size()); ++i)
+            m_segments[size_t(i)]->setChecked(i == on);
+    }
     void showMenu(const QPoint& global)
     {
         QMenu menu;
@@ -334,6 +377,7 @@ private:
     ParamDef m_def;
     Knob* m_knob = nullptr;
     QComboBox* m_combo = nullptr;
+    std::vector<QToolButton*> m_segments;
     QToolButton* m_toggle = nullptr;
     QPushButton* m_color = nullptr;
     QLineEdit* m_text = nullptr;
@@ -786,7 +830,34 @@ public:
             }
             return;
         }
-        auto* grid = new QGridLayout(body);
+        auto* bodyRow = new QHBoxLayout(body);
+        bodyRow->setContentsMargins(0, 0, 0, 0);
+        bodyRow->setSpacing(0);
+        if (meta && meta->params && !m_user) {
+            // The settings as a picture (an EQ's curve, a compressor's transfer curve...), left of the controls.
+            const DeviceChainView::ParamRef ref{path, index, -1};
+            const std::vector<ParamDef> defs = *meta->params;
+            auto get = [view, ref, defs](const QString& id) {
+                const ParamMap* map = view->params(ref);
+                for (const ParamDef& d : defs)
+                    if (d.id == id) {
+                        auto it = map ? map->find(id) : ParamMap::const_iterator();
+                        return map && it != map->end() ? it->second.at(view->keyTime(), d.type) : d.def;
+                    }
+                return 0.0;
+            };
+            auto set = [view, ref](const QString& id, double v) { view->setParam(ref, id, v); };
+            if (ParamDisplay* display = ParamDisplay::create(e.type, defs, get, set)) {
+                bodyRow->addSpacing(4);
+                bodyRow->addWidget(display);
+                view->m_displays.push_back(display);
+                if (!e.enabled)
+                    display->setEnabled(false);
+            }
+        }
+        auto* controls = new QWidget;
+        bodyRow->addWidget(controls, 1);
+        auto* grid = new QGridLayout(controls);
         grid->setContentsMargins(6, 4, 6, 4);
         grid->setHorizontalSpacing(6);
         grid->setVerticalSpacing(4);
@@ -821,13 +892,13 @@ public:
             if (d.hidden)
                 continue;
             const bool wide = d.type == ParamType::Text || d.type == ParamType::Font;
-            const int need = d.type == ParamType::Number ? 70 : (d.type == ParamType::Bool ? 28 : 46);
+            auto* c = new ParamControl(view, DeviceChainView::ParamRef{path, index, -1}, d, false);
+            const int need = c->sizeHint().height(); // (knobs with long names are taller)
             if (used > 0 && (used + need > avail || wide)) {
                 row = 0;
                 used = 0;
                 ++col;
             }
-            auto* c = new ParamControl(view, DeviceChainView::ParamRef{path, index, -1}, d, false);
             grid->addWidget(c, row, col, 1, wide ? 2 : 1, Qt::AlignTop | Qt::AlignHCenter);
             ++row;
             used += need + 4;
@@ -2565,6 +2636,7 @@ void DeviceChainView::rebuild()
         return;
     m_key = structureKey();
     m_controls.clear();
+    m_displays.clear();
     const int scrollX = m_scroll->horizontalScrollBar()->value();
     if (QWidget* old = m_scroll->takeWidget())
         old->deleteLater();
@@ -2638,6 +2710,8 @@ void DeviceChainView::refreshValues()
     const TimeUs tol = keyTolerance();
     for (ParamControl* c : m_controls)
         c->refresh(t, tol);
+    for (QWidget* d : m_displays)
+        d->update();
     if (m_preview && m_maskOverlay && m_preview->overlay() == m_maskOverlay.get())
         m_preview->update();
 }

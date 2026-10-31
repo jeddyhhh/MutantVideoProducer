@@ -169,6 +169,7 @@ private:
     QScrollArea* m_scroll;
     int m_bodyHeight = 140; // height of a (top-level) device's controls
     std::vector<ParamControl*> m_controls;
+    std::vector<QWidget*> m_displays; // the devices' pictures of their settings (ParamDisplay), drawn again as values change
     std::map<int, int> m_rackChain; // rack effect id -> chain shown
     std::set<int> m_folded;         // effect ids
     std::set<int> m_selected;       // effect ids

@@ -288,6 +288,7 @@ add_executable(mvp WIN32
     src/ui/GraphicsEditor.h      src/ui/GraphicsEditor.cpp
     src/ui/FxTarget.h
     src/ui/Knob.h                src/ui/Knob.cpp
+    src/ui/ParamDisplay.h        src/ui/ParamDisplay.cpp
     src/ui/DeviceChainView.h     src/ui/DeviceChainView.cpp
     src/ui/KeyframeEditor.h      src/ui/KeyframeEditor.cpp
     src/ui/PanCropView.h         src/ui/PanCropView.cpp

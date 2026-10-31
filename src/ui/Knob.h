@@ -6,8 +6,8 @@
 
 // Rotary control for a numeric parameter: drag up/down (Shift
 // for fine steps) or use the wheel; double-click resets to the default.
-// Shows the parameter name above and the value below; compact knobs show
-// only the value, to the right.
+// Shows the parameter name above (in full: wider, then on two or three lines,
+// for long names) and the value below; compact knobs show only the value, to the right.
 class Knob : public QWidget {
     Q_OBJECT
 public:
@@ -35,6 +35,8 @@ protected:
 
 private:
     double toPos(double v) const; // 0..1 along the arc (log scale aware)
+    QFont labelFont() const;
+    QRect labelRect() const; // where the name goes (its whole height)
     double fromPos(double pos) const;
     void editTo(double v);
 

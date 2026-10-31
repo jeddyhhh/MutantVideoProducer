@@ -31,6 +31,8 @@
 #include "ui/DeviceChainView.h"
 #include "core/Presets.h"
 #include <QMenu>
+#include <QMouseEvent>
+#include <QScrollArea>
 #include "ui/EffectEditor.h"
 #include "ui/KeyframeEditor.h"
 #include "ui/EventPropertiesDialog.h"
@@ -371,6 +373,58 @@ int MainWindow::runEditorTest(QStringList& log)
                 const bool effectListed = holds(user, QStringLiteral("GUI Test Mosaic"), holds);
                 PresetLibrary::instance().remove(presetId);
                 m_devices->setTarget(before);
+                {
+                    // The devices' pictures: one each for the EQ, filter, dynamics, delay, reverb, chorus and stereo devices,
+                    // the colour effects (curves, hues) and a centre on the picture; dragging the EQ's band 3 up raises its gain.
+                    const Timeline kept = m_project->timeline();
+                    Timeline tl = kept;
+                    tl.audioMasterEffects.clear();
+                    for (const char* type : {"a_eq", "a_filter", "a_compressor", "a_gate", "a_limiter", "a_delay", "a_reverb", "a_chorus", "a_stereo"})
+                        tl.audioMasterEffects.push_back(makeEffectOfType(QString::fromLatin1(type), tl.allocId()));
+                    tl.audioMasterEffects[0].params[QStringLiteral("mid1Gain")].value = 6;
+                    tl.audioMasterEffects[0].params[QStringLiteral("lowCut")].value = 80;
+                    tl.outputEffects.clear();
+                    for (const char* type : {"levels", "hsl", "twirl"})
+                        tl.outputEffects.push_back(makeEffectOfType(QString::fromLatin1(type), tl.allocId()));
+                    tl.outputEffects[0].params[QStringLiteral("gamma")].value = 1.6;
+                    tl.outputEffects[1].params[QStringLiteral("hue")].value = 60;
+                    m_project->applyEdit(tl, QStringLiteral("Test device pictures"));
+                    auto shown = [&](const FxTarget& target, const QString& file) {
+                        m_devices->setTarget({}); // (built afresh)
+                        m_devices->setTarget(target);
+                        QApplication::processEvents();
+                        auto* scroll = m_devices->findChild<QScrollArea*>();
+                        QWidget* strip = scroll ? scroll->widget() : nullptr;
+                        if (strip) {
+                            strip->adjustSize();
+                            strip->grab().save(work.filePath(file));
+                        }
+                        return strip ? strip->findChildren<QWidget*>(QStringLiteral("paramDisplay")) : QList<QWidget*>();
+                    };
+                    const QList<QWidget*> audio = shown({FxTarget::Kind::AudioMaster, 0}, QStringLiteral("device-pictures-audio.png"));
+                    double raised = 0;
+                    if (!audio.isEmpty()) {
+                        // Band 3 (Mid 1: 500 Hz, +6 dB) on the EQ's plot (the widget less 3 pixels each side, 20 Hz - 20 kHz, ±24 dB).
+                        QWidget* eq = audio.front();
+                        const QRectF r = QRectF(eq->rect()).adjusted(3, 3, -3, -3);
+                        const QPointF band(r.left() + std::log(500.0 / 20.0) / std::log(1000.0) * r.width(), r.top() + (24.0 - 6.0) / 48.0 * r.height());
+                        auto mouse = [&](QEvent::Type type, QPointF pos) {
+                            QMouseEvent ev(type, pos, eq->mapToGlobal(pos), Qt::LeftButton,
+                                           type == QEvent::MouseButtonRelease ? Qt::NoButton : Qt::MouseButtons(Qt::LeftButton), Qt::NoModifier);
+                            QApplication::sendEvent(eq, &ev);
+                        };
+                        mouse(QEvent::MouseButtonPress, band);
+                        mouse(QEvent::MouseMove, band - QPointF(0, r.height() / 8));
+                        mouse(QEvent::MouseButtonRelease, band - QPointF(0, r.height() / 8));
+                        raised = m_project->timeline().audioMasterEffects[0].params.at(QStringLiteral("mid1Gain")).value;
+                    }
+                    const QList<QWidget*> video = shown({FxTarget::Kind::Output, 0}, QStringLiteral("device-pictures-video.png"));
+                    m_project->applyEdit(kept, QStringLiteral("Test device pictures"));
+                    check(audio.size() == 9 && video.size() == 3 && raised > 10 && raised < 14,
+                          QStringLiteral("the devices show their settings as pictures (%1 audio, %2 video), and dragging the EQ's band "
+                                         "up raises its gain (6 dB to %3)")
+                              .arg(audio.size()).arg(video.size()).arg(raised, 0, 'f', 1));
+                }
                 check(!presetId.isEmpty() && chainListed && effectListed,
                       QStringLiteral("the device chain's Add menu has a chain just saved under Preset Chains (%1) and a user effect just "
                                      "saved under User Created (%2)")

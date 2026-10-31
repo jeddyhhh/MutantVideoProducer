@@ -2148,6 +2148,29 @@ int cmdAudioFx(const QString& mediaDir, const QString& outDir)
                                                        {{QStringLiteral("mid1Freq"), 440}, {QStringLiteral("mid1Gain"), 5}}), 0.5, 1.0)).rmsDb;
         check(std::abs((eq6 - sineRms) - 5.0) < 0.5 && eq > eq6,
               QStringLiteral("EQ bell at 440 Hz: +5 dB setting gives %1 dB").arg(eq6 - sineRms, 0, 'f', 2));
+        // The device chain's pictures of them draw what is heard: the EQ's and the filter's curves at 440 Hz, and the
+        // compressor's, gate's and limiter's transfer curves.
+        auto settings = [](const QString& type, const std::map<QString, double>& set) {
+            Params p;
+            for (const ParamDef& d : findAudioEffect(type)->params)
+                p.numbers[d.id] = d.def;
+            for (const auto& [k, v] : set)
+                p.numbers[k] = v;
+            return p;
+        };
+        const double eqDrawn = audioEffectResponseDb(QStringLiteral("a_eq"), settings(QStringLiteral("a_eq"), {{QStringLiteral("mid1Freq"), 440}, {QStringLiteral("mid1Gain"), 5}}), 440);
+        const double lpDrawn = audioEffectResponseDb(QStringLiteral("a_filter"), settings(QStringLiteral("a_filter"), {{QStringLiteral("frequency"), 200}}), 440);
+        const double lpHeard = measure(mixRange(withEffect(sine, QStringLiteral("a_filter"), {{QStringLiteral("frequency"), 200}}), 0.5, 1.0)).rmsDb - sineRms;
+        const Params comp = settings(QStringLiteral("a_compressor"), {{QStringLiteral("threshold"), -20}, {QStringLiteral("ratio"), 4}, {QStringLiteral("knee"), 0}});
+        const Params gate = settings(QStringLiteral("a_gate"), {{QStringLiteral("threshold"), -40}, {QStringLiteral("range"), -60}});
+        const Params lim = settings(QStringLiteral("a_limiter"), {{QStringLiteral("ceiling"), -1}});
+        check(std::abs(eqDrawn - (eq6 - sineRms)) < 0.5 && std::abs(lpDrawn - lpHeard) < 0.5
+                  && std::abs(audioEffectTransferDb(QStringLiteral("a_compressor"), comp, -6) + 16.5) < 0.01
+                  && audioEffectTransferDb(QStringLiteral("a_gate"), gate, -50) == -110 && audioEffectTransferDb(QStringLiteral("a_gate"), gate, -30) == -30
+                  && audioEffectTransferDb(QStringLiteral("a_limiter"), lim, 6) == -1 && std::isnan(audioEffectResponseDb(QStringLiteral("a_gain"), {}, 440)),
+              QStringLiteral("the device pictures draw what is heard: the EQ at 440 Hz %1 dB (heard %2), a 200 Hz low-pass %3 dB (heard %4), "
+                             "the dynamics' transfer curves")
+                  .arg(eqDrawn, 0, 'f', 2).arg(eq6 - sineRms, 0, 'f', 2).arg(lpDrawn, 0, 'f', 2).arg(lpHeard, 0, 'f', 2));
     }
     {
         // -6 dBFS peak sine, threshold -20, ratio 4, hard knee: about -16.5 dBFS peak.

@@ -22,9 +22,31 @@ Knob::Knob(const ParamDef& def, bool compact, QWidget* parent) : QWidget(parent)
     setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
 }
 
+namespace {
+constexpr int kMinWidth = 62, kMaxWidth = 96; // a name wider than kMaxWidth wraps
+}
+
+QFont Knob::labelFont() const
+{
+    QFont f = font();
+    f.setPointSizeF(f.pointSizeF() * 0.8);
+    return f;
+}
+
+QRect Knob::labelRect() const
+{
+    const QFontMetrics fm(labelFont());
+    const int w = std::clamp(fm.horizontalAdvance(m_def.name) + 6, kMinWidth, kMaxWidth);
+    const int h = fm.boundingRect(QRect(0, 0, w, 200), Qt::AlignHCenter | Qt::TextWordWrap, m_def.name).height();
+    return QRect(0, 0, w, std::max(14, h));
+}
+
 QSize Knob::sizeHint() const
 {
-    return m_compact ? QSize(84, 24) : QSize(62, 66);
+    if (m_compact)
+        return QSize(84, 24);
+    const QRect label = labelRect();
+    return QSize(label.width(), label.height() + 52); // the name, the knob, the value
 }
 
 double Knob::toPos(double v) const
@@ -85,9 +107,7 @@ void Knob::paintEvent(QPaintEvent*)
 {
     QPainter p(this);
     p.setRenderHint(QPainter::Antialiasing, true);
-    QFont f = font();
-    f.setPointSizeF(f.pointSizeF() * 0.8);
-    p.setFont(f);
+    p.setFont(labelFont());
     const QColor valueColor = m_animated ? theme::c().key : theme::c().accent;
 
     QRectF knob;
@@ -95,9 +115,10 @@ void Knob::paintEvent(QPaintEvent*)
         knob = QRectF(3, 3, height() - 6, height() - 6);
     } else {
         p.setPen(theme::c().text);
-        p.drawText(QRectF(0, 0, width(), 14), Qt::AlignCenter, p.fontMetrics().elidedText(m_def.name, Qt::ElideRight, width()));
+        const QRect label = labelRect();
+        p.drawText(QRect(0, 0, width(), label.height()), Qt::AlignHCenter | Qt::AlignTop | Qt::TextWordWrap, m_def.name);
         const double d = 30;
-        knob = QRectF((width() - d) / 2, 17, d, d);
+        knob = QRectF((width() - d) / 2, label.height() + 3, d, d);
     }
     // Track, then the value arc (from 0 for bipolar ranges).
     const double pos = toPos(m_value);

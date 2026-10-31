@@ -15,6 +15,7 @@ extern "C" {
 
 #include <algorithm>
 #include <cmath>
+#include <complex>
 #include <cstring>
 #include <array>
 #include <deque>
@@ -122,6 +123,13 @@ struct Biquad {
         a2 /= a0;
     }
 
+    // What it does to a steady tone at `freq` Hz, in dB.
+    double responseDb(double freq, double rate) const
+    {
+        const std::complex<double> z1 = std::polar(1.0, -2 * kPi * freq / rate), z2 = z1 * z1;
+        return 20 * std::log10(std::max(1e-12, std::abs((b0 + b1 * z1 + b2 * z2) / (1.0 + a1 * z1 + a2 * z2))));
+    }
+
     inline double run(int ch, double x)
     {
         const double y = b0 * x + z1[ch];
@@ -167,6 +175,27 @@ private:
 
 // ---- Parametric EQ ---------------------------------------------------------------
 
+// The Parametric EQ's six bands with these settings (bands at 0 dB, and cuts at the ends, are off).
+struct EqBand {
+    Biquad::Type type;
+    double freq, q, gain;
+    bool active;
+};
+std::array<EqBand, 6> eqBands(const Params& p)
+{
+    return {{
+            {Biquad::HighPass, p.num(QStringLiteral("lowCut")), 0.707, 0, p.num(QStringLiteral("lowCut")) > 20.5},
+            {Biquad::LowShelf, p.num(QStringLiteral("lowFreq")), 0.707, p.num(QStringLiteral("lowGain")), p.num(QStringLiteral("lowGain")) != 0},
+            {Biquad::Peak, p.num(QStringLiteral("mid1Freq")), p.num(QStringLiteral("mid1Q")), p.num(QStringLiteral("mid1Gain")),
+             p.num(QStringLiteral("mid1Gain")) != 0},
+            {Biquad::Peak, p.num(QStringLiteral("mid2Freq")), p.num(QStringLiteral("mid2Q")), p.num(QStringLiteral("mid2Gain")),
+             p.num(QStringLiteral("mid2Gain")) != 0},
+            {Biquad::HighShelf, p.num(QStringLiteral("highFreq")), 0.707, p.num(QStringLiteral("highGain")),
+             p.num(QStringLiteral("highGain")) != 0},
+            {Biquad::LowPass, p.num(QStringLiteral("highCut")), 0.707, 0, p.num(QStringLiteral("highCut")) < 19999.5},
+    }};
+}
+
 class EqProcessor : public AudioProcessor {
 public:
     void reset(int rate) override
@@ -177,21 +206,7 @@ public:
     }
     void process(float* s, int frames, const Params& p) override
     {
-        struct Band {
-            Biquad::Type type;
-            double freq, q, gain;
-            bool active;
-        } bands[6] = {
-            {Biquad::HighPass, p.num(QStringLiteral("lowCut")), 0.707, 0, p.num(QStringLiteral("lowCut")) > 20.5},
-            {Biquad::LowShelf, p.num(QStringLiteral("lowFreq")), 0.707, p.num(QStringLiteral("lowGain")), p.num(QStringLiteral("lowGain")) != 0},
-            {Biquad::Peak, p.num(QStringLiteral("mid1Freq")), p.num(QStringLiteral("mid1Q")), p.num(QStringLiteral("mid1Gain")),
-             p.num(QStringLiteral("mid1Gain")) != 0},
-            {Biquad::Peak, p.num(QStringLiteral("mid2Freq")), p.num(QStringLiteral("mid2Q")), p.num(QStringLiteral("mid2Gain")),
-             p.num(QStringLiteral("mid2Gain")) != 0},
-            {Biquad::HighShelf, p.num(QStringLiteral("highFreq")), 0.707, p.num(QStringLiteral("highGain")),
-             p.num(QStringLiteral("highGain")) != 0},
-            {Biquad::LowPass, p.num(QStringLiteral("highCut")), 0.707, 0, p.num(QStringLiteral("highCut")) < 19999.5},
-        };
+        const std::array<EqBand, 6> bands = eqBands(p);
         for (int i = 0; i < 6; ++i) {
             if (!bands[i].active) {
                 m_bands[i].reset();
@@ -237,6 +252,17 @@ private:
 
 // ---- Compressor -------------------------------------------------------------------------
 
+// The gain change (dB, <= 0) for a level `over` dB above the threshold: soft knee `knee` dB wide.
+double compressorGainDb(double over, double ratio, double knee)
+{
+    const double slope = 1.0 / std::max(1.0, ratio) - 1.0;
+    if (2 * over < -knee)
+        return 0;
+    if (knee > 0 && 2 * std::abs(over) <= knee)
+        return slope * (over + knee / 2) * (over + knee / 2) / (2 * knee);
+    return slope * over;
+}
+
 class CompressorProcessor : public AudioProcessor {
 public:
     void reset(int rate) override
@@ -250,17 +276,9 @@ public:
         const double knee = p.num(QStringLiteral("knee")), makeup = p.num(QStringLiteral("makeup"));
         const double att = timeCoef(p.num(QStringLiteral("attack")), m_rate);
         const double rel = timeCoef(p.num(QStringLiteral("release")), m_rate);
-        const double slope = 1.0 / ratio - 1.0;
         for (int i = 0; i < frames; ++i) {
             const double level = linToDb(std::max(std::abs(s[i * 2]), std::abs(s[i * 2 + 1])));
-            const double over = level - th;
-            double gr; // target gain change in dB (<= 0)
-            if (2 * over < -knee)
-                gr = 0;
-            else if (knee > 0 && 2 * std::abs(over) <= knee)
-                gr = slope * (over + knee / 2) * (over + knee / 2) / (2 * knee);
-            else
-                gr = slope * over;
+            const double gr = compressorGainDb(level - th, ratio, knee); // target gain change in dB (<= 0)
             m_env = gr < m_env ? att * m_env + (1 - att) * gr : rel * m_env + (1 - rel) * gr;
             const double g = dbToLin(m_env + makeup);
             s[i * 2] = float(s[i * 2] * g);
@@ -1069,4 +1087,36 @@ EffectInstance makeEffectOfType(const QString& type, int id)
     if (auto meta = effectMeta(type))
         e.params = defaultParams(*meta->params);
     return e;
+}
+
+double audioEffectResponseDb(const QString& type, const Params& p, double freq, int rate)
+{
+    Biquad b;
+    if (type == QLatin1String("a_eq")) {
+        double db = 0;
+        for (const EqBand& band : eqBands(p))
+            if (band.active) {
+                b.set(band.type, rate, band.freq, band.q, band.gain);
+                db += b.responseDb(freq, rate);
+            }
+        return db;
+    }
+    if (type == QLatin1String("a_filter")) {
+        static const Biquad::Type types[] = {Biquad::LowPass, Biquad::HighPass, Biquad::BandPass, Biquad::Notch};
+        b.set(types[std::clamp(p.choice(QStringLiteral("type")), 0, 3)], rate, p.num(QStringLiteral("frequency")), p.num(QStringLiteral("q")), 0);
+        return b.responseDb(freq, rate) * (p.choice(QStringLiteral("slope")) == 1 ? 2 : 1);
+    }
+    return std::nan("");
+}
+
+double audioEffectTransferDb(const QString& type, const Params& p, double in)
+{
+    if (type == QLatin1String("a_compressor"))
+        return in + compressorGainDb(in - p.num(QStringLiteral("threshold")), p.num(QStringLiteral("ratio")), p.num(QStringLiteral("knee")))
+               + p.num(QStringLiteral("makeup"));
+    if (type == QLatin1String("a_gate"))
+        return in > p.num(QStringLiteral("threshold")) ? in : in + p.num(QStringLiteral("range"));
+    if (type == QLatin1String("a_limiter"))
+        return std::min(in, p.num(QStringLiteral("ceiling")));
+    return std::nan("");
 }

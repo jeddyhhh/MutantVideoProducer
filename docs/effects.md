@@ -39,6 +39,31 @@ Clicking a track header, its **fx** button, or **Track FX** in an event's right-
 **Controls**:
 
 - **Knobs**: drag up or down; hold **Shift** for fine steps; use the mouse wheel; double-click to reset.
+  Each shows its setting's whole name.
+- Short choices are a row of buttons, one lit (*12 dB/octave* | *24 dB/octave*); longer ones are menus.
+- **Pictures** of the settings, left of the controls, on many devices. Hold the mouse over a point for
+  its values; drag it to change them (the wheel too, where it says so). Each drag is one undo step and
+  sets keyframes as the knobs do.
+  - **Parametric EQ**: its curve, 20 Hz to 20 kHz. Points 1 and 6 are the cuts (drag across), 2 and 5
+    the shelves, 3 and 4 the mid bands (across for the frequency, up and down for the gain, the wheel
+    for the width). A band dragged back to 0 dB is off (a hollow point).
+  - **Filter**: its curve; the point moves the frequency (across) and the resonance (up and down).
+  - **Compressor**, **Noise Gate**, **Limiter**: level in (across) against level out (up). **T** is the
+    threshold; the compressor's **R** at the end of the curve is the ratio, the gate's **R** the range;
+    the limiter's point is the ceiling.
+  - **Delay / Echo**: the sound and its echoes over 2.4 seconds (ping-pong: left above, right below).
+    Point 1 sets the time and the mix, point 2 the feedback.
+  - **Reverb**: the sound and the tail, in dB, over 4 seconds; the highs (inside) die sooner with more
+    damping. Its start sets the pre-delay and the wet level, its end the room size.
+  - **Chorus**, **Flanger**: the delay sweeping over 2 seconds (the line is the delay; the top of the
+    sweep the depth and, across, the rate).
+  - **Stereo Tools**: the sound between the speakers; drag across for the balance, up for the width.
+  - Colour effects that change each brightness (Levels, Curves, Brightness and Contrast, Color
+    Balance, Color Wheels, Posterize...): their curves, red, green and blue where they differ.
+  - Colour effects that mix the colours (Hue, Saturation and Lightness, Black and White, Sepia, Color
+    Tint): the hues before (outside) and after (inside), and greys from black to white.
+  - Effects with a centre or a position on the picture (Twirl, Ripple, Kaleidoscope, Transform...): a
+    picture with the point on it to drag.
 - Right-click any control:
   - **Enter Value...** to type a number,
   - **Reset to Default**,

@@ -43,6 +43,11 @@ What changed in each version of Mutant Video Producer. The newest is first.
   layer on the big Live picture to put it anywhere.
 - **Status bar**: CPU and GPU load, RAM, the GPU's temperature and memory (NVIDIA), once a second.
 - **Help > About**: links to jeddyh.fyi and the YouTube channel.
+- **Device chain**: pictures of the settings beside the controls, most of them dragged to change them: the Parametric
+  EQ's and the Filter's curves, the Compressor's, Noise Gate's and Limiter's transfer curves, the Delay's echoes, the
+  Reverb's tail, the Chorus's and Flanger's sweep, the Stereo Tools' field, the colour curves of LUT colour effects,
+  the hues before and after of colour-matrix effects, and a centre or position on the picture. Short choices are a row
+  of buttons. Knobs show their settings' whole names (wider, then on two or three lines).
 - **Device chain > Add**: the Preset Chains, as in the FX tabs. A chain saved with Save Chain is there straight away.
 - Effect Builder effects are in the nested sequence editor's Add FX list and in the graphics editor's effect on a layer,
   as soon as they are saved.
