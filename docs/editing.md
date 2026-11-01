@@ -46,6 +46,9 @@ its colour (Neon Green, Amber, LED Red and others, or a custom one).
 - **Ctrl+drag** copies it (and its grouped audio). The copies are selected.
 - **Alt+Left / Alt+Right** nudge the selection one frame. Hold **Shift** too for 10 frames.
 - **Ctrl+X / Ctrl+C / Ctrl+V** cut, copy and paste. Paste goes in at the cursor.
+- **Ctrl+D** (Edit > Duplicate) puts a copy of the selected events right after them: one event's copy
+  starts where it ends, with its grouped sound or picture. With auto ripple on, what follows moves
+  along to make room. The copies are selected, so Ctrl+D again makes the next one.
 
 ### Trimming and splitting
 

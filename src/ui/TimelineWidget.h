@@ -120,6 +120,8 @@ public:
     void copySelection();
     void cutSelection();
     void paste();
+    // Ctrl+D: a copy of the selected events (and their groups) right after them, starting where they end. Selected.
+    void duplicateSelection();
     void toggleMuteSelection();
     void insertTrack(TrackType type);
     // Timeline drops give each video its own tracks; cursor placement can reuse tracks.

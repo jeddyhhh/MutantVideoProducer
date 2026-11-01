@@ -16,6 +16,7 @@ What changed in each version of Mutant Video Producer. The newest is first.
 
 - **J and L cuts**: Alt+drag an edge of a grouped event trims its picture or its sound alone; Ctrl+Alt+Shift+drag a cut
   rolls that track's cut alone. They stay grouped.
+- **Ctrl+D** (Edit > Duplicate): a copy of the selected events right after them, starting where they end.
 - **Retro Shaders**: RetroArch's screen shaders (libretro's GLSL presets: CRT, handheld LCD, NTSC, VHS, pixel-art
   upscalers; over 600) as video effects on the GPU renderer, their parameters as knobs. Tools > Get Screen Shaders
   downloads them (each under its own licence); "Picture fed in" sets the lines they see (240 to start).

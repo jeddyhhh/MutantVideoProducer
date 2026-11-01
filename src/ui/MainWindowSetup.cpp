@@ -512,6 +512,10 @@ void MainWindow::createActions()
     edit->addAction(act(tr("Cu&t"), QKeySequence::Cut, [this] { m_timeline->cutSelection(); }));
     edit->addAction(act(tr("&Copy"), QKeySequence::Copy, [this] { m_timeline->copySelection(); }));
     edit->addAction(act(tr("&Paste"), QKeySequence::Paste, [this] { m_timeline->paste(); }));
+    edit->addAction(act(tr("&Duplicate"), QKeySequence(QStringLiteral("Ctrl+D")), [this] {
+        if (editorActive())
+            m_timeline->duplicateSelection();
+    }));
     edit->addAction(act(tr("&Delete"), QKeySequence::Delete, [this] { m_timeline->deleteSelection(false); }));
     edit->addAction(act(tr("Ripple De&lete"), QKeySequence(QStringLiteral("Ctrl+Del")), [this] { m_timeline->deleteSelection(true); }));
     edit->addSeparator();

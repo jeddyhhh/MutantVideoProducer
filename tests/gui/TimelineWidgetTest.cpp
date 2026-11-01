@@ -824,6 +824,28 @@ int TimelineWidget::runEditTest(QStringList& log)
             reset();
         }
         {
+            // Ctrl+D: A (and its sound) copied to start where A ends, the copies selected and grouped together; again: the next.
+            reset();
+            selectA();
+            const Clip a = clipAt(videoTrack, 0);
+            const size_t before = m_project->timeline().tracks[size_t(videoTrack)].clips.size();
+            duplicateSelection();
+            const auto& vt = m_project->timeline().tracks[size_t(videoTrack)].clips;
+            const auto& at = m_project->timeline().tracks[size_t(audioTrack)].clips;
+            auto startingAt = [](const std::vector<Clip>& clips, TimeUs t) {
+                return std::find_if(clips.begin(), clips.end(), [&](const Clip& c) { return c.start == t; });
+            };
+            const auto v = startingAt(vt, a.end()), au = startingAt(at, a.end());
+            const bool once = vt.size() == before + 1 && v != vt.end() && au != at.end() && v->length == a.length && v->sourceIn == a.sourceIn
+                              && v->groupId && v->groupId == au->groupId && v->groupId != a.groupId && m_selection.count(v->id) && m_selection.count(au->id)
+                              && m_project->undoStack()->undoText() == tr("Duplicate");
+            duplicateSelection();
+            const auto& vt2 = m_project->timeline().tracks[size_t(videoTrack)].clips;
+            const bool twice = startingAt(vt2, a.end() + a.length) != vt2.end();
+            check(once && twice, QStringLiteral("Ctrl+D duplicates an event (and its sound) to start where it ends, selected; again: the next one"));
+            reset();
+        }
+        {
             // With the snap grid off, faint lines run down the tracks at the ruler's marks, and only there.
             const Grid gridBefore = m_grid;
             setGrid(Grid::Off);

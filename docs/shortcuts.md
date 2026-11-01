@@ -28,6 +28,7 @@ already in use can be moved to the new command. **Reset All** brings back the de
 | S | Split at the cursor |
 | Del / Ctrl+Del | Delete / ripple delete |
 | Ctrl+X / Ctrl+C / Ctrl+V | Cut / copy / paste at the cursor |
+| Ctrl+D | Duplicate the selected events, right after them |
 | Ctrl+A | Select all |
 | G / U | Group / ungroup |
 | Ctrl+Z / Ctrl+Y | Undo / redo |

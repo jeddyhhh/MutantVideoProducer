@@ -423,6 +423,50 @@ void TimelineWidget::paste()
     setSelection(pasted);
 }
 
+void TimelineWidget::duplicateSelection()
+{
+    Timeline tl = m_project->timeline();
+    const std::set<int> ids = ops::expandToGroups(tl, m_selection);
+    TimeUs from = std::numeric_limits<TimeUs>::max(), to = std::numeric_limits<TimeUs>::min();
+    for (const Track& t : tl.tracks)
+        for (const Clip& c : t.clips)
+            if (ids.count(c.id) && !t.locked) {
+                from = std::min(from, c.start);
+                to = std::max(to, c.end());
+            }
+    if (from >= to)
+        return;
+    // As one block: each copy as far after its original as the selection is long (one event: it starts where it ends).
+    std::map<int, int> groupMap;
+    std::set<int> made;
+    for (Track& t : tl.tracks) {
+        if (t.locked)
+            continue;
+        std::vector<Clip> copies;
+        for (const Clip& c : t.clips) {
+            if (!ids.count(c.id))
+                continue;
+            Clip d = c;
+            d.id = tl.allocId();
+            d.start = c.start + (to - from);
+            reassignEffectIds(d.effects, [&] { return tl.allocId(); });
+            if (d.groupId) {
+                auto it = groupMap.find(c.groupId);
+                if (it == groupMap.end())
+                    it = groupMap.emplace(c.groupId, tl.allocId()).first;
+                d.groupId = it->second;
+            }
+            made.insert(d.id);
+            copies.push_back(d);
+        }
+        t.clips.insert(t.clips.end(), copies.begin(), copies.end());
+    }
+    tl.sortClips();
+    rippleAfterInsert(tl, to, made); // auto ripple: what follows moves along to make room
+    m_project->applyEdit(tl, tr("Duplicate"));
+    setSelection(made);
+}
+
 void TimelineWidget::toggleMuteSelection()
 {
     if (m_selection.empty())
