@@ -11,7 +11,7 @@ Everything in the **Options** menu. Settings are remembered between sessions.
 | Classic | Neutral dark grey with blue accents (the original look). |
 | Neon Grid | Cyberpunk: violet-black with hot magenta and electric cyan. |
 | Night City | Cyberpunk: near-black with acid yellow, red and cyan, like a heads-up display. |
-| Synthwave Sunset | Deep purple with orange and pink, like an '80s poster. |
+| Synthwave Sunset | Deep purple with orange and pink, like an '80s poster. The theme a new install starts with. |
 | Terminal | Black with green phosphor text and amber highlights. |
 | Arctic | Cool blue-grey with frosty accents: calm and low-contrast for long sessions. |
 | Studio Light | A light theme for daytime and bright rooms. |

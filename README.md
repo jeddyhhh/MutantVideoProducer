@@ -24,8 +24,7 @@ Mutant Video Producer (MVP) runs on Windows and Linux and has three workspaces:
 - **Live**: cameras, screens, windows and video files through effect pads in real time, recorded or streamed.
 - **Deliver**: checks a finished edit, renders every output at once and writes the publish pack.
 
-It is free software (GPL v3), with no accounts, no watermarks and no subscriptions. The About box will tell you it is
-registered to someone called Hugh Jass. It isn't.
+It is free software (GPL v3), with no accounts, no watermarks and no subscriptions.
 
 ---
 

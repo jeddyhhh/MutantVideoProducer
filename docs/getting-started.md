@@ -30,7 +30,9 @@ The Editor has four areas. Drag the dividers between them to resize them.
   - **Properties** shows the settings of a title, a transition or Pan/Crop.
 
 **View > Theme** changes the colours: seven themes, from the neutral Classic to the cyberpunk Neon
-Grid and Night City, and a light one (see [Themes](options.md#themes)).
+Grid and Night City, and a light one (see [Themes](options.md#themes)). It starts as Synthwave Sunset.
+The timecode in the timeline's top-left corner starts as neon green seven-segment digits: click it for
+another font, right-click it for another colour (or the theme's).
 
 The status bar at the bottom says what the computer is using, for example
 `Render: GPU (NVIDIA GeForce RTX 5070) Decode: D3D11VA`, and how busy it is, once a second:

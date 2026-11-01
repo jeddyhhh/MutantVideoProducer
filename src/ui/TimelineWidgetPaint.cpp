@@ -124,7 +124,7 @@ void TimelineWidget::setRulerLines(bool on)
 
 void TimelineWidget::paintGrid(QPainter& p, const QRect& band)
 {
-    if (m_grid == Grid::Off) { // the ruler's marks, faintly (as Vegas draws its grid)
+    if (m_grid == Grid::Off) { // the ruler's marks, faintly
         if (!m_rulerLines)
             return;
         const RulerSteps s = rulerSteps();

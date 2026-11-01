@@ -1010,6 +1010,13 @@ int LiveView::runSelfTest(QStringList& log)
             const QSize least = window()->minimumSizeHint();
             if (least.width() > 1366 || least.height() > 768)
                 problems << QStringLiteral("layout %1 needs %2x%3").arg(l).arg(least.width()).arg(least.height());
+            // The setup's controls clear of its scroll bar: none reaching past the visible width.
+            QApplication::processEvents();
+            if (m_sidebar->isVisibleTo(this) && m_sidebar->widget()->width() < m_sidebar->widget()->minimumSizeHint().width())
+                problems << QStringLiteral("layout %1: the setup is squeezed under its scroll bar (%2 of %3 px)")
+                                .arg(l).arg(m_sidebar->widget()->width()).arg(m_sidebar->widget()->minimumSizeHint().width());
+            if (l == 0)
+                m_sidebar->grab().save(QDir(qEnvironmentVariable("MVP_LIVE_DIR")).filePath(QStringLiteral("live_setup.png")));
         }
         // Splitter positions are kept per layout.
         setLayoutMode(1);

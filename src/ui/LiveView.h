@@ -94,6 +94,7 @@ public:
 protected:
     // Pad keys on the Live tab (and its output windows): 1 2 3 4 / Q W E R / A S D F / Z X C V.
     bool eventFilter(QObject* watched, QEvent* event) override;
+    void fitSidebar(); // the setup's width: what its sections need, plus the scroll bar
 
     // The switcher: input 0 = the Source, 1.. = the Switcher section's inputs.
     // Preview picks the next one; cutTo puts one on air (with the pads' transition).

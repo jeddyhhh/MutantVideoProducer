@@ -4,6 +4,14 @@ What changed in each version of Mutant Video Producer. The newest is first.
 
 ## Unreleased
 
+### Changed
+
+- A new install starts with the **Synthwave Sunset** theme and a neon green seven-segment timecode.
+
+### Fixed
+
+- **Live tab**: the setup's scroll bar covered the controls at its right edge (Mirror, Reset...).
+
 ### Added
 
 - **J and L cuts**: Alt+drag an edge of a grouped event trims its picture or its sound alone; Ctrl+Alt+Shift+drag a cut
@@ -468,7 +476,7 @@ What changed in each version of Mutant Video Producer. The newest is first.
 
 ## 0.5.0 (2026-10-16)
 
-### Timeline wheel works like Ableton Live
+### Timeline wheel: zoom over the ruler, scroll elsewhere
 
 - The mouse wheel zooms only over the time ruler, where the pointer becomes a magnifying glass.
   Anywhere else on the timeline the wheel scrolls the tracks up and down. Ctrl+wheel or

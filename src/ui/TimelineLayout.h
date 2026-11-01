@@ -36,7 +36,7 @@ inline QColor ink(int alpha)
     c.setAlpha(alpha);
     return c;
 }
-// As in Ableton Live, the wheel zooms only over the time ruler; elsewhere it scrolls the tracks.
+// The wheel zooms only over the time ruler; elsewhere it scrolls the tracks.
 inline bool overRuler(QPointF p) { return p.x() >= kHeaderWidth && p.y() >= kRulerTop && p.y() < kTopH; }
 inline QCursor magnifierCursor()
 {

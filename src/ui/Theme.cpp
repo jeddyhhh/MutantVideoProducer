@@ -145,7 +145,7 @@ void apply(QApplication& app, const QString& id)
     QSettings settings;
     if (!id.isEmpty())
         settings.setValue(QStringLiteral("ui/theme"), id);
-    const QString want = id.isEmpty() ? settings.value(QStringLiteral("ui/theme"), QStringLiteral("classic")).toString() : id;
+    const QString want = id.isEmpty() ? settings.value(QStringLiteral("ui/theme"), QStringLiteral("synthwave")).toString() : id;
     g_current = 0;
     for (size_t i = 0; i < kThemes.size(); ++i)
         if (want == QLatin1String(kThemes[i].id))

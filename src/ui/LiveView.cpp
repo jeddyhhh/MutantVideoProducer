@@ -59,6 +59,7 @@
 #include <QWheelEvent>
 #include <cmath>
 #include <QScrollArea>
+#include <QScrollBar>
 #include <QTabWidget>
 
 namespace {
@@ -993,7 +994,10 @@ LiveView::LiveView(Project* project, QWidget* parent) : QWidget(parent), m_proje
     m_sidebar->setWidgetResizable(true);
     m_sidebar->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     m_sidebar->setFrameShape(QFrame::NoFrame);
-    m_sidebar->setMinimumWidth(sections->minimumSizeHint().width() + 16);
+    // As wide as the sections need with the scroll bar beside them (not over them), again whenever they change (a section
+    // opened, the theme's fonts...).
+    sections->installEventFilter(this);
+    fitSidebar();
     layout->addWidget(m_showBar);
     m_mainLayout = layout;
 
@@ -2115,9 +2119,17 @@ void LiveView::saveScreenshot()
     m_lastScreenshot = path;
 }
 
+void LiveView::fitSidebar()
+{
+    const int bar = m_sidebar->verticalScrollBar()->sizeHint().width();
+    m_sidebar->setMinimumWidth(m_sidebar->widget()->minimumSizeHint().width() + bar + 2 * m_sidebar->frameWidth() + 2);
+}
+
 bool LiveView::eventFilter(QObject* watched, QEvent* event)
 {
     const QEvent::Type type = event->type();
+    if (m_sidebar && watched == m_sidebar->widget() && (type == QEvent::LayoutRequest || type == QEvent::Show || type == QEvent::StyleChange))
+        fitSidebar();
     if (type == QEvent::MouseButtonDblClick) // a switcher input: on air at once
         for (int k = 0; k <= LiveEngine::kMaxInputs; ++k)
             if (watched == m_inputTiles[size_t(k)]) {

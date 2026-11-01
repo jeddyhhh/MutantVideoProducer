@@ -51,8 +51,10 @@ TimelineWidget::TimelineWidget(Project* project, MediaCache* cache, QWidget* par
     setFrameShape(QFrame::NoFrame);
     setMinimumHeight(kTopH + 80);
     const QSettings settings;
-    m_clockStyle = std::clamp(settings.value(Profiles::instance().settingsKey(QStringLiteral("timeline/clockStyle")), 0).toInt(), 0, ClockStyles - 1);
-    m_clockColor = QColor(settings.value(Profiles::instance().settingsKey(QStringLiteral("timeline/clockColor"))).toString());
+    // (A fresh install: seven segments in neon green. A colour set back to the theme's is kept as "".)
+    m_clockStyle = std::clamp(settings.value(Profiles::instance().settingsKey(QStringLiteral("timeline/clockStyle")), int(ClockSegment)).toInt(), 0,
+                              ClockStyles - 1);
+    m_clockColor = QColor(settings.value(Profiles::instance().settingsKey(QStringLiteral("timeline/clockColor")), QStringLiteral("#39ff14")).toString());
 
     m_session = m_project->snapshot()->session;
     connect(m_project, &Project::changed, this, [this] {
