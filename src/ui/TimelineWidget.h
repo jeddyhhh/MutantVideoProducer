@@ -166,6 +166,7 @@ public:
 
 signals:
     void cursorMoved(TimeUs t);
+    void cursorSet(TimeUs t); // the cursor put somewhere by the program (setCursorTime: a seek, a marker...), to follow it
     void beatsRequested(); // right-click > Detect Beats
     void stabilizeRequested(int clipId);
     void matchColourRequested();

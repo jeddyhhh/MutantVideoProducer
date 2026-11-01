@@ -117,13 +117,21 @@ void MainWindow::runProductionToolsTest(const std::function<void(bool, const QSt
             wait(300);
             QApplication::processEvents();
             if (auto* dlg = findChild<QDialog*>(QStringLiteral("spectrogramWindow"))) {
+                // Its cursor line follows the timeline's cursor (and the playhead).
+                const Clip* ac = m_project->timeline().findClip(id);
+                seekTo(ac->start + ac->length / 4);
+                QApplication::processEvents();
+                const QImage early = dlg->grab().toImage();
+                seekTo(ac->start + ac->length * 3 / 4);
+                QApplication::processEvents();
+                const QImage late = dlg->grab().toImage();
                 dlg->grab().save(work.filePath(QStringLiteral("spectrogram.png")));
-                spectrum = dlg->isVisible();
+                spectrum = dlg->isVisible() && early != late;
                 dlg->close();
             }
         }
         check(labelled && saved && spectrum,
               QStringLiteral("colour labels on an event and its group (drawn in its colour, one undo step, saved with the "
-                             "project); the Spectrogram window opens for an audio event"));
+                             "project); the Spectrogram window opens for an audio event, its cursor following the timeline's"));
     }
 }

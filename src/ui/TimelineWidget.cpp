@@ -255,6 +255,7 @@ void TimelineWidget::setCursorTime(TimeUs t, bool ensureVisible)
     if (ensureVisible)
         ensureTimeVisible(m_cursor, false);
     viewport()->update();
+    emit cursorSet(m_cursor);
 }
 
 void TimelineWidget::setPlayhead(std::optional<TimeUs> t)

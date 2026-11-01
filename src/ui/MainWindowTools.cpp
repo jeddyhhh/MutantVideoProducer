@@ -487,8 +487,12 @@ void MainWindow::showSpectrogram(int clipId)
         seekTo(start + TimeUs(at * seconds * kUsPerSecond));
         view->setCursor01(at);
     };
-    const double cursorAt = double(m_timeline->cursorTime() - start) / (seconds * kUsPerSecond);
-    view->setCursor01(cursorAt);
+    // The cursor line follows the timeline's cursor, and the playhead while playing.
+    auto follow = [view, start, seconds](TimeUs t) { view->setCursor01(double(t - start) / (seconds * kUsPerSecond)); };
+    follow(m_timeline->cursorTime());
+    connect(m_timeline, &TimelineWidget::cursorMoved, view, follow);
+    connect(m_timeline, &TimelineWidget::cursorSet, view, follow);
+    connect(m_engine, &PlaybackEngine::positionChanged, view, follow);
     dlg->show();
     QTimer::singleShot(0, dlg, draw);
 }

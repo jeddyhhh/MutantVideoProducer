@@ -46,7 +46,8 @@ as colour, from black through red and orange to white.
 - **Clicks** are thin upright lines: use **De-click**.
 - **Hiss** is a haze across the top: use **Noise Reduction**.
 - It shows the event as heard (its effects and level); tick **Before the event's effects** to compare.
-- Click it to move the cursor there. It shows the first 10 minutes of a longer event.
+- Its white line follows the timeline's cursor, and the playhead while playing. Click it to move the
+  cursor there. It shows the first 10 minutes of a longer event.
 
 ## Sound effects library
 
