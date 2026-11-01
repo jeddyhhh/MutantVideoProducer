@@ -29,4 +29,18 @@ Curves curves(const Histogram& source, const Histogram& reference);
 // with `error` saying why.
 int match(Timeline& tl, const ProjectSnapshot& snap, const std::set<int>& ids, TimeUs reference, QString* error);
 
+// The video event `clipId` alone as it looks at timeline time `t` (clamped into it), with its FX before the effect
+// `beforeEffect` (all of them when 0), `width` pixels wide.
+QImage eventPicture(const ProjectSnapshot& snap, int clipId, TimeUs t, int beforeEffect, int width = 320);
+
+// Auto Colour: in each channel the darkest and brightest levels (all but 0.5% of the pixels at each end) stretched to
+// black and white, then the colour the greyish parts have on average made grey. Sets those on a White Balance effect.
+void autoColour(const QImage& picture, EffectInstance& whiteBalance);
+// The White Balance effect's neutral for a colour picked before it (taken through its black and white points).
+void setNeutral(EffectInstance& whiteBalance, const QColor& picked);
+// Auto Colour on the video events `ids` (as they look at timeline time `at`, or half way through those it misses): each
+// gets a White Balance effect at the end of its FX (or its own one, already there, is set again). Returns how many;
+// 0 with `error` saying why.
+int autoColourEvents(Timeline& tl, const ProjectSnapshot& snap, const std::set<int>& ids, TimeUs at, QString* error);
+
 } // namespace colormatch

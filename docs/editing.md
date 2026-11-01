@@ -70,6 +70,19 @@ its colour (Neon Green, Amber, LED Red and others, or a custom one).
 - **Roll** (**Ctrl+Alt+drag the cut** between two touching events): one event gets longer and the
   other shorter, their audio with them. Nothing else moves.
 
+### J and L cuts
+
+The sound of a shot starting before its picture (a J cut) or running on after it (an L cut), without
+ungrouping them:
+
+- **Alt+drag an edge** of a grouped event: that event alone is trimmed, its picture or its sound,
+  and the rest of the group stays where it is. Auto ripple leaves the rest of the edit alone for it.
+- **Ctrl+Alt+Shift+drag the cut** between two touching events: a roll on that track alone. Do it on
+  the audio track to move where one shot's sound hands over to the next while the pictures still cut
+  where they did. (Snapping still works.)
+
+They stay grouped: moving one moves the other, as before. The undo step is called *Split Edit*.
+
 ### Fades and level
 
 - Drag the small **handle in a top corner** of an event to fade it in or out.

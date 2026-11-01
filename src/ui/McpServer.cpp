@@ -1320,9 +1320,11 @@ QJsonArray McpServer::toolList()
                   {QStringLiteral("action")}));
     t.append(tool("track_motion", "Track Motion: an effect's mask follows what is inside it, from a time to the end of the video event, "
                                   "keyframing the mask's position on every frame. The effect needs a mask (add_effect params mask.shape, "
-                                  "mask.x / y / w / h) and the event a steady forward speed.",
-                  {{QStringLiteral("event_id"), prop("integer", "The video event")},
-                   {QStringLiteral("effect_id"), prop("integer", "The masked effect on it")},
+                                  "mask.x / y / w / h) and the event a steady forward speed. On a corner_pin effect (Track Corners): its "
+                                  "four corners, put on the corners of a screen or sign in the shot under the event (a lower track), "
+                                  "follow them, as keyframes on tlX/tlY, trX/trY, brX/brY, blX/blY.",
+                  {{QStringLiteral("event_id"), prop("integer", "The video event (for a corner_pin, the event pinned over the shot)")},
+                   {QStringLiteral("effect_id"), prop("integer", "The masked effect on it, or its corner_pin")},
                    {QStringLiteral("from"), prop("number", "Seconds on the timeline (default: the cursor, else the event's start)")}},
                   {QStringLiteral("event_id"), QStringLiteral("effect_id")}));
     t.append(tool("presets", "Effect presets. list: the factory and saved ones (search narrows; audio: the audio ones). apply: a preset onto "
@@ -4240,6 +4242,25 @@ QJsonObject McpServer::ToolCall::tool_track_motion()
     const Clip* clip = tl.findClip(integer("event_id", -1));
     if (!clip)
         return errorResult(QStringLiteral("no event %1").arg(integer("event_id", -1)));
+    for (int i = 0; i < int(clip->effects.size()); ++i)
+        if (clip->effects[size_t(i)].id == integer("effect_id", -1) && clip->effects[size_t(i)].type == QLatin1String("corner_pin")) {
+            // Track Corners: on the shot under the event.
+            const int clipId = clip->id, effectId = integer("effect_id", -1);
+            const TimeUs from = has("from") ? us(num("from")) : std::clamp(w->m_timeline->cursorTime(), clip->start, clip->end() - 1);
+            w->stopPlayback(false);
+            w->seekTo(std::clamp(from, clip->start, clip->end() - 1));
+            w->m_devices->setTarget({FxTarget::Kind::Clip, clipId});
+            const int before = project->undoStack()->index();
+            const QString said = w->m_devices->trackCorners(ChainPath{}, i, true);
+            if (project->undoStack()->index() == before)
+                return errorResult(said.isEmpty() ? QStringLiteral("nothing was tracked") : said);
+            Timeline now = project->timeline();
+            const EffectInstance* e = effectById(now, effectId);
+            const auto x = e ? e->params.find(QStringLiteral("tlX")) : ParamMap::const_iterator{};
+            return jsonResult({{QStringLiteral("effect_id"), effectId},
+                               {QStringLiteral("keyframes"), e && x != e->params.end() ? int(x->second.keys.size()) : 0},
+                               {QStringLiteral("note"), said}});
+        }
     const auto media = clip->isGenerated() ? nullptr : project->mediaItem(clip->mediaId);
     if (!media || media->info.isStill || !media->info.videoStream(clip->streamIndex))
         return errorResult(QStringLiteral("Track Motion follows the footage of a video event"));

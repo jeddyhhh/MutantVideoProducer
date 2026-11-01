@@ -7,6 +7,8 @@
 #include "ui/EffectsBrowser.h"
 #include "ui/Knob.h"
 #include "ui/ParamDisplay.h"
+#include "core/ColorMatch.h"
+#include <QTimer>
 #include "ui/ModulationDialog.h"
 #include "ui/PreviewWidget.h"
 #include "core/EffectMask.h"
@@ -916,6 +918,34 @@ public:
             QObject::connect(track, &QPushButton::clicked, view, [view, path, index] { view->trackMask(path, index); });
             grid->addWidget(track, row, col, Qt::AlignTop | Qt::AlignHCenter);
         }
+        if (e.type == QLatin1String("corner_pin")) {
+            auto* track = new QPushButton(QObject::tr("Track Corners"));
+            track->setObjectName(QStringLiteral("trackCorners"));
+            track->setToolTip(QObject::tr("Put the corners on the four corners of a screen or sign in the shot under this event (on a "
+                                          "lower track), then follow them from the cursor on: keyframes on every frame (Event FX)"));
+            track->setEnabled(view->m_target.kind == FxTarget::Kind::Clip);
+            QObject::connect(track, &QPushButton::clicked, view, [view, path, index] { view->trackCorners(path, index); });
+            grid->addWidget(track, row, col, Qt::AlignTop | Qt::AlignHCenter);
+        }
+        if (e.type == QLatin1String("white_balance")) {
+            // Set from the event: Auto, or a click on something that should be grey or white.
+            const bool onEvent = view->m_target.kind == FxTarget::Kind::Clip;
+            auto* buttons = new QVBoxLayout;
+            auto* autoButton = new QPushButton(QObject::tr("Auto"));
+            autoButton->setObjectName(QStringLiteral("autoWhiteBalance"));
+            autoButton->setToolTip(QObject::tr("Black and white points and the neutral from the event at the cursor (Event FX)"));
+            autoButton->setEnabled(onEvent);
+            QObject::connect(autoButton, &QPushButton::clicked, view, [view, path, index] { view->autoWhiteBalance(path, index); });
+            auto* pick = new QPushButton(QObject::tr("Pick Neutral"));
+            pick->setObjectName(QStringLiteral("pickNeutral"));
+            pick->setToolTip(QObject::tr("Then click something on the preview that should be grey or white: it is made so (Event FX)"));
+            pick->setEnabled(onEvent);
+            QObject::connect(pick, &QPushButton::clicked, view, [view, path, index] { view->pickNeutral(path, index); });
+            buttons->addWidget(autoButton);
+            buttons->addWidget(pick);
+            buttons->addStretch();
+            grid->addLayout(buttons, 0, col + 1, -1, 1, Qt::AlignTop);
+        }
         grid->setRowStretch(grid->rowCount(), 1);
     }
 
@@ -1622,6 +1652,238 @@ void DeviceChainView::updateMaskOverlay()
     m_preview->setOverlay(m_maskOverlay.get());
 }
 
+namespace {
+// An event's canvas from its source display (as shown, rotation applied) at an event-local time: framing and
+// stabilisation as rendered.
+QTransform eventView(const Clip& clip, const MediaItem& media, const VideoStreamInfo& vs, QSizeF canvas, TimeUs local)
+{
+    QTransform v = panCropTransform(resolveParams(panCropParams(), clip.panCrop, local), QSizeF(vs.displaySize()), canvas);
+    if (clip.stabilize > 0)
+        v = stabilize::correction(media.path, vs, clip.sourceTimeAt(clip.start + local), clip.stabilize, clip.stabilizeZoom, clip.sourceIn,
+                                  clip.sourceIn + clip.sourceSpan())
+            * v;
+    return v;
+}
+
+// Pick Neutral: a crosshair on the preview; a click there reports where (0..1 of the picture).
+class PickOverlay : public PreviewOverlay {
+public:
+    explicit PickOverlay(std::function<void(QPointF)> picked) : m_picked(std::move(picked)) {}
+    void paint(QPainter& p, const QRectF& picture) override
+    {
+        const QString hint = QObject::tr("Click something that should be grey or white (Pick Neutral again: cancel)");
+        const QRectF box(picture.left() + 8, picture.top() + 8, p.fontMetrics().horizontalAdvance(hint) + 12, p.fontMetrics().height() + 6);
+        p.fillRect(box, QColor(0, 0, 0, 170));
+        p.setPen(Qt::white);
+        p.drawText(box, Qt::AlignCenter, hint);
+    }
+    bool press(QPointF pos, const QRectF& picture, Qt::KeyboardModifiers) override
+    {
+        if (picture.contains(pos))
+            m_picked(QPointF((pos.x() - picture.left()) / picture.width(), (pos.y() - picture.top()) / picture.height()));
+        return false;
+    }
+    void move(QPointF, const QRectF&) override {}
+    void release() override {}
+    Qt::CursorShape cursor(QPointF, const QRectF&) const override { return Qt::CrossCursor; }
+
+private:
+    std::function<void(QPointF)> m_picked;
+};
+} // namespace
+
+void DeviceChainView::autoWhiteBalance(const ChainPath& path, int index)
+{
+    const EffectInstance* e = effectAt(path, index);
+    if (!e || m_target.kind != FxTarget::Kind::Clip)
+        return;
+    const int effectId = e->id;
+    const QImage picture = colormatch::eventPicture(*m_project->snapshot(), m_target.id, m_cursor(), effectId);
+    if (picture.isNull())
+        return;
+    editNow([&](Timeline& tl) {
+        EffectChain* r = root(tl);
+        if (EffectChain* c = r ? resolveChain(*r, path) : nullptr; c && index < int(c->size()) && (*c)[size_t(index)].id == effectId)
+            colormatch::autoColour(picture, (*c)[size_t(index)]);
+    }, tr("Auto Colour"));
+}
+
+void DeviceChainView::pickNeutral(const ChainPath& path, int index)
+{
+    if (!m_preview || m_target.kind != FxTarget::Kind::Clip)
+        return;
+    if (m_picker && m_preview->overlay() == m_picker.get()) { // (pressed again: cancel)
+        m_preview->setOverlay(nullptr);
+        m_picker.reset();
+        updateMaskOverlay();
+        return;
+    }
+    m_picker = std::make_unique<PickOverlay>([this, path, index](QPointF at) {
+        setNeutralAt(path, index, at);
+        QTimer::singleShot(0, this, [this] { // (not from inside its own click)
+            if (m_preview && m_preview->overlay() == m_picker.get())
+                m_preview->setOverlay(nullptr);
+            m_picker.reset();
+            updateMaskOverlay();
+        });
+    });
+    m_preview->setOverlay(m_picker.get());
+    m_preview->update();
+}
+
+void DeviceChainView::setNeutralAt(const ChainPath& path, int index, QPointF at)
+{
+    const EffectInstance* e = effectAt(path, index);
+    if (!e || m_target.kind != FxTarget::Kind::Clip)
+        return;
+    const int effectId = e->id;
+    const QImage picture = colormatch::eventPicture(*m_project->snapshot(), m_target.id, m_cursor(), effectId, 640)
+                               .convertToFormat(QImage::Format_ARGB32);
+    if (picture.isNull())
+        return;
+    // A few pixels round the click, averaged (noise, grain).
+    const int cx = std::clamp(int(at.x() * picture.width()), 0, picture.width() - 1), cy = std::clamp(int(at.y() * picture.height()), 0, picture.height() - 1);
+    double sum[3] = {}, n = 0;
+    for (int y = std::max(0, cy - 2); y <= std::min(picture.height() - 1, cy + 2); ++y)
+        for (int x = std::max(0, cx - 2); x <= std::min(picture.width() - 1, cx + 2); ++x) {
+            const QRgb px = picture.pixel(x, y);
+            sum[0] += qRed(px);
+            sum[1] += qGreen(px);
+            sum[2] += qBlue(px);
+            ++n;
+        }
+    const QColor picked(int(sum[0] / n), int(sum[1] / n), int(sum[2] / n));
+    editNow([&](Timeline& tl) {
+        EffectChain* r = root(tl);
+        if (EffectChain* c = r ? resolveChain(*r, path) : nullptr; c && index < int(c->size()) && (*c)[size_t(index)].id == effectId)
+            colormatch::setNeutral((*c)[size_t(index)], picked);
+    }, tr("Pick Neutral"));
+}
+
+QString DeviceChainView::trackCorners(const ChainPath& path, int index, bool quiet)
+{
+    auto say = [&](const QString& text) {
+        if (!quiet)
+            QMessageBox::information(this, tr("Track Corners"), text);
+        return text;
+    };
+    // The shot under the pinned event at the cursor (the top video event on the tracks below it), each corner followed
+    // on its source frames in a small box, mapped back onto the canvas as keyframes on the corners.
+    const Timeline& tl = m_project->timeline();
+    int pinTrack = -1;
+    const Clip* pin = m_target.kind == FxTarget::Kind::Clip ? tl.findClip(m_target.id, &pinTrack) : nullptr;
+    const EffectDef* def = findEffect(QStringLiteral("corner_pin"));
+    if (!pin || !def)
+        return say(tr("Track Corners follows the shot under an event: use it on the Event FX of the event to pin (on a track above the shot)."));
+    const TimeUs now = std::clamp(m_cursor(), pin->start, pin->end() - 1);
+    const Clip* shot = nullptr;
+    for (int i = pinTrack + 1; i < int(tl.tracks.size()) && !shot; ++i)
+        if (isVisualTrack(tl.tracks[size_t(i)].type))
+            for (const Clip& c : tl.tracks[size_t(i)].clips)
+                if (now >= c.start && now < c.end() && !c.isGenerated()) {
+                    shot = &c;
+                    break;
+                }
+    const auto media = shot ? m_project->mediaItem(shot->mediaId) : nullptr;
+    const VideoStreamInfo* vs = media ? media->info.videoStream(shot->streamIndex) : nullptr;
+    if (!shot || !vs || media->info.isStill)
+        return say(tr("There is no video under this event at the cursor to follow: put the event to pin on a track above the shot."));
+    if (shot->reverse || shot->hasRamp())
+        return say(tr("Track Corners works on shots playing forwards at a steady speed (no reverse or speed ramp)."));
+    const ParamMap* map = params(ParamRef{path, index, -1});
+    if (!map)
+        return {};
+    const QSizeF canvas(m_project->settings().width, m_project->settings().height);
+    const QSizeF disp(vs->displaySize());
+    auto view = [&](TimeUs shotLocal) { return eventView(*shot, *media, *vs, canvas, shotLocal); };
+    const TimeUs from = now - pin->start;
+    const Params pp = resolveParams(def->params, *map, from);
+    bool invertible = false;
+    const QTransform toSource = view(now - shot->start).inverted(&invertible);
+    if (!invertible)
+        return {};
+    static const char* corners[4] = {"tl", "tr", "br", "bl"};
+    const bool sideways = vs->rotation == 90 || vs->rotation == 270;
+    const double side = disp.height() * 0.08; // (a box 8% of the picture's height round each corner)
+    const QSizeF b = sideways ? QSizeF(side / disp.height(), side / disp.width()) : QSizeF(side / disp.width(), side / disp.height());
+    QRectF boxes[4];
+    for (int k = 0; k < 4; ++k) {
+        const QPointF onCanvas(pp.num(QLatin1String(corners[k]) + QLatin1String("X")) * canvas.width(),
+                               pp.num(QLatin1String(corners[k]) + QLatin1String("Y")) * canvas.height());
+        const QPointF d = toSource.map(onCanvas);
+        const QPointF c = tracker::displayToStored(QPointF(d.x() / disp.width(), d.y() / disp.height()), vs->rotation);
+        boxes[k] = QRectF(c - QPointF(b.width() / 2, b.height() / 2), b);
+    }
+    const TimeUs end = std::min(pin->end(), shot->end()) - 1;
+    const TimeUs srcFrom = shot->sourceTimeAt(now), srcTo = shot->sourceTimeAt(end);
+
+    QProgressDialog progress(tr("Tracking the corners..."), tr("Stop"), 0, 1000, this);
+    progress.setWindowModality(Qt::WindowModal);
+    progress.setMinimumDuration(200);
+    std::atomic<double> done{0};
+    std::atomic<bool> stop{false}, finished{false};
+    std::vector<tracker::Point> points[4];
+    QString error;
+    std::thread worker([&] {
+        for (int k = 0; k < 4 && !stop; ++k)
+            points[k] = tracker::track(media->path, shot->streamIndex, srcFrom, srcTo, boxes[k], [&](double p) {
+                done = (k + p) / 4;
+                return !stop.load();
+            }, &error);
+        finished = true;
+    });
+    while (!finished) {
+        progress.setValue(int(done * 1000));
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 30);
+        if (progress.wasCanceled())
+            stop = true;
+        std::this_thread::sleep_for(std::chrono::milliseconds(15));
+    }
+    worker.join();
+    progress.close();
+    const size_t frames = std::min({points[0].size(), points[1].size(), points[2].size(), points[3].size()});
+    if (frames < 2)
+        return say(error.isEmpty() ? tr("Nothing to track there: put the corners on the corners of something in the shot.") : error);
+    // Keyframes (every frame, until a corner is lost for good), replacing the ones in that span.
+    std::vector<std::pair<TimeUs, std::array<QPointF, 4>>> keys;
+    int lost = 0;
+    for (size_t i = 0; i < frames; ++i) {
+        const bool weak = std::any_of(std::begin(points), std::end(points), [&](const auto& pts) { return pts[i].match < 0.25f; });
+        lost = weak ? lost + 1 : 0;
+        if (lost >= 5)
+            break;
+        const TimeUs shotLocal = TimeUs(std::llround(double(points[0][i].srcT - shot->sourceIn) / shot->speed));
+        const QTransform v = view(shotLocal);
+        std::array<QPointF, 4> at;
+        for (int k = 0; k < 4; ++k) {
+            const QPointF d = tracker::storedToDisplay(points[k][i].centre, vs->rotation);
+            const QPointF c = v.map(QPointF(d.x() * disp.width(), d.y() * disp.height()));
+            at[size_t(k)] = QPointF(c.x() / canvas.width(), c.y() / canvas.height());
+        }
+        keys.emplace_back(shot->start + shotLocal - pin->start, at);
+    }
+    if (keys.empty())
+        return say(tr("The corners were lost straight away: put them exactly on the corners and try again."));
+    const TimeUs last = keys.back().first;
+    editNow([&](Timeline& t) {
+        ParamMap* m = params(t, ParamRef{path, index, -1});
+        if (!m)
+            return;
+        for (int k = 0; k < 4; ++k)
+            for (const bool x : {true, false}) {
+                ParamValue& pv = (*m)[QLatin1String(corners[k]) + QLatin1String(x ? "X" : "Y")];
+                std::erase_if(pv.keys, [&](const Keyframe& key) { return key.time >= from && key.time <= last; });
+                for (const auto& [time, at] : keys)
+                    pv.keys.push_back({time, std::clamp(x ? at[size_t(k)].x() : at[size_t(k)].y(), -0.5, 1.5), Keyframe::Interp::Linear});
+                std::sort(pv.keys.begin(), pv.keys.end(), [](const Keyframe& a, const Keyframe& c) { return a.time < c.time; });
+            }
+    }, tr("Track Corners"));
+    emit seekRequested(pin->start + last);
+    return say(lost >= 5 ? tr("Followed the corners for %1 s, then lost one: move the corners back onto them there and track again.")
+                               .arg(double(last - from) / 1e6, 0, 'f', 1)
+                         : tr("Followed the corners for %1 s (%2 keyframes each).").arg(double(last - from) / 1e6, 0, 'f', 1).arg(keys.size()));
+}
+
 QString DeviceChainView::trackMask(const ChainPath& path, int index, bool quiet)
 {
     auto say = [&](const QString& text) {
@@ -1648,13 +1910,7 @@ QString DeviceChainView::trackMask(const ChainPath& path, int index, bool quiet)
     const QSizeF canvas(m_project->settings().width, m_project->settings().height);
     const QSizeF disp(vs->displaySize());
     // Canvas <-> source display, at an event-local time (framing and stabilisation as rendered).
-    auto view = [&](TimeUs local) {
-        QTransform v = panCropTransform(resolveParams(panCropParams(), clip->panCrop, local), disp, canvas);
-        if (clip->stabilize > 0)
-            v = stabilize::correction(media->path, *vs, clip->sourceTimeAt(clip->start + local), clip->stabilize, clip->stabilizeZoom, clip->sourceIn,
-                                      clip->sourceIn + clip->sourceSpan()) * v;
-        return v;
-    };
+    auto view = [&](TimeUs local) { return eventView(*clip, *media, *vs, canvas, local); };
     const TimeUs from = std::clamp(m_cursor(), clip->start, clip->end() - 1) - clip->start;
     const Params mp = resolveParams(effectMaskParams(), *map, from);
     bool invertible = false;

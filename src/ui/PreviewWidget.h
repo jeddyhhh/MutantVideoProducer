@@ -35,6 +35,11 @@ public:
     void setOverlay(PreviewOverlay* overlay);
     PreviewOverlay* overlay() const { return m_overlay; }
     QRectF pictureRect() const;
+    // Lines over the picture to frame by, never rendered: title and action safe areas, thirds, the centre, and where a
+    // 9:16, 1:1 or 4:5 crop of it would be (outside it shaded). Or'ed together.
+    enum Guide { SafeAreas = 1, Thirds = 2, Centre = 4, Crop9x16 = 8, Crop1x1 = 16, Crop4x5 = 32 };
+    void setGuides(int guides);
+    int guides() const { return m_guides; }
 
 protected:
     void paintEvent(QPaintEvent*) override;
@@ -49,4 +54,6 @@ private:
     QColor m_background{0x18, 0x18, 0x1a};
     PreviewOverlay* m_overlay = nullptr;
     bool m_dragging = false;
+    int m_guides = 0;
+    void paintGuides(QPainter& p, const QRectF& r) const;
 };

@@ -209,6 +209,8 @@ void TimelineWidget::mousePressEvent(QMouseEvent* e)
         m_pressTrack = hit.track;
         m_pressTime = xToTime(p.x());
         m_copyDrag = false;
+        // Alt on an edge (Ctrl+Alt+Shift on a cut): this event alone, its picture or sound left where it is (a J or L cut).
+        m_splitEdit = (e->modifiers() & Qt::AltModifier) && (!ctrl || (e->modifiers() & Qt::ShiftModifier));
         // Ctrl+Alt on an edge another event touches: roll the cut between them.
         if ((hit.zone == Zone::LeftEdge || hit.zone == Zone::RightEdge) && ctrl && (e->modifiers() & Qt::AltModifier)) {
             const Track& track = m_before.tracks[size_t(hit.track)];
@@ -432,7 +434,7 @@ void TimelineWidget::mouseMoveEvent(QMouseEvent* e)
         break;
     }
     case Drag::Move: dragMove(p, e->modifiers()); break;
-    case Drag::Roll: dragRoll(p, e->modifiers()); break;
+    case Drag::Roll: dragRoll(p, m_splitEdit ? e->modifiers() & ~Qt::ShiftModifier : e->modifiers()); break; // (Shift: this track only)
     case Drag::Slip: dragSlip(p); break;
     case Drag::Slide: dragSlide(p, e->modifiers()); break;
     case Drag::MarkerMove:
@@ -528,9 +530,9 @@ void TimelineWidget::mouseReleaseEvent(QMouseEvent* e)
         }
         m_copyDrag = false;
         break;
-    case Drag::Roll: m_project->commitEdit(m_before, tr("Trim Adjacent Events")); break;
+    case Drag::Roll: m_project->commitEdit(m_before, m_splitEdit ? tr("Split Edit") : tr("Trim Adjacent Events")); break;
     case Drag::TrimLeft:
-    case Drag::TrimRight: m_project->commitEdit(m_before, tr("Trim Event")); break;
+    case Drag::TrimRight: m_project->commitEdit(m_before, m_splitEdit ? tr("Split Edit") : tr("Trim Event")); break;
     case Drag::Slip: m_project->commitEdit(m_before, tr("Slip Event")); break;
     case Drag::Slide: m_project->commitEdit(m_before, tr("Slide Event")); break;
     case Drag::FadeIn:
@@ -846,17 +848,18 @@ void TimelineWidget::dragTrim(QPoint p, bool left, Qt::KeyboardModifiers mods)
     // Ctrl+drag an edge time-stretches (changes speed, keeps the footage).
     const bool stretchMode = mods & Qt::ControlModifier;
 
-    // Selected clips sharing this edge (e.g. grouped video + audio) trim together.
+    // Selected clips sharing this edge (e.g. grouped video + audio) trim together; Alt: this one alone (a J or L cut).
     std::vector<Clip*> clips;
     std::vector<int> clipTracks; // track id of each
     for (auto& t : tl.tracks)
         for (auto& c : t.clips)
-            if (m_selection.count(c.id) && (left ? c.start : c.end()) == edge) {
+            if (m_selection.count(c.id) && (left ? c.start : c.end()) == edge && (!m_splitEdit || c.id == m_dragClip)) {
                 clips.push_back(&c);
                 clipTracks.push_back(t.id);
             }
-    // Auto ripple: the event keeps its start, what follows moves with its end.
-    const bool ripple = m_ripple != RippleMode::Off;
+    // Auto ripple: the event keeps its start, what follows moves with its end. (Not for a split edit: what follows would
+    // move away from the picture or sound left behind.)
+    const bool ripple = m_ripple != RippleMode::Off && !m_splitEdit;
 
     auto unboundedClip = [&](const Clip* c) {
         auto media = m_project->mediaItem(c->mediaId);
@@ -957,7 +960,7 @@ void TimelineWidget::dragTrim(QPoint p, bool left, Qt::KeyboardModifiers mods)
         std::set<int> trimmed;
         for (const auto& t : tl.tracks)
             for (const Clip& c : t.clips)
-                if (m_selection.count(c.id))
+                if (m_selection.count(c.id) && (!m_splitEdit || c.id == m_dragClip))
                     trimmed.insert(c.id);
         ops::overwriteOverlaps(tl, trimmed);
     }
@@ -979,11 +982,11 @@ void TimelineWidget::dragRoll(QPoint p, Qt::KeyboardModifiers mods)
         auto media = m_project->mediaItem(c.mediaId);
         return !c.isGenerated() && media && !media->info.isStill;
     };
-    std::vector<int> lefts, rights;
-    for (int id : ops::expandToGroups(m_before, {L->id}))
+    std::vector<int> lefts, rights; // (a split edit: these two alone, their groups' cut left where it is)
+    for (int id : m_splitEdit ? std::set<int>{L->id} : ops::expandToGroups(m_before, {L->id}))
         if (const Clip* c = m_before.findClip(id); c && std::llabs(c->end() - edge) <= frame / 2)
             lefts.push_back(id);
-    for (int id : ops::expandToGroups(m_before, {R->id}))
+    for (int id : m_splitEdit ? std::set<int>{R->id} : ops::expandToGroups(m_before, {R->id}))
         if (const Clip* c = m_before.findClip(id); c && std::llabs(c->start - R->start) <= frame / 2)
             rights.push_back(id);
     TimeUs lo = std::numeric_limits<TimeUs>::min() / 4, hi = std::numeric_limits<TimeUs>::max() / 4;
@@ -1094,7 +1097,11 @@ void TimelineWidget::updateHoverCursor(QPoint p)
         const Hit hit = hitTest(p);
         switch (hit.zone) {
         case Zone::LeftEdge:
-        case Zone::RightEdge: shape = Qt::SizeHorCursor; tip = tr("Drag to trim, Ctrl+drag to change speed"); break;
+        case Zone::RightEdge:
+            shape = Qt::SizeHorCursor;
+            tip = tr("Drag to trim, Ctrl+drag to change speed, Alt+drag to trim this event alone (not its grouped picture or "
+                     "sound: a J or L cut). Ctrl+Alt+drag a cut rolls it; add Shift to roll this track's cut alone.");
+            break;
         case Zone::FadeIn:
         case Zone::FadeOut: shape = Qt::PointingHandCursor; tip = tr("Drag to fade"); break;
         case Zone::Gain: shape = Qt::SizeVerCursor; tip = tr("Drag to change event level"); break;

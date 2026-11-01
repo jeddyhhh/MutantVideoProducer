@@ -464,6 +464,11 @@ std::map<QString, double> testValues(const QString& effect)
          {{QStringLiteral("liftHue"), 190}, {QStringLiteral("liftAmount"), 0.5}, {QStringLiteral("gainHue"), 30}, {QStringLiteral("gainAmount"), 0.5}}},
         {QStringLiteral("color_match"), // (as Match Colour would set it: warmer, the blues pulled down)
          {{QStringLiteral("red0"), 0.15}, {QStringLiteral("red4"), 0.6}, {QStringLiteral("blue4"), 0.4}, {QStringLiteral("blue8"), 0.75}}},
+        {QStringLiteral("white_balance"),
+         {{QStringLiteral("neutral"), double(0x7080a0)}, {QStringLiteral("blackR"), 0.05}, {QStringLiteral("whiteB"), 0.9}}},
+        {QStringLiteral("corner_pin"),
+         {{QStringLiteral("tlX"), 0.1}, {QStringLiteral("tlY"), 0.05}, {QStringLiteral("trX"), 0.85}, {QStringLiteral("brX"), 0.95},
+          {QStringLiteral("brY"), 0.9}, {QStringLiteral("blY"), 0.8}}},
     };
     auto it = table.find(effect);
     return it == table.end() ? std::map<QString, double>{} : it->second;
@@ -1411,6 +1416,48 @@ int cmdGpu(const QString& mediaDir, const QString& outDir)
         compare(QStringLiteral("color_match"), fixed, 4 * kUsPerSecond, 1.5);
         const QImage ref = cpu.render(s, kUsPerSecond, size), off = cpu.render(s, 4 * kUsPerSecond, size), on = cpu.render(fixed, 4 * kUsPerSecond, size);
         const double before = imageDifference(off, ref), after = imageDifference(on, ref);
+        {
+            // Auto Colour: a dull, blue picture (greys from 40 to 190, blue raised) comes out stretched to black and white
+            // with its greys grey; the White Balance effect's curves show it (and it is a LUT: the GPU's the same).
+            QImage dull(64, 64, QImage::Format_ARGB32_Premultiplied);
+            for (int y = 0; y < 64; ++y)
+                for (int x = 0; x < 64; ++x) {
+                    const int v = 40 + (x + y) * 150 / 126;
+                    dull.setPixel(x, y, qRgb(int(v * 0.85), int(v * 0.92), std::min(255, v + 25)));
+                }
+            EffectInstance wb = makeEffect(*findEffect(QStringLiteral("white_balance")), 1);
+            colormatch::autoColour(dull, wb);
+            Params wp;
+            for (const auto& [id, pv] : wb.params)
+                wp.numbers[id] = pv.value;
+            ChannelLuts l;
+            const bool changes = findEffect(QStringLiteral("white_balance"))->luts(wp, l);
+            auto out = [&](QRgb c) { return std::array<int, 3>{l[0][size_t(qRed(c))], l[1][size_t(qGreen(c))], l[2][size_t(qBlue(c))]}; };
+            const auto mid = out(dull.pixel(32, 31)), low = out(dull.pixel(0, 0)), high = out(dull.pixel(63, 63));
+            const int spread = std::max({mid[0], mid[1], mid[2]}) - std::min({mid[0], mid[1], mid[2]});
+            check(changes && spread <= 6 && std::max({low[0], low[1], low[2]}) < 20 && std::min({high[0], high[1], high[2]}) > 235,
+                  QStringLiteral("Auto Colour: a dull blue picture's middle grey comes out grey (%1, %2, %3), its ends near black and white")
+                      .arg(mid[0]).arg(mid[1]).arg(mid[2]));
+        }
+        {
+            // Corner Pin: the picture's corners put on the top left quarter's: it fills that quarter, nothing outside it.
+            QImage pic(200, 100, QImage::Format_ARGB32_Premultiplied);
+            pic.fill(QColor(220, 30, 30));
+            Params pp;
+            for (const ParamDef& d : findEffect(QStringLiteral("corner_pin"))->params)
+                pp.numbers[d.id] = d.def;
+            pp.numbers[QStringLiteral("trX")] = 0.5;
+            pp.numbers[QStringLiteral("brX")] = 0.5;
+            pp.numbers[QStringLiteral("brY")] = 0.5;
+            pp.numbers[QStringLiteral("blY")] = 0.5;
+            RenderContext rc;
+            rc.contentRect = QRectF(pic.rect());
+            std::unique_ptr<EffectState> state;
+            QImage pinned = pic;
+            findEffect(QStringLiteral("corner_pin"))->apply(pinned, pp, rc, state);
+            check(qAlpha(pinned.pixel(150, 75)) == 0 && qAlpha(pinned.pixel(150, 20)) == 0 && pinned.pixel(50, 25) == pic.pixel(50, 25),
+                  QStringLiteral("Corner Pin puts the picture's corners where they are set (a quarter of the frame, nothing outside it)"));
+        }
         check(refused && n == 1 && after < before * 0.4, QStringLiteral("Match Colour brings a darkened, tinted shot back to the reference "
                                                                          "(mean difference %1 -> %2); the cursor in it is refused")
                                                              .arg(before, 0, 'f', 1)

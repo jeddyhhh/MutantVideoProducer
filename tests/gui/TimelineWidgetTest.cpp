@@ -795,6 +795,34 @@ int TimelineWidget::runEditTest(QStringList& log)
                                      "second starts there from later in its file, their audio too, nothing else moves")
                           .arg(secs(rb.start)));
         reset();
+        {
+            // J and L cuts: Alt+drag A's picture end (3 s) to 2.5 s: the picture alone (its sound runs on to 3 s, an L cut).
+            // Then Ctrl+Alt+Shift+drag the sound's cut to 3.5 s: the sound alone rolls (B's sound starts later, a J cut the
+            // other way), the pictures' cut stays at 2.5 s.
+            Timeline tl = m_project->timeline();
+            for (auto& t : tl.tracks)
+                for (auto& c : t.clips)
+                    if (c.start == 0)
+                        c.length = 3 * S;
+            m_project->applyEdit(tl, QStringLiteral("touching"));
+            setSelection({});
+            modDrag(QPoint(int(std::lround(timeToX(3 * S))) - 2, y), at(2.5), Qt::AltModifier);
+            const bool pictureAlone = near(clipAt(videoTrack, 0).end(), 2500000) && clipAt(audioTrack, 0).end() == 3 * S
+                                      && clipAt(videoTrack, 0).groupId && clipAt(videoTrack, 0).groupId == clipAt(audioTrack, 0).groupId
+                                      && m_project->undoStack()->undoText() == tr("Split Edit");
+            setSelection({});
+            const int ay = trackTop(audioTrack) + 20;
+            modDrag(QPoint(int(std::lround(timeToX(3 * S))) - 2, ay), QPoint(at(3.5).x(), ay),
+                    Qt::ControlModifier | Qt::AltModifier | Qt::ShiftModifier);
+            const bool soundAlone = near(clipAt(audioTrack, 0).end(), 3500000) && near(clipAt(audioTrack, 1).start, 3500000)
+                                    && near(clipAt(videoTrack, 0).end(), 2500000) && clipAt(videoTrack, 1).start == 3 * S
+                                    && m_project->undoStack()->undoText() == tr("Split Edit");
+            check(pictureAlone && soundAlone,
+                  QStringLiteral("J and L cuts: Alt+drag trims a grouped event's picture alone (its sound to %1 s, the picture to %2 s), "
+                                 "Ctrl+Alt+Shift+drag rolls the sound's cut alone (to %3 s), still grouped")
+                      .arg(secs(clipAt(audioTrack, 0).end())).arg(secs(clipAt(videoTrack, 0).end())).arg(secs(clipAt(audioTrack, 1).start)));
+            reset();
+        }
         // Loop: drag B's end (5 s) out to 12 s, past the end of its 4 s file: it loops, with notches.
         setSelection({});
         drag(QPoint(int(std::lround(timeToX(5 * S))) - 2, y), at(12));

@@ -60,6 +60,7 @@
 #include <QLockFile>
 #include <QPushButton>
 #include <QToolButton>
+#include <QMenu>
 #include <QDesktopServices>
 #include <QElapsedTimer>
 #include <QEventLoop>
@@ -248,9 +249,47 @@ void MainWindow::createLayout()
     m_scopesAction->setCheckable(true);
     m_scopesAction->setShortcut(QKeySequence(QStringLiteral("Ctrl+Alt+S")));
     m_scopesAction->setToolTip(tr("Video scopes beside the preview: waveform, RGB parade, vectorscope, histogram (Ctrl+Alt+S)"));
+    // Guides over the preview (not rendered): safe areas, thirds, the centre, crops for other shapes.
+    m_guidesMenu = new QMenu(tr("&Guides"), this);
+    {
+        const std::pair<int, QString> guides[] = {
+            {PreviewWidget::SafeAreas, tr("&Safe Areas (title 90%, action 93%)")}, {PreviewWidget::Thirds, tr("Rule of &Thirds")},
+            {PreviewWidget::Centre, tr("&Centre")},
+            {PreviewWidget::Crop9x16, tr("Crop &9:16 (Shorts, Reels, TikTok)")}, {PreviewWidget::Crop4x5, tr("Crop &4:5 (feed posts)")},
+            {PreviewWidget::Crop1x1, tr("Crop &1:1 (square)")}};
+        for (const auto& [flag, name] : guides) {
+            QAction* a = m_guidesMenu->addAction(name);
+            a->setCheckable(true);
+            a->setData(flag);
+            connect(a, &QAction::toggled, this, [this, flag](bool on) {
+                const int g = on ? m_preview->guides() | flag : m_preview->guides() & ~flag;
+                m_preview->setGuides(g);
+                QSettings().setValue(QStringLiteral("preview/guides"), g);
+            });
+        }
+        m_guidesMenu->addSeparator();
+        m_guidesMenu->addAction(tr("&None"), this, [this] {
+            for (QAction* a : m_guidesMenu->actions())
+                a->setChecked(false);
+        });
+        auto* button = new QToolButton;
+        button->setObjectName(QStringLiteral("guidesButton"));
+        button->setText(tr("Guides"));
+        button->setToolTip(tr("Lines over the preview to frame by (not rendered): safe areas, thirds, the centre, and crops "
+                              "for vertical, 4:5 and square versions"));
+        button->setMenu(m_guidesMenu);
+        button->setPopupMode(QToolButton::InstantPopup);
+        previewBar->addWidget(button);
+    }
     pl->addWidget(previewBar);
     m_preview = new PreviewWidget;
     pl->addWidget(m_preview, 1);
+    {
+        const int saved = QSettings().value(QStringLiteral("preview/guides"), 0).toInt();
+        for (QAction* a : m_guidesMenu->actions())
+            if (a->isCheckable())
+                a->setChecked(saved & a->data().toInt());
+    }
     m_previewInfo = new QLabel;
     m_previewInfo->setContentsMargins(6, 2, 6, 2);
     theme::style(m_previewInfo, QStringLiteral("color: @dim;"));
@@ -544,6 +583,7 @@ void MainWindow::createActions()
     view->addSeparator();
     view->addAction(act(tr("Audio &Mixer..."), QKeySequence(QStringLiteral("Ctrl+Shift+M")), [this] { showMixer(); }));
     view->addAction(m_scopesAction);
+    view->addMenu(m_guidesMenu);
     view->addSeparator();
     view->addAction(act(tr("Previous Marker"), QKeySequence(Qt::Key_BracketLeft), [this] {
         if (editorActive()) {
@@ -652,6 +692,10 @@ void MainWindow::createActions()
     tools->addAction(act(tr("Match &Colour to the Cursor Frame"), QKeySequence(), [this] {
         if (editorActive())
             matchColour();
+    }));
+    tools->addAction(act(tr("&Auto Colour"), QKeySequence(), [this] {
+        if (editorActive())
+            autoColour();
     }));
     tools->addAction(act(tr("Render Selection to &New Track"), QKeySequence(), [this] {
         if (editorActive())
@@ -1160,6 +1204,7 @@ void MainWindow::connectSignals()
     connect(m_timeline, &TimelineWidget::beatsRequested, this, &MainWindow::detectBeats);
     connect(m_timeline, &TimelineWidget::stabilizeRequested, this, &MainWindow::stabilizeClip);
     connect(m_timeline, &TimelineWidget::matchColourRequested, this, &MainWindow::matchColour);
+    connect(m_timeline, &TimelineWidget::autoColourRequested, this, &MainWindow::autoColour);
     connect(m_devices, &DeviceChainView::userEffectRequested, this, &MainWindow::editUserEffect);
     connect(m_live->devices(), &DeviceChainView::userEffectRequested, this, &MainWindow::editUserEffect);
     connect(m_bin, &MediaBin::relinkRequested, this, [this](int id) { relinkMissing(id); });

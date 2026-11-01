@@ -21,6 +21,7 @@ class QToolButton;
 class ParamControl;
 class PreviewWidget;
 class MaskOverlay;
+class PreviewOverlay;
 
 // Device chain, docked under the timeline: the effect chain of
 // an event, a track, the video output or the audio master as a row of
@@ -118,6 +119,13 @@ private:
     void updateMaskOverlay();
     // Returns what it says when done; quiet: says it only that way, no message boxes (AI control).
     QString trackMask(const ChainPath& path, int index, bool quiet = false);
+    // Corner Pin (an event's): its four corners followed on the shot under the event, from the cursor on, as keyframes.
+    QString trackCorners(const ChainPath& path, int index, bool quiet = false);
+    // White Balance (an event's): Auto Colour from the event at the cursor, or the next click on the preview picks its neutral.
+    void autoWhiteBalance(const ChainPath& path, int index);
+    void pickNeutral(const ChainPath& path, int index);
+    // Sets the neutral from the event at `at` (0..1 of the picture), as it looks before the effect.
+    void setNeutralAt(const ChainPath& path, int index, QPointF at);
 
     // Structure.
     bool dropMime(const QMimeData* mime, const ChainPath& path, int index, bool copy);
@@ -175,6 +183,7 @@ private:
     std::set<int> m_selected;       // effect ids
     PreviewWidget* m_preview = nullptr;
     std::unique_ptr<MaskOverlay> m_maskOverlay;
+    std::unique_ptr<PreviewOverlay> m_picker; // Pick Neutral: the next click on the preview
     int m_maskEditing = 0;          // effect whose mask is on the picture
     QString m_key;
 

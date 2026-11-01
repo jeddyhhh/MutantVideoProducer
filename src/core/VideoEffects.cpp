@@ -427,6 +427,42 @@ std::vector<EffectDef> buildEffects()
     add(d);
 
     d = {};
+    d.id = QStringLiteral("white_balance");
+    d.name = QStringLiteral("White Balance and Auto Colour");
+    d.category = QStringLiteral("Color");
+    d.description = QStringLiteral("Each channel's black and white points, then the neutral colour made grey (white balance). "
+                                   "Set by Auto Colour (an event's right-click menu, Tools), or pick the neutral on the preview.");
+    d.params = {color("neutral", "Neutral (made grey)", 0x808080),
+                num("blackR", "Red black point", 0, 0.5, 0, 3), num("blackG", "Green black point", 0, 0.5, 0, 3),
+                num("blackB", "Blue black point", 0, 0.5, 0, 3), num("whiteR", "Red white point", 0.5, 1, 1, 3),
+                num("whiteG", "Green white point", 0.5, 1, 1, 3), num("whiteB", "Blue white point", 0.5, 1, 1, 3),
+                num("amount", "Amount", 0, 1, 1)};
+    d.luts = [](const Params& p, ChannelLuts& l) {
+        const QColor n = p.color(QStringLiteral("neutral"));
+        const double amount = p.num(QStringLiteral("amount"));
+        const double rgb[3] = {std::max(0.02, double(n.redF())), std::max(0.02, double(n.greenF())), std::max(0.02, double(n.blueF()))};
+        const double grey = (rgb[0] + rgb[1] + rgb[2]) / 3;
+        static const char* channel[3] = {"R", "G", "B"};
+        bool any = false;
+        double black[3], white[3], gain[3];
+        for (int c = 0; c < 3; ++c) {
+            black[c] = p.num(QStringLiteral("black") + QLatin1String(channel[c]));
+            white[c] = p.num(QStringLiteral("white") + QLatin1String(channel[c]));
+            gain[c] = std::clamp(grey / rgb[c], 0.25, 4.0);
+            any |= black[c] != 0 || white[c] != 1 || std::abs(gain[c] - 1) > 1e-6;
+        }
+        if (!any || amount <= 0)
+            return false;
+        for (int c = 0; c < 3; ++c)
+            l[size_t(c)] = makeLut([&](double v) {
+                const double x = std::clamp((v - black[c]) / std::max(1e-3, white[c] - black[c]), 0.0, 1.0);
+                return v + (std::clamp(x * gain[c], 0.0, 1.0) - v) * amount;
+            });
+        return true;
+    };
+    add(d);
+
+    d = {};
     d.id = QStringLiteral("hsl");
     d.name = QStringLiteral("Hue, Saturation and Lightness");
     d.category = QStringLiteral("Color");
@@ -788,6 +824,42 @@ std::vector<EffectDef> buildEffects()
                 color("borderColor", "Border color", 0xffffff)};
     d.params.front().logScale = true;
     d.apply = [](QImage& img, const Params& p, const RenderContext& ctx, std::unique_ptr<EffectState>&) { applyTransform(img, p, ctx); };
+    add(d);
+
+    d = {};
+    d.id = QStringLiteral("corner_pin");
+    d.name = QStringLiteral("Corner Pin");
+    d.category = QStringLiteral("Keying & Compositing");
+    d.description = QStringLiteral("Puts the picture's four corners anywhere (shares of the frame), in perspective: a video onto a "
+                                   "phone, a TV or a sign. Track Corners follows them on the shot under it.");
+    d.params = {num("tlX", "Top left X", -0.5, 1.5, 0, 3), num("tlY", "Top left Y", -0.5, 1.5, 0, 3),
+                num("trX", "Top right X", -0.5, 1.5, 1, 3), num("trY", "Top right Y", -0.5, 1.5, 0, 3),
+                num("brX", "Bottom right X", -0.5, 1.5, 1, 3), num("brY", "Bottom right Y", -0.5, 1.5, 1, 3),
+                num("blX", "Bottom left X", -0.5, 1.5, 0, 3), num("blY", "Bottom left Y", -0.5, 1.5, 1, 3)};
+    d.apply = [](QImage& img, const Params& p, const RenderContext& ctx, std::unique_ptr<EffectState>&) {
+        const QRectF src = ctx.contentRect.isEmpty() ? QRectF(img.rect()) : ctx.contentRect;
+        // The corners where they start (the frame's): the picture as it is, letterboxed or not.
+        const std::pair<const char*, double> start[] = {{"tlX", 0}, {"tlY", 0}, {"trX", 1}, {"trY", 0}, {"brX", 1}, {"brY", 1}, {"blX", 0}, {"blY", 1}};
+        if (std::all_of(std::begin(start), std::end(start), [&](const auto& s) { return p.num(QLatin1String(s.first)) == s.second; }))
+            return;
+        auto at = [&](const char* x, const char* y) {
+            return QPointF(p.num(QLatin1String(x)) * img.width(), p.num(QLatin1String(y)) * img.height());
+        };
+        const QPolygonF to{at("tlX", "tlY"), at("trX", "trY"), at("brX", "brY"), at("blX", "blY")};
+        const QPolygonF from{src.topLeft(), src.topRight(), src.bottomRight(), src.bottomLeft()};
+        QTransform t;
+        if (!QTransform::quadToQuad(from, to, t) || t.isIdentity()) // (the corners where they are: nothing to do)
+            return;
+        QImage out(img.size(), QImage::Format_ARGB32_Premultiplied);
+        out.fill(Qt::transparent);
+        QPainter painter(&out);
+        painter.setRenderHint(QPainter::SmoothPixmapTransform, true);
+        painter.setRenderHint(QPainter::Antialiasing, true);
+        painter.setTransform(t);
+        painter.drawImage(src, img, src);
+        painter.end();
+        img = out;
+    };
     add(d);
 
     d = {};

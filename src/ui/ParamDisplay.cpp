@@ -704,6 +704,25 @@ private:
             p.drawLine(QPointF(f.left(), f.top() + f.height() * i / 3), QPointF(f.right(), f.top() + f.height() * i / 3));
         }
         // Positions that reach past the picture (-2..2) show the picture in the middle of their range.
+        if (m_pairs.size() == 4) { // four corners (Corner Pin): where the picture goes, and the frame itself
+            const ParamDef* dx = def(m_pairs[0].first);
+            const ParamDef* dy = def(m_pairs[0].second);
+            if (dx && dy) {
+                auto to = [&](double x, double y) {
+                    return QPointF(f.left() + (x - dx->min) / (dx->max - dx->min) * f.width(), f.top() + (y - dy->min) / (dy->max - dy->min) * f.height());
+                };
+                p.setPen(QPen(alpha(theme::c().ink, 90), 1, Qt::DashLine));
+                p.drawRect(QRectF(to(0, 0), to(1, 1)));
+                QPolygonF quad;
+                for (const auto& [xId, yId] : m_pairs)
+                    quad << to(value(xId), value(yId));
+                p.setPen(QPen(theme::c().accent, 1.5));
+                p.setBrush(alpha(theme::c().accent, 50));
+                p.drawPolygon(quad);
+                p.setBrush(Qt::NoBrush);
+            }
+            return;
+        }
         p.setPen(QPen(alpha(theme::c().key, 110), 1, Qt::DashLine));
         for (const auto& [xId, yId] : m_pairs) {
             const QPointF at(f.left() + share(xId) * f.width(), f.top() + share(yId) * f.height());

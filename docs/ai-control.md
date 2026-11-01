@@ -44,7 +44,7 @@ for each step and the checks that catch mistakes. It is how the *Snowbank* episo
 | match_colour | Gives video events the colours of the shot at a time (Tools > Match Colour to the Cursor Frame): a Color Match effect on each. |
 | envelope | Volume, pan and composite automation on tracks, and an event's velocity (custom speed ramp), as points. |
 | group, duplicate_events | Group / ungroup events; copy events (with effects and groups) to another time. |
-| stabilize, track_motion | Stabilize a video event (analysing the file); make a masked effect's mask follow the footage. |
+| stabilize, track_motion | Stabilize a video event (analysing the file); make a masked effect's mask follow the footage, or a corner_pin's corners follow the shot under its event (Track Corners). |
 | beat_montage | Tools > Make Beat Montage: a montage cut to the markers from the video files. |
 | media | Relink a missing file, remove an unused one, organize (folder, rating, Mark In / Out), make proxies. |
 | presets | List effect presets, apply one to a chain or an effect, save an effect or chain as one, remove a saved one. |

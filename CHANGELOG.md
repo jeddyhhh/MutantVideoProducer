@@ -2,6 +2,20 @@
 
 What changed in each version of Mutant Video Producer. The newest is first.
 
+## Unreleased
+
+### Added
+
+- **J and L cuts**: Alt+drag an edge of a grouped event trims its picture or its sound alone; Ctrl+Alt+Shift+drag a cut
+  rolls that track's cut alone. They stay grouped.
+- **Guides over the preview** (View > Guides, or the Guides button): title and action safe areas, the rule of thirds,
+  the centre, and 9:16, 4:5 and 1:1 crops. Never rendered.
+- **Auto Colour** (Tools, or right-click a video event): black and white points and white balance from the picture, as
+  a new **White Balance and Auto Colour** effect, which also has **Auto** and **Pick Neutral** (click something grey or
+  white on the preview).
+- **Corner Pin** effect (the picture's corners anywhere, in perspective, on the GPU too) and **Track Corners**: its
+  corners follow a screen or sign in the shot under the event. AI control: track_motion on a corner_pin.
+
 ## 0.9.3 (2026-11-01)
 
 ### Changed

@@ -33,6 +33,8 @@
 #include <QMenu>
 #include <QMouseEvent>
 #include <QScrollArea>
+#include <QPainter>
+#include <QThread>
 #include "ui/EffectEditor.h"
 #include "ui/KeyframeEditor.h"
 #include "ui/EventPropertiesDialog.h"
@@ -424,6 +426,23 @@ int MainWindow::runEditorTest(QStringList& log)
                           QStringLiteral("the devices show their settings as pictures (%1 audio, %2 video), and dragging the EQ's band "
                                          "up raises its gain (6 dB to %3)")
                               .arg(audio.size()).arg(video.size()).arg(raised, 0, 'f', 1));
+                }
+                {
+                    // View > Guides: ticked ones are drawn over the preview (and remembered), not rendered.
+                    int checkable = 0;
+                    for (QAction* g : m_guidesMenu->actions())
+                        if (g->isCheckable()) {
+                            ++checkable;
+                            g->setChecked(g->data().toInt() & (PreviewWidget::SafeAreas | PreviewWidget::Thirds | PreviewWidget::Crop9x16));
+                        }
+                    const QImage plain = m_preview->image();
+                    m_preview->grab().save(work.filePath(QStringLiteral("preview-guides.png")));
+                    const bool drawn = m_preview->guides() == (PreviewWidget::SafeAreas | PreviewWidget::Thirds | PreviewWidget::Crop9x16)
+                                       && QSettings().value(QStringLiteral("preview/guides")).toInt() == m_preview->guides();
+                    for (QAction* g : m_guidesMenu->actions())
+                        g->setChecked(false);
+                    check(checkable == 6 && drawn && m_preview->guides() == 0 && m_preview->image() == plain,
+                          QStringLiteral("View > Guides: safe areas, thirds and a 9:16 crop drawn over the preview, remembered, the picture itself unchanged"));
                 }
                 check(!presetId.isEmpty() && chainListed && effectListed,
                       QStringLiteral("the device chain's Add menu has a chain just saved under Preset Chains (%1) and a user effect just "
@@ -1400,6 +1419,84 @@ int MainWindow::runEditorTest(QStringList& log)
                                            [](const Marker& m) { return m.name == QLatin1String("from AI"); });
             call(QStringLiteral("undo"), {});
             check(removed == 1 && gone, QStringLiteral("AI control: remove_markers takes markers out of a stretch of time (%1 removed)").arg(removed));
+            const QJsonObject unknown = call(QStringLiteral("remove_markers"), {{QStringLiteral("from"), 0}, {QStringLiteral("to"), 1}, {QStringLiteral("preview"), true}});
+            check(failed(unknown) && m_project->undoStack()->undoText() != QLatin1String("AI: Remove Markers"),
+                  QStringLiteral("AI control refuses an argument a tool doesn't take, and changes nothing"));
+        }
+        {
+            // Track Corners: a picture pinned onto a screen moving across the shot under it follows the screen's corners.
+            const int undoIndex = m_project->undoStack()->index();
+            const QString screen = work.filePath(QStringLiteral("screen.mp4"));
+            constexpr int kFrames = 45;
+            auto quad = [](int i) {
+                const QPointF shift(i * 2.5, i * 1.2);
+                return std::array<QPointF, 4>{QPointF(200, 100) + shift, QPointF(440, 112) + shift, QPointF(428, 262) + shift, QPointF(212, 250) + shift};
+            };
+            {
+                LiveRecorder rec;
+                QString error;
+                rec.start(screen, QSize(640, 360), 30, &error);
+                const double t0 = rec.startTime();
+                for (int i = 0; i < kFrames; ++i) {
+                    QImage frame(640, 360, QImage::Format_ARGB32_Premultiplied);
+                    QPainter p(&frame);
+                    for (int y = 0; y < 360; y += 20) // a wall of tiles
+                        for (int x = 0; x < 640; x += 20)
+                            p.fillRect(x, y, 20, 20, QColor::fromHsv((x * 7 + y * 13) % 360, 90, 90 + (x + y) % 60));
+                    const auto q = quad(i);
+                    p.setPen(QPen(QColor(20, 20, 20), 6));
+                    p.setBrush(QColor(235, 235, 240));
+                    p.drawPolygon(q.data(), 4);
+                    const QColor marks[4] = {Qt::red, Qt::green, Qt::blue, Qt::magenta};
+                    for (int k = 0; k < 4; ++k) {
+                        p.setPen(Qt::NoPen);
+                        p.setBrush(marks[k]);
+                        p.drawEllipse(q[size_t(k)], 7, 7);
+                    }
+                    p.end();
+                    while (!rec.addFrame(frame, t0 + i / 30.0))
+                        QThread::msleep(2);
+                }
+                rec.finish(&error);
+            }
+            const int media = content(call(QStringLiteral("import_media"), {{QStringLiteral("paths"), QJsonArray{screen}}}))[QStringLiteral("media_ids")].toArray().at(0).toInt();
+            call(QStringLiteral("add_track"), {{QStringLiteral("type"), QStringLiteral("video")}, {QStringLiteral("index"), 0}});
+            call(QStringLiteral("add_media_to_timeline"), {{QStringLiteral("media_id"), media}, {QStringLiteral("at"), 400}, {QStringLiteral("track"), 1}});
+            const int pinned = content(call(QStringLiteral("add_text"), {{QStringLiteral("preset"), QStringLiteral("solid_black")}, {QStringLiteral("at"), 400},
+                                                                        {QStringLiteral("length"), 1.5}, {QStringLiteral("track"), 0}}))[QStringLiteral("event_id")].toInt();
+            const auto start = quad(0);
+            QJsonObject corners;
+            const char* ids[4][2] = {{"tlX", "tlY"}, {"trX", "trY"}, {"brX", "brY"}, {"blX", "blY"}};
+            for (int k = 0; k < 4; ++k) {
+                corners[QLatin1String(ids[k][0])] = start[size_t(k)].x() / 640;
+                corners[QLatin1String(ids[k][1])] = start[size_t(k)].y() / 360;
+            }
+            const int pin = content(call(QStringLiteral("add_effect"), {{QStringLiteral("target"), QStringLiteral("event")}, {QStringLiteral("id"), pinned},
+                                                                       {QStringLiteral("effect"), QStringLiteral("corner_pin")}, {QStringLiteral("params"), corners}}))
+                                [QStringLiteral("effect_id")].toInt();
+            const QJsonObject tracked = content(call(QStringLiteral("track_motion"), {{QStringLiteral("event_id"), pinned}, {QStringLiteral("effect_id"), pin},
+                                                                                     {QStringLiteral("from"), 400}}));
+            // Where the corners are on the last frame tracked, against where they were drawn (the project is 16:9 like the shot).
+            double worst = 0;
+            int frames = 0;
+            if (const Clip* c = m_project->timeline().findClip(pinned))
+                for (const EffectInstance& e : c->effects)
+                    if (e.id == pin)
+                        for (int k = 0; k < 4; ++k)
+                            for (int axis = 0; axis < 2; ++axis) {
+                                const ParamValue& pv = e.params.at(QLatin1String(ids[k][axis]));
+                                frames = int(pv.keys.size());
+                                if (pv.keys.empty())
+                                    continue;
+                                const int i = int(std::lround(double(pv.keys.back().time) * 30 / kUsPerSecond));
+                                const auto q = quad(std::min(i, kFrames - 1));
+                                const double drawn = axis ? q[size_t(k)].y() / 360 : q[size_t(k)].x() / 640;
+                                worst = std::max(worst, std::abs(pv.keys.back().value - drawn) * (axis ? 360 : 640));
+                            }
+            m_project->undoStack()->setIndex(undoIndex);
+            check(tracked[QStringLiteral("keyframes")].toInt() > 30 && frames > 30 && worst < 4,
+                  QStringLiteral("Track Corners: a corner pin follows a screen's four corners across the shot under it (%1 frames, at worst %2 px off)")
+                      .arg(frames).arg(worst, 0, 'f', 2));
         }
         const QJsonObject blur =
             content(call(QStringLiteral("list_effects"),

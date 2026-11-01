@@ -61,10 +61,10 @@ uniform vec4 uSrcRect;    // texture coordinate origin + extent
 out vec2 vUv;
 out vec2 vPix;
 void main() {
-    vec3 p = uXform * vec3(aPos * uQuadSize, 1.0);
-    vPix = p.xy;
+    vec3 p = uXform * vec3(aPos * uQuadSize, 1.0); // (p.z: 1, but for a perspective transform: Corner Pin)
+    vPix = p.xy / p.z;
     vUv = uSrcRect.xy + aPos * uSrcRect.zw;
-    gl_Position = vec4(p.xy / uTargetSize * 2.0 - 1.0, 0.0, 1.0);
+    gl_Position = vec4(p.xy / uTargetSize * 2.0 - p.z, 0.0, p.z); // (divided by p.z: the picture in perspective)
 }
 )";
 
@@ -2727,6 +2727,21 @@ struct GpuCompositor::Impl : protected QOpenGLExtraFunctions {
             removeBackground(layer, p, ctx, state);
         } else if (id == QLatin1String("transform")) {
             transformEffect(layer, p, ctx);
+        } else if (id == QLatin1String("corner_pin")) {
+            // As the CPU's: the picture's box onto the four corners, in perspective; the frame's corners: as it is.
+            const std::pair<const char*, double> start[] = {{"tlX", 0}, {"tlY", 0}, {"trX", 1}, {"trY", 0}, {"brX", 1}, {"brY", 1}, {"blX", 0}, {"blY", 1}};
+            if (std::all_of(std::begin(start), std::end(start), [&](const auto& s) { return p.num(QLatin1String(s.first)) == s.second; }))
+                return;
+            const QRectF src = ctx.contentRect.isEmpty() ? QRectF(QPointF(), QSizeF(size)) : ctx.contentRect;
+            auto at = [&](const char* x, const char* y) { return QPointF(p.num(QLatin1String(x)) * size.width(), p.num(QLatin1String(y)) * size.height()); };
+            QTransform t;
+            if (!QTransform::quadToQuad(QPolygonF{QPointF(0, 0), QPointF(src.width(), 0), QPointF(src.width(), src.height()), QPointF(0, src.height())},
+                                        QPolygonF{at("tlX", "tlY"), at("trX", "trY"), at("brX", "brY"), at("blX", "blY")}, t))
+                return;
+            Layer out = acquire(size);
+            drawTexture(*out, layer->tex, src.size(), t, 1.0,
+                        QRectF(src.x() / size.width(), src.y() / size.height(), src.width() / size.width(), src.height() / size.height()), false);
+            layer = std::move(out);
         } else if (id == QLatin1String("flip")) {
             const bool h = p.flag(QStringLiteral("horizontal")), v = p.flag(QStringLiteral("vertical"));
             if (!h && !v)

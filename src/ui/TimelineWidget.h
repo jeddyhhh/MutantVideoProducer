@@ -162,6 +162,7 @@ signals:
     void beatsRequested(); // right-click > Detect Beats
     void stabilizeRequested(int clipId);
     void matchColourRequested();
+    void autoColourRequested();
     void selectionChanged();
     void filesDropped(const QStringList& paths, TimeUs at, int trackIndex);
     void clipEffectsRequested(int clipId);
@@ -222,6 +223,7 @@ private:
     double m_moodPressTime = 0;
     // Ctrl+drag: copies of the selection are moved (the originals stay).
     bool m_copyDrag = false;
+    bool m_splitEdit = false; // trimming or rolling this event alone, not its group (a J or L cut)
     std::set<int> m_copyIds;
     // Ctrl+click on an event that was selected: taken out of the selection if not dragged.
     bool m_ctrlDeselect = false;

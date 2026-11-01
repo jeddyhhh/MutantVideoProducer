@@ -17,7 +17,9 @@ The Editor has four areas. Drag the dividers between them to resize them.
   - **From Live**: clips recorded on the Live tab.
   - **History**: every undo step.
 - **Top right: the Video Preview.** It shows the frame at the cursor, or the playing picture. The
-  buttons over it switch **Proxies** and **Scopes** on and off.
+  buttons over it switch **Proxies** and **Scopes** on and off. **Guides** (also **View > Guides**)
+  draws lines over it to frame by, never rendered: the title and action safe areas (90% and 93%),
+  the rule of thirds, the centre, and where a 9:16, 4:5 or 1:1 crop would be (outside it shaded).
 - **Middle: the transport bar and the timeline.**
   - The transport bar has play, stop, loop, the Ripple button, Master FX, the Mixer button and the
     master level meter.

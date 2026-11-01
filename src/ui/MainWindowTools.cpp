@@ -369,6 +369,24 @@ void MainWindow::matchColour()
                              8000);
 }
 
+void MainWindow::autoColour()
+{
+    stopPlayback(false);
+    Timeline tl = m_project->timeline();
+    QString error;
+    QApplication::setOverrideCursor(Qt::WaitCursor);
+    const int n = colormatch::autoColourEvents(tl, *m_project->snapshot(), m_timeline->selection(), m_timeline->cursorTime(), &error);
+    QApplication::restoreOverrideCursor();
+    if (!n) {
+        statusBar()->showMessage(error, 5000);
+        return;
+    }
+    m_project->applyEdit(tl, tr("Auto Colour"));
+    statusBar()->showMessage(tr("Auto Colour on %n event(s): each has a White Balance effect (its Amount tones it down; pick the "
+                                "neutral on the preview to set it by hand)", nullptr, n),
+                             8000);
+}
+
 void MainWindow::splitAtSceneChanges()
 {
     Timeline tl = m_project->timeline();

@@ -217,6 +217,21 @@ the mask:
 
 ![A Pixelate in an ellipse mask, following the ball after Track Motion](animations/track-motion.gif)
 
+### Track Corners
+
+To put a video onto a phone screen, a TV or a sign that moves in the shot:
+
+1. Put the video to show on a track **above** the shot, over the time it should be there.
+2. Give it a **Corner Pin** (Keying & Compositing). Put the cursor where the screen is in view.
+3. Drag the four corners on the Corner Pin's picture (or with its knobs) onto the screen's corners.
+   Turn the video's opacity down for a moment to see them, if you like.
+4. Press **Track Corners**. Each corner is followed on the shot underneath from the cursor to the
+   end of the video (or of the shot), keyframed on every frame.
+
+It works through the shot's framing and stabilisation, needs the shot playing forwards at a steady
+speed, and stops where it loses a corner: move the corners back on there and track again. Corners on
+something with clear edges or marks track best.
+
 ## Follow Audio
 
 Right-click any number control in the Editor > **Follow Audio...** to make it move with the music.
@@ -294,6 +309,19 @@ Frame** (or right-click an event). Each selected event gets a **Color Match** ef
 its FX: red, green and blue curves that give its spread of colours (from frames across the event)
 the reference shot's. Its **Amount** tones the match down; match again to update it, or remove the
 effect to undo it.
+
+## Auto Colour
+
+**Tools > Auto Colour** (or right-click a video event) fixes dull or tinted footage on its own: in
+each colour the darkest and brightest parts are stretched to black and white, then the colour that
+should be grey is made grey (white balance). It looks at the selected events at the cursor (or half
+way through those the cursor misses) and gives each a **White Balance and Auto Colour** effect, with
+its curves in the device chain. Then:
+
+- **Amount** tones it down.
+- **Auto** on the device sets it again from the frame at the cursor.
+- **Pick Neutral**, then click something on the preview that should be grey or white (a wall, a
+  shirt, a sheet of paper): that colour is made neutral. (Click Pick Neutral again to cancel.)
 
 ## Effect Builder
 

@@ -278,6 +278,9 @@ void TimelineWidget::contextMenuEvent(QContextMenuEvent* e)
                     }
                     menu.addAction(tr("Match Colour to the Cursor Frame"), this, [this] { emit matchColourRequested(); })
                         ->setToolTip(tr("Gives the selected events the colours of the shot under the cursor"));
+                    menu.addAction(tr("Auto Colour"), this, [this] { emit autoColourRequested(); })
+                        ->setToolTip(tr("Stretches the selected events' darkest and brightest parts to black and white and makes "
+                                        "what should be grey grey (a White Balance effect on each, to adjust)"));
                 }
                 menu.addAction(tr("Freeze Frame at Cursor (2 s)\tShift+F"), this, [this] { insertFreezeFrame(2 * kUsPerSecond); });
                 const Track& vt = m_project->timeline().tracks[size_t(hit.track)];

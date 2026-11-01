@@ -199,6 +199,7 @@ private:
     // Right-click a video event > Stabilize: how much, analysing it first if needed.
     void stabilizeClip(int clipId);
     void matchColour(); // the selected video events, to the shot at the cursor (a Color Match effect on each)
+    void autoColour();  // the selected video events' levels and white balance (a White Balance effect on each)
     // Tools > Effect Builder: make a video effect from nodes (an effect file to change, or a new one).
     NodeEffectEditor* effectBuilder(const QString& file = {});
     // The Effect Builder on a user effect in the project (by its effect id): saved, that effect takes the new graph.
@@ -254,6 +255,7 @@ private:
     QAction* m_snapAction = nullptr;
     QAction* m_playAction = nullptr;
     QLabel* m_rendererLabel = nullptr;
+    QMenu* m_guidesMenu = nullptr; // View > Guides and the preview bar's Guides button
     QString m_rendererName;            // what renders the preview ("GPU (...)" or "CPU ...")
     QString m_updateUrl;               // a newer release's page, once one was found
     QToolButton* m_updateButton = nullptr; // status bar: the newer release

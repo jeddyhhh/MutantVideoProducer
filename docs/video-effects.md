@@ -20,6 +20,7 @@ limited to part of the picture with a [mask](effects.md#masks).
 | Color Tint | Colours the picture with one tint. |
 | Invert | Photographic negative. |
 | Posterize | Reduces each channel to a few levels. |
+| White Balance and Auto Colour | Each channel's black and white points, then a neutral colour made grey. Set by **Auto Colour** (right-click a video event, or **Tools > Auto Colour**), its **Auto** button, or **Pick Neutral**: then click something on the preview that should be grey or white. **Amount** tones it down. |
 
 **Grading presets**: *S-Curve Contrast*, *Faded Film*, *Cross Process*, *Bright and Airy* (Curves);
 *Teal and Orange*, *Warm Sunset*, *Cool Moonlight*, *Matrix Green* (Color Wheels); and the chains
@@ -53,6 +54,7 @@ GPU and the CPU.
 | Chroma Keyer | Makes a colour (green or blue screen) transparent so lower tracks show through. Key colour, tolerance, softness, spill suppression, and *Show mask only* to check the key. |
 | Transform (Picture in Picture) | Scales, moves, rotates and crops the picture, with an optional border. Keyframe it for animated picture-in-picture. |
 | Mirror / Flip | Flips the picture horizontally and / or vertically. |
+| Corner Pin | Puts the picture's four corners anywhere, in perspective: a video onto a phone, a TV or a sign. Drag the corners on its picture in the device chain. **Track Corners** follows them on the shot under the event (see [Effects](effects.md#track-corners)). |
 | Remove Background (AI) | See below. |
 
 ### Remove Background (AI)
