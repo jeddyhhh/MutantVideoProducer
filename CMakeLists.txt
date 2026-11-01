@@ -133,6 +133,7 @@ add_library(mvp_core STATIC
     src/core/Proxy.h             src/core/Proxy.cpp
     src/core/PreviewCache.h      src/core/PreviewCache.cpp
     src/core/Spectrogram.h       src/core/Spectrogram.cpp
+    src/core/RetroShaders.h      src/core/RetroShaders.cpp
     src/core/Scopes.h            src/core/Scopes.cpp
     src/core/VideoShare.h        src/core/VideoShare.cpp
     src/core/MotionTracker.h     src/core/MotionTracker.cpp
@@ -388,7 +389,7 @@ target_link_libraries(mvp_adversarial_test PRIVATE mvp_core)
 add_executable(mvp_collection_test tests/collection.cpp)
 add_executable(mvp_finishing_test tests/finishing.cpp)
 add_executable(mvp_nodes_test tests/nodes.cpp)
-target_link_libraries(mvp_nodes_test PRIVATE mvp_core)
+target_link_libraries(mvp_nodes_test PRIVATE mvp_core Qt6::CorePrivate) # (QZipWriter: a screen-shader zip)
 add_executable(mvp_keyframes_test tests/keyframes.cpp)
 target_link_libraries(mvp_keyframes_test PRIVATE mvp_core)
 target_link_libraries(mvp_finishing_test PRIVATE mvp_core)

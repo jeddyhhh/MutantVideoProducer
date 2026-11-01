@@ -11,6 +11,11 @@
 #include "core/Captions.h"
 #include "core/Hardware.h"
 #include "core/Segmentation.h"
+#include "core/NodeGraph.h"
+#include "core/RetroShaders.h"
+#include <QEventLoop>
+#include <QProgressDialog>
+#include <QTemporaryFile>
 #include "core/VideoShare.h"
 #include "core/YouTube.h"
 #include "core/Vst3Host.h"
@@ -436,6 +441,63 @@ bool MainWindow::isNewerVersion(const QString& latest, const QString& current)
     auto parse = [](QString v) { return QVersionNumber::fromString(v.startsWith(QLatin1Char('v')) ? v.mid(1) : v); };
     const QVersionNumber a = parse(latest), b = parse(current);
     return !a.isNull() && !b.isNull() && a > b;
+}
+
+void MainWindow::getScreenShaders()
+{
+    const QUrl url(QStringLiteral("https://github.com/libretro/glsl-shaders/archive/refs/heads/master.zip"));
+    const bool again = retro::installed();
+    if (QMessageBox::question(this, tr("Get Screen Shaders"),
+                              tr("%1 libretro's GLSL screen shaders, the ones RetroArch uses (CRT screens, scanlines, handheld LCDs, NTSC "
+                                 "and VHS looks, pixel-art upscalers...), from GitHub (about 30 MB):\n%2\n\nEach shader is under its own "
+                                 "licence (in its file). They go into %3 and show as effects under Retro Shaders (the GPU renderer runs "
+                                 "them).")
+                                  .arg(again ? tr("Download again") : tr("Download"), url.toString(), QDir::toNativeSeparators(retro::folder())))
+        != QMessageBox::Yes)
+        return;
+    QProgressDialog progress(tr("Downloading the screen shaders..."), tr("Cancel"), 0, 1000, this);
+    progress.setWindowModality(Qt::WindowModal);
+    progress.setMinimumDuration(0);
+    QNetworkAccessManager net;
+    QNetworkRequest request(url);
+    request.setHeader(QNetworkRequest::UserAgentHeader, QStringLiteral("MutantVideoProducer/%1").arg(QApplication::applicationVersion()));
+    QNetworkReply* reply = net.get(request);
+    QTemporaryFile zip(QDir::temp().filePath(QStringLiteral("mvp-shaders-XXXXXX.zip")));
+    zip.open();
+    connect(reply, &QNetworkReply::readyRead, &zip, [&] { zip.write(reply->readAll()); });
+    connect(reply, &QNetworkReply::downloadProgress, &progress, [&](qint64 got, qint64 total) {
+        progress.setValue(total > 0 ? int(got * 900 / total) : std::min<int>(900, int(got / 40000)));
+        progress.setLabelText(tr("Downloading the screen shaders... %1 MB").arg(double(got) / 1e6, 0, 'f', 1));
+    });
+    QEventLoop loop;
+    connect(reply, &QNetworkReply::finished, &loop, &QEventLoop::quit);
+    connect(&progress, &QProgressDialog::canceled, reply, &QNetworkReply::abort);
+    loop.exec();
+    zip.write(reply->readAll());
+    zip.flush();
+    const bool ok = reply->error() == QNetworkReply::NoError;
+    const QString netError = reply->errorString();
+    reply->deleteLater();
+    if (!ok) {
+        if (!progress.wasCanceled())
+            QMessageBox::warning(this, tr("Get Screen Shaders"), tr("The download failed: %1").arg(netError));
+        return;
+    }
+    progress.setLabelText(tr("Unpacking the screen shaders..."));
+    QString error;
+    const bool installed = retro::installZip(zip.fileName(), &error, [&](double f) {
+        progress.setValue(900 + int(f * 100));
+        QCoreApplication::processEvents();
+        return !progress.wasCanceled();
+    });
+    progress.setValue(1000);
+    if (!installed) {
+        if (!progress.wasCanceled())
+            QMessageBox::warning(this, tr("Get Screen Shaders"), tr("They couldn't be unpacked: %1").arg(error));
+        return;
+    }
+    emit nodes::Notifier::instance().changed(); // (the effect lists, again)
+    statusBar()->showMessage(tr("%n screen shader(s) ready: Video FX > Retro Shaders", nullptr, int(retro::effects().size())), 8000);
 }
 
 void MainWindow::checkForUpdates(bool manual)

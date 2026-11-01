@@ -216,6 +216,26 @@ the steps with a pattern of dots.
 Animated effects are seeded from the frame number, so every render is identical. The effects that
 build on earlier frames (trails, feedback, datamosh, slit scan) start over after a jump in time.
 
+## Retro Shaders (screen shaders)
+
+The screen shaders RetroArch uses (libretro's GLSL collection): CRT screens with curvature, scanlines
+and shadow masks, arcade and consumer TVs, handheld LCDs (Game Boy, GBA, DS, PSP), NTSC and VHS
+signal looks, and the pixel-art upscalers (xBR, ScaleFX, HQx...), over 600 presets in all.
+
+- **Tools > Get Screen Shaders (RetroArch's)...** downloads them from GitHub (about 30 MB) into the
+  app data folder. They are not part of Mutant Video Producer: each is under its own licence (GPL,
+  MIT, public domain...), written at the top of its file. Run it again to get the newest ones.
+- Then they are effects under **Video FX > Retro Shaders**, in the same folders as RetroArch's
+  (crt, handheld, ntsc, vhs, xbr...), and in the device chain's **Add > Retro Shaders**. A preset's
+  settings (its *#pragma parameter*s) are knobs, starting at the preset's values.
+- **Picture fed in**: the shaders draw a scanline, a pixel or a phosphor per line of the picture they
+  get, as from an old console. It starts at **240 lines**; **144** and **160** suit the handheld ones
+  (Game Boy, GBA), **As it is** gives the project's own lines.
+- They run on the **GPU renderer** (the preview, renders, the Live tab), each pass as RetroArch runs it:
+  sizes by source, viewport or pixels, float and sRGB passes, the frames before, lookup textures,
+  aliases. The CPU renderer leaves the picture as it is.
+- The picture is put on black first, so transparent parts come out black.
+
 ## Video scopes
 
 The **Scopes** button over the preview (**Ctrl+Alt+S**) shows a scope beside the preview, live

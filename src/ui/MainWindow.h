@@ -143,6 +143,7 @@ private:
     void showWelcome();
     void showSystemCheck();
     void checkForUpdates(bool manual);
+    void getScreenShaders(); // Tools > Get Screen Shaders: libretro's GLSL shaders downloaded, as Retro Shaders effects
     // Mutant Video Producer crashed last time: the report, to look at or to report on GitHub (CrashReport.h).
     void offerCrashReport();
     // Help > Find a Command (Ctrl+K): every menu command, found by typing part of its name.

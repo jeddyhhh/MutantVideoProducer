@@ -13,6 +13,9 @@
 #include "core/Hardware.h"
 #include "core/MotionGraphics.h"
 #include "core/NodeGraph.h"
+#include "core/RetroShaders.h"
+#include <QFile>
+#include <QMatrix4x4>
 #include "core/PanCrop.h"
 #include "core/EffectMask.h"
 #include "core/Proxy.h"
@@ -2329,6 +2332,252 @@ struct GpuCompositor::Impl : protected QOpenGLExtraFunctions {
         return img;
     }
 
+    // ---- Screen shaders: libretro GLSL presets (RetroShaders.h), pass after pass as RetroArch runs them ----
+
+    struct RetroState : EffectState {
+        Impl* owner = nullptr;
+        std::deque<Target> history; // the pictures fed in, newest first (PrevTexture, Prev1Texture...)
+        ~RetroState() override
+        {
+            if (owner && QOpenGLContext::currentContext() == owner->context.get())
+                for (Target& t : history)
+                    owner->deleteTarget(t);
+        }
+    };
+    struct RetroPrograms {
+        std::vector<std::unique_ptr<QOpenGLShaderProgram>> passes;
+        bool failed = false;
+    };
+    std::map<QString, RetroPrograms> retroPrograms; // by preset file
+    std::map<QString, std::pair<GLuint, QSize>> retroLuts; // by image file
+    GLuint retroVao = 0, retroVbo = 0;
+
+    RetroPrograms& retroProgramsFor(const retro::Preset& pre)
+    {
+        RetroPrograms& rp = retroPrograms[pre.path];
+        if (!rp.passes.empty() || rp.failed)
+            return rp;
+        for (const retro::Pass& pass : pre.passes) {
+            QFile f(pass.path);
+            const QString src = f.open(QIODevice::ReadOnly | QIODevice::Text) ? QString::fromUtf8(f.readAll()) : QString();
+            auto prog = std::make_unique<QOpenGLShaderProgram>();
+            prog->bindAttributeLocation("VertexCoord", 0);
+            prog->bindAttributeLocation("TexCoord", 1);
+            prog->bindAttributeLocation("COLOR", 2);
+            if (src.isEmpty() || !prog->addShaderFromSourceCode(QOpenGLShader::Vertex, retro::passSource(src, true))
+                || !prog->addShaderFromSourceCode(QOpenGLShader::Fragment, retro::passSource(src, false)) || !prog->link()) {
+                qWarning("screen shader %s: %s", qPrintable(pass.path), qPrintable(prog->log().left(600)));
+                rp.passes.clear();
+                rp.failed = true;
+                return rp;
+            }
+            rp.passes.push_back(std::move(prog));
+        }
+        return rp;
+    }
+
+    GLuint retroLut(const retro::Lut& lut, QSize* size)
+    {
+        auto it = retroLuts.find(lut.path);
+        if (it == retroLuts.end()) {
+            QImage img = QImage(lut.path).convertToFormat(QImage::Format_RGBA8888);
+            GLuint tex = 0;
+            if (!img.isNull()) {
+                glGenTextures(1, &tex);
+                glBindTexture(GL_TEXTURE_2D, tex);
+                glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, img.width(), img.height(), 0, GL_RGBA, GL_UNSIGNED_BYTE, img.constBits());
+                if (lut.mipmap)
+                    glGenerateMipmap(GL_TEXTURE_2D);
+            }
+            it = retroLuts.emplace(lut.path, std::pair{tex, img.size()}).first;
+        }
+        if (it->second.first) { // (its sampling, each time: two presets may want it differently)
+            glBindTexture(GL_TEXTURE_2D, it->second.first);
+            retroSampling(lut.linear, lut.wrap, lut.mipmap);
+        }
+        *size = it->second.second;
+        return it->second.first;
+    }
+
+    // The bound texture's filtering and edges as a pass asks for them.
+    void retroSampling(bool linear, retro::Wrap wrap, bool mipmap)
+    {
+        constexpr GLenum kClampToBorder = 0x812D;
+        const GLint w = wrap == retro::Wrap::Edge     ? GL_CLAMP_TO_EDGE
+                        : wrap == retro::Wrap::Repeat ? GL_REPEAT
+                        : wrap == retro::Wrap::Mirror ? GL_MIRRORED_REPEAT
+                                                      : GLint(kClampToBorder);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, w);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, w);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, linear ? GL_LINEAR : GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, mipmap ? (linear ? GL_LINEAR_MIPMAP_LINEAR : GL_NEAREST_MIPMAP_NEAREST) : (linear ? GL_LINEAR : GL_NEAREST));
+    }
+    void retroSamplingDefault(GLuint tex)
+    {
+        glBindTexture(GL_TEXTURE_2D, tex);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    }
+
+    // True when it was a screen shader (its picture made, or left as it was when the preset can't run).
+    bool retroEffect(const QString& id, const Params& p, Layer& layer, const RenderContext& ctx, std::unique_ptr<EffectState>& state)
+    {
+        if (!id.startsWith(QLatin1String("retro.")))
+            return false;
+        const retro::Preset* pre = retro::preset(id);
+        if (!pre)
+            return true;
+        RetroPrograms& rp = retroProgramsFor(*pre);
+        if (rp.failed)
+            return true;
+        if (!retroVao) { // VertexCoord, TexCoord, COLOR: a quad over 0..1
+            const float v[] = {0, 0, 0, 1, 0, 0, 0, 0, 1, 1, 1, 1, //
+                               1, 0, 0, 1, 1, 0, 0, 0, 1, 1, 1, 1, //
+                               0, 1, 0, 1, 0, 1, 0, 0, 1, 1, 1, 1, //
+                               1, 1, 0, 1, 1, 1, 0, 0, 1, 1, 1, 1};
+            glGenVertexArrays(1, &retroVao);
+            glGenBuffers(1, &retroVbo);
+            glBindVertexArray(retroVao);
+            glBindBuffer(GL_ARRAY_BUFFER, retroVbo);
+            glBufferData(GL_ARRAY_BUFFER, sizeof v, v, GL_STATIC_DRAW);
+            for (GLuint a = 0; a < 3; ++a) {
+                glEnableVertexAttribArray(a);
+                glVertexAttribPointer(a, 4, GL_FLOAT, GL_FALSE, 12 * sizeof(float), reinterpret_cast<const void*>(uintptr_t(a * 4 * sizeof(float))));
+            }
+            glBindVertexArray(0);
+        }
+        if (!state || !dynamic_cast<RetroState*>(state.get())) {
+            auto s = std::make_unique<RetroState>();
+            s->owner = this;
+            state = std::move(s);
+        }
+        RetroState& st = *static_cast<RetroState*>(state.get());
+        const QSize out = layer->size();
+        // The picture fed in: flattened onto black, at an old console's lines (or as it is).
+        static const int kLines[] = {0, 1080, 720, 480, 360, 288, 240, 224, 160, 144};
+        const int lines = kLines[std::clamp(p.choice(QString::fromLatin1(retro::kSourceLines)), 0, int(std::size(kLines)) - 1)];
+        const QSize in = lines && lines < out.height() ? QSize(std::max(1, int(std::lround(double(out.width()) * lines / out.height()))), lines) : out;
+        Layer orig = acquire(in, false);
+        clear(*orig, 0, 0, 0, 1);
+        drawTexture(*orig, layer->tex, QSizeF(out), QTransform::fromScale(double(in.width()) / out.width(), double(in.height()) / out.height()), 1.0);
+        const int64_t frame = int64_t(std::llround(double(ctx.time) * std::max(1.0, ctx.fps) / kUsPerSecond));
+        std::vector<Layer> outputs;
+        for (size_t i = 0; i < pre->passes.size(); ++i) {
+            const retro::Pass& ps = pre->passes[i];
+            const Target& src = outputs.empty() ? *orig : *outputs.back();
+            const bool last = i + 1 == pre->passes.size();
+            auto axis = [&](retro::Scale type, double scale, int source, int viewport) {
+                if (last && !ps.scaleSet)
+                    return viewport;
+                const double v = type == retro::Scale::Absolute ? scale : (type == retro::Scale::Viewport ? viewport : source) * scale;
+                return std::clamp(int(std::lround(v)), 1, 8192);
+            };
+            const QSize size(axis(ps.scaleX, ps.sx, src.w, out.width()), axis(ps.scaleY, ps.sy, src.h, out.height()));
+            const GLenum fmt = ps.floatBuffer ? GL_RGBA16F : (ps.srgbBuffer ? GL_SRGB8_ALPHA8 : GL_RGBA8);
+            Layer dst = acquire(size, true, fmt);
+            QOpenGLShaderProgram& prog = *rp.passes[i];
+            prog.bind();
+            int unit = 0;
+            auto sampler = [&](const QByteArray& name, GLuint tex, QSize texSize, bool linear, retro::Wrap wrap, bool mipmap) {
+                const int loc = prog.uniformLocation(name);
+                const int sizeLoc = prog.uniformLocation(QByteArray(name).replace("Texture", "TextureSize"));
+                const int inLoc = prog.uniformLocation(QByteArray(name).replace("Texture", "InputSize"));
+                if (loc < 0 && sizeLoc < 0 && inLoc < 0)
+                    return;
+                if (loc >= 0) {
+                    bindTexture(unit, tex);
+                    retroSampling(linear, wrap, mipmap);
+                    prog.setUniformValue(loc, unit++);
+                }
+                if (sizeLoc >= 0)
+                    prog.setUniformValue(sizeLoc, QVector2D(float(texSize.width()), float(texSize.height())));
+                if (inLoc >= 0)
+                    prog.setUniformValue(inLoc, QVector2D(float(texSize.width()), float(texSize.height())));
+            };
+            // The pass's input (as it asks to sample it), the original, the passes before, the frames before, the LUTs.
+            if (ps.mipmapInput) {
+                glBindTexture(GL_TEXTURE_2D, src.tex);
+                glGenerateMipmap(GL_TEXTURE_2D);
+            }
+            bindTexture(unit, src.tex);
+            retroSampling(ps.linear, ps.wrap, ps.mipmapInput);
+            prog.setUniformValue("Texture", unit++);
+            prog.setUniformValue("TextureSize", QVector2D(float(src.w), float(src.h)));
+            prog.setUniformValue("InputSize", QVector2D(float(src.w), float(src.h)));
+            prog.setUniformValue("OutputSize", QVector2D(float(size.width()), float(size.height())));
+            prog.setUniformValue("FrameCount", int(ps.frameCountMod > 0 ? frame % ps.frameCountMod : frame));
+            prog.setUniformValue("FrameDirection", 1);
+            QMatrix4x4 mvp; // (0..1 onto the whole target)
+            mvp.ortho(0, 1, 0, 1, -1, 1);
+            prog.setUniformValue("MVPMatrix", mvp);
+            sampler("OrigTexture", orig->tex, in, ps.linear, ps.wrap, false);
+            for (size_t j = 0; j < outputs.size(); ++j) {
+                const Target& o = *outputs[j];
+                sampler("Pass" + QByteArray::number(qulonglong(j + 1)) + "Texture", o.tex, o.size(), ps.linear, ps.wrap, false);
+                sampler("PassPrev" + QByteArray::number(qulonglong(i - j)) + "Texture", o.tex, o.size(), ps.linear, ps.wrap, false);
+                if (!pre->passes[j].alias.isEmpty())
+                    sampler(pre->passes[j].alias.toUtf8() + "Texture", o.tex, o.size(), ps.linear, ps.wrap, false);
+            }
+            sampler("PassPrev" + QByteArray::number(qulonglong(i + 1)) + "Texture", orig->tex, in, ps.linear, ps.wrap, false);
+            for (int h = 0; h < 7; ++h) {
+                const QByteArray name = h == 0 ? QByteArray("PrevTexture") : "Prev" + QByteArray::number(h) + "Texture";
+                const bool have = size_t(h) < st.history.size() && st.history[size_t(h)].size() == in;
+                sampler(name, have ? st.history[size_t(h)].tex : orig->tex, in, ps.linear, ps.wrap, false);
+            }
+            for (const retro::Lut& lut : pre->luts) {
+                const int loc = prog.uniformLocation(lut.name.toUtf8());
+                if (loc < 0)
+                    continue;
+                glActiveTexture(GL_TEXTURE0 + GLenum(unit)); // (its own unit: retroLut binds the texture where it is)
+                QSize lutSize;
+                if (retroLut(lut, &lutSize))
+                    prog.setUniformValue(loc, unit++);
+            }
+            for (const retro::Parameter& par : pre->parameters)
+                if (const int loc = prog.uniformLocation(par.id.toUtf8()); loc >= 0)
+                    prog.setUniformValue(loc, float(p.num(par.id)));
+            glBindFramebuffer(GL_FRAMEBUFFER, dst->fbo);
+            glViewport(0, 0, size.width(), size.height());
+            glDisable(GL_BLEND);
+            glDisable(GL_SCISSOR_TEST);
+            constexpr GLenum kFramebufferSrgb = 0x8DB9;
+            if (ps.srgbBuffer)
+                glEnable(kFramebufferSrgb);
+            glBindVertexArray(retroVao);
+            glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+            glBindVertexArray(0);
+            if (ps.srgbBuffer)
+                glDisable(kFramebufferSrgb);
+            // (the textures back as the rest of the compositor samples them)
+            retroSamplingDefault(src.tex);
+            retroSamplingDefault(orig->tex);
+            for (Layer& o : outputs)
+                retroSamplingDefault(o->tex);
+            for (Target& t : st.history)
+                retroSamplingDefault(t.tex);
+            glActiveTexture(GL_TEXTURE0);
+            outputs.push_back(std::move(dst));
+        }
+        // The last pass's picture, at the layer's size, opaque.
+        Layer result = acquire(out, false);
+        drawTexture(*result, outputs.back()->tex, QSizeF(outputs.back()->size()),
+                    QTransform::fromScale(double(out.width()) / outputs.back()->w, double(out.height()) / outputs.back()->h), 1.0, QRectF(0, 0, 1, 1), false);
+        layer = std::move(result);
+        // This picture fed in, kept for the next frames.
+        if (pre->history > 0) {
+            Target keep;
+            copyInto(keep, *orig);
+            st.history.push_front(keep);
+            while (int(st.history.size()) > pre->history) {
+                deleteTarget(st.history.back());
+                st.history.pop_back();
+            }
+        }
+        return true;
+    }
+
     void nodeGraphEffect(const Params& p, Layer& layer, const RenderContext& ctx, std::unique_ptr<EffectState>& state)
     {
         auto* s = dynamic_cast<NodeGraphState*>(state.get());
@@ -2749,7 +2998,8 @@ struct GpuCompositor::Impl : protected QOpenGLExtraFunctions {
             Layer out = acquire(size, false);
             drawTexture(*out, layer->tex, QSizeF(size), QTransform(), 1.0, QRectF(h ? 1 : 0, v ? 1 : 0, h ? -1 : 1, v ? -1 : 1), false);
             layer = std::move(out);
-        } else if (glitchEffect(id, p, layer, ctx) || fxEffect(id, p, layer, ctx, state) || consoleEffect(id, p, layer, ctx, state)) {
+        } else if (retroEffect(id, p, layer, ctx, state) || glitchEffect(id, p, layer, ctx) || fxEffect(id, p, layer, ctx, state)
+                   || consoleEffect(id, p, layer, ctx, state)) {
             // done on the GPU
         } else {
             // No GPU version (e.g. FFmpeg Filter): run the CPU effect on a copy.

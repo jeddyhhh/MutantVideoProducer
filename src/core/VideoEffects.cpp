@@ -6,6 +6,7 @@
 #include "core/Effects.h"
 #include "core/ColorMatch.h"
 #include "core/NodeGraph.h"
+#include "core/RetroShaders.h"
 #include "core/EffectHelpers.h"
 #include "core/ConsoleEngine.h"
 #include "core/Segmentation.h"
@@ -931,5 +932,7 @@ const EffectDef* findEffect(const QString& id)
     for (const auto& e : videoEffects())
         if (e.id == id)
             return &e;
+    if (id.startsWith(QLatin1String("retro."))) // (libretro screen shaders, downloaded)
+        return retro::findEffect(id);
     return id.startsWith(QLatin1String("user.")) ? nodes::findUserEffect(id) : nullptr; // (made in the Effect Builder)
 }

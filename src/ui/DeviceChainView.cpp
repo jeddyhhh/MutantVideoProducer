@@ -8,6 +8,7 @@
 #include "ui/Knob.h"
 #include "ui/ParamDisplay.h"
 #include "core/ColorMatch.h"
+#include "core/RetroShaders.h"
 #include <QTimer>
 #include "ui/ModulationDialog.h"
 #include "ui/PreviewWidget.h"
@@ -1112,6 +1113,24 @@ DeviceChainView::DeviceChainView(Project* project, std::function<TimeUs()> curso
         }
         if (userMenu->isEmpty())
             userMenu->addAction(tr("(none yet: Tools > Effect Builder)"))->setEnabled(false);
+    });
+    // Screen shaders, by folder (read when opened: they come with Tools > Get Screen Shaders).
+    QMenu* retroMenu = new QMenu(tr("Retro Shaders"), m_videoMenu);
+    m_videoMenu->insertMenu(m_videoMenu->actions().value(m_videoMenu->actions().size() - 2), retroMenu);
+    connect(retroMenu, &QMenu::aboutToShow, this, [this, retroMenu] {
+        retroMenu->clear();
+        std::map<QString, QMenu*> folders;
+        for (const EffectDef* e : retro::effects()) {
+            const QString sub = e->category.section(QLatin1Char('/'), 1);
+            QMenu*& into = folders[sub];
+            if (!into)
+                into = sub.isEmpty() ? retroMenu : retroMenu->addMenu(QString(sub).replace(QLatin1Char('&'), QStringLiteral("&&")));
+            QAction* a = into->addAction(QString(e->name).replace(QLatin1Char('&'), QStringLiteral("&&")));
+            a->setToolTip(e->description);
+            connect(a, &QAction::triggered, this, [this, id = e->id] { addEffect(id); });
+        }
+        if (retroMenu->isEmpty())
+            retroMenu->addAction(tr("(none yet: Tools > Get Screen Shaders)"))->setEnabled(false);
     });
     m_audioMenu = new QMenu(this);
     buildMenu(m_audioMenu, audioEffects(), true);

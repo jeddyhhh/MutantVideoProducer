@@ -7,6 +7,10 @@
 #include "core/FrameRenderer.h"
 #include "core/GpuCompositor.h"
 #include "core/NodeGraph.h"
+#include "core/RetroShaders.h"
+#include <QtCore/private/qzipwriter_p.h>
+#include <QTemporaryDir>
+#include <QElapsedTimer>
 #include "core/Project.h"
 #include "core/TimelineOps.h"
 #include <QDir>
@@ -238,6 +242,92 @@ int main(int argc, char** argv)
         } else {
             const QImage pic = testPicture(QSize(640, 360));
             static const EffectChain kNoChain;
+            {
+                // A screen-shader zip as GitHub gives one (everything in one folder), unpacked and run: a two-pass preset of
+                // our own (an alias, a parameter set by the preset, a pass at half size, nearest sampling). Each pass
+                // inverts what it gets by Amount: twice at 1 is the picture back (at the 240 lines it is fed, scaled up).
+                // (A pass of our own, lines joined with newlines; the preset likewise.)
+                const QString shader = QStringList{
+                    QStringLiteral("#pragma parameter AMOUNT \"Amount\" 0.5 0.0 1.0 0.05"),
+                    QStringLiteral("#ifndef PARAMETER_UNIFORM"), QStringLiteral("#define AMOUNT 0.5"), QStringLiteral("#endif"),
+                    QStringLiteral("#if defined(VERTEX)"),
+                    QStringLiteral("in vec4 VertexCoord; in vec4 TexCoord; out vec2 uv; uniform mat4 MVPMatrix;"),
+                    QStringLiteral("void main() { gl_Position = MVPMatrix * VertexCoord; uv = TexCoord.xy; }"),
+                    QStringLiteral("#elif defined(FRAGMENT)"),
+                    QStringLiteral("in vec2 uv; out vec4 FragColor; uniform sampler2D Texture; uniform float AMOUNT;"),
+                    QStringLiteral("void main() { vec3 c = texture(Texture, uv).rgb; FragColor = vec4(mix(c, 1.0 - c, AMOUNT), 1.0); }"),
+                    QStringLiteral("#endif")}.join(QLatin1Char('\n'));
+                const QString preset = QStringList{QStringLiteral("shaders = 2"), QStringLiteral("shader0 = shaders/flip.glsl"),
+                                                   QStringLiteral("scale_type0 = source"), QStringLiteral("scale0 = 0.5"), QStringLiteral("alias0 = FIRST"),
+                                                   QStringLiteral("shader1 = shaders/flip.glsl"), QStringLiteral("filter_linear1 = false"),
+                                                   QStringLiteral("parameters = AMOUNT"), QStringLiteral("AMOUNT = 1.0")}
+                                           .join(QLatin1Char('\n'));
+                QTemporaryDir zipDir;
+                const QString zipPath = zipDir.filePath(QStringLiteral("shaders.zip"));
+                {
+                    QZipWriter zw(zipPath);
+                    zw.addFile(QStringLiteral("glsl-shaders-master/test/flip.glslp"), preset.toUtf8());
+                    zw.addFile(QStringLiteral("glsl-shaders-master/test/shaders/flip.glsl"), shader.toUtf8());
+                    zw.close();
+                }
+                const QByteArray keep = qgetenv("MVP_SCREEN_SHADERS_DIR");
+                qputenv("MVP_SCREEN_SHADERS_DIR", zipDir.filePath(QStringLiteral("installed")).toUtf8());
+                QString why;
+                const bool unpacked = retro::installZip(zipPath, &why);
+                const std::vector<const EffectDef*> mine = retro::effects();
+                const EffectDef* flip = retro::findEffect(QStringLiteral("retro.test/flip"));
+                const retro::Preset* pre = retro::preset(QStringLiteral("retro.test/flip"));
+                double back = 999;
+                if (flip && pre) {
+                    auto r = createFrameRenderer(false, surface.get(), nullptr);
+                    EffectInstance fx = makeEffect(*flip, 1);
+                    const QImage out = r->renderLive(pic, EffectChain{fx}, 0, 30);
+                    QImage opaque(pic.size(), QImage::Format_ARGB32_Premultiplied);
+                    opaque.fill(Qt::black);
+                    QPainter(&opaque).drawImage(0, 0, pic);
+                    back = difference(out, opaque);
+                }
+                check(unpacked && mine.size() == 1 && flip && flip->category == QLatin1String("Retro Shaders/test") && pre && pre->passes.size() == 2
+                          && pre->passes[0].alias == QLatin1String("FIRST") && pre->parameters.size() == 1 && pre->parameters[0].def == 1.0
+                          && back < 12 && !retro::passSource(QStringLiteral("#version 120") + QLatin1Char('\n') + QStringLiteral("void main(){}"), true)
+                                                .contains(QLatin1String("120")),
+                      QStringLiteral("screen shaders: a zip unpacked into a preset effect (its parameter at the preset's value), run pass after pass "
+                                     "on the GPU: inverted twice is the picture back (%1 off at 240 lines) %2").arg(back, 0, 'f', 1).arg(why));
+                if (keep.isEmpty())
+                    qunsetenv("MVP_SCREEN_SHADERS_DIR");
+                else
+                    qputenv("MVP_SCREEN_SHADERS_DIR", keep);
+                retro::reload();
+            }
+            if (qEnvironmentVariableIsSet("MVP_SCREEN_SHADERS_DIR")) {
+                // Screen shaders (libretro's, from MVP_SCREEN_SHADERS_DIR): every preset run on the GPU over three frames.
+                // One that can't compile leaves the picture as it was; one that runs changes it (it is fed in at 240 lines).
+                const std::vector<const EffectDef*> all = retro::effects();
+                QStringList failed;
+                int ran = 0;
+                QElapsedTimer timer;
+                timer.start();
+                for (const EffectDef* def : all) {
+                    auto r = createFrameRenderer(false, surface.get(), nullptr);
+                    const EffectChain chain{makeEffect(*def, 1)};
+                    QImage out;
+                    for (int f = 0; f < 3; ++f)
+                        out = r->renderLive(pic, chain, TimeUs(f) * kUsPerSecond / 30, 30);
+                    if (!out.isNull() && difference(out, pic) > 0.01)
+                        ++ran;
+                    if (qEnvironmentVariableIsSet("MVP_SCREEN_SHADER_GRABS")
+                        && qEnvironmentVariable("MVP_SCREEN_SHADER_GRABS").split(QLatin1Char(',')).contains(def->id.mid(6)))
+                        out.save(QDir::temp().filePath(QStringLiteral("mvp-shader-%1.png").arg(QString(def->id.mid(6)).replace(QLatin1Char('/'), QLatin1Char('_')))));
+                    else
+                        failed << def->id.mid(6);
+                }
+                QFile list(QDir::temp().filePath(QStringLiteral("mvp-screen-shaders-failed.txt")));
+                if (list.open(QIODevice::WriteOnly | QIODevice::Text))
+                    list.write(failed.join(QLatin1Char('\n')).toUtf8());
+                check(!all.empty() && ran >= int(all.size()) * 0.8,
+                      QStringLiteral("screen shaders: %1 of %2 libretro presets run on the GPU (%3 s; the rest listed in %4)")
+                          .arg(ran).arg(all.size()).arg(timer.elapsed() / 1000.0, 0, 'f', 1).arg(QDir::toNativeSeparators(list.fileName())));
+            }
             auto renderBoth = [&](const nodes::Graph& g, int frames, double* ms) {
                 const EffectDef* def = nodes::registerEffect(g);
                 const EffectChain chain{makeEffect(*def, 1)};

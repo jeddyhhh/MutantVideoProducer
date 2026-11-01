@@ -697,6 +697,7 @@ void MainWindow::createActions()
         if (editorActive())
             autoColour();
     }));
+    tools->addAction(act(tr("Get Screen &Shaders (RetroArch's)..."), QKeySequence(), [this] { getScreenShaders(); }));
     tools->addAction(act(tr("Spectrogram of the Selected Audio Event..."), QKeySequence(), [this] {
         if (!editorActive())
             return;

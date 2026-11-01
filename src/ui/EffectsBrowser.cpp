@@ -1,4 +1,5 @@
 #include "ui/EffectsBrowser.h"
+#include "core/RetroShaders.h"
 
 #include "ui/Theme.h"
 
@@ -118,6 +119,9 @@ void EffectsBrowser::populate()
                 addEffect(e.id, e.name, e.category, e.description);
         if (!audio)
             for (const EffectDef* e : nodes::userEffects()) // (made in Tools > Effect Builder)
+                addEffect(e->id, e->name, e->category, e->description);
+        if (!audio)
+            for (const EffectDef* e : retro::effects()) // (screen shaders: Tools > Get Screen Shaders)
                 addEffect(e->id, e->name, e->category, e->description);
         for (auto& [name, g] : groups)
             g->setExpanded(!g->data(0, kNestedRole).toBool()); // categories open, sub-folders and presets folded

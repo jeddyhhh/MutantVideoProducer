@@ -5,6 +5,7 @@
 #include "core/MediaInfo.h"
 #include "core/Effects.h"
 #include "core/NodeGraph.h"
+#include "core/RetroShaders.h"
 #include "engine/MediaCache.h"
 #include "engine/PlaybackEngine.h"
 #include "ui/TimelineWidget.h"
@@ -134,6 +135,8 @@ bool editEmbeddedSequence(Project* project, int clipId, QWidget* parent)
             effects->addItem(e.name, e.id);
         for (const EffectDef* e : nodes::userEffects())
             effects->addItem(e->name, e->id);
+        for (const EffectDef* e : retro::effects())
+            effects->addItem(e->category.mid(e->category.indexOf(QLatin1Char('/')) + 1) + QStringLiteral(": ") + e->name, e->id);
         effects->setCurrentIndex(std::max(0, effects->findData(current)));
     };
     listEffects();
