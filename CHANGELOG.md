@@ -6,6 +6,14 @@ What changed in each version of Mutant Video Producer. The newest is first.
 
 ### Changed
 
+- **AI control**: get_frame draws with the GPU renderer, as the preview and renders do (screen shaders showed as if
+  they weren't there). match_colour takes `auto: true` for Auto Colour.
+
+### Fixed
+
+- **Track Corners** followed the shot ending under the event, not the one going on, when the two overlapped at the
+  cursor by a moment; and when it can't follow, it says how far each corner got.
+
 - A new install starts with the **Synthwave Sunset** theme and a neon green seven-segment timecode.
 
 ### Fixed

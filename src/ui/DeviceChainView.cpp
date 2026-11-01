@@ -1795,14 +1795,13 @@ QString DeviceChainView::trackCorners(const ChainPath& path, int index, bool qui
     if (!pin || !def)
         return say(tr("Track Corners follows the shot under an event: use it on the Event FX of the event to pin (on a track above the shot)."));
     const TimeUs now = std::clamp(m_cursor(), pin->start, pin->end() - 1);
+    // (Two there at once, a crossfade or a cut a moment off: the one that goes on, not the one ending.)
     const Clip* shot = nullptr;
     for (int i = pinTrack + 1; i < int(tl.tracks.size()) && !shot; ++i)
         if (isVisualTrack(tl.tracks[size_t(i)].type))
             for (const Clip& c : tl.tracks[size_t(i)].clips)
-                if (now >= c.start && now < c.end() && !c.isGenerated()) {
+                if (now >= c.start && now < c.end() && !c.isGenerated() && (!shot || c.end() > shot->end()))
                     shot = &c;
-                    break;
-                }
     const auto media = shot ? m_project->mediaItem(shot->mediaId) : nullptr;
     const VideoStreamInfo* vs = media ? media->info.videoStream(shot->streamIndex) : nullptr;
     if (!shot || !vs || media->info.isStill)
@@ -1861,8 +1860,14 @@ QString DeviceChainView::trackCorners(const ChainPath& path, int index, bool qui
     worker.join();
     progress.close();
     const size_t frames = std::min({points[0].size(), points[1].size(), points[2].size(), points[3].size()});
-    if (frames < 2)
-        return say(error.isEmpty() ? tr("Nothing to track there: put the corners on the corners of something in the shot.") : error);
+    if (frames < 2) {
+        QStringList counts;
+        for (int k = 0; k < 4; ++k)
+            counts << QString::number(points[k].size());
+        return say(error.isEmpty() ? tr("Nothing to track there: put the corners on the corners of something in the shot (frames followed: %1).")
+                                         .arg(counts.join(QStringLiteral(", ")))
+                                   : error);
+    }
     // Keyframes (every frame, until a corner is lost for good), replacing the ones in that span.
     std::vector<std::pair<TimeUs, std::array<QPointF, 4>>> keys;
     int lost = 0;

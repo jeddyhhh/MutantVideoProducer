@@ -41,7 +41,7 @@ for each step and the checks that catch mistakes. It is how the *Snowbank* episo
 | get_project | Reads the media, tracks, events, effects and their settings, markers. |
 | user_guide | Reads this User Guide and the tutorials: the list of pages, or one page. |
 | multicam | Lines events up by their sound (sync), makes a multicam of video events (create), cuts or switches between angles, and lists the angles and cuts. |
-| match_colour | Gives video events the colours of the shot at a time (Tools > Match Colour to the Cursor Frame): a Color Match effect on each. |
+| match_colour | Gives video events the colours of the shot at a time (Tools > Match Colour to the Cursor Frame): a Color Match effect on each. `auto: true` is Auto Colour instead: each event's own levels and white balance (a White Balance and Auto Colour effect). |
 | envelope | Volume, pan and composite automation on tracks, and an event's velocity (custom speed ramp), as points. |
 | group, duplicate_events | Group / ungroup events; copy events (with effects and groups) to another time. |
 | stabilize, track_motion | Stabilize a video event (analysing the file); make a masked effect's mask follow the footage, or a corner_pin's corners follow the shot under its event (Track Corners). |

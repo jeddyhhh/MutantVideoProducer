@@ -1383,9 +1383,11 @@ QJsonArray McpServer::toolList()
     t.append(tool("match_colour",
                   "Gives video events the colours of the shot at time (Tools > Match Colour to the Cursor Frame): each gets a "
                   "Color Match effect (red, green and blue curves; its amount tones it down) at the end of its FX. time must be "
-                  "outside the events.",
+                  "outside the events. auto: true is Auto Colour instead (Tools > Auto Colour): each event's own black and white "
+                  "points and white balance, from it at time (or half way through), as a White Balance and Auto Colour effect.",
                   {{QStringLiteral("event_ids"), arrayProp("integer", "Video events to change")},
-                   {QStringLiteral("time"), prop("number", "Seconds: the frame to match (default: the cursor)")}},
+                   {QStringLiteral("time"), prop("number", "Seconds: the frame to match (default: the cursor)")},
+                   {QStringLiteral("auto"), prop("boolean", "Auto Colour each event from itself instead of matching (default false)")}},
                   {QStringLiteral("event_ids")}));
     t.append(tool("multicam",
                   "Several cameras of the same moment. sync: moves events (with their groups) so their sound lines up with the "
@@ -2831,8 +2833,11 @@ QJsonObject McpServer::ToolCall::tool_get_frame()
     // (saved: the project's size unless a width is given)
     const int width = std::clamp(integer("width", saveTo.isEmpty() ? 640 : ps.width), 160, saveTo.isEmpty() ? 1920 : 8192);
     const QSize size(width, std::max(2, int(std::lround(double(width) * ps.height / std::max(1, ps.width)))));
-    Compositor renderer(true);
-    const QImage img = renderer.render(*project->snapshot(), t, size);
+    if (!server.m_frameRenderer) { // (the GPU renderer, as the preview and renders have it; the CPU's without a GPU)
+        server.m_frameSurface = createGpuSurface();
+        server.m_frameRenderer = createFrameRenderer(true, server.m_frameSurface.get(), nullptr);
+    }
+    const QImage img = server.m_frameRenderer->render(*project->snapshot(), t, size);
     if (img.isNull())
         return errorResult(QStringLiteral("nothing rendered"));
     QString saved;
@@ -4484,10 +4489,12 @@ QJsonObject McpServer::ToolCall::tool_match_colour()
         ids.insert(v.toInt());
     const TimeUs at = has("time") ? us(num("time")) : w->m_timeline->cursorTime();
     QString error;
-    const int n = colormatch::match(tl, *project->snapshot(), ids, at, &error);
+    const bool autoColour = a.value(QStringLiteral("auto")).toBool();
+    const int n = autoColour ? colormatch::autoColourEvents(tl, *project->snapshot(), ids, at, &error)
+                             : colormatch::match(tl, *project->snapshot(), ids, at, &error);
     if (!n)
         return errorResult(error);
-    apply(tl, QStringLiteral("Match Colour"));
+    apply(tl, autoColour ? QStringLiteral("Auto Colour") : QStringLiteral("Match Colour"));
     return jsonResult({{QStringLiteral("matched"), n}, {QStringLiteral("reference"), sec(at)}});
 }
 

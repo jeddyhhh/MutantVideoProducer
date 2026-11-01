@@ -1465,6 +1465,13 @@ int MainWindow::runEditorTest(QStringList& log)
             const int media = content(call(QStringLiteral("import_media"), {{QStringLiteral("paths"), QJsonArray{screen}}}))[QStringLiteral("media_ids")].toArray().at(0).toInt();
             call(QStringLiteral("add_track"), {{QStringLiteral("type"), QStringLiteral("video")}, {QStringLiteral("index"), 0}});
             call(QStringLiteral("add_media_to_timeline"), {{QStringLiteral("media_id"), media}, {QStringLiteral("at"), 400}, {QStringLiteral("track"), 1}});
+            {
+                // (A shot before it that ends a moment into it: the shot that goes on is followed, not that one.)
+                const QJsonObject before = content(call(QStringLiteral("add_media_to_timeline"),
+                                                        {{QStringLiteral("media_id"), media}, {QStringLiteral("at"), 396}, {QStringLiteral("track"), 1}}));
+                for (const QJsonValue v : before[QStringLiteral("event_ids")].toArray())
+                    call(QStringLiteral("edit_event"), {{QStringLiteral("event_id"), v.toInt()}, {QStringLiteral("length"), 4.0005}});
+            }
             const int pinned = content(call(QStringLiteral("add_text"), {{QStringLiteral("preset"), QStringLiteral("solid_black")}, {QStringLiteral("at"), 400},
                                                                         {QStringLiteral("length"), 1.5}, {QStringLiteral("track"), 0}}))[QStringLiteral("event_id")].toInt();
             const auto start = quad(0);

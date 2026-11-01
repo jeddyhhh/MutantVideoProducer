@@ -65,6 +65,9 @@ private:
     // A render started by the render tool.
     struct Render;
     std::shared_ptr<Render> m_render;
+    // get_frame's renderer: the GPU one when there is a GPU (as the preview and renders draw: screen shaders are GPU only).
+    std::unique_ptr<class QOffscreenSurface> m_frameSurface;
+    std::unique_ptr<class FrameRenderer> m_frameRenderer;
 };
 
 // `MutantVideoProducer --mcp-stdio [--port N]`: reads JSON-RPC messages, one per line, from
