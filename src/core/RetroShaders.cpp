@@ -194,12 +194,13 @@ bool installZip(const QString& zipPath, QString* error, const std::function<bool
     }
     const QList<QZipReader::FileInfo> files = zip.fileInfoList();
     // GitHub's zips hold everything in one folder ("glsl-shaders-master/"): what is inside it goes in.
+    // (Qt gives a folder's entry without its slash: "glsl-shaders-master", then "glsl-shaders-master/Makefile"...)
     QString root;
     if (!files.isEmpty()) {
-        const QString first = files.front().filePath;
-        root = first.left(first.indexOf(QLatin1Char('/')) + 1);
+        const QString top = files.front().filePath.section(QLatin1Char('/'), 0, 0);
+        root = top + QLatin1Char('/');
         for (const auto& f : files)
-            if (!f.filePath.startsWith(root))
+            if (f.filePath != top && !f.filePath.startsWith(root))
                 root.clear();
     }
     const QString target = folder(), fresh = target + QStringLiteral(".new");
@@ -264,7 +265,11 @@ void loadLocked(Registry& r)
     r.generations.emplace_back();
     Generation& g = r.generations.back();
     std::vector<EffectDef>& defs = g.defs;
-    const QDir base(folder());
+    // The presets' folder (or GitHub's folder alone in it, "glsl-shaders-master": a download unpacked a folder too deep).
+    QDir base(folder());
+    if (const QStringList entries = base.entryList(QDir::AllEntries | QDir::NoDotAndDotDot);
+        entries.size() == 1 && entries.front().startsWith(QLatin1String("glsl-shaders")) && QFileInfo(base.filePath(entries.front())).isDir())
+        base.cd(entries.front());
     std::vector<QString> paths;
     for (QDirIterator it(base.absolutePath(), {QStringLiteral("*.glslp")}, QDir::Files, QDirIterator::Subdirectories); it.hasNext();)
         paths.push_back(it.next());

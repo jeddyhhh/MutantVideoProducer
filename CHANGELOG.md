@@ -11,6 +11,8 @@ What changed in each version of Mutant Video Producer. The newest is first.
 
 ### Fixed
 
+- **Retro Shaders** came out as "Unknown (retro.glsl-shaders-master/...)": Get Screen Shaders unpacked GitHub's folder one
+  level too deep (Qt lists the folder's own entry without its slash). Shaders already downloaded that way are found too.
 - **Track Corners** followed the shot ending under the event, not the one going on, when the two overlapped at the
   cursor by a moment; and when it can't follow, it says how far each corner got.
 

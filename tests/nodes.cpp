@@ -266,14 +266,18 @@ int main(int argc, char** argv)
                 const QString zipPath = zipDir.filePath(QStringLiteral("shaders.zip"));
                 {
                     QZipWriter zw(zipPath);
+                    zw.addDirectory(QStringLiteral("glsl-shaders-master")); // (GitHub's zips list their folder first)
                     zw.addFile(QStringLiteral("glsl-shaders-master/test/flip.glslp"), preset.toUtf8());
                     zw.addFile(QStringLiteral("glsl-shaders-master/test/shaders/flip.glsl"), shader.toUtf8());
                     zw.close();
                 }
                 const QByteArray keep = qgetenv("MVP_SCREEN_SHADERS_DIR");
-                qputenv("MVP_SCREEN_SHADERS_DIR", zipDir.filePath(QStringLiteral("installed")).toUtf8());
+                qputenv("MVP_SCREEN_SHADERS_DIR", zipDir.filePath(QStringLiteral("wrap/glsl-shaders-master")).toUtf8());
                 QString why;
                 const bool unpacked = retro::installZip(zipPath, &why);
+                // (Read from the folder above as well: GitHub's folder alone in it is looked into, as an older download left it.)
+                qputenv("MVP_SCREEN_SHADERS_DIR", zipDir.filePath(QStringLiteral("wrap")).toUtf8());
+                retro::reload();
                 const std::vector<const EffectDef*> mine = retro::effects();
                 const EffectDef* flip = retro::findEffect(QStringLiteral("retro.test/flip"));
                 const retro::Preset* pre = retro::preset(QStringLiteral("retro.test/flip"));
