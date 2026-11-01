@@ -62,6 +62,7 @@ public:
     // Developer check (MutantVideoProducer --editor-test): markers, ripple, tracks,
     // J/K/L, I/O, autosave and recovery, recent projects, relinking.
     int runEditorTest(QStringList& log);
+    void runProductionToolsTest(const std::function<void(bool, const QString&)>& check, const class QDir& work); // (a part of it)
     Q_INVOKABLE void showMixerForTests() { showMixer(); }
 
     // Help > User Guide / Tutorials, and context help (Help.h): a page of docs/
@@ -200,6 +201,7 @@ private:
     void stabilizeClip(int clipId);
     void matchColour(); // the selected video events, to the shot at the cursor (a Color Match effect on each)
     void autoColour();  // the selected video events' levels and white balance (a White Balance effect on each)
+    void showSpectrogram(int clipId); // an audio event's sound as a picture (a window; a click there moves the cursor)
     // Tools > Effect Builder: make a video effect from nodes (an effect file to change, or a new one).
     NodeEffectEditor* effectBuilder(const QString& file = {});
     // The Effect Builder on a user effect in the project (by its effect id): saved, that effect takes the new graph.

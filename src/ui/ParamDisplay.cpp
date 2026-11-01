@@ -156,6 +156,8 @@ public:
         setFixedWidth(230);
         setToolTip(m_eq ? tr("Drag a band: across for its frequency, up and down for its gain. The wheel over a mid band changes its width.")
                         : tr("Drag the point: across for the frequency, up and down for the resonance (the wheel too)."));
+        if (type == QLatin1String("a_dehum"))
+            setToolTip(tr("The notches that take the hum out: the mains frequency and its harmonics."));
     }
 
 private:
@@ -208,6 +210,8 @@ private:
     {
         const QRectF r = plot();
         std::vector<Handle> hs;
+        if (m_type == QLatin1String("a_dehum"))
+            return hs; // (its notches: set by the mains and the harmonics)
         if (!m_eq) {
             const double f = value(QStringLiteral("frequency")), q = value(QStringLiteral("q"));
             const auto setQ = [this](double v) { setValue(QStringLiteral("q"), v); };
@@ -797,7 +801,7 @@ void ParamDisplay::paintFrame(QPainter& p, const QRectF& r) const
 
 ParamDisplay* ParamDisplay::create(const QString& type, const std::vector<ParamDef>& defs, Get get, Set set)
 {
-    if (type == QLatin1String("a_eq") || type == QLatin1String("a_filter"))
+    if (type == QLatin1String("a_eq") || type == QLatin1String("a_filter") || type == QLatin1String("a_dehum"))
         return new FrequencyDisplay(type, defs, std::move(get), std::move(set));
     if (type == QLatin1String("a_compressor") || type == QLatin1String("a_gate") || type == QLatin1String("a_limiter"))
         return new DynamicsDisplay(type, defs, std::move(get), std::move(set));

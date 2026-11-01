@@ -116,6 +116,26 @@ TimeUs TimelineWidget::rulerTick(int64_t n, TimeUs step, bool frames) const
     return n * step;
 }
 
+void TimelineWidget::setPreRenderSpans(std::vector<std::tuple<TimeUs, TimeUs, bool>> spans)
+{
+    if (spans == m_preRenderSpans)
+        return;
+    m_preRenderSpans = std::move(spans);
+    viewport()->update(QRect(kHeaderWidth, kTopH - 4, viewport()->width(), 4));
+}
+
+void TimelineWidget::setLabelOnSelection(int label)
+{
+    Timeline tl = m_project->timeline();
+    const std::set<int> ids = ops::expandToGroups(tl, m_selection);
+    for (auto& t : tl.tracks)
+        for (auto& c : t.clips)
+            if (ids.count(c.id))
+                c.label = label;
+    if (tl != m_project->timeline())
+        m_project->applyEdit(tl, label ? tr("Colour Label: %1").arg(clipLabelName(label)) : tr("Remove Colour Label"));
+}
+
 void TimelineWidget::setRulerLines(bool on)
 {
     m_rulerLines = on;
@@ -816,6 +836,13 @@ void TimelineWidget::paintRuler(QPainter& p)
         p.drawLine(QPointF(x, kRulerTop + 4), QPointF(x, kTopH));
         p.setPen(theme::c().text);
         p.drawText(QPointF(x + 4, kRulerTop + 14), formatTimecode(t, fps));
+    }
+
+    // Pre-rendering, along the bottom of the ruler: green pre-rendered, orange heavy and not yet.
+    for (const auto& [a, b, done] : m_preRenderSpans) {
+        const double x0 = std::max<double>(kHeaderWidth, timeToX(a)), x1 = timeToX(b);
+        if (x1 > x0)
+            p.fillRect(QRectF(x0, kTopH - 3, std::max(1.0, x1 - x0), 3), done ? theme::c().good : theme::c().warn);
     }
 
     // Cursor marker on the ruler.

@@ -3,6 +3,7 @@
 #include "core/ProjectCollection.h"
 #include "core/ProjectFormat.h"
 
+#include <QCoreApplication>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
@@ -719,6 +720,8 @@ QJsonObject clipToJson(const Clip& c)
         o[QStringLiteral("fadeOutCurve")] = c.fadeOutCurve;
     o[QStringLiteral("group")] = c.groupId;
     o[QStringLiteral("muted")] = c.muted;
+    if (c.label)
+        o[QStringLiteral("label")] = c.label;
     o[QStringLiteral("name")] = c.name;
     if (!c.effects.empty())
         o[QStringLiteral("effects")] = chainToJson(c.effects);
@@ -898,6 +901,7 @@ Clip clipFromJson(const QJsonObject& o)
     c.fadeOutCurve = std::clamp(o[QStringLiteral("fadeOutCurve")].toInt(0), 0, kFadeCurves - 1);
     c.groupId = o[QStringLiteral("group")].toInt();
     c.muted = o[QStringLiteral("muted")].toBool();
+    c.label = std::clamp(o[QStringLiteral("label")].toInt(), 0, kClipLabels);
     c.name = o[QStringLiteral("name")].toString();
     c.effects = chainFromJson(o[QStringLiteral("effects")]);
     c.transitionIn = transitionFromJson(o[QStringLiteral("transitionIn")].toObject());
@@ -1105,6 +1109,37 @@ LivePads livePadsFromJson(const QJsonArray& a)
         pads[size_t(i)].momentary = o[QStringLiteral("momentary")].toBool();
     }
     return pads;
+}
+
+QString clipLabelName(int label)
+{
+    static const char* names[kClipLabels] = {QT_TRANSLATE_NOOP("Timeline", "Red"),  QT_TRANSLATE_NOOP("Timeline", "Orange"),
+                                             QT_TRANSLATE_NOOP("Timeline", "Yellow"), QT_TRANSLATE_NOOP("Timeline", "Green"),
+                                             QT_TRANSLATE_NOOP("Timeline", "Teal"), QT_TRANSLATE_NOOP("Timeline", "Blue"),
+                                             QT_TRANSLATE_NOOP("Timeline", "Purple"), QT_TRANSLATE_NOOP("Timeline", "Pink")};
+    return label >= 1 && label <= kClipLabels ? QCoreApplication::translate("Timeline", names[label - 1]) : QString();
+}
+
+QByteArray renderKeyData(const Timeline& tl, TimeUs from, TimeUs to)
+{
+    QJsonArray tracks;
+    for (const Track& t : tl.tracks) {
+        QJsonArray clips;
+        for (const Clip& c : t.clips)
+            if (c.start < to && c.end() > from) {
+                QJsonObject o = clipToJson(c);
+                o.remove(QStringLiteral("label")); // (only the timeline shows it)
+                clips.append(o);
+            }
+        tracks.append(QJsonObject{{QStringLiteral("type"), int(t.type)}, {QStringLiteral("muted"), t.muted}, {QStringLiteral("solo"), t.solo},
+                                  {QStringLiteral("level"), t.level}, {QStringLiteral("pan"), t.pan}, {QStringLiteral("blend"), t.blend},
+                                  {QStringLiteral("matte"), t.matte}, {QStringLiteral("duckUnder"), t.duckUnder},
+                                  {QStringLiteral("duckAmount"), t.duckAmount}, {QStringLiteral("effects"), chainToJson(t.effects)},
+                                  {QStringLiteral("volume"), envelopeToJson(t.volume)}, {QStringLiteral("pan2"), envelopeToJson(t.panEnvelope)},
+                                  {QStringLiteral("composite"), envelopeToJson(t.composite)}, {QStringLiteral("clips"), clips}});
+    }
+    return QJsonDocument(QJsonObject{{QStringLiteral("tracks"), tracks}, {QStringLiteral("output"), chainToJson(tl.outputEffects)}})
+        .toJson(QJsonDocument::Compact);
 }
 
 QByteArray Project::toJson(const QString& baseDir, const QString& backupOf, bool backup) const

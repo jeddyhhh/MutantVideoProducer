@@ -5,6 +5,7 @@
 #include "core/MediaInfo.h"
 #include "core/Time.h"
 
+#include <QColor>
 #include <QJsonArray>
 #include <QObject>
 #include <QString>
@@ -61,6 +62,15 @@ struct NestedTimeline {
 };
 
 // A media event placed on a track (an "event").
+// Colour labels for events (to sort an edit by eye: interviews, B-roll, music...), the same in every theme.
+inline constexpr int kClipLabels = 8;
+inline QColor clipLabelColor(int label)
+{
+    static const QRgb colours[kClipLabels] = {0xd94848, 0xe8892c, 0xd8c13a, 0x4fae4f, 0x2fa8a0, 0x3f7fe0, 0x8a5ad8, 0xd65aa6};
+    return label >= 1 && label <= kClipLabels ? QColor(colours[label - 1]) : QColor();
+}
+QString clipLabelName(int label); // "Red", "Orange"...
+
 struct Clip {
     int id = 0;
     int mediaId = 0;
@@ -76,6 +86,7 @@ struct Clip {
     int groupId = 0;         // 0 = not grouped
     bool muted = false;
     QString name;
+    int label = 0;                // colour label on the timeline: 1..kClipLabels (clipLabelColor), 0 = none
     EffectChain effects;          // event FX, video or audio (keyframe times are event-local)
     TransitionSpec transitionIn;  // used over the fade-in / overlap with the previous event
     TransitionSpec transitionOut; // used over the fade-out when nothing overlaps
@@ -328,6 +339,9 @@ double envelopeGain(const Clip& clip, const ClipEnvelope& env, TimeUs t);
 // while it lasts (mixed in by its opacity and fades).
 inline bool isAdjustment(const Clip& c) { return c.generator.type == QLatin1String("adjustment"); }
 struct ProjectSnapshot;
+// Everything in tl that can change the picture between from and to, as bytes for a cache key: every track's settings
+// (not its events), the events on any track that overlap the stretch (whole, as saved), the output FX.
+QByteArray renderKeyData(const Timeline& tl, TimeUs from, TimeUs to);
 // The topmost visual track whose picture covers the whole frame at t, opaque (one plain event from a file, the
 // project's shape, no alpha, no effects, fades, pan/crop or transparency on it or its track): everything below it is
 // hidden, so the compositors start there. -1: none.

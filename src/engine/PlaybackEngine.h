@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/Project.h"
+#include "core/PreviewCache.h"
 
 #include <algorithm>
 #include <QAudioFormat>
@@ -9,6 +10,7 @@
 #include <QObject>
 #include <QTimer>
 #include <atomic>
+#include <chrono>
 #include <condition_variable>
 #include <deque>
 #include <map>
@@ -57,6 +59,19 @@ public:
     // Recreates the preview renderer (after GPU / hardware decoding settings change).
     void resetRenderer();
 
+    // Pre-rendering (on unless switched off): while stopped, a thread renders the heavy stretches near the cursor (frames
+    // slower to make than the frame rate allows) into the cache folder, and the preview plays them from there. An edit
+    // makes its stretch new, so what is played is always what the project looks like now.
+    void setPreRender(bool on);
+    bool preRender() const { return m_preRender; }
+    void clearPreRender();
+    struct PreRenderSpan {
+        TimeUs start, end;
+        bool done; // pre-rendered (else heavy, not yet)
+        bool operator==(const PreRenderSpan&) const = default;
+    };
+    precache::Store& preRenderStore() { return m_store; }
+
     // Peak levels (linear) of the audio sent to the device since the last call.
     std::pair<float, float> takePeaks();
     // Per audio track (by id), for what has been heard since the last call.
@@ -75,10 +90,14 @@ signals:
     void frameReady(const QImage& image, TimeUs t);
     void positionChanged(TimeUs t);
     void rendererChanged(const QString& name);
+    // The heavy stretches near the cursor, pre-rendered or not yet (for the timeline's ruler).
+    void preRenderChanged(const std::vector<PlaybackEngine::PreRenderSpan>& spans);
 
 private:
     void onTick();
     void videoThreadMain();
+    void preRenderThreadMain();
+    QImage cachedFrame(const std::shared_ptr<const ProjectSnapshot>& snap, TimeUs t, QSize size);
     void audioThreadMain();
     TimeUs computeClock();
     QSize previewSize(const ProjectSnapshot& s) const;
@@ -132,4 +151,19 @@ private:
 
     std::thread m_videoThread;
     std::thread m_audioThread;
+
+    // Pre-rendering.
+    precache::Store m_store;
+    std::mutex m_preMutex; // guards the stretches and what they are for
+    std::shared_ptr<const ProjectSnapshot> m_preSnap;
+    QSize m_preSize;
+    bool m_preProxies = false;
+    std::vector<precache::Stretch> m_stretches;
+    std::condition_variable m_preCv; // (with m_mutex)
+    std::atomic<bool> m_preRender{true};
+    std::atomic<int> m_preCleared{0}; // bumped by clearPreRender: the thread forgets which stretches it measured heavy
+    std::atomic<TimeUs> m_cursorHint{0};
+    std::chrono::steady_clock::time_point m_snapChanged; // guarded by m_mutex
+    std::unique_ptr<QOffscreenSurface> m_preSurface;     // created on the GUI thread
+    std::thread m_preThread;
 };

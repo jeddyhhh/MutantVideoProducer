@@ -990,6 +990,7 @@ QJsonArray McpServer::toolList()
                               QStringLiteral("freeze_middle"), QStringLiteral("none")},
                              "A speed ramp preset (its grouped sound follows); none removes the ramp")},
                    {QStringLiteral("name"), prop("string", "Label")},
+                   {QStringLiteral("label"), prop("string", "Colour label on the timeline: red, orange, yellow, green, teal, blue, purple, pink or none")},
                    {QStringLiteral("muted"), prop("boolean", "Mute")},
                    {QStringLiteral("gain"), prop("number", "Opacity (video) or volume (audio), 0..1 (audio up to 4)")},
                    {QStringLiteral("speed"), prop("number", "Playback rate 0.05..20 (the length follows: half speed, twice as long)")},
@@ -1855,6 +1856,8 @@ QJsonObject McpServer::ToolCall::tool_get_project()
                 o[QStringLiteral("name")] = c.name;
             if (c.muted)
                 o[QStringLiteral("muted")] = true;
+            if (c.label)
+                o[QStringLiteral("label")] = clipLabelName(c.label).toLower();
             if (c.groupId)
                 o[QStringLiteral("group")] = c.groupId;
             if (c.speed != 1.0)
@@ -2522,6 +2525,15 @@ QJsonObject McpServer::ToolCall::tool_edit_event()
         c->denoise = c->isGenerated() ? 0.0 : std::clamp(num("denoise", 0), 0.0, 1.0);
     if (has("name"))
         c->name = str("name");
+    if (has("label")) { // a colour's name, or none
+        int label = 0;
+        for (int l = 1; l <= kClipLabels; ++l)
+            if (str("label").compare(clipLabelName(l), Qt::CaseInsensitive) == 0)
+                label = l;
+        if (!label && str("label").compare(QLatin1String("none"), Qt::CaseInsensitive) != 0 && !str("label").isEmpty())
+            return errorResult(QStringLiteral("label is red, orange, yellow, green, teal, blue, purple, pink or none"));
+        c->label = label;
+    }
     if (has("muted"))
         c->muted = a.value(QStringLiteral("muted")).toBool();
     if (has("gain"))

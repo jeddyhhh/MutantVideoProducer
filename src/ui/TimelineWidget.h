@@ -54,6 +54,10 @@ public:
     void setGrid(Grid grid);
     // Faint lines down the tracks at the ruler's marks (labelled ones a little stronger), while the snap grid is off.
     void setRulerLines(bool on);
+    // Pre-rendering's heavy stretches, under the ruler: green done, orange not yet (start, end, done).
+    void setPreRenderSpans(std::vector<std::tuple<TimeUs, TimeUs, bool>> spans);
+    // A colour label (0: none) on the selected events and their groups: one undo step.
+    void setLabelOnSelection(int label);
     bool rulerLines() const { return m_rulerLines; }
     Grid grid() const { return m_grid; }
     // The beat grid's tempo and its first beat (Detect Beats sets them).
@@ -166,6 +170,7 @@ signals:
     void stabilizeRequested(int clipId);
     void matchColourRequested();
     void autoColourRequested();
+    void spectrogramRequested(int clipId);
     void selectionChanged();
     void filesDropped(const QStringList& paths, TimeUs at, int trackIndex);
     void clipEffectsRequested(int clipId);
@@ -244,6 +249,7 @@ private:
     RulerSteps rulerSteps() const;
     TimeUs rulerTick(int64_t n, TimeUs step, bool frames) const;
     bool m_rulerLines = true;
+    std::vector<std::tuple<TimeUs, TimeUs, bool>> m_preRenderSpans;
     Grid m_grid = Grid::Off;
     double m_gridBpm = 120;
     TimeUs m_gridOffset = 0;

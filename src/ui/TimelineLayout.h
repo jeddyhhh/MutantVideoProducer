@@ -84,7 +84,7 @@ inline QColor kindColor(ClipKind k, TrackType type)
 {
     return k == ClipKind::Text ? theme::c().captionClip : k == ClipKind::Graphics ? theme::c().graphicsClip : trackColor(type);
 }
-inline QColor clipColor(TrackType type, const Clip& c) { return kindColor(clipKind(c), type); }
+inline QColor clipColor(TrackType type, const Clip& c) { return c.label ? clipLabelColor(c.label) : kindColor(clipKind(c), type); }
 // A track holding only text (a captions track) or only graphics takes that colour in its header.
 inline QColor trackColor(const Track& t)
 {

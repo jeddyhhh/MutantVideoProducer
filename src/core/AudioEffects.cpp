@@ -250,6 +250,45 @@ private:
     Biquad m_a, m_b;
 };
 
+// ---- De-hum: notches on the mains frequency and its harmonics ---------------------------------
+
+// The notches with these settings: the mains frequency (50 or 60 Hz) and the harmonics above it, each as narrow as `q`.
+std::vector<std::pair<double, double>> humNotches(const Params& p)
+{
+    const double base = p.choice(QStringLiteral("mains")) == 1 ? 60.0 : 50.0;
+    const int harmonics = std::clamp(int(p.num(QStringLiteral("harmonics"))), 1, 8);
+    std::vector<std::pair<double, double>> out;
+    for (int k = 1; k <= harmonics; ++k)
+        out.emplace_back(base * k, p.num(QStringLiteral("q")) * k); // (as wide in Hz at every harmonic)
+    return out;
+}
+
+class DehumProcessor : public AudioProcessor {
+public:
+    void reset(int rate) override
+    {
+        m_rate = rate;
+        for (auto& b : m_notches)
+            b.reset();
+    }
+    void process(float* s, int frames, const Params& p) override
+    {
+        const auto notches = humNotches(p);
+        for (size_t i = 0; i < std::size(m_notches); ++i) {
+            if (i >= notches.size()) {
+                m_notches[i].reset();
+                continue;
+            }
+            m_notches[i].set(Biquad::Notch, m_rate, notches[i].first, notches[i].second, 0);
+            m_notches[i].process(s, frames);
+        }
+    }
+
+private:
+    int m_rate = 48000;
+    Biquad m_notches[8];
+};
+
 // ---- Compressor -------------------------------------------------------------------------
 
 // The gain change (dB, <= 0) for a level `over` dB above the threshold: soft knee `knee` dB wide.
@@ -975,6 +1014,35 @@ std::vector<AudioEffectDef> buildAudioEffects()
     list.push_back(d);
 
     d = {};
+    d.id = QStringLiteral("a_dehum");
+    d.name = QStringLiteral("De-hum");
+    d.category = QStringLiteral("Restoration");
+    d.description = QStringLiteral("Takes out mains hum (a steady buzz at 50 or 60 Hz and its harmonics) with narrow notches, "
+                                   "leaving the rest of the sound alone. The spectrogram shows the hum as flat lines.");
+    d.params = {choice("mains", "Mains", {QStringLiteral("50 Hz"), QStringLiteral("60 Hz")}),
+                num("harmonics", "Harmonics", 1, 8, 4, 0), num("q", "Narrowness (Q)", 2, 60, 18, 0, "", true)};
+    d.create = make([] { return new DehumProcessor; });
+    list.push_back(d);
+
+    d = {};
+    d.id = QStringLiteral("a_declick");
+    d.name = QStringLiteral("De-click");
+    d.category = QStringLiteral("Restoration");
+    d.description = QStringLiteral("Repairs clicks, pops and crackle (vinyl, mouth clicks, digital glitches) with FFmpeg's de-click: "
+                                   "short bursts are found and filled in from the sound either side. Can also repair clipping.");
+    d.params = {num("threshold", "Sensitivity (lower finds more)", 1, 20, 2, 1), num("window", "Window", 10, 100, 55, 0, " ms"),
+                flag("declip", "Repair clipping too", false)};
+    d.create = [] {
+        return std::unique_ptr<AudioProcessor>(new FfmpegAudioProcessor([](const Params& p, int) {
+            QString f = QStringLiteral("adeclick=w=%1:o=75:t=%2").arg(p.num(QStringLiteral("window")), 0, 'f', 0).arg(p.num(QStringLiteral("threshold")), 0, 'f', 1);
+            if (p.flag(QStringLiteral("declip")))
+                f += QStringLiteral(",adeclip");
+            return f;
+        }));
+    };
+    list.push_back(d);
+
+    d = {};
     d.id = QStringLiteral("a_pitch");
     d.name = QStringLiteral("Pitch Shift");
     d.category = QStringLiteral("Restoration");
@@ -1099,6 +1167,14 @@ double audioEffectResponseDb(const QString& type, const Params& p, double freq, 
                 b.set(band.type, rate, band.freq, band.q, band.gain);
                 db += b.responseDb(freq, rate);
             }
+        return db;
+    }
+    if (type == QLatin1String("a_dehum")) {
+        double db = 0;
+        for (const auto& [f, q] : humNotches(p)) {
+            b.set(Biquad::Notch, rate, f, q, 0);
+            db += b.responseDb(freq, rate);
+        }
         return db;
     }
     if (type == QLatin1String("a_filter")) {

@@ -252,6 +252,8 @@ void TimelineWidget::contextMenuEvent(QContextMenuEvent* e)
                 menu.addAction(tr("Audio Track FX (whole track)..."), this, [this, tid] { emit trackEffectsRequested(tid); });
                 menu.addAction(tr("Normalize"), this, &TimelineWidget::normalizeSelection);
                 menu.addAction(tr("Detect Beats (Markers)..."), this, [this] { emit beatsRequested(); });
+                menu.addAction(tr("Spectrogram..."), this, [this, cid] { emit spectrogramRequested(cid); })
+                    ->setToolTip(tr("The event's sound as a picture: hum shows as flat lines, clicks as thin upright ones"));
                 menu.addAction(tr("Remove Fades / Transitions (both ends)"), this, &TimelineWidget::removeTransitionsFromSelection);
                 menu.addSeparator();
             }
@@ -353,6 +355,18 @@ void TimelineWidget::contextMenuEvent(QContextMenuEvent* e)
                 menu.addAction(tr("Group Selected Events\tG"), this, &TimelineWidget::groupSelection)->setEnabled(m_selection.size() > 1);
             }
             menu.addAction(tr("Mute / Unmute Event"), this, &TimelineWidget::toggleMuteSelection);
+            {
+                // A colour label on the selected events (and their groups).
+                QMenu* labels = menu.addMenu(tr("Colour Label"));
+                const Clip* lc = m_project->timeline().findClip(hit.clipId);
+                for (int l = 0; l <= kClipLabels; ++l) {
+                    QPixmap swatch(12, 12);
+                    swatch.fill(l ? clipLabelColor(l) : Qt::transparent);
+                    QAction* a = labels->addAction(l ? QIcon(swatch) : QIcon(), l ? clipLabelName(l) : tr("None"), this, [this, l] { setLabelOnSelection(l); });
+                    a->setCheckable(true);
+                    a->setChecked(lc && lc->label == l);
+                }
+            }
             {
                 QMenu* speedMenu = menu.addMenu(tr("Playback Speed"));
                 for (double sp : {0.25, 0.5, 0.75, 1.0, 1.5, 2.0, 4.0, 8.0})

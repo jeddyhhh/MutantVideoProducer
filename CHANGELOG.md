@@ -16,6 +16,13 @@ What changed in each version of Mutant Video Producer. The newest is first.
 
 - **J and L cuts**: Alt+drag an edge of a grouped event trims its picture or its sound alone; Ctrl+Alt+Shift+drag a cut
   rolls that track's cut alone. They stay grouped.
+- **Pre-rendering**: while stopped, the heavy parts near the cursor (slower to render than a frame lasts) are rendered in
+  the background and the preview plays them from there; green under the ruler when done, orange until then. Edits make
+  their own stretch new. Options turn it off and clear its frames.
+- **Colour labels** on events (right-click > Colour Label; eight colours; AI control: edit_event label).
+- **Spectrogram** of an audio event (right-click, or Tools), as heard or before its effects; a click moves the cursor.
+- **De-hum** (notches at 50 / 60 Hz and harmonics) and **De-click** (clicks, pops, crackle; optionally clipping) audio
+  effects.
 - **Timeline**: faint lines down the tracks at the ruler's marks while the snap grid is off (Options > Grid turns them
   off).
 - **Guides over the preview** (View > Guides, or the Guides button): title and action safe areas, the rule of thirds,

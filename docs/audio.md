@@ -27,12 +27,26 @@ Setting, keyframing and grouping them works as for video: see [Effects](effects.
 | Flanger | A jet-plane sweep. |
 | Stereo Tools | Width, balance, channel swap, per-channel phase invert, mono. |
 | Noise Reduction | Removes steady background noise (hiss, hum, fans) with FFmpeg's FFT denoiser. |
+| De-hum | Takes out mains hum: narrow notches at 50 or 60 Hz and its harmonics (up to 8), leaving the rest of the sound alone. Its picture in the device chain shows the notches. |
+| De-click | Repairs clicks, pops and crackle (vinyl, mouth clicks, digital glitches): short bursts are found and filled in from the sound either side (FFmpeg's de-click). **Repair clipping too** also rebuilds clipped peaks. |
 | Pitch Shift | Changes the pitch without changing the speed (Rubber Band). |
 | VST3 Plugin | Runs an installed VST3 effect (see below). |
 | FFmpeg Audio Filter (advanced) | Any FFmpeg audio filter chain, for example `loudnorm`, `dynaudnorm`, `deesser`. |
 
 Effects with built-in delay (pitch shift, noise reduction, the limiter, loudness normalisers) are
 delay-compensated on events, tracks and the master bus, so the sound stays in sync with the picture.
+
+## Spectrogram
+
+Right-click an audio event > **Spectrogram...** (or **Tools > Spectrogram of the Selected Audio Event**)
+shows its sound as a picture: time across, frequency up (30 Hz to 24 kHz, on a log scale), loudness
+as colour, from black through red and orange to white.
+
+- **Hum** is flat lines at 50 or 60 Hz and the harmonics above: use **De-hum**.
+- **Clicks** are thin upright lines: use **De-click**.
+- **Hiss** is a haze across the top: use **Noise Reduction**.
+- It shows the event as heard (its effects and level); tick **Before the event's effects** to compare.
+- Click it to move the cursor there. It shows the first 10 minutes of a longer event.
 
 ## Sound effects library
 

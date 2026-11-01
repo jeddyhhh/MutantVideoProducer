@@ -131,6 +131,8 @@ add_library(mvp_core STATIC
     src/core/EffectMask.h        src/core/EffectMask.cpp
     src/core/Stabilizer.h        src/core/Stabilizer.cpp
     src/core/Proxy.h             src/core/Proxy.cpp
+    src/core/PreviewCache.h      src/core/PreviewCache.cpp
+    src/core/Spectrogram.h       src/core/Spectrogram.cpp
     src/core/Scopes.h            src/core/Scopes.cpp
     src/core/VideoShare.h        src/core/VideoShare.cpp
     src/core/MotionTracker.h     src/core/MotionTracker.cpp
@@ -245,7 +247,7 @@ add_executable(mvp WIN32
     tests/transport.cpp tests/transport.h
     tests/collection-ui.cpp tests/collection-ui.h
     # The scripted GUI tests (--editor-test, --live-test): members, so they reach the widgets' internals.
-    tests/gui/MainWindowTest.cpp tests/gui/TimelineWidgetTest.cpp tests/gui/LiveViewTest.cpp
+    tests/gui/MainWindowTest.cpp tests/gui/MainWindowTest2.cpp tests/gui/TimelineWidgetTest.cpp tests/gui/LiveViewTest.cpp
     src/ui/MainWindowStory.cpp
     src/ui/VoiceJob.h            src/ui/VoiceJob.cpp
     src/ui/VoiceOverDialog.h     src/ui/VoiceOverDialog.cpp

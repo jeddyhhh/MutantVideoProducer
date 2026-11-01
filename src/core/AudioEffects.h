@@ -28,7 +28,7 @@ struct AudioEffectDef {
 
 const std::vector<AudioEffectDef>& audioEffects();
 const AudioEffectDef* findAudioEffect(const QString& id);
-// For pictures of the settings (the device chain): what the Parametric EQ or the Filter does to a steady tone at `freq` Hz,
+// For pictures of the settings (the device chain): what the Parametric EQ, the Filter or De-hum does to a steady tone at `freq` Hz,
 // in dB, as they filter it; NaN for other effects.
 double audioEffectResponseDb(const QString& type, const Params& p, double freq, int rate = 48000);
 // The Compressor's, Noise Gate's or Limiter's level out for a steady level in (dB), attack and release settled; NaN for others.

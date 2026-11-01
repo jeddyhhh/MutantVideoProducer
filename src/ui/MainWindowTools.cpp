@@ -15,6 +15,7 @@
 #include "core/Project.h"
 #include "core/SceneDetect.h"
 #include "core/ColorMatch.h"
+#include "core/Spectrogram.h"
 #include "ui/NodeEffectEditor.h"
 #include "core/Reframe.h"
 #include "core/PanCrop.h"
@@ -79,6 +80,9 @@
 #include <QPlainTextEdit>
 #include <QListWidget>
 #include <QCheckBox>
+#include <QDialog>
+#include <QMouseEvent>
+#include <QPainter>
 #include <QDialogButtonBox>
 #include <QFormLayout>
 #include <QProgressDialog>
@@ -367,6 +371,126 @@ void MainWindow::matchColour()
     statusBar()->showMessage(tr("Matched %n event(s) to the frame at %1: each has a Color Match effect (its Amount tones it down)", nullptr, n)
                                  .arg(formatTimecode(m_timeline->cursorTime(), m_project->settings().fps)),
                              8000);
+}
+
+namespace {
+// The spectrogram, with its frequencies up the left and its time along the bottom; a click reports where (0..1 across).
+class SpectrogramView : public QWidget {
+public:
+    std::function<void(double)> clicked;
+    void setPicture(const QImage& img, int rate, double seconds)
+    {
+        m_img = img;
+        m_rate = rate;
+        m_seconds = seconds;
+        update();
+    }
+    void setCursor01(double at)
+    {
+        m_cursor = at;
+        update();
+    }
+    QRect plot() const { return rect().adjusted(46, 6, -6, -20); }
+
+protected:
+    void paintEvent(QPaintEvent*) override
+    {
+        QPainter p(this);
+        p.fillRect(rect(), QColor(16, 12, 24));
+        const QRect r = plot();
+        if (m_img.isNull()) {
+            p.setPen(Qt::gray);
+            p.drawText(r, Qt::AlignCenter, QObject::tr("Listening..."));
+            return;
+        }
+        p.setRenderHint(QPainter::SmoothPixmapTransform, true);
+        p.drawImage(r, m_img);
+        QFont f = font();
+        f.setPointSizeF(f.pointSizeF() * 0.8);
+        p.setFont(f);
+        for (const double hz : {50.0, 100.0, 200.0, 500.0, 1000.0, 2000.0, 5000.0, 10000.0, 20000.0}) {
+            if (hz > m_rate / 2.0)
+                continue;
+            const double y = r.top() + spectrogram::rowOf(hz, m_rate, r.height());
+            p.setPen(QColor(255, 255, 255, 50));
+            p.drawLine(QPointF(r.left(), y), QPointF(r.right(), y));
+            p.setPen(QColor(220, 220, 230));
+            p.drawText(QRectF(0, y - 8, r.left() - 4, 16), Qt::AlignRight | Qt::AlignVCenter,
+                       hz >= 1000 ? QStringLiteral("%1k").arg(hz / 1000) : QString::number(int(hz)));
+        }
+        const double step = m_seconds > 120 ? 30 : m_seconds > 30 ? 10 : m_seconds > 8 ? 2 : 0.5;
+        for (double s = 0; s <= m_seconds; s += step) {
+            const double x = r.left() + s / std::max(1e-6, m_seconds) * r.width();
+            if (x + 34 > width()) // (no room for its label)
+                break;
+            p.setPen(QColor(220, 220, 230));
+            p.drawText(QPointF(x + 2, height() - 5), QStringLiteral("%1 s").arg(s, 0, 'f', step < 1 ? 1 : 0));
+        }
+        if (m_cursor >= 0 && m_cursor <= 1) {
+            p.setPen(QPen(QColor(255, 255, 255, 200), 1));
+            const double x = r.left() + m_cursor * r.width();
+            p.drawLine(QPointF(x, r.top()), QPointF(x, r.bottom()));
+        }
+    }
+    void mousePressEvent(QMouseEvent* e) override
+    {
+        const QRect r = plot();
+        if (clicked && r.width() > 0)
+            clicked(std::clamp((e->position().x() - r.left()) / r.width(), 0.0, 1.0));
+    }
+
+private:
+    QImage m_img;
+    int m_rate = 48000;
+    double m_seconds = 0;
+    double m_cursor = -1;
+};
+} // namespace
+
+void MainWindow::showSpectrogram(int clipId)
+{
+    const Clip* c = m_project->timeline().findClip(clipId);
+    if (!c)
+        return;
+    stopPlayback(false);
+    auto* dlg = new QDialog(this);
+    dlg->setAttribute(Qt::WA_DeleteOnClose);
+    dlg->setObjectName(QStringLiteral("spectrogramWindow"));
+    dlg->setWindowTitle(tr("Spectrogram: %1").arg(c->name.isEmpty() ? tr("audio event") : c->name));
+    dlg->resize(1000, 520);
+    auto* v = new QVBoxLayout(dlg);
+    auto* view = new SpectrogramView;
+    view->setMinimumSize(400, 240);
+    v->addWidget(view, 1);
+    auto* row = new QHBoxLayout;
+    auto* before = new QCheckBox(tr("Before the event's effects"));
+    before->setToolTip(tr("Off: as it is heard (its effects and level). On: the sound as it was, to compare"));
+    auto* hint = new QLabel(tr("Hum: flat lines (50 or 60 Hz and above): De-hum. Clicks: thin upright lines: De-click. Hiss: a haze "
+                               "across the top: Noise Reduction. Click to move the cursor there."));
+    hint->setWordWrap(true);
+    theme::style(hint, QStringLiteral("color: @dim;"));
+    row->addWidget(before);
+    row->addWidget(hint, 1);
+    v->addLayout(row);
+    constexpr int kRate = 48000;
+    const TimeUs start = c->start;
+    const double seconds = std::min(double(c->length) / kUsPerSecond, 600.0);
+    auto draw = [this, view, before, clipId, seconds] {
+        QApplication::setOverrideCursor(Qt::WaitCursor);
+        const std::vector<float> sound = spectrogram::eventSound(*m_project->snapshot(), clipId, before->isChecked(), kRate);
+        const QSize size(std::clamp(int(seconds * 40), 400, 4000), 384);
+        view->setPicture(spectrogram::render(sound, kRate, size), kRate, seconds);
+        QApplication::restoreOverrideCursor();
+    };
+    connect(before, &QCheckBox::toggled, dlg, draw);
+    view->clicked = [this, view, start, seconds](double at) {
+        seekTo(start + TimeUs(at * seconds * kUsPerSecond));
+        view->setCursor01(at);
+    };
+    const double cursorAt = double(m_timeline->cursorTime() - start) / (seconds * kUsPerSecond);
+    view->setCursor01(cursorAt);
+    dlg->show();
+    QTimer::singleShot(0, dlg, draw);
 }
 
 void MainWindow::autoColour()

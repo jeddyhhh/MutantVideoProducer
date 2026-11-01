@@ -34,6 +34,9 @@
 #include "core/PanCrop.h"
 #include "core/Compositor.h"
 #include "core/ColorMatch.h"
+#include "core/PreviewCache.h"
+#include "core/Spectrogram.h"
+#include <QDataStream>
 #include "core/Dither.h"
 #include "core/ConsoleEngine.h"
 #include "core/BeatTracker.h"
@@ -2366,6 +2369,128 @@ int cmdAudioFx(const QString& mediaDir, const QString& outDir)
         Project loaded;
         check(proj.save(path, &err) && loaded.load(path, &err) && loaded.timeline() == proj.timeline(),
               QStringLiteral("audio event, track and master FX survive save/load %1").arg(err));
+    }
+    {
+        // Restoration: De-hum takes 50 Hz hum (and its harmonics) out and leaves a 1 kHz tone; De-click takes the
+        // clicks out of a tone; the spectrogram shows a tone at its row; an event's sound comes out for it.
+        auto writeWav = [&](const QString& path, const std::function<float(int)>& sample, int n) {
+            QFile f(path);
+            f.open(QIODevice::WriteOnly);
+            QDataStream st(&f);
+            st.setByteOrder(QDataStream::LittleEndian);
+            st.setFloatingPointPrecision(QDataStream::SinglePrecision);
+            f.write("RIFF", 4);
+            st << quint32(36 + n * 8);
+            f.write("WAVEfmt ", 8);
+            st << quint32(16) << quint16(3) << quint16(2) << quint32(rate) << quint32(rate * 8) << quint16(8) << quint16(32);
+            f.write("data", 4);
+            st << quint32(n * 8);
+            for (int i = 0; i < n; ++i) {
+                const float x = sample(i);
+                st << x << x;
+            }
+        };
+        const double pi = 3.14159265358979;
+        const QString humPath = QDir(outDir).filePath(QStringLiteral("hum.wav")), clickPath = QDir(outDir).filePath(QStringLiteral("clicks.wav"));
+        writeWav(humPath, [&](int i) { return float(0.25 * std::sin(2 * pi * 50 * i / rate) + 0.08 * std::sin(2 * pi * 150 * i / rate)
+                                                    + 0.25 * std::sin(2 * pi * 1000 * i / rate)); }, rate * 3);
+        writeWav(clickPath, [&](int i) { return float(0.1 * std::sin(2 * pi * 440 * i / rate) + (i % (rate / 4) == rate / 8 ? 0.9 : 0.0)); }, rate * 3);
+        auto hum = loadItem(humPath, 40), clicks = loadItem(clickPath, 41);
+        // A tone's level in the mix (Goertzel), dB.
+        auto toneDb = [&](const std::vector<float>& stereo, double hz) {
+            const size_t n = stereo.size() / 2;
+            double s1 = 0, s2 = 0;
+            const double k = 2 * std::cos(2 * pi * hz / rate);
+            for (size_t i = 0; i < n; ++i) {
+                const double s0 = stereo[i * 2] + k * s1 - s2;
+                s2 = s1;
+                s1 = s0;
+            }
+            return 20 * std::log10(std::max(1e-12, std::sqrt(s1 * s1 + s2 * s2 - k * s1 * s2) / (n / 2.0)));
+        };
+        if (hum && clicks) {
+            // (From the start, the last 1.5 s: the notches settled, as when playing.)
+            auto settled = [&](const ProjectSnapshot& s) {
+                const std::vector<float> all = mixRange(s, 0.0, 3.0);
+                return std::vector<float>(all.begin() + rate * 3, all.end());
+            };
+            const std::vector<float> raw = settled(snapFor(hum));
+            ProjectSnapshot fixed = snapFor(hum);
+            audioClip(fixed).effects.push_back(makeEffectOfType(QStringLiteral("a_dehum"), fixed.timeline.allocId()));
+            const std::vector<float> clean = settled(fixed);
+            const double humCut = toneDb(raw, 50) - toneDb(clean, 50), thirdCut = toneDb(raw, 150) - toneDb(clean, 150);
+            const double toneKept = toneDb(clean, 1000) - toneDb(raw, 1000);
+            check(humCut > 30 && thirdCut > 30 && std::abs(toneKept) < 1,
+                  QStringLiteral("De-hum takes 50 Hz hum down %1 dB (its 3rd harmonic %2 dB) and leaves a 1 kHz tone (%3 dB)")
+                      .arg(humCut, 0, 'f', 1).arg(thirdCut, 0, 'f', 1).arg(toneKept, 0, 'f', 2));
+            ProjectSnapshot declicked = snapFor(clicks);
+            audioClip(declicked).effects.push_back(makeEffectOfType(QStringLiteral("a_declick"), declicked.timeline.allocId()));
+            const Levels before = measure(mixRange(snapFor(clicks), 0.5, 2.0)), after = measure(mixRange(declicked, 0.5, 2.0));
+            check(before.peakDb > -2 && after.peakDb < before.peakDb - 6,
+                  QStringLiteral("De-click takes clicks out of a tone (peaks %1 dBFS -> %2)").arg(before.peakDb, 0, 'f', 1).arg(after.peakDb, 0, 'f', 1));
+            // The spectrogram: the 1 kHz tone is the brightest row near 1 kHz's (and the hum at 50 Hz's).
+            const std::vector<float> mono = spectrogram::eventSound(snapFor(hum), audioClip(fixed).id, true, rate);
+            const QImage pic = spectrogram::render(mono, rate, QSize(200, 300));
+            auto brightest = [&](int from, int to) {
+                int best = from;
+                double most = -1;
+                for (int y = from; y < to; ++y) {
+                    const double v = qGray(pic.pixel(100, y));
+                    if (v > most) {
+                        most = v;
+                        best = y;
+                    }
+                }
+                return best;
+            };
+            const int toneRow = int(std::lround(spectrogram::rowOf(1000, rate, 300))), humRow = int(std::lround(spectrogram::rowOf(50, rate, 300)));
+            check(mono.size() == size_t(rate * 3) && std::abs(brightest(toneRow - 20, toneRow + 20) - toneRow) <= 2
+                      && std::abs(brightest(humRow - 12, std::min(300, humRow + 12)) - humRow) <= 4, // (within 4 Hz at 50)
+                  QStringLiteral("the spectrogram shows a 1 kHz tone and 50 Hz hum at their rows (the event's sound: %1 s)").arg(double(mono.size()) / rate, 0, 'f', 1));
+        } else {
+            check(false, QStringLiteral("the hum and click test files were made"));
+        }
+    }
+    {
+        // Pre-rendering's stretches: an edit changes its own stretch's key only; a colour label changes none; frames on
+        // disk come back.
+        ProjectSnapshot s = snapFor(sine, 3 * kUsPerSecond);
+        for (auto& t : s.timeline.tracks)
+            if (!t.clips.empty()) {
+                Clip c = t.clips.front();
+                c.id = s.timeline.allocId();
+                c.start = 5 * kUsPerSecond;
+                t.clips.push_back(c);
+            }
+        const auto before = precache::stretches(s, QSize(320, 180), false);
+        ProjectSnapshot edited = s;
+        audioClip(edited).gain = 0.5f; // (the first event: 0 - 3 s)
+        ProjectSnapshot labelled = s;
+        for (auto& t : labelled.timeline.tracks)
+            for (auto& c : t.clips)
+                c.label = 3;
+        const auto after = precache::stretches(edited, QSize(320, 180), false), same = precache::stretches(labelled, QSize(320, 180), false);
+        bool firstChanged = false, othersKept = before.size() == after.size(), labelKept = before.size() == same.size();
+        for (size_t i = 0; i < before.size() && i < after.size(); ++i) {
+            if (before[i].end <= 3 * kUsPerSecond)
+                firstChanged = firstChanged || before[i].key != after[i].key;
+            else
+                othersKept = othersKept && before[i].key == after[i].key;
+            labelKept = labelKept && i < same.size() && same[i].key == before[i].key;
+        }
+        const QString dir = QDir(outDir).filePath(QStringLiteral("prerender-test"));
+        precache::Store store(dir);
+        store.clear();
+        QImage frame(64, 36, QImage::Format_ARGB32_Premultiplied);
+        frame.fill(QColor(30, 160, 90));
+        store.save(before.front().key, 7, frame);
+        precache::Store again(dir); // (as after a restart: found on disk)
+        const QImage back = again.load(before.front().key, 7);
+        again.trim(0);
+        check(before.size() == 3 && firstChanged && othersKept && labelKept && !back.isNull() && qGreen(back.pixel(10, 10)) > 150
+                  && !precache::Store(dir).has(before.front().key, 7) && precache::stretchAt(before, 6 * kUsPerSecond) == &before[2],
+              QStringLiteral("pre-rendering: an edit makes only its own stretch new (%1 stretches), a colour label none; frames come back "
+                             "from disk and are trimmed").arg(before.size()));
     }
     {
         // A realistic voice chain on one track: EQ + compressor + reverb + limiter.

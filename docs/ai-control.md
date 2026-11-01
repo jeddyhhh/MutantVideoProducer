@@ -56,7 +56,7 @@ for each step and the checks that catch mistakes. It is how the *Snowbank* episo
 | waveform_graphic | Build and style native graphics from real source audio, with embedded peaks, stereo and playback progress. |
 | import_media, add_media_to_timeline | Imports files and places them. |
 | add_text | Adds a title, text or any generator preset; `params` sets the generator's own settings (a title's font, size and colour, a starfield's speed). |
-| edit_event, split, delete_events, add_track | Moves (also to another track), trims, splits and deletes events, with their grouped sound; `edit_event` `params` changes a generator's settings, and `denoise` (0..1) reduces a video event's noise. `add_track` with no index puts a video or image track on top and an audio track at the bottom. Edits that would change a locked track are refused. |
+| edit_event, split, delete_events, add_track | Moves (also to another track), trims, splits and deletes events, with their grouped sound; `edit_event` `params` changes a generator's settings, and `denoise` (0..1) reduces a video event's noise. `label` (red, orange, yellow, green, teal, blue, purple, pink or none) gives it a colour label on the timeline. `add_track` with no index puts a video or image track on top and an audio track at the bottom. Edits that would change a locked track are refused. |
 | list_effects | Lists every effect with its settings. |
 | add_effect, set_effect, remove_effect | Effects (with keyframes and masks) on events, tracks, the output, the audio master, the Live FX, pads and the layer. Remove Background, freehand masks and VST3 plugins work through these. |
 | list_vst3_plugins | The VST3 plugins installed. |

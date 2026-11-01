@@ -697,6 +697,19 @@ void MainWindow::createActions()
         if (editorActive())
             autoColour();
     }));
+    tools->addAction(act(tr("Spectrogram of the Selected Audio Event..."), QKeySequence(), [this] {
+        if (!editorActive())
+            return;
+        const Timeline& tl = m_project->timeline();
+        for (int id : m_timeline->selection()) {
+            int ti = -1;
+            if (tl.findClip(id, &ti) && tl.tracks[size_t(ti)].type == TrackType::Audio) {
+                showSpectrogram(id);
+                return;
+            }
+        }
+        statusBar()->showMessage(tr("Select an audio event first"), 4000);
+    }));
     tools->addAction(act(tr("Render Selection to &New Track"), QKeySequence(), [this] {
         if (editorActive())
             renderInPlace();
@@ -939,6 +952,22 @@ void MainWindow::createActions()
     m_loopAction = act(tr("&Loop Playback"), QKeySequence(QStringLiteral("Q")), [] {});
     m_loopAction->setCheckable(true);
     options->addAction(m_loopAction);
+    // Pre-rendering heavy stretches in the background, and the frames it kept.
+    QAction* preRender = options->addAction(tr("&Pre-render Heavy Parts in the Background"));
+    preRender->setObjectName(QStringLiteral("preRender"));
+    preRender->setCheckable(true);
+    preRender->setToolTip(tr("While stopped, the parts of the timeline too slow to play smoothly near the cursor are rendered\n"
+                             "ahead (a green bar under the ruler when done, orange until then), and play from there"));
+    preRender->setChecked(QSettings().value(QStringLiteral("play/preRender"), true).toBool());
+    m_engine->setPreRender(preRender->isChecked());
+    connect(preRender, &QAction::toggled, this, [this](bool on) {
+        m_engine->setPreRender(on);
+        QSettings().setValue(QStringLiteral("play/preRender"), on);
+    });
+    options->addAction(tr("Clear Pre-rendered Frames"), this, [this] {
+        m_engine->clearPreRender();
+        statusBar()->showMessage(tr("Pre-rendered frames cleared: they are made again as needed"), 4000);
+    });
     m_clickJumpAction = options->addAction(tr("Click While Playing &Jumps There"), this,
                                            [](bool on) { QSettings().setValue(QStringLiteral("play/clickJumps"), on); });
     m_clickJumpAction->setCheckable(true);
@@ -1214,6 +1243,7 @@ void MainWindow::connectSignals()
     connect(m_timeline, &TimelineWidget::stabilizeRequested, this, &MainWindow::stabilizeClip);
     connect(m_timeline, &TimelineWidget::matchColourRequested, this, &MainWindow::matchColour);
     connect(m_timeline, &TimelineWidget::autoColourRequested, this, &MainWindow::autoColour);
+    connect(m_timeline, &TimelineWidget::spectrogramRequested, this, &MainWindow::showSpectrogram);
     connect(m_devices, &DeviceChainView::userEffectRequested, this, &MainWindow::editUserEffect);
     connect(m_live->devices(), &DeviceChainView::userEffectRequested, this, &MainWindow::editUserEffect);
     connect(m_bin, &MediaBin::relinkRequested, this, [this](int id) { relinkMissing(id); });
@@ -1377,6 +1407,12 @@ void MainWindow::connectSignals()
             m_scopes->setPicture(img);
     });
     connect(m_engine, &PlaybackEngine::positionChanged, this, &MainWindow::onPlaybackPosition);
+    connect(m_engine, &PlaybackEngine::preRenderChanged, this, [this](const std::vector<PlaybackEngine::PreRenderSpan>& spans) {
+        std::vector<std::tuple<TimeUs, TimeUs, bool>> shown;
+        for (const auto& s : spans)
+            shown.emplace_back(s.start, s.end, s.done);
+        m_timeline->setPreRenderSpans(std::move(shown));
+    });
     connect(m_engine, &PlaybackEngine::rendererChanged, this, [this](const QString& name) {
         const QString decode = hw::settings().hardwareDecoding && !hw::decodeDeviceName().isEmpty()
                                    ? hw::decodeDeviceName()

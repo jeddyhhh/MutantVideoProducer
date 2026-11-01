@@ -2,6 +2,7 @@
 
 #include "core/AudioMixer.h"
 #include "core/FrameRenderer.h"
+#include "core/Proxy.h"
 
 #include <QAudioDevice>
 #include <QAudioSink>
@@ -69,6 +70,7 @@ private:
 PlaybackEngine::PlaybackEngine(QObject* parent) : QObject(parent)
 {
     m_gpuSurface = createGpuSurface(); // may be null: CPU rendering then
+    m_preSurface = createGpuSurface();
     setupAudio();
     m_scrubStop.setSingleShot(true);
     m_scrubStop.setInterval(500);
@@ -82,6 +84,7 @@ PlaybackEngine::PlaybackEngine(QObject* parent) : QObject(parent)
     connect(&m_tick, &QTimer::timeout, this, &PlaybackEngine::onTick);
     m_videoThread = std::thread(&PlaybackEngine::videoThreadMain, this);
     m_audioThread = std::thread(&PlaybackEngine::audioThreadMain, this);
+    m_preThread = std::thread(&PlaybackEngine::preRenderThreadMain, this);
 }
 
 PlaybackEngine::~PlaybackEngine()
@@ -96,8 +99,10 @@ PlaybackEngine::~PlaybackEngine()
     }
     m_videoCv.notify_all();
     m_audioCv.notify_all();
+    m_preCv.notify_all();
     m_videoThread.join();
     m_audioThread.join();
+    m_preThread.join();
     // The sink pulls from the ring device: stop and delete it first.
     if (m_sink) {
         m_sink->stop();
@@ -220,6 +225,7 @@ void PlaybackEngine::setSnapshot(std::shared_ptr<const ProjectSnapshot> snap)
         std::lock_guard lock(m_mutex);
         projectChanged = m_snap && snap && m_snap->session != snap->session;
         m_snap = std::move(snap);
+        m_snapChanged = std::chrono::steady_clock::now();
         if (projectChanged) {
             ++m_generation;
             m_queue.clear();
@@ -256,6 +262,7 @@ void PlaybackEngine::requestFrame(TimeUs t)
 {
     if (m_playing)
         return; // playback renders on its own
+    m_cursorHint = t;
     {
         std::lock_guard lock(m_mutex);
         m_scrubRequest = t;
@@ -294,6 +301,7 @@ void PlaybackEngine::play(TimeUs from)
     }
     m_startPos = from;
     m_clock = from;
+    m_cursorHint = from;
     m_clockAdjust = 0;
     m_playing = true;
     // Take each lock once so the worker threads can't miss the wake-up.
@@ -422,8 +430,11 @@ void PlaybackEngine::videoThreadMain()
             const uint64_t gen = m_generation;
             const TimeUs t = fps.timeOf(frame);
             lock.unlock();
-            ensureRenderer();
-            QImage img = renderer->render(*snap, t, size);
+            QImage img = cachedFrame(snap, t, size);
+            if (img.isNull()) {
+                ensureRenderer();
+                img = renderer->render(*snap, t, size);
+            }
             lock.lock();
             if (gen == m_generation && m_playing)
                 m_queue.emplace_back(t, std::move(img));
@@ -432,8 +443,11 @@ void PlaybackEngine::videoThreadMain()
             const uint64_t gen = m_generation;
             m_scrubRequest.reset();
             lock.unlock();
-            ensureRenderer();
-            QImage img = renderer->render(*snap, t, size);
+            QImage img = cachedFrame(snap, t, size);
+            if (img.isNull()) {
+                ensureRenderer();
+                img = renderer->render(*snap, t, size);
+            }
             QMetaObject::invokeMethod(
                 this, [this, img = std::move(img), t, gen] {
                     { std::lock_guard guard(m_mutex); if (gen != m_generation) return; }
@@ -441,6 +455,185 @@ void PlaybackEngine::videoThreadMain()
                 }, Qt::QueuedConnection);
             lock.lock();
         }
+    }
+}
+
+QImage PlaybackEngine::cachedFrame(const std::shared_ptr<const ProjectSnapshot>& snap, TimeUs t, QSize size)
+{
+    if (!m_preRender)
+        return {};
+    QByteArray key;
+    {
+        std::lock_guard lock(m_preMutex);
+        if (m_preSnap != snap || m_preSize != size || m_preProxies != proxy::enabled()) // (not worked out for this project yet)
+            return {};
+        const precache::Stretch* s = precache::stretchAt(m_stretches, t);
+        if (!s)
+            return {};
+        key = s->key;
+    }
+    QImage img = m_store.load(key, snap->settings.fps.frameAt(t));
+    return img.size() == size ? img : QImage();
+}
+
+void PlaybackEngine::setPreRender(bool on)
+{
+    m_preRender = on;
+    m_preCv.notify_all();
+    if (!on)
+        QMetaObject::invokeMethod(this, [this] { emit preRenderChanged({}); }, Qt::QueuedConnection);
+}
+
+void PlaybackEngine::clearPreRender()
+{
+    m_store.clear();
+    ++m_preCleared;
+    {
+        std::lock_guard lock(m_mutex);
+        m_snapChanged = std::chrono::steady_clock::now(); // (looked at again, from the start)
+    }
+    m_preCv.notify_all();
+}
+
+void PlaybackEngine::preRenderThreadMain()
+{
+    using namespace std::chrono;
+    constexpr TimeUs kBehind = 5 * kUsPerSecond, kAhead = 90 * kUsPerSecond; // round the cursor
+    constexpr qint64 kCacheBytes = qint64(4) << 30;                           // 4 GB on disk at most
+    std::unique_ptr<FrameRenderer> renderer;
+    int rendererGeneration = -1;
+    std::map<QByteArray, bool> heavy; // by stretch key: measured slower than the frame rate allows
+    std::vector<PreRenderSpan> shown;
+    int rounds = 0, cleared = m_preCleared;
+    for (;;) {
+        if (cleared != m_preCleared) { // (cleared: measured again)
+            cleared = m_preCleared;
+            heavy.clear();
+        }
+        std::shared_ptr<const ProjectSnapshot> snap;
+        QSize size;
+        {
+            std::unique_lock lock(m_mutex);
+            m_preCv.wait_for(lock, milliseconds(400), [&] { return m_quit; });
+            if (m_quit)
+                return;
+            // Not while playing, and not until an edit has settled (dragging a knob).
+            if (m_playing || !m_preRender || !m_snap || steady_clock::now() - m_snapChanged < milliseconds(900))
+                continue;
+            snap = m_snap;
+            size = previewSize(*snap);
+        }
+        const bool proxies = proxy::enabled();
+        std::vector<precache::Stretch> list;
+        {
+            std::unique_lock lock(m_preMutex);
+            if (m_preSnap != snap || m_preSize != size || m_preProxies != proxies) {
+                lock.unlock();
+                list = precache::stretches(*snap, size, proxies);
+                lock.lock();
+                m_stretches = list;
+                m_preSnap = snap;
+                m_preSize = size;
+                m_preProxies = proxies;
+            } else {
+                list = m_stretches;
+            }
+        }
+        const FrameRate fps = snap->settings.fps;
+        const TimeUs fd = fps.frameDuration();
+        // (Tests: MVP_PRERENDER_ALL=<seconds> makes every stretch heavy and looks that far ahead only.)
+        const double testAhead = qEnvironmentVariable("MVP_PRERENDER_ALL").toDouble();
+        const TimeUs cursor = m_cursorHint, from = std::max<TimeUs>(0, cursor - (testAhead > 0 ? 0 : kBehind)),
+                     to = cursor + (testAhead > 0 ? TimeUs(testAhead * kUsPerSecond) : kAhead);
+        auto stale = [&] {
+            std::lock_guard lock(m_mutex);
+            return m_quit || m_playing || !m_preRender || m_snap != snap || m_cursorHint < from || m_cursorHint > std::max(from, to - kBehind);
+        };
+        auto spans = [&] { // the heavy stretches round the cursor: runs of frames done and not done
+            std::vector<PreRenderSpan> out;
+            for (const precache::Stretch& s : list) {
+                const auto h = heavy.find(s.key);
+                if (h == heavy.end() || !h->second || s.end <= from || s.start >= to)
+                    continue;
+                const TimeUs a = std::max(s.start, from), b = std::min(s.end, to);
+                for (int64_t f = fps.frameAt(a); fps.timeOf(f) < b; ++f) {
+                    const bool done = m_store.has(s.key, f);
+                    const TimeUs t0 = std::max(a, fps.timeOf(f)), t1 = std::min(b, fps.timeOf(f + 1));
+                    if (!out.empty() && out.back().done == done && out.back().end == t0)
+                        out.back().end = t1;
+                    else
+                        out.push_back({t0, t1, done});
+                }
+            }
+            return out;
+        };
+        auto publish = [&] {
+            std::vector<PreRenderSpan> now = spans();
+            if (now == shown)
+                return;
+            shown = now;
+            QMetaObject::invokeMethod(this, [this, now] { emit preRenderChanged(now); }, Qt::QueuedConnection);
+        };
+        auto ensureRenderer = [&] {
+            if (renderer && rendererGeneration == m_rendererGeneration)
+                return;
+            rendererGeneration = m_rendererGeneration;
+            renderer = createFrameRenderer(false, m_preSurface.get(), nullptr);
+            renderer->setUseProxies(true); // (as the preview plays)
+        };
+        // Nearest first: from the cursor on, then what is just before it.
+        std::vector<const precache::Stretch*> order;
+        for (const precache::Stretch& s : list)
+            if (s.end > from && s.start < to)
+                order.push_back(&s);
+        std::stable_sort(order.begin(), order.end(), [&](const precache::Stretch* x, const precache::Stretch* y) {
+            return (x->end <= cursor) < (y->end <= cursor);
+        });
+        bool worked = false;
+        for (const precache::Stretch* s : order) {
+            if (stale())
+                break;
+            const TimeUs a = std::max(s->start, from), b = std::min(s->end, to);
+            if (!heavy.count(s->key)) {
+                // Heavy: a frame at its start or middle takes longer than a frame lasts (well over: playing has other work).
+                // Timed on the frame after one rendered first, so opening and seeking the files isn't counted.
+                ensureRenderer();
+                double worst = 0;
+                for (const TimeUs t : {a, a + (b - a) / 2}) {
+                    const int64_t f = fps.frameAt(t);
+                    const QImage first = renderer->render(*snap, fps.timeOf(f), size);
+                    if (fps.timeOf(f + 1) >= b)
+                        continue;
+                    const auto t0 = steady_clock::now();
+                    const QImage next = renderer->render(*snap, fps.timeOf(f + 1), size);
+                    const double took = duration<double, std::micro>(steady_clock::now() - t0).count();
+                    worst = std::max(worst, took);
+                    if (took > std::max(25000.0, 0.7 * double(fd))) {
+                        m_store.save(s->key, f, first);
+                        m_store.save(s->key, f + 1, next);
+                    }
+                }
+                heavy[s->key] = testAhead > 0 || worst > std::max(25000.0, 0.7 * double(fd));
+                worked = true;
+            }
+            if (!heavy[s->key])
+                continue;
+            int n = 0;
+            for (int64_t f = fps.frameAt(a); fps.timeOf(f) < b; ++f) {
+                if (m_store.has(s->key, f))
+                    continue;
+                if (stale())
+                    break;
+                ensureRenderer();
+                m_store.save(s->key, f, renderer->render(*snap, fps.timeOf(f), size));
+                worked = true;
+                if (++n % 12 == 0)
+                    publish();
+            }
+        }
+        publish();
+        if (worked && ++rounds % 8 == 0)
+            m_store.trim(kCacheBytes);
     }
 }
 

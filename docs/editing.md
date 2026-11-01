@@ -206,6 +206,13 @@ time selection, or on the whole timeline when there is none. **Ctrl+Z** undoes e
   ones; the window shows how much time will go. **Cut from the Edit** removes each struck run up to
   the next kept word, so the gap after it goes too.
 
+## Colour labels
+
+Right-click an event > **Colour Label** gives it (and its group) one of eight colours on the timeline,
+to sort an edit by eye: interviews red, B-roll blue, music green... **None** takes it off. It is
+only for the timeline (renders don't change) and it is saved with the project. AI control sets it
+with `edit_event` `label`.
+
 ## Snapping and the grid
 
 - **F8** (**Options > Enable Snapping**) turns snapping on and off. Hold **Shift** while dragging to
@@ -229,6 +236,25 @@ Envelopes change a track's volume, pan or video level over time.
 - Right-click the line to reset or hide it.
 - Envelopes follow timeline time. They multiply the track's own Level / Vol; pan is added to the Pan slider.
 - **Shift+V** puts a speed ramp on the selected events (see [Speed and Time](speed.md#speed-ramps)).
+
+## Pre-rendering
+
+Some parts of an edit are too slow to play smoothly: background removal, noise reduction, heavy
+Effect Builder effects, many layers. While the timeline is stopped, Mutant Video Producer renders
+those parts near the cursor (from 5 seconds before it to 90 seconds after) in the background, and
+the preview then plays them from there.
+
+- It measures each stretch between events' edges, and pre-renders only those slower to make than a
+  frame lasts.
+- Under the ruler, **green** is pre-rendered and **orange** is heavy and not done yet.
+- An edit makes its stretch new (renders always follow the project as it is now). Other stretches
+  are kept.
+- It stops while playing, and starts again a moment after the last edit.
+- The frames go in the app's cache folder (4 GB at most; the oldest go first). **Options > Clear
+  Pre-rendered Frames** throws them away; **Options > Pre-render Heavy Parts in the Background**
+  turns it off.
+
+Renders (Render As, the queue) don't use these frames: they always render at full quality.
 
 ## Playback and moving around
 

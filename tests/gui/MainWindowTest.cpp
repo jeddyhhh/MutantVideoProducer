@@ -30,6 +30,8 @@
 #include "ui/AudioFinishingWindow.h"
 #include "ui/DeviceChainView.h"
 #include "core/Presets.h"
+#include "core/PreviewCache.h"
+#include "ui/TimelineLayout.h"
 #include <QMenu>
 #include <QMouseEvent>
 #include <QScrollArea>
@@ -427,6 +429,7 @@ int MainWindow::runEditorTest(QStringList& log)
                                          "up raises its gain (6 dB to %3)")
                               .arg(audio.size()).arg(video.size()).arg(raised, 0, 'f', 1));
                 }
+                runProductionToolsTest(check, work); // (its own function: this one is as big as the compiler takes)
                 {
                     // View > Guides: ticked ones are drawn over the preview (and remembered), not rendered.
                     int checkable = 0;
