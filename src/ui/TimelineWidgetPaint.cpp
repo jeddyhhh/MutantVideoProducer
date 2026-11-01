@@ -86,8 +86,58 @@ void TimelineWidget::paintMarkers(QPainter& p)
     }
 }
 
+TimelineWidget::RulerSteps TimelineWidget::rulerSteps() const
+{
+    // Major tick spacing: the smallest "nice" interval at least ~100 px apart.
+    const FrameRate fps = m_project->settings().fps;
+    const TimeUs fd = fps.frameDuration();
+    const TimeUs candidates[] = {fd, 2 * fd, 5 * fd, 10 * fd, kUsPerSecond, 2 * kUsPerSecond, 5 * kUsPerSecond,
+                                 10 * kUsPerSecond, 15 * kUsPerSecond, 30 * kUsPerSecond, 60 * kUsPerSecond,
+                                 120 * kUsPerSecond, 300 * kUsPerSecond, 600 * kUsPerSecond, 900 * kUsPerSecond,
+                                 1800 * kUsPerSecond, 3600 * kUsPerSecond, 7200 * kUsPerSecond};
+    TimeUs major = candidates[std::size(candidates) - 1];
+    for (TimeUs c : candidates)
+        if (c * m_pxPerSec / kUsPerSecond >= 100) {
+            major = c;
+            break;
+        }
+    const TimeUs minor = major >= kUsPerSecond && major % (5 * kUsPerSecond) == 0 ? major / 5
+                         : major <= 10 * fd                                      ? std::max<TimeUs>(fd, major / 5)
+                                                                                 : major / 2;
+    return {major, minor, major < kUsPerSecond};
+}
+
+TimeUs TimelineWidget::rulerTick(int64_t n, TimeUs step, bool frames) const
+{
+    if (frames) {
+        const FrameRate fps = m_project->settings().fps;
+        return fps.timeOf(fps.frameAt(n * step + step / 2));
+    }
+    return n * step;
+}
+
+void TimelineWidget::setRulerLines(bool on)
+{
+    m_rulerLines = on;
+    viewport()->update();
+}
+
 void TimelineWidget::paintGrid(QPainter& p, const QRect& band)
 {
+    if (m_grid == Grid::Off) { // the ruler's marks, faintly (as Vegas draws its grid)
+        if (!m_rulerLines)
+            return;
+        const RulerSteps s = rulerSteps();
+        const TimeUs t0 = std::max<TimeUs>(0, xToTime(band.left())), t1 = xToTime(band.right());
+        for (int64_t n = t0 / s.minor; n * s.minor <= t1 + s.minor; ++n) {
+            const TimeUs t = rulerTick(n, s.minor, s.frames);
+            const bool labelled = (n * s.minor) % s.major == 0;
+            p.setPen(ink(labelled ? 26 : 11));
+            const double x = std::round(timeToX(t)) + 0.5;
+            p.drawLine(QPointF(x, band.top()), QPointF(x, band.bottom()));
+        }
+        return;
+    }
     const TimeUs g = gridStep();
     if (g <= 0 || double(g) * m_pxPerSec / kUsPerSecond < 5) // too dense to draw (snapping still works)
         return;
@@ -746,28 +796,9 @@ void TimelineWidget::paintRuler(QPainter& p)
     }
     paintMarkers(p);
 
-    // Major tick spacing: the smallest "nice" interval at least ~100 px apart.
     const FrameRate fps = m_project->settings().fps;
-    const TimeUs fd = fps.frameDuration();
-    const TimeUs candidates[] = {fd, 2 * fd, 5 * fd, 10 * fd, kUsPerSecond, 2 * kUsPerSecond, 5 * kUsPerSecond,
-                                 10 * kUsPerSecond, 15 * kUsPerSecond, 30 * kUsPerSecond, 60 * kUsPerSecond,
-                                 120 * kUsPerSecond, 300 * kUsPerSecond, 600 * kUsPerSecond, 900 * kUsPerSecond,
-                                 1800 * kUsPerSecond, 3600 * kUsPerSecond, 7200 * kUsPerSecond};
-    TimeUs major = candidates[std::size(candidates) - 1];
-    for (TimeUs c : candidates)
-        if (c * m_pxPerSec / kUsPerSecond >= 100) {
-            major = c;
-            break;
-        }
-    const TimeUs minor = major >= kUsPerSecond && major % (5 * kUsPerSecond) == 0 ? major / 5
-                         : major <= 10 * fd                                      ? std::max<TimeUs>(fd, major / 5)
-                                                                                 : major / 2;
-    const bool frameTicks = major < kUsPerSecond;
-    auto tickTime = [&](int64_t n, TimeUs step) {
-        if (frameTicks)
-            return fps.timeOf(fps.frameAt(n * step + step / 2));
-        return n * step;
-    };
+    const auto [major, minor, frameTicks] = rulerSteps();
+    auto tickTime = [&](int64_t n, TimeUs step) { return rulerTick(n, step, frameTicks); };
 
     const TimeUs t0 = xToTime(kHeaderWidth), t1 = xToTime(W);
     p.setPen(theme::c().dim);

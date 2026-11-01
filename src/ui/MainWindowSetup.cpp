@@ -895,6 +895,15 @@ void MainWindow::createActions()
         });
     }
     gridMenu->addSeparator();
+    QAction* rulerLines = gridMenu->addAction(tr("Faint Lines at the Ruler Marks (grid off)"));
+    rulerLines->setObjectName(QStringLiteral("rulerLines"));
+    rulerLines->setCheckable(true);
+    rulerLines->setChecked(QSettings().value(QStringLiteral("edit/rulerLines"), true).toBool());
+    m_timeline->setRulerLines(rulerLines->isChecked());
+    connect(rulerLines, &QAction::toggled, this, [this](bool on) {
+        m_timeline->setRulerLines(on);
+        QSettings().setValue(QStringLiteral("edit/rulerLines"), on);
+    });
     gridMenu->addAction(tr("Beat Grid Tempo..."), this, [this] {
         QDialog dlg(this);
         dlg.setWindowTitle(tr("Beat Grid"));

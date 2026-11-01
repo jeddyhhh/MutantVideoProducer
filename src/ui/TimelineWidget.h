@@ -52,6 +52,9 @@ public:
     // Grid lines events snap to: off, frames, half seconds, seconds, beats.
     enum class Grid { Off, Frames, HalfSeconds, Seconds, Beats };
     void setGrid(Grid grid);
+    // Faint lines down the tracks at the ruler's marks (labelled ones a little stronger), while the snap grid is off.
+    void setRulerLines(bool on);
+    bool rulerLines() const { return m_rulerLines; }
     Grid grid() const { return m_grid; }
     // The beat grid's tempo and its first beat (Detect Beats sets them).
     void setGridTempo(double bpm, TimeUs firstBeat);
@@ -233,6 +236,14 @@ private:
     // Grid.
     TimeUs gridStep() const;
     void paintGrid(QPainter& p, const QRect& band);
+    // The ruler's marks at this zoom: labelled ones every `major`, small ones every `minor`; frame-exact below a second.
+    struct RulerSteps {
+        TimeUs major, minor;
+        bool frames;
+    };
+    RulerSteps rulerSteps() const;
+    TimeUs rulerTick(int64_t n, TimeUs step, bool frames) const;
+    bool m_rulerLines = true;
     Grid m_grid = Grid::Off;
     double m_gridBpm = 120;
     TimeUs m_gridOffset = 0;

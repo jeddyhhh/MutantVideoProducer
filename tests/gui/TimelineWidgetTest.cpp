@@ -823,6 +823,32 @@ int TimelineWidget::runEditTest(QStringList& log)
                       .arg(secs(clipAt(audioTrack, 0).end())).arg(secs(clipAt(videoTrack, 0).end())).arg(secs(clipAt(audioTrack, 1).start)));
             reset();
         }
+        {
+            // With the snap grid off, faint lines run down the tracks at the ruler's marks, and only there.
+            const Grid gridBefore = m_grid;
+            setGrid(Grid::Off);
+            setRulerLines(false);
+            const QImage off = viewport()->grab().toImage();
+            setRulerLines(true);
+            const QImage on = viewport()->grab().toImage();
+            if (!qEnvironmentVariableIsEmpty("MVP_TIMELINE_GRAB")) // (to look at)
+                on.save(qEnvironmentVariable("MVP_TIMELINE_GRAB"));
+            const RulerSteps steps = rulerSteps();
+            std::vector<double> marks;
+            for (int64_t n = 0; rulerTick(n, steps.minor, steps.frames) <= xToTime(viewport()->width()) + steps.minor; ++n)
+                marks.push_back(timeToX(rulerTick(n, steps.minor, steps.frames)));
+            int changed = 0, stray = 0;
+            const double k = double(on.width()) / std::max(1, viewport()->width()); // (device pixels)
+            for (int y = int(kTopH * k); y < std::min(on.height(), off.height()); y += 3)
+                for (int x = int(kHeaderWidth * k); x < std::min(on.width(), off.width()); ++x)
+                    if (on.pixel(x, y) != off.pixel(x, y)) {
+                        ++changed;
+                        const bool onMark = std::any_of(marks.begin(), marks.end(), [&](double m) { return std::abs(m * k - x) <= 1.5 * k; });
+                        stray += onMark ? 0 : 1;
+                    }
+            setGrid(gridBefore);
+            check(changed > 20 && stray == 0, QStringLiteral("faint lines on the tracks at the ruler's marks (%1 pixels, %2 elsewhere)").arg(changed).arg(stray));
+        }
         // Loop: drag B's end (5 s) out to 12 s, past the end of its 4 s file: it loops, with notches.
         setSelection({});
         drag(QPoint(int(std::lround(timeToX(5 * S))) - 2, y), at(12));

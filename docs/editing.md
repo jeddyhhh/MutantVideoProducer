@@ -213,6 +213,8 @@ time selection, or on the whole timeline when there is none. **Ctrl+Z** undoes e
 - Events snap to other events' edges, markers, the cursor and the grid.
 - **Options > Grid**: Off, Frames, Half Seconds, Seconds, or **Beats** (bars brighter). The grid is
   drawn on the tracks; events, edges and the cursor snap to it.
+- With the grid **Off**, faint lines run down the tracks at the ruler's marks (stronger at the
+  labelled ones), following the zoom. **Options > Grid > Faint Lines at the Ruler Marks** turns them off.
 - **Options > Grid > Beat Grid Tempo...** sets the tempo and where a beat falls.
   **Tools > Detect Beats** sets them from the music.
 
