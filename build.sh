@@ -10,5 +10,5 @@ set -e
 CONFIG="${1:-Release}"
 DIR="$(cd "$(dirname "$0")" && pwd)"
 cmake -S "$DIR" -B "$DIR/build/$CONFIG" -G Ninja -DCMAKE_BUILD_TYPE="$CONFIG"
-cmake --build "$DIR/build/$CONFIG"
+cmake --build "$DIR/build/$CONFIG" ${CI:+-- -k 0} # (on CI: every error at once)
 echo "Built: $DIR/build/$CONFIG/bin/MutantVideoProducer"

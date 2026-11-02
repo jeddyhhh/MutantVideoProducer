@@ -3608,7 +3608,9 @@ QJsonObject McpServer::ToolCall::tool_edit_track()
         t.pan = float(std::clamp(num("pan", 0), -1.0, 1.0));
     }
     if (has("blend")) {
-        const int b = blendModeNames().indexOf(str("blend"), 0, Qt::CaseInsensitive);
+        const QStringList names = blendModeNames();
+        const auto found = std::find_if(names.begin(), names.end(), [&](const QString& n) { return n.compare(str("blend"), Qt::CaseInsensitive) == 0; });
+        const int b = found == names.end() ? -1 : int(found - names.begin());
         if (b < 0 || !isVisualTrack(t.type))
             return errorResult(QStringLiteral("blend is one of %1, on a video track").arg(blendModeNames().join(QStringLiteral(", "))));
         t.blend = b;
