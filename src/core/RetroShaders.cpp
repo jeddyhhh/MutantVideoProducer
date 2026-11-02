@@ -1,6 +1,10 @@
 #include "core/RetroShaders.h"
 
+#if __has_include(<QtCore/private/qzipreader_p.h>)
 #include <QtCore/private/qzipreader_p.h>
+#else // (Qt before 6.5 keeps it in QtGui)
+#include <QtGui/private/qzipreader_p.h>
+#endif
 
 #include <QDir>
 #include <QDirIterator>

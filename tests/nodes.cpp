@@ -8,7 +8,11 @@
 #include "core/GpuCompositor.h"
 #include "core/NodeGraph.h"
 #include "core/RetroShaders.h"
+#if __has_include(<QtCore/private/qzipwriter_p.h>)
 #include <QtCore/private/qzipwriter_p.h>
+#else // (Qt before 6.5 keeps it in QtGui)
+#include <QtGui/private/qzipwriter_p.h>
+#endif
 #include <QTemporaryDir>
 #include <QElapsedTimer>
 #include "core/Project.h"
