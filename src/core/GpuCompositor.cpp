@@ -1056,7 +1056,8 @@ struct GpuCompositor::Impl : protected QOpenGLExtraFunctions {
 
     ~Impl()
     {
-        if (!context || !context->makeCurrent(surface))
+        // (glReady: init got as far as loading the GL functions; an OpenGL too old for them has none to clean up with)
+        if (!glReady || !context || !context->makeCurrent(surface))
             return;
         for (auto& [id, cache] : sequenceResources) deleteSequenceResources(*cache);
         effectStates.clear(); // GPU effect states own textures
@@ -1120,6 +1121,8 @@ struct GpuCompositor::Impl : protected QOpenGLExtraFunctions {
 
     // ---- Setup ----------------------------------------------------------------
 
+    bool glReady = false;
+
     bool init(QString* error)
     {
         context = std::make_unique<QOpenGLContext>();
@@ -1136,6 +1139,7 @@ struct GpuCompositor::Impl : protected QOpenGLExtraFunctions {
             return false;
         }
         initializeOpenGLFunctions();
+        glReady = true;
         rendererName = QString::fromLatin1(reinterpret_cast<const char*>(glGetString(GL_RENDERER)));
 
         struct {
