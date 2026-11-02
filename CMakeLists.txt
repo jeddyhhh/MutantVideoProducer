@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(MutantVideoProducer VERSION 0.9.3 DESCRIPTION "Non-linear video editor" LANGUAGES CXX)
+project(MutantVideoProducer VERSION 0.9.4 DESCRIPTION "Non-linear video editor" LANGUAGES CXX)
 # A release build takes its version from the tag (the workflow sets MVP_VERSION).
 set(MVP_VERSION "$ENV{MVP_VERSION}")
 if(NOT MVP_VERSION)

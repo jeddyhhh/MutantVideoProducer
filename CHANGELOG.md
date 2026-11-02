@@ -2,7 +2,7 @@
 
 What changed in each version of Mutant Video Producer. The newest is first.
 
-## Unreleased
+## 0.9.4 (2026-11-02)
 
 ### Added
 
