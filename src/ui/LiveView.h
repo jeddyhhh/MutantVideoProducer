@@ -40,6 +40,8 @@ public:
     // Tab shown / hidden: rendering pauses while hidden (the source stays open).
     void setActive(bool active);
     LiveEngine* engine() const { return m_engine; }
+    // Capturing with the Editor timeline as the source, a layer or a switcher input.
+    bool usesEditor() const;
     DeviceChainView* devices() const { return m_devices; }
     // Start / Stop button (also Space on the Live tab).
     void startStop();

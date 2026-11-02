@@ -228,6 +228,11 @@ void TimelineWidget::contextMenuEvent(QContextMenuEvent* e)
                 m_project->applyEdit(tl, tr("Delete Track"));
             });
         }
+    } else if (p.x() >= kHeaderWidth && p.y() < kRegionBarH) {
+        // The time selection bar.
+        if (m_loopAction)
+            menu.addAction(m_loopAction);
+        menu.addAction(tr("Clear Time Selection"), this, [this] { setRegion(0, 0); })->setEnabled(hasRegion());
     } else if (p.x() >= kHeaderWidth && p.y() >= kRegionBarH && p.y() < kRulerTop) {
         markerMenu(menu, p);
     } else if (const EnvHit eh = p.y() >= kTopH ? envelopeHit(p) : EnvHit{}; eh.track >= 0) {

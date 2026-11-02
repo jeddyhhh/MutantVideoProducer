@@ -223,6 +223,9 @@ private:
     void pausePlay();       // Enter: play / pause in place
     void stopPlayback(bool returnToStart);
     void onPlaybackPosition(TimeUs t);
+    // The Live tab takes the Editor timeline: keep it playing (looped).
+    void feedLive();
+    bool m_playingForLive = false; // feedLive started the playback: Live stopping stops it
     void refreshPreview();
     void updateTitle();
     void updatePreviewInfo();

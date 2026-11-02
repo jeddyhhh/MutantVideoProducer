@@ -351,6 +351,15 @@ void MainWindow::createLayout()
 
     // Editor (everything above) and Live (capture + effects) modes.
     m_live = new LiveView(m_project);
+    connect(m_live->engine(), &LiveEngine::started, this, [this] { feedLive(); });
+    connect(m_live->engine(), &LiveEngine::stopped, this, [this] {
+        if (std::exchange(m_playingForLive, false) && m_engine->isPlaying())
+            stopPlayback(false);
+    });
+    connect(m_live->engine(), &LiveEngine::layerStatus, this, [this](int, const QString& description) {
+        if (!description.isEmpty())
+            feedLive();
+    });
     connect(m_live->engine(), &LiveEngine::recordingStarted, m_liveClips, [this](const QString& path) { m_liveClips->setRecordingPath(path); });
     connect(m_live->engine(), &LiveEngine::recordingFinished, m_liveClips, [this] { m_liveClips->setRecordingPath(QString()); });
     connect(m_liveClips, &LiveClipsBrowser::addToTimelineRequested, this,
@@ -369,9 +378,11 @@ void MainWindow::createLayout()
     m_modes->setTabToolTip(2, tr("Check the edit, render every output at once, and make the title, description, thumbnail and captions"));
     connect(m_modes, &QTabWidget::currentChanged, this, [this](int index) {
         const bool live = index == 1;
-        if (live && m_engine->isPlaying())
+        if (live && m_engine->isPlaying() && !m_live->usesEditor())
             stopPlayback(false);
         m_live->setActive(live);
+        if (live)
+            feedLive();
     });
     setCentralWidget(m_modes);
     statusBar()->showMessage(tr("Ready. Import media with Ctrl+I or drag files in."), 5000);
@@ -956,6 +967,7 @@ void MainWindow::createActions()
     m_timeline->setGrid(TimelineWidget::Grid(std::clamp(savedGrid, 0, 4)));
     m_loopAction = act(tr("&Loop Playback"), QKeySequence(QStringLiteral("Q")), [] {});
     m_loopAction->setCheckable(true);
+    m_timeline->setLoopAction(m_loopAction);
     options->addAction(m_loopAction);
     // Pre-rendering heavy stretches in the background, and the frames it kept.
     QAction* preRender = options->addAction(tr("&Pre-render Heavy Parts in the Background"));
@@ -1407,6 +1419,7 @@ void MainWindow::connectSignals()
     });
 
     connect(m_engine, &PlaybackEngine::frameReady, m_preview, [this](const QImage& img, TimeUs) {
+        setEditorFeed(img); // the Live tab's Editor source
         m_preview->setImage(img);
         if (m_scopes->isVisible())
             m_scopes->setPicture(img);

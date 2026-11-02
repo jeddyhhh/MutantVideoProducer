@@ -440,6 +440,7 @@ LiveView::LiveView(Project* project, QWidget* parent) : QWidget(parent), m_proje
 
     // ---- Controls (placed by the chosen layout below) ----
     m_source = new QComboBox;
+    m_source->setObjectName(QStringLiteral("liveSource"));
     m_source->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
     m_source->setMinimumContentsLength(13);
     m_source->setToolTip(tr("Cameras and capture cards, whole screens, or a single window"));
@@ -1702,6 +1703,7 @@ void LiveView::refreshSources()
     QSignalBlocker block(m_source);
     m_source->clear();
     m_sources = listLiveSources();
+    m_sources.push_back(editorLiveSource());
     // Video files chosen before (newest first), as playlists.
     for (const QVariant& v : QSettings().value(QStringLiteral("live/playlists")).toList()) {
         const QStringList paths = v.toStringList();
@@ -1729,7 +1731,8 @@ void LiveView::refreshSources()
         LiveSource::Kind kind;
         QString title;
     } groups[] = {{LiveSource::Kind::Device, tr("Cameras & capture devices")}, {LiveSource::Kind::Screen, tr("Screens")},
-                  {LiveSource::Kind::Window, tr("Windows")}, {LiveSource::Kind::File, tr("Video files (looped)")}};
+                  {LiveSource::Kind::Window, tr("Windows")}, {LiveSource::Kind::File, tr("Video files (looped)")},
+                  {LiveSource::Kind::Editor, tr("Editor (the timeline playing, looped)")}};
     int select = -1, firstScreen = -1;
     for (const auto& g : groups) {
         header(g.title);
@@ -2170,6 +2173,15 @@ bool LiveView::eventFilter(QObject* watched, QEvent* event)
     if (!k->isAutoRepeat())
         runAction(action, type == QEvent::KeyPress);
     return true;
+}
+
+bool LiveView::usesEditor() const
+{
+    if (!m_engine->isRunning())
+        return false;
+    const LiveEngine::Options o = options();
+    auto editor = [](const LiveSource& s) { return s.kind == LiveSource::Kind::Editor; };
+    return editor(o.source) || std::any_of(o.layers.begin(), o.layers.end(), editor) || std::any_of(o.inputs.begin(), o.inputs.end(), editor);
 }
 
 LiveEngine::Options LiveView::options() const

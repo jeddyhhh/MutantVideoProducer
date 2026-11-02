@@ -6,12 +6,19 @@
 #include "core/PreviewCache.h"
 #include "core/Proxy.h"
 #include "core/TimelineOps.h"
+#include "engine/LiveEngine.h"
 #include "engine/PlaybackEngine.h"
+#include "ui/LiveView.h"
 #include "ui/TimelineLayout.h"
 #include "ui/TimelineWidget.h"
 
+#include <QAction>
 #include <QApplication>
+#include <QComboBox>
+#include <QContextMenuEvent>
 #include <QDialog>
+#include <QMenu>
+#include <QTabWidget>
 #include <QDir>
 #include <QEventLoop>
 #include <QTimer>
@@ -133,5 +140,72 @@ void MainWindow::runProductionToolsTest(const std::function<void(bool, const QSt
         check(labelled && saved && spectrum,
               QStringLiteral("colour labels on an event and its group (drawn in its colour, one undo step, saved with the "
                              "project); the Spectrogram window opens for an audio event, its cursor following the timeline's"));
+    }
+    {
+        // The time selection bar: right-click offers Loop Playback; with it on, Play from inside the selection
+        // goes round it until stopped.
+        QStringList items;
+        QTimer::singleShot(200, this, [&items] {
+            if (auto* menu = qobject_cast<QMenu*>(QApplication::activePopupWidget())) {
+                for (QAction* a : menu->actions())
+                    items << a->text();
+                menu->close();
+            }
+        });
+        const QPoint at(timeline_layout::kHeaderWidth + 40, timeline_layout::kRegionBarH / 2);
+        QContextMenuEvent rc(QContextMenuEvent::Mouse, at, m_timeline->viewport()->mapToGlobal(at));
+        QApplication::sendEvent(m_timeline->viewport(), &rc);
+        const bool offered = items.contains(m_loopAction->text()) && items.contains(tr("Clear Time Selection"));
+        const TimeUs a = kUsPerSecond, b = a + kUsPerSecond * 6 / 10;
+        m_timeline->setRegion(a, b);
+        const bool wasLooping = m_loopAction->isChecked();
+        m_loopAction->setChecked(true);
+        seekTo(a + kUsPerSecond / 5);
+        TimeUs last = 0;
+        int rounds = 0;
+        QMetaObject::Connection watch = connect(m_engine, &PlaybackEngine::positionChanged, this, [&](TimeUs t) {
+            rounds += t + kUsPerSecond / 10 < last;
+            last = t;
+        });
+        play(false);
+        for (int i = 0; i < 60 && rounds < 2; ++i)
+            wait(100);
+        const bool looped = rounds >= 2 && m_engine->isPlaying() && last >= a && last <= b + kUsPerSecond / 5;
+        disconnect(watch);
+        stopPlayback(false);
+        m_loopAction->setChecked(wasLooping);
+        m_timeline->setRegion(0, 0);
+        check(offered && looped, QStringLiteral("the time selection bar's right-click offers Loop Playback (%1); on, Play from "
+                                                "inside the selection goes round it (%2 times)")
+                                     .arg(items.join(QStringLiteral(", ")))
+                                     .arg(rounds));
+    }
+    {
+        // The Live tab takes the Editor timeline as a source: capture starts the timeline playing, its pictures
+        // arrive on the Live tab, and stopping capture stops the timeline.
+        auto* source = m_live->findChild<QComboBox*>(QStringLiteral("liveSource"));
+        const int before = source ? source->currentIndex() : -1;
+        const int editor = source ? source->findText(QStringLiteral("Editor timeline"), Qt::MatchContains) : -1;
+        bool playing = false, pictures = false, stopped = false;
+        if (editor >= 0) {
+            source->setCurrentIndex(editor);
+            m_modes->setCurrentWidget(m_live);
+            seekTo(0);
+            m_live->startStop();
+            for (int i = 0; i < 50 && !(m_engine->isPlaying() && !m_live->engine()->cleanFrame().isNull()); ++i)
+                wait(100);
+            playing = m_engine->isPlaying();
+            pictures = !m_live->engine()->cleanFrame().isNull();
+            m_live->startStop();
+            for (int i = 0; i < 30 && m_engine->isPlaying(); ++i)
+                wait(100);
+            stopped = !m_engine->isPlaying();
+            m_modes->setCurrentIndex(0);
+            source->setCurrentIndex(before);
+        }
+        check(editor >= 0 && playing && pictures && stopped,
+              QStringLiteral("the Live tab's Editor timeline source: listed (%1), capturing plays the timeline (%2) and its "
+                             "pictures arrive (%3), stopping capture stops it (%4)")
+                  .arg(editor >= 0 ? "yes" : "no").arg(playing ? "yes" : "no").arg(pictures ? "yes" : "no").arg(stopped ? "yes" : "no"));
     }
 }

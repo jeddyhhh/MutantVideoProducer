@@ -298,6 +298,28 @@ std::vector<LiveSource> listLiveSources()
     return out;
 }
 
+LiveSource editorLiveSource()
+{
+    LiveSource s;
+    s.kind = LiveSource::Kind::Editor;
+    s.id = QStringLiteral("editor");
+    s.name = QStringLiteral("Editor timeline");
+    return s;
+}
+
+namespace {
+std::mutex g_feedMutex;
+QImage g_feed;
+uint64_t g_feedSerial = 0;
+} // namespace
+
+void setEditorFeed(const QImage& picture)
+{
+    std::lock_guard lock(g_feedMutex);
+    g_feed = picture;
+    ++g_feedSerial;
+}
+
 // ---- Capture ---------------------------------------------------------------------------
 
 struct LiveCapture::Impl {
@@ -324,6 +346,39 @@ struct LiveCapture::Impl {
     std::atomic<bool> skip{false};
     double firstPts = -1;
     std::chrono::steady_clock::time_point wallStart;
+    // The Editor: no reader; latest() takes the newest preview picture.
+    bool editor = false;
+    uint64_t feedSerial = 0;
+    QElapsedTimer feedTimer;
+    int feedFrames = 0;
+
+    void takeFeed()
+    {
+        QImage picture;
+        uint64_t s;
+        {
+            std::lock_guard lock(g_feedMutex);
+            picture = g_feed;
+            s = g_feedSerial;
+        }
+        std::lock_guard lock(mutex);
+        if (s == feedSerial || picture.isNull())
+            return;
+        feedSerial = s;
+        srcSize = picture.size();
+        const QSize want = fitInside(picture.size(), maxSize);
+        if (want != picture.size())
+            picture = picture.scaled(want, Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
+        latest = picture.format() == QImage::Format_ARGB32_Premultiplied ? picture : picture.convertToFormat(QImage::Format_ARGB32_Premultiplied);
+        ++serial;
+        if (!feedTimer.isValid())
+            feedTimer.start();
+        ++feedFrames;
+        if (feedTimer.elapsed() >= 1000) {
+            fps = feedFrames * 1000.0 / double(feedTimer.restart());
+            feedFrames = 0;
+        }
+    }
 
     static int interrupt(void* p) { return static_cast<Impl*>(p)->quit.load() ? 1 : 0; }
 
@@ -543,6 +598,10 @@ bool LiveCapture::start(const LiveSource& source, const LiveFormat& format, QSiz
             tried << QStringLiteral("%1: %2").arg(what, e);
     };
     switch (source.kind) {
+    case LiveSource::Kind::Editor:
+        d->editor = true;
+        d->description = QStringLiteral("Editor timeline");
+        return true;
     case LiveSource::Kind::Device:
 #ifdef Q_OS_WIN
         attempt("dshow", QStringLiteral("video=") + source.id, {{"rtbufsize", QStringLiteral("256M")}, {"video_size", size}, {"framerate", fps}},
@@ -633,6 +692,8 @@ void LiveCapture::setMaxSize(QSize maxSize)
 
 QImage LiveCapture::latest(uint64_t* serial) const
 {
+    if (d->editor)
+        d->takeFeed();
     std::lock_guard lock(d->mutex);
     if (serial)
         *serial = d->serial;

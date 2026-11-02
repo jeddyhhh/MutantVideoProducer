@@ -1148,8 +1148,9 @@ void TimelineWidget::updateHoverCursor(QPoint p)
         } else {
             tip = tr("Marker bar: double-click (or press M) to add a marker, R makes a region from the time selection");
         }
-    } else if (p.y() < kRegionBarH && hasRegion()) {
-        if (std::abs(p.x() - timeToX(m_regionStart)) <= 5 || std::abs(p.x() - timeToX(m_regionEnd)) <= 5)
+    } else if (p.y() < kRegionBarH && p.x() >= kHeaderWidth) {
+        tip = tr("Time selection: drag to select a stretch of time; right-click to loop it");
+        if (hasRegion() && (std::abs(p.x() - timeToX(m_regionStart)) <= 5 || std::abs(p.x() - timeToX(m_regionEnd)) <= 5))
             shape = Qt::SizeHorCursor;
     }
     viewport()->setCursor(overRuler(p) ? magnifierCursor() : QCursor(shape));

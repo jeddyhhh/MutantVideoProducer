@@ -36,7 +36,8 @@ To remove all always-on effects, select **Live FX (always on)** in the pads' Edi
 step (**Ctrl+Z**). Pad effects and Layer FX are kept.
 
 Switching sources while running reopens at once. Rendering pauses while the Editor tab is shown,
-unless something is recording, sending or popped out. Editor playback stops when you switch to Live.
+unless something is recording, sending or popped out. Editor playback stops when you switch to Live,
+unless the Live tab is taking the Editor timeline.
 
 ## Sources
 
@@ -46,6 +47,11 @@ unless something is recording, sending or popped out. Editor playback stops when
   GPU-drawn windows such as browsers and games work; GDI as a fallback; X11 on Linux).
 - **Video files**: **Choose video files...** takes one or several. Several play as a playlist, one
   after the other, each at its own speed. **⏭** skips to the next. Chosen playlists stay in the list.
+- **Editor timeline**: whatever the Editor tab's preview shows. Starting capture plays the timeline, round and round
+  (the time selection when Loop Playback is on, else the whole timeline), and stopping capture stops it. Set up a
+  few clips on the timeline, loop them, and play effects, pads and layers on them here. It comes at the preview's
+  quality (**Video Preview** in the Editor tab), and the timeline's sound plays as usual. It can be a layer or a
+  switcher input too.
 - The refresh button looks for new windows and devices.
 
 ### Size, frame rate and framing

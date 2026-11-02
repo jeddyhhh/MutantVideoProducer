@@ -4,7 +4,17 @@ What changed in each version of Mutant Video Producer. The newest is first.
 
 ## Unreleased
 
+### Added
+
+- **Live tab: Editor timeline source**: the Editor's preview as a Live source (or a layer, or a switcher input).
+  Capturing plays the timeline in a loop (the time selection with Loop Playback on); stopping capture stops it.
+- **Time selection bar**: right-click > Loop Playback (Play goes round the selection from the playhead inside it
+  until stopped) and Clear Time Selection.
+
 ### Changed
+
+- The **time selection bar** above the ruler is tinted, says "Drag here to select time" while empty, and "Loop" on
+  the selection while looping.
 
 - **AI control**: get_frame draws with the GPU renderer, as the preview and renders do (screen shaders showed as if
   they weren't there). match_colour takes `auto: true` for Auto Colour.

@@ -11,6 +11,7 @@
 #include "ui/AudioLevels.h"
 #include "ui/MediaBin.h"
 #include "ui/Theme.h"
+#include <QAction>
 #include <QClipboard>
 #include <QContextMenuEvent>
 #include <QCursor>
@@ -122,6 +123,13 @@ void TimelineWidget::setPreRenderSpans(std::vector<std::tuple<TimeUs, TimeUs, bo
         return;
     m_preRenderSpans = std::move(spans);
     viewport()->update(QRect(kHeaderWidth, kTopH - 4, viewport()->width(), 4));
+}
+
+void TimelineWidget::setLoopAction(QAction* loop)
+{
+    m_loopAction = loop;
+    loop->setToolTip(tr("Play goes round the time selection until stopped (from the playhead, when it is inside)"));
+    connect(loop, &QAction::toggled, viewport(), [this] { viewport()->update(QRect(kHeaderWidth, 0, viewport()->width(), kRegionBarH)); });
 }
 
 void TimelineWidget::setLabelOnSelection(int label)
@@ -798,12 +806,28 @@ void TimelineWidget::paintRuler(QPainter& p)
     const int W = viewport()->width();
     const QRect bar(kHeaderWidth, 0, W - kHeaderWidth, kRegionBarH);
     const QRect ruler(kHeaderWidth, kRulerTop, W - kHeaderWidth, kRulerH);
+    // The time selection bar: tinted with the selection's colour, so it reads as a place to drag.
+    QColor tint = theme::c().region;
+    tint.setAlphaF(0.4);
     p.fillRect(bar, theme::c().markerBar);
+    p.fillRect(bar, tint);
+    p.fillRect(QRect(bar.left(), bar.bottom(), bar.width(), 1), theme::c().region.darker(140));
     p.fillRect(ruler, theme::c().ruler);
     p.save();
     p.setClipRect(QRect(kHeaderWidth, 0, W - kHeaderWidth, kTopH));
 
-    if (hasRegion()) {
+    auto barText = [&](const QRectF& r, const QColor& colour, const QString& text) {
+        p.save();
+        QFont f = p.font();
+        f.setPixelSize(9);
+        p.setFont(f);
+        p.setPen(colour);
+        p.drawText(r, Qt::AlignLeft | Qt::AlignVCenter, text);
+        p.restore();
+    };
+    if (!hasRegion()) {
+        barText(QRectF(bar.adjusted(6, 0, 0, 0)), theme::c().dim, tr("Drag here to select time"));
+    } else {
         const double x0 = timeToX(m_regionStart), x1 = timeToX(m_regionEnd);
         p.fillRect(QRectF(x0, 2, x1 - x0, kRegionBarH - 4), theme::c().region);
         p.setBrush(QColor(0xe0, 0xe8, 0xff));
@@ -813,6 +837,8 @@ void TimelineWidget::paintRuler(QPainter& p)
         p.drawPolygon(a, 3);
         p.drawPolygon(b, 3);
         p.setBrush(Qt::NoBrush);
+        if (m_loopAction && m_loopAction->isChecked() && x1 - x0 > 50)
+            barText(QRectF(x0 + 8, 0, x1 - x0 - 16, kRegionBarH), theme::c().bright, tr("Loop"));
     }
     paintMarkers(p);
 

@@ -4,7 +4,8 @@
 // screens and single windows, opened through FFmpeg's capture devices
 // (Windows: DirectShow, Windows.Graphics.Capture with a GDI fallback;
 // Linux: V4L2 and X11), or video files played in a loop (a playlist: one
-// after the other, at their own speed), read on a background thread.
+// after the other, at their own speed), read on a background thread; or the
+// Editor tab's preview (whatever the timeline plays, fed in by the window).
 
 #include <QImage>
 #include <QPointF>
@@ -18,7 +19,7 @@
 #include <vector>
 
 struct LiveSource {
-    enum class Kind { Device, Screen, Window, File };
+    enum class Kind { Device, Screen, Window, File, Editor };
     Kind kind = Kind::Device;
     QString name;   // shown in the UI
     QString id;     // device name / path, monitor or window handle; files: paths, one per line
@@ -28,6 +29,10 @@ struct LiveSource {
 
 // Cameras / capture cards, then screens, then windows (top-level, visible, titled).
 std::vector<LiveSource> listLiveSources();
+// The Editor source: what the Editor tab's preview shows (Kind::Editor).
+LiveSource editorLiveSource();
+// The Editor's preview pictures, handed over as they are shown (any thread).
+void setEditorFeed(const QImage& picture);
 
 // An output of a fixed shape (portrait for phones, square...) and how a
 // picture of another shape goes into it.

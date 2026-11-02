@@ -135,10 +135,13 @@ pull what comes after them:
 
 ## The time selection and loop region
 
-- Drag in the thin bar above the ruler, or **Shift+drag** in empty track space, to select a stretch of time.
+- Drag in the tinted bar above the ruler (it reads "Drag here to select time" while empty), or **Shift+drag** in
+  empty track space, to select a stretch of time.
 - Double-click an event to select its span.
 - **I** and **O** set the start and end at the cursor, or where playback is.
-- **Q** (**Options > Loop Playback**) loops playback inside the selection.
+- **Q** (**Options > Loop Playback**, or right-click the bar > **Loop Playback**) loops playback inside the
+  selection until you stop it: Play starts from the playhead when it is inside the selection, else from its start.
+  The bar says "Loop" while it is on. Right-click > **Clear Time Selection** removes the selection.
 - [Render As](rendering.md) can render just the selection.
 
 ## Markers and regions

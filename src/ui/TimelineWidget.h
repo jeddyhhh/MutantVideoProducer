@@ -56,6 +56,8 @@ public:
     void setRulerLines(bool on);
     // Pre-rendering's heavy stretches, under the ruler: green done, orange not yet (start, end, done).
     void setPreRenderSpans(std::vector<std::tuple<TimeUs, TimeUs, bool>> spans);
+    // Transport > Loop Playback, offered on the time selection bar's right-click menu too.
+    void setLoopAction(QAction* loop);
     // A colour label (0: none) on the selected events and their groups: one undo step.
     void setLabelOnSelection(int label);
     bool rulerLines() const { return m_rulerLines; }
@@ -253,6 +255,7 @@ private:
     TimeUs rulerTick(int64_t n, TimeUs step, bool frames) const;
     bool m_rulerLines = true;
     std::vector<std::tuple<TimeUs, TimeUs, bool>> m_preRenderSpans;
+    QAction* m_loopAction = nullptr;
     Grid m_grid = Grid::Off;
     double m_gridBpm = 120;
     TimeUs m_gridOffset = 0;

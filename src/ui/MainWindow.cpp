@@ -644,6 +644,7 @@ void MainWindow::pausePlay()
 void MainWindow::stopPlayback(bool returnToStart)
 {
     stopShuttle();
+    m_playingForLive = false;
     if (!m_engine->isPlaying())
         return;
     m_engine->stop();
@@ -654,6 +655,14 @@ void MainWindow::stopPlayback(bool returnToStart)
     m_engine->requestFrame(m_timeline->cursorTime());
 }
 
+void MainWindow::feedLive()
+{
+    if (!m_live->usesEditor() || m_engine->isPlaying() || m_project->timeline().duration() <= 0)
+        return;
+    play(false);
+    m_playingForLive = true;
+}
+
 void MainWindow::onPlaybackPosition(TimeUs t)
 {
     if (m_loopAction->isChecked() && m_timeline->hasRegion()) {
@@ -661,6 +670,9 @@ void MainWindow::onPlaybackPosition(TimeUs t)
             m_engine->play(m_timeline->regionStart());
             return;
         }
+    } else if (t >= m_project->timeline().duration() && m_live->usesEditor()) { // the Live tab's source: round again
+        m_engine->play(0);
+        return;
     } else if (t >= m_project->timeline().duration()) {
         stopPlayback(false);
         m_timeline->setCursorTime(m_project->timeline().duration());
