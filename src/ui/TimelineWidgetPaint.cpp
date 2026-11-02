@@ -253,7 +253,7 @@ void TimelineWidget::paintGenerated(QPainter& p, const Clip& c, const QRectF& bo
     if (thumb.image.isNull() || thumb.size != size || !(thumb.spec == c.generator) || thumb.length != c.length) {
         QImage img(size, QImage::Format_ARGB32_Premultiplied);
         img.fill(QColor(0x2a, 0x22, 0x3a));
-        const QImage gen = renderGenerator(c.generator, size, thumbW / std::max(1, s.width), c.length / 2, c.length, s.fps);
+        const QImage gen = renderGenerator(c.generator, size, thumbW / std::max(1, s.width), c.sourceIn + c.length / 2, c.generatedLength(), s.fps);
         QPainter(&img).drawImage(0, 0, gen);
         thumb = {c.generator, c.length, size, img};
     }

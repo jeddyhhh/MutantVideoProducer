@@ -2552,7 +2552,7 @@ void composeGraphics(QWidget* parent, Project* project, int eventId)
     const bool animation = clip->generator.type == "animation" || graphics::sceneType(clip->generator.data) == "animation";
     Designer dialog(parent,
                     clip->generator.data.isEmpty() ? graphics::scene(animation ? "motion_blank" : "broadcast") : clip->generator.data, project,
-                    double(clip->length) / kUsPerSecond, double(clip->start) / kUsPerSecond, animation);
+                    double(clip->generatedLength()) / kUsPerSecond, double(clip->start - clip->sourceIn) / kUsPerSecond, animation);
     if (dialog.exec() != QDialog::Accepted)
         return;
     auto error = graphics::validateScene(dialog.data);

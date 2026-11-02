@@ -1905,8 +1905,8 @@ struct GpuCompositor::Impl : protected QOpenGLExtraFunctions {
         if (!def)
             return {};
         GeneratorContext ctx;
-        ctx.time = t - clip.start;
-        ctx.length = clip.length;
+        ctx.time = clip.generatedTime(t);
+        ctx.length = clip.generatedLength();
         ctx.timelineTime = t;
         ctx.scale = double(dst.w) / std::max(1, snap.settings.width);
         ctx.fps = snap.settings.fps;

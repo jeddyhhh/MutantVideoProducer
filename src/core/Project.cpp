@@ -753,6 +753,8 @@ QJsonObject clipToJson(const Clip& c)
         o[QStringLiteral("denoise")] = c.denoise;
     if (c.loopLength > 0)
         o[QStringLiteral("loopLength")] = QString::number(c.loopLength);
+    if (c.generatorSpan > 0)
+        o[QStringLiteral("generatorSpan")] = QString::number(c.generatorSpan);
     if (c.velocity.active || !c.velocity.points.empty())
         o[QStringLiteral("velocityEnvelope")] = envelopeToJson(c.velocity);
     return o;
@@ -921,6 +923,7 @@ Clip clipFromJson(const QJsonObject& o)
     c.stabilizeZoom = o[QStringLiteral("stabilizeZoom")].toBool(true);
     c.denoise = std::clamp(o[QStringLiteral("denoise")].toDouble(0), 0.0, 1.0);
     c.loopLength = std::max<TimeUs>(0, jsonTime(o[QStringLiteral("loopLength")]));
+    c.generatorSpan = std::max<TimeUs>(0, jsonTime(o[QStringLiteral("generatorSpan")]));
     c.velocity = envelopeFromJson(o[QStringLiteral("velocityEnvelope")], 1.0);
     for (auto& k : c.velocity.points)
         k.value = std::clamp(k.value, kMinVelocity, kMaxVelocity);

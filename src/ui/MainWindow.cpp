@@ -887,6 +887,10 @@ void MainWindow::reopenLast()
     settings.remove(Profiles::instance().settingsKey(QStringLiteral("startup/opening")));
     if (!settings.value(QStringLiteral("startup/reopenLast"), true).toBool())
         return;
+    // Something was opened or edited meanwhile (AI control works while a startup question, such as Recover Work, is up):
+    // reopening would throw it away.
+    if (!m_project->filePath().isEmpty() || m_project->isModified())
+        return;
     const QStringList recent = settings.value(Profiles::instance().settingsKey(QStringLiteral("recent/projects"))).toStringList();
     if (recent.isEmpty() || !project_format::hasExtension(recent.front()) || !QFileInfo::exists(recent.front()))
         return;

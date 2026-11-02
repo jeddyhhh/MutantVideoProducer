@@ -979,7 +979,7 @@ void EffectEditor::updatePanCropView()
         const QSize size(480, std::max(1, 480 * ps.height / std::max(1, ps.width)));
         QImage img(size, QImage::Format_ARGB32_Premultiplied);
         img.fill(QColor(0x2a, 0x22, 0x3a));
-        QPainter(&img).drawImage(0, 0, renderGenerator(c->generator, size, 480.0 / std::max(1, ps.width), local, c->length, ps.fps));
+        QPainter(&img).drawImage(0, 0, renderGenerator(c->generator, size, 480.0 / std::max(1, ps.width), local + c->sourceIn, c->generatedLength(), ps.fps));
         m_panCropView->setPicture(img, QSizeF(ps.width, ps.height));
         return;
     }

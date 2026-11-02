@@ -240,6 +240,7 @@ private:
     QMap<QString, QString> m_midiMap; // "n:channel:note" / "c:channel:cc" -> action
     QSet<QString> m_ccDown;           // controllers mapped to actions that are "down"
     QString m_midiLearn, m_midiLearnLabel;
+    QString m_lastRecording; // the latest clip recorded (for AI control)
     std::vector<LiveSource> m_sources; // index = combo item data
     std::vector<LiveAudioSource> m_audioSources; // index = m_audio item data (-1 = no audio)
     QString m_audioState; // shown after the capture statistics

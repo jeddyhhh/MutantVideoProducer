@@ -418,6 +418,8 @@ std::vector<int> splitClips(Timeline& tl, const std::set<int>& ids, TimeUs t)
                 right.sourceIn = c.sourceIn + TimeUs(double(t - c.start) * c.speed);
             }
             right.length = c.end() - t;
+            if (c.isGenerated()) // both pieces keep the whole picture's length (a roll keeps its pace)
+                c.generatorSpan = right.generatorSpan = c.generatedLength();
             right.fadeIn = 0;
             right.fadeOut = std::min(c.fadeOut, right.length);
             right.transitionIn = {};

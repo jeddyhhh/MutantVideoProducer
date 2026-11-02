@@ -263,8 +263,8 @@ QRectF Compositor::drawGenerated(const ProjectSnapshot& snap, const Clip& clip, 
     if (!def)
         return {};
     GeneratorContext ctx;
-    ctx.time = t - clip.start;
-    ctx.length = clip.length;
+    ctx.time = clip.generatedTime(t);
+    ctx.length = clip.generatedLength();
     ctx.timelineTime = t;
     ctx.scale = double(target.width()) / std::max(1, snap.settings.width);
     ctx.fps = snap.settings.fps;

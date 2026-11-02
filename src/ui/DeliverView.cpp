@@ -1143,7 +1143,7 @@ void DeliverView::runChecks()
     TimeUs firstOffline = -1;
     for (const Track& t : tl.tracks)
         for (const Clip& c : t.clips)
-            if (!c.isGenerated()) {
+            if (!c.isGenerated() && !c.isSequence()) { // (a compound sequence's own events are its media)
                 const auto media = m_project->mediaItem(c.mediaId);
                 if (!media || !media->info.ok()) {
                     ++offline;

@@ -716,7 +716,7 @@ bool trackBindingsStale(const Timeline &tl) {
           continue;
         const auto source = std::find_if(tl.tracks.begin(), tl.tracks.end(), [&](const Track &t) { return t.id == binding["track_id"].toInt(); });
         if (source != tl.tracks.end()
-            && trackSignature(*source, double(c.start) / kUsPerSecond, double(c.length) / kUsPerSecond,
+            && trackSignature(*source, double(c.start - c.sourceIn) / kUsPerSecond, double(c.generatedLength()) / kUsPerSecond,
                               std::clamp(int(binding["left"].toArray().size()), 64, 8192)) != binding["signature"].toString())
           return true;
       }
@@ -738,7 +738,8 @@ bool followTrackBindings(Timeline &tl, const MediaMap &media) {
         const auto source = std::find_if(tl.tracks.begin(), tl.tracks.end(), [&](const Track &t) { return t.id == binding["track_id"].toInt(); });
         if (source == tl.tracks.end())
           continue; // (the track was deleted: the mouth keeps what it had)
-        const double from = double(c.start) / kUsPerSecond, length = double(c.length) / kUsPerSecond;
+        // (the scene's own time 0 and its whole length: a piece of a split scene listens where the whole one did)
+        const double from = double(c.start - c.sourceIn) / kUsPerSecond, length = double(c.generatedLength()) / kUsPerSecond;
         const int bins = std::clamp(int(binding["left"].toArray().size()), 64, 8192);
         const QString signature = trackSignature(*source, from, length, bins);
         if (signature == binding["signature"].toString())

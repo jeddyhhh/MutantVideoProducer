@@ -137,7 +137,7 @@ void MainWindow::makeMulticam()
     const Timeline& now = m_project->timeline();
     for (int id : m_timeline->selection()) {
         int ti = -1;
-        if (const Clip* c = now.findClip(id, &ti); c && ti >= 0 && isVisualTrack(now.tracks[size_t(ti)].type) && !c->isGenerated())
+        if (const Clip* c = now.findClip(id, &ti); c && ti >= 0 && isVisualTrack(now.tracks[size_t(ti)].type) && !c->isSequence())
             picked.push_back({{ti, c->start}, id});
     }
     std::sort(picked.begin(), picked.end());

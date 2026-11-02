@@ -27,7 +27,8 @@ std::vector<Angle> angles(const Timeline& tl, const MediaMap& media);
 int angleOf(const Clip& c);
 
 // Makes the video events `clipIds` (in that order: angle 1, 2...) the angles of a new Multicam track on top, starting
-// on angle 1. False (and why) when there are fewer than two, one isn't a video file, one plays at another speed, or
+// on angle 1. False (and why) when there are fewer than two, one isn't a video file or a generated picture (an
+// animation scene filmed from several cameras), one plays at another speed, or
 // there is a multicam already.
 bool create(Timeline& tl, const MediaMap& media, const std::vector<int>& clipIds, QString* error);
 // From time t on (up to the next cut), the Multicam track shows `angle`: what pressing a number does while playing.

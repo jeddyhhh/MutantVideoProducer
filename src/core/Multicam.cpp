@@ -38,6 +38,8 @@ std::optional<Clip> piece(Timeline& tl, int number, TimeUs t0, TimeUs t1, QStrin
     c.start = t0;
     c.length = t1 - t0;
     c.sourceIn = a->sourceIn + (t0 - a->start);
+    if (a->isGenerated()) // (an animated angle: each piece carries on in the same picture)
+        c.generatorSpan = a->generatedLength();
     c.groupId = 0;
     c.fadeIn = c.fadeOut = 0;
     c.transitionIn = c.transitionOut = {};
@@ -103,10 +105,13 @@ bool create(Timeline& tl, const MediaMap& media, const std::vector<int>& clipIds
         int ti = -1;
         const Clip* c = tl.findClip(id, &ti);
         const auto m = c ? media.find(c->mediaId) : media.end();
-        if (!c || ti < 0 || !isVisualTrack(tl.tracks[size_t(ti)].type) || m == media.end() || !m->second || !m->second->info.hasVideo())
-            return fail(QStringLiteral("Each angle must be a video event from a file."));
+        const bool file = m != media.end() && m->second && m->second->info.hasVideo();
+        const bool animated = c && c->isGenerated() && !c->isSequence(); // (cameras on an animation scene)
+        if (!c || ti < 0 || !isVisualTrack(tl.tracks[size_t(ti)].type) || !(file || animated))
+            return fail(QStringLiteral("Each angle must be a video event from a file, or a generated picture."));
         if (c->speed != 1.0 || c->reverse || c->hasRamp())
-            return fail(QStringLiteral("Angles play at their own speed: put the speed of %1 back to 100%.").arg(c->name.isEmpty() ? m->second->displayName() : c->name));
+            return fail(QStringLiteral("Angles play at their own speed: put the speed of %1 back to 100%.")
+                            .arg(!c->name.isEmpty() ? c->name : file ? m->second->displayName() : QStringLiteral("an angle")));
         angleTracks.push_back(tl.tracks[size_t(ti)].id);
     }
     QJsonArray ids;

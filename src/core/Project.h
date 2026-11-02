@@ -101,6 +101,7 @@ struct Clip {
     bool stabilizeZoom = true;    // zoom in to hide the edges the correction moves into view
     double denoise = 0;           // video: noise reduction, 0 (off) .. 1 (strong; see flow::denoise)
     TimeUs loopLength = 0;        // > 0: the file repeats every loopLength (the event runs on past its end)
+    TimeUs generatorSpan = 0;     // generated: how long the whole picture runs (a piece of a split one keeps it; 0 = sourceIn + length)
     Envelope velocity{false, 1.0, {}}; // speed ramp: rate multiplier over event-local time
                                        // (kMinVelocity .. kMaxVelocity), on top of `speed`
 
@@ -109,6 +110,10 @@ struct Clip {
     bool isSequence() const { return bool(sequence.value); }
 
     bool isGenerated() const { return !generator.isEmpty(); }
+    // Generated: its picture's own time at timeline time t (from where its in-point is) and how long the picture runs, so a
+    // piece of a split title, roll or scene carries on where the whole one was.
+    TimeUs generatedTime(TimeUs t) const { return t - start + sourceIn; }
+    TimeUs generatedLength() const { return generatorSpan > 0 ? generatorSpan : sourceIn + length; }
     bool hasRamp() const { return velocity.active; }
     // Playback rate at event-local time (negative plays backwards).
     double rateAt(TimeUs local) const { return speed * (velocity.active ? velocity.at(local) : 1.0); }

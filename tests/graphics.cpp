@@ -4,6 +4,7 @@
 #include "core/Exporter.h"
 #include "core/FrameRenderer.h"
 #include "core/GpuCompositor.h"
+#include "core/Multicam.h"
 #include "core/Project.h"
 #include "core/TimelineOps.h"
 #include "ui/GraphicsEditor.h"
@@ -894,6 +895,36 @@ int main(int argc, char **argv) {
       auto held=sameSession.render(edit,frame,{160,90});
       if(QString(effect)=="trails") check(held!=expected,"ordinary edits preserve intentional temporal effect history");
     }
+  }
+  {
+    // A split credits roll carries on (the second piece doesn't start the roll again, nor the first speed it up), and so
+    // does a Multicam track cut between two angles of the same generated picture.
+    auto rollAt = [](const Timeline& tl, TimeUs t) {
+      Project p;
+      p.applyEdit(tl, "roll");
+      Compositor cpu;
+      return cpu.render(*p.snapshot(), t, {320, 180});
+    };
+    Timeline whole = Project().timeline();
+    const int roll = ops::insertGenerated(whole, *findGeneratorPreset("credits"), 0, -1, {});
+    whole.findClip(roll)->length = 10 * kUsPerSecond;
+    Timeline split = whole;
+    ops::splitClips(split, {roll}, 5 * kUsPerSecond);
+    const bool same = rollAt(whole, 3 * kUsPerSecond) == rollAt(split, 3 * kUsPerSecond)
+                      && rollAt(whole, 7 * kUsPerSecond) == rollAt(split, 7 * kUsPerSecond)
+                      && rollAt(whole, 7 * kUsPerSecond) != rollAt(whole, 3 * kUsPerSecond);
+    check(same, "a split credits roll carries on across the cut");
+    Timeline cams = whole;
+    int ti = -1;
+    cams.findClip(roll, &ti);
+    const int other = ops::addTrack(cams, TrackType::Video, ti + 1);
+    Clip second = *cams.findClip(roll);
+    second.id = cams.allocId();
+    cams.tracks[size_t(other)].clips.push_back(second);
+    QString why;
+    const bool made = multicam::create(cams, {}, {roll, second.id}, &why) && multicam::cut(cams, {}, 2, 4 * kUsPerSecond, &why);
+    check(made && rollAt(cams, 7 * kUsPerSecond) == rollAt(whole, 7 * kUsPerSecond),
+          QStringLiteral("generated pictures as multicam angles, the cut carrying on in the same picture (%1)").arg(why));
   }
   Project project;
   Timeline tl = project.timeline();

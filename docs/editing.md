@@ -196,6 +196,10 @@ or a separate sound recorder, with the first.
 The Multicam track's events are ordinary events named **Angle 1**, **Angle 2**...: roll an edit
 (**Ctrl+Alt+drag** the cut) to move a cut, and add transitions between them as usual.
 
+Animation scenes can be angles too: copies of one scene, each with its own scene camera (a wide shot, a close-up of
+each character), cut as if three cameras had filmed it. Set the cameras before making the multicam: its events are
+copies of the angles as they were then.
+
 ## Remove silences and edit by transcript
 
 Both cut time out of the whole edit: every unlocked track is cut at the same points and closes up,

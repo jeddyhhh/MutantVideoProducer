@@ -10,6 +10,10 @@ What changed in each version of Mutant Video Producer. The newest is first.
   Capturing plays the timeline in a loop (the time selection with Loop Playback on); stopping capture stops it.
 - **Time selection bar**: right-click > Loop Playback (Play goes round the selection from the playhead inside it
   until stopped) and Clear Time Selection.
+- **Multicam** takes generated pictures as angles: an animation scene filmed by several scene cameras is cut like
+  cameras of the same moment.
+- **AI control**: transport sets the time selection (`select`) and Loop Playback (`loop`); live_status gives the
+  latest Live recording's file (`last_recording`).
 
 ### Changed
 
@@ -24,6 +28,12 @@ What changed in each version of Mutant Video Producer. The newest is first.
 
 ### Fixed
 
+- **Splitting a generated event** (a title, a credits roll, an animation scene) started its picture again in the
+  second piece, and sped up the first: both pieces now carry on as the whole one did, lip sync included. Trimming its
+  start cuts into it, as with a file.
+- **Deliver**: compound sequences were counted as events on offline media.
+- **Reopen Last Project on Start** could replace a project that AI control had opened while a startup question (such
+  as Recover Work) was still on the screen.
 - **Retro Shaders** came out as "Unknown (retro.glsl-shaders-master/...)": Get Screen Shaders unpacked GitHub's folder one
   level too deep (Qt lists the folder's own entry without its slash). Shaders already downloaded that way are found too.
 - **Track Corners** followed the shot ending under the event, not the one going on, when the two overlapped at the

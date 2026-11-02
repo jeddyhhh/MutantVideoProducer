@@ -1080,6 +1080,8 @@ LiveView::LiveView(Project* project, QWidget* parent) : QWidget(parent), m_proje
     connect(m_engine, &LiveEngine::recordingFinished, this, [this](const QString& path, bool ok, const QString& error, double secs) {
         m_recTime->clear();
         if (ok)
+            m_lastRecording = path;
+        if (ok)
             m_status->setText(tr("Recorded %1 (%2 s): it is in the Editor's From Live tab").arg(QFileInfo(path).fileName()).arg(secs, 0, 'f', 1));
         else
             m_status->setText(tr("Recording failed: %1").arg(error));

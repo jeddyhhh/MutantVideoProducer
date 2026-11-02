@@ -1062,9 +1062,14 @@ QJsonArray McpServer::toolList()
                    {QStringLiteral("save_to"), prop("string", "Also save it to this file (.png or .jpg; File > Export Frame), at the project's size "
                                                               "unless width is given")}},
                   {}, true));
-    t.append(tool("transport", "Moves the cursor, plays or stops the preview.",
-                  {{QStringLiteral("action"), enumProp({QStringLiteral("seek"), QStringLiteral("play"), QStringLiteral("stop")}, "What")},
-                   {QStringLiteral("time"), prop("number", "seek: seconds")}},
+    t.append(tool("transport", "Moves the cursor, plays or stops the preview, or sets the time selection (select: from-to; "
+                               "to at or before from clears it). loop (with any action) switches Loop Playback: Play goes round the "
+                               "time selection until stopped.",
+                  {{QStringLiteral("action"), enumProp({QStringLiteral("seek"), QStringLiteral("play"), QStringLiteral("stop"), QStringLiteral("select")}, "What")},
+                   {QStringLiteral("time"), prop("number", "seek: seconds")},
+                   {QStringLiteral("from"), prop("number", "select: seconds")},
+                   {QStringLiteral("to"), prop("number", "select: seconds")},
+                   {QStringLiteral("loop"), prop("boolean", "Loop Playback on or off")}},
                   {QStringLiteral("action")}));
     t.append(tool("render",
                   "Renders the project (or a part) to a video file in the background (or in place onto a Rendered track, or as "
@@ -1478,7 +1483,7 @@ QJsonArray McpServer::toolList()
                   {QStringLiteral("action")}));
     t.append(tool("live_status",
                   "The Live tab: capturing or not, the sources to choose from, the pads (names, effects), which is on, scenes, "
-                  "the setlist, the tempo, recording / streaming / Spout / virtual camera, the cue.",
+                  "the setlist, the tempo, recording (last_recording: the latest clip's file) / streaming / Spout / virtual camera, the cue.",
                   {}, {}, true));
     t.append(tool(
         "live_action",
@@ -2338,7 +2343,7 @@ QJsonObject McpServer::ToolCall::tool_graphics_overlay()
             if (!c || index < 0 || index >= int(tl.tracks.size()))
                 return errorResult(QStringLiteral("No track %1.").arg(index));
             QString error;
-            envelope = graphics::trackEnvelope(tl.tracks[size_t(index)], project->snapshot()->media, sec(c->start), sec(c->length),
+            envelope = graphics::trackEnvelope(tl.tracks[size_t(index)], project->snapshot()->media, sec(c->start - c->sourceIn), sec(c->generatedLength()),
                                                integer("bins", 4096), &error);
             if (envelope.isEmpty())
                 return errorResult(error);
@@ -2857,19 +2862,28 @@ QJsonObject McpServer::ToolCall::tool_get_frame()
 QJsonObject McpServer::ToolCall::tool_transport()
 {
     const QString action = str("action");
+    if (has("loop"))
+        w->m_loopAction->setChecked(a.value(QStringLiteral("loop")).toBool());
     if (action == QLatin1String("seek")) {
         w->stopPlayback(false);
         w->seekTo(std::max<TimeUs>(0, us(num("time"))));
+    } else if (action == QLatin1String("select")) {
+        const TimeUs from = us(std::max(0.0, num("from"))), to = us(num("to"));
+        w->m_timeline->setRegion(from, std::max(from, to));
     } else if (action == QLatin1String("play")) {
         if (!w->m_engine->isPlaying())
             w->pausePlay();
     } else if (action == QLatin1String("stop")) {
         w->stopPlayback(false);
     } else {
-        return errorResult(QStringLiteral("action is seek, play or stop"));
+        return errorResult(QStringLiteral("action is seek, play, stop or select"));
     }
-    return jsonResult(
-        {{QStringLiteral("cursor"), sec(w->m_timeline->cursorTime())}, {QStringLiteral("playing"), w->m_engine->isPlaying()}});
+    QJsonObject o{{QStringLiteral("cursor"), sec(w->m_timeline->cursorTime())},
+                  {QStringLiteral("playing"), w->m_engine->isPlaying()},
+                  {QStringLiteral("loop"), w->m_loopAction->isChecked()}};
+    if (w->m_timeline->hasRegion())
+        o[QStringLiteral("selection")] = QJsonArray{sec(w->m_timeline->regionStart()), sec(w->m_timeline->regionEnd())};
+    return jsonResult(o);
 }
 
 QJsonObject McpServer::ToolCall::tool_render()
@@ -3375,6 +3389,7 @@ QJsonObject McpServer::ToolCall::tool_live_status()
                   {QStringLiteral("bpm"), pads->bpm()},
                   {QStringLiteral("tempo_locked"), pads->lockBpmButton()->isChecked()},
                   {QStringLiteral("recording"), engine->isRecording()},
+                  {QStringLiteral("last_recording"), live->m_lastRecording},
                   {QStringLiteral("streaming"), engine->isStreaming()},
                   {QStringLiteral("stream_live"), live->m_streamLive},
                   {QStringLiteral("spout"), live->m_spoutSender},
