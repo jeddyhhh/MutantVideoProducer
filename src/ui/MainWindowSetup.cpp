@@ -472,8 +472,21 @@ void MainWindow::createActions()
         return a;
     };
 
+    // Every menu is grouped under headings (labels, not actions).
+    auto heading = [](QMenu* menu, const QString& text) {
+        auto* label = new QLabel(text.toUpper());
+        label->setObjectName(QStringLiteral("menuHeading"));
+        label->setStyleSheet(QStringLiteral("QLabel { color: %1; font-size: 8pt; font-weight: bold; padding: 7px 12px 3px 12px; }")
+                                 .arg(theme::c().dim.name()));
+        auto* action = new QWidgetAction(menu);
+        action->setDefaultWidget(label);
+        action->setEnabled(false); // (skipped by the mouse and the keyboard)
+        menu->addAction(action);
+    };
+
     // File
     QMenu* file = menuBar()->addMenu(tr("&File"));
+    heading(file, tr("Project"));
     QAction* newAction = act(tr("&New..."), QKeySequence::New, [this] { newProjectDialog(); });
     newAction->setObjectName(QStringLiteral("newProject"));
     file->addAction(newAction);
@@ -485,13 +498,15 @@ void MainWindow::createActions()
     file->addAction(act(tr("&Save"), QKeySequence::Save, [this] { save(); }));
     file->addAction(act(tr("Save &As..."), QKeySequence(QStringLiteral("Ctrl+Shift+S")), [this] { saveAs(); }));
     file->addAction(act(tr("Collect Project and Media..."), {}, [this] { collectProjectDialog(); }));
-    file->addSeparator();
+    file->addAction(act(tr("&Properties..."), QKeySequence(QStringLiteral("Alt+Return")), [this] { projectProperties(); }));
+    heading(file, tr("Media"));
     file->addAction(act(tr("&Import Media..."), QKeySequence(QStringLiteral("Ctrl+I")), [this] { importDialog(); }));
     file->addAction(act(tr("Create Clip from &YouTube..."), QKeySequence(QStringLiteral("Ctrl+Shift+Y")), [this] {
         if (editorActive())
             createClipFromYouTube();
     }));
     file->addAction(act(tr("Relink &Missing Media..."), QKeySequence(), [this] { relinkMissing(); }));
+    heading(file, tr("Export"));
     file->addAction(act(tr("Export &Frame as Image..."), QKeySequence(QStringLiteral("Ctrl+Shift+F")), [this] { exportFrame(false); }));
     file->addAction(act(tr("Copy Frame to Clipboard"), QKeySequence(QStringLiteral("Ctrl+Shift+C")), [this] { exportFrame(true); }));
     file->addAction(act(tr("&Render As..."), QKeySequence(QStringLiteral("Ctrl+R")), [this] { renderAs(); }));
@@ -503,14 +518,13 @@ void MainWindow::createActions()
         renderQueue()->show();
         renderQueue()->raise();
     }));
-    file->addSeparator();
-    file->addAction(act(tr("&Properties..."), QKeySequence(QStringLiteral("Alt+Return")), [this] { projectProperties(); }));
+    heading(file, tr("Program"));
     auto* profilesAction = act(tr("Profiles & Home Folders..."), QKeySequence(), [this] { profilesDialog(); });
     profilesAction->setObjectName(QStringLiteral("profiles")); file->addAction(profilesAction);
-    file->addSeparator();
     file->addAction(act(tr("E&xit"), QKeySequence(QStringLiteral("Alt+F4")), [this] { close(); }));
     // Edit
     QMenu* edit = menuBar()->addMenu(tr("&Edit"));
+    heading(edit, tr("History"));
     QAction* undoAct = undo->createUndoAction(this, tr("&Undo"));
     undoAct->setShortcut(QKeySequence::Undo);
     QAction* redoAct = undo->createRedoAction(this, tr("&Redo"));
@@ -519,7 +533,7 @@ void MainWindow::createActions()
     addAction(redoAct);
     edit->addAction(undoAct);
     edit->addAction(redoAct);
-    edit->addSeparator();
+    heading(edit, tr("Clipboard"));
     edit->addAction(act(tr("Cu&t"), QKeySequence::Cut, [this] { m_timeline->cutSelection(); }));
     edit->addAction(act(tr("&Copy"), QKeySequence::Copy, [this] { m_timeline->copySelection(); }));
     edit->addAction(act(tr("&Paste"), QKeySequence::Paste, [this] { m_timeline->paste(); }));
@@ -529,20 +543,20 @@ void MainWindow::createActions()
     }));
     edit->addAction(act(tr("&Delete"), QKeySequence::Delete, [this] { m_timeline->deleteSelection(false); }));
     edit->addAction(act(tr("Ripple De&lete"), QKeySequence(QStringLiteral("Ctrl+Del")), [this] { m_timeline->deleteSelection(true); }));
-    edit->addSeparator();
+    heading(edit, tr("Events"));
     edit->addAction(act(tr("&Split"), QKeySequence(QStringLiteral("S")), [this] { m_timeline->splitAtCursor(); }));
     edit->addAction(act(tr("Select &All"), QKeySequence::SelectAll, [this] { m_timeline->selectAll(); }));
     edit->addAction(act(tr("&Group Selected Events"), QKeySequence(QStringLiteral("G")), [this] { m_timeline->groupSelection(); }));
     edit->addAction(act(tr("&Ungroup Selected Events"), QKeySequence(QStringLiteral("U")), [this] { m_timeline->ungroupSelection(); }));
     edit->addAction(act(tr("&Mute / Unmute Event"), QKeySequence(), [this] { m_timeline->toggleMuteSelection(); }));
-    edit->addSeparator();
+    heading(edit, tr("Nudge and trim"));
     edit->addAction(act(tr("Nudge Left (1 frame)"), QKeySequence(QStringLiteral("Alt+Left")), [this] { m_timeline->nudgeSelection(-1); }));
     edit->addAction(act(tr("Nudge Right (1 frame)"), QKeySequence(QStringLiteral("Alt+Right")), [this] { m_timeline->nudgeSelection(1); }));
     edit->addAction(act(tr("Nudge Left (10 frames)"), QKeySequence(QStringLiteral("Shift+Alt+Left")), [this] { m_timeline->nudgeSelection(-10); }));
     edit->addAction(act(tr("Nudge Right (10 frames)"), QKeySequence(QStringLiteral("Shift+Alt+Right")), [this] { m_timeline->nudgeSelection(10); }));
     edit->addAction(act(tr("Trim Start to Cursor"), QKeySequence(QStringLiteral("Alt+[")), [this] { m_timeline->trimSelectionToCursor(true); }));
     edit->addAction(act(tr("Trim End to Cursor"), QKeySequence(QStringLiteral("Alt+]")), [this] { m_timeline->trimSelectionToCursor(false); }));
-    edit->addSeparator();
+    heading(edit, tr("Time selection"));
     edit->addAction(act(tr("Set &In Point"), QKeySequence(Qt::Key_I), [this] {
         if (editorActive())
             m_timeline->setInPoint(currentTime());
@@ -551,7 +565,7 @@ void MainWindow::createActions()
         if (editorActive())
             m_timeline->setOutPoint(currentTime());
     }));
-    edit->addSeparator();
+    heading(edit, tr("Effects and properties"));
     edit->addAction(act(tr("&Event FX..."), QKeySequence(QStringLiteral("Ctrl+E")), [this] {
         if (const int id = m_timeline->firstSelectedClip())
             m_devices->setTarget({FxTarget::Kind::Clip, id});
@@ -580,10 +594,12 @@ void MainWindow::createActions()
 
     // View
     QMenu* view = menuBar()->addMenu(tr("&View"));
+    heading(view, tr("Timeline zoom"));
     view->addAction(act(tr("Zoom &In"), QKeySequence(Qt::Key_Up), [this] { m_timeline->zoomIn(); }));
     view->addAction(act(tr("Zoom &Out"), QKeySequence(Qt::Key_Down), [this] { m_timeline->zoomOut(); }));
     view->addAction(act(tr("Zoom to &Fit"), QKeySequence(QStringLiteral("Ctrl+0")), [this] { m_timeline->zoomToFit(); }));
     // The look: every theme switches at once and is remembered.
+    heading(view, tr("Look"));
     QMenu* themes = view->addMenu(tr("&Theme"));
     themes->setObjectName(QStringLiteral("themeMenu"));
     auto* themeGroup = new QActionGroup(themes);
@@ -595,11 +611,11 @@ void MainWindow::createActions()
         themeGroup->addAction(a);
         connect(a, &QAction::triggered, this, [id = QString::fromLatin1(t.id)] { theme::apply(*qApp, id); });
     }
-    view->addSeparator();
+    heading(view, tr("Windows and overlays"));
     view->addAction(act(tr("Audio &Mixer..."), QKeySequence(QStringLiteral("Ctrl+Shift+M")), [this] { showMixer(); }));
     view->addAction(m_scopesAction);
     view->addMenu(m_guidesMenu);
-    view->addSeparator();
+    heading(view, tr("Markers"));
     view->addAction(act(tr("Previous Marker"), QKeySequence(Qt::Key_BracketLeft), [this] {
         if (editorActive()) {
             stopPlayback(false);
@@ -612,28 +628,25 @@ void MainWindow::createActions()
             m_timeline->jumpToMarker(1);
         }
     }));
-    view->addSeparator();
+    heading(view, tr("Shuttle"));
     view->addAction(act(tr("Shuttle Backward (press again: faster)"), QKeySequence(Qt::Key_J), [this] { shuttle(-1); }));
     view->addAction(act(tr("Pause"), QKeySequence(Qt::Key_K), [this] { shuttle(0); }));
     view->addAction(act(tr("Shuttle Forward (press again: faster)"), QKeySequence(Qt::Key_L), [this] { shuttle(1); }));
 
     // Insert
     QMenu* insert = menuBar()->addMenu(tr("&Insert"));
+    heading(insert, tr("Tracks"));
     insert->addAction(act(tr("&Video Track"), QKeySequence(QStringLiteral("Ctrl+Shift+Q")),
                           [this] { m_timeline->insertTrack(TrackType::Video); }));
     insert->addAction(act(tr("&Audio Track"), QKeySequence(QStringLiteral("Ctrl+Q")),
                           [this] { m_timeline->insertTrack(TrackType::Audio); }));
-    insert->addAction(act(tr("Insert &Time at the Cursor..."), QKeySequence(), [this] {
-        if (editorActive())
-            insertTime();
-    }));
-    insert->addSeparator();
+    heading(insert, tr("Envelopes"));
     insert->addAction(act(tr("&Volume Envelope (or Composite Level for video)"), QKeySequence(QStringLiteral("V")),
                           [this] { m_timeline->toggleEnvelope(EnvelopeKind::Volume); }));
     insert->addAction(act(tr("&Pan Envelope"), QKeySequence(QStringLiteral("P")), [this] { m_timeline->toggleEnvelope(EnvelopeKind::Pan); }));
     insert->addAction(act(tr("Velocity Envelope (&Speed Ramp)"), QKeySequence(QStringLiteral("Shift+V")),
                           [this] { m_timeline->toggleVelocityEnvelope(); }));
-    insert->addSeparator();
+    heading(insert, tr("Markers"));
     insert->addAction(act(tr("&Marker (at the cursor, or where playback is)"), QKeySequence(Qt::Key_M), [this] {
         if (!editorActive())
             return;
@@ -644,6 +657,11 @@ void MainWindow::createActions()
     insert->addAction(act(tr("&Region (from the time selection)"), QKeySequence(Qt::Key_R), [this] {
         if (editorActive())
             m_timeline->addRegionFromSelection();
+    }));
+    heading(insert, tr("Time"));
+    insert->addAction(act(tr("Insert &Time at the Cursor..."), QKeySequence(), [this] {
+        if (editorActive())
+            insertTime();
     }));
     insert->addAction(act(tr("&Freeze Frame (2 s at the cursor)"), QKeySequence(QStringLiteral("Shift+F")), [this] {
         if (!editorActive())
@@ -659,7 +677,7 @@ void MainWindow::createActions()
         if (m_timeline->insertFreezeFrame(2 * kUsPerSecond, true))
             statusBar()->showMessage(tr("Freeze frame added in place: the picture holds for 2 s, the sound and everything after stay put."), 5000);
     }));
-    insert->addSeparator();
+    heading(insert, tr("Titles and colour"));
     auto insertGenerated = [this](const char* preset) {
         stopPlayback(false);
         if (const int id = m_timeline->insertGeneratorAtCursor(QString::fromLatin1(preset)))
@@ -669,7 +687,7 @@ void MainWindow::createActions()
     insert->addAction(act(tr("&Lower Third"), QKeySequence(), [insertGenerated] { insertGenerated("lower_third"); }));
     insert->addAction(act(tr("&Credits Roll"), QKeySequence(), [insertGenerated] { insertGenerated("credits"); }));
     insert->addAction(act(tr("&Solid Color"), QKeySequence(), [insertGenerated] { insertGenerated("solid_black"); }));
-    insert->addSeparator();
+    heading(insert, tr("Graphics and adjustment"));
     insert->addAction(act(tr("Graphics Overlay"), QKeySequence(), [insertGenerated] { insertGenerated("graphics_broadcast"); }));
     insert->addAction(act(tr("Animation"), QKeySequence(), [insertGenerated] { insertGenerated("animation_blank"); }));
     insert->addAction(act(tr("Audio Waveform Graphic"), QKeySequence(), [insertGenerated] { insertGenerated("audio_waveform"); }));
@@ -683,18 +701,8 @@ void MainWindow::createActions()
         }
     }));
 
-    // Tools, grouped under headings (labels, not actions)
+    // Tools
     QMenu* tools = menuBar()->addMenu(tr("&Tools"));
-    auto heading = [](QMenu* menu, const QString& text) {
-        auto* label = new QLabel(text.toUpper());
-        label->setObjectName(QStringLiteral("menuHeading"));
-        label->setStyleSheet(QStringLiteral("QLabel { color: %1; font-size: 8pt; font-weight: bold; padding: 7px 12px 3px 12px; }")
-                                 .arg(theme::c().dim.name()));
-        auto* action = new QWidgetAction(menu);
-        action->setDefaultWidget(label);
-        action->setEnabled(false); // (skipped by the mouse and the keyboard)
-        menu->addAction(action);
-    };
     heading(tools, tr("Editing"));
     tools->addAction(act(tr("&Split Selected Events at Markers"), QKeySequence(), [this] {
         if (editorActive())
@@ -870,7 +878,7 @@ void MainWindow::createActions()
         QSettings().setValue(QStringLiteral("mcp/enabled"), on);
         setAiControl(on);
     });
-    options->addAction(tr("AI Control Setup..."), this, &MainWindow::showAiControlSetup);
+    QAction* aiSetup = options->addAction(tr("AI Control Setup..."), this, &MainWindow::showAiControlSetup);
     QMenu* liveLayout = options->addMenu(tr("Live Tab Layout"));
     auto* liveLayouts = new QActionGroup(liveLayout);
     for (int i = 0; i < LiveView::kLayoutCount; ++i) {
@@ -885,12 +893,11 @@ void MainWindow::createActions()
         statusBar()->showMessage(tr("AI: %1").arg(tool), 3000);
     });
     aiControl->setChecked(QSettings().value(QStringLiteral("mcp/enabled"), false).toBool());
-    options->addSeparator();
     m_snapAction = act(tr("Enable &Snapping"), QKeySequence(Qt::Key_F8), [this](bool on) { m_timeline->setSnapping(on); });
     m_snapAction->setCheckable(true);
     m_snapAction->setChecked(true);
     options->addAction(m_snapAction);
-    options->addAction(tr("&Keyboard Shortcuts..."), this, [this] {
+    QAction* shortcuts = options->addAction(tr("&Keyboard Shortcuts..."), this, [this] {
         ShortcutsDialog dlg(ShortcutsDialog::commands(this), this);
         dlg.exec();
     });
@@ -981,7 +988,7 @@ void MainWindow::createActions()
         m_engine->setPreRender(on);
         QSettings().setValue(QStringLiteral("play/preRender"), on);
     });
-    options->addAction(tr("Clear Pre-rendered Frames"), this, [this] {
+    QAction* clearPreRender = options->addAction(tr("Clear Pre-rendered Frames"), this, [this] {
         m_engine->clearPreRender();
         statusBar()->showMessage(tr("Pre-rendered frames cleared: they are made again as needed"), 4000);
     });
@@ -1066,7 +1073,6 @@ void MainWindow::createActions()
     updates->setCheckable(true);
     updates->setChecked(QSettings().value(QStringLiteral("updates/check"), true).toBool());
     updates->setToolTip(tr("Once a day, ask GitHub whether a newer Mutant Video Producer is out (the request carries only the version number)"));
-    options->addSeparator();
     QAction* gpuAct = act(tr("&GPU Acceleration (OpenGL rendering)"), QKeySequence(), [this](bool on) {
         hw::settings().gpuCompositing = on;
         QSettings().setValue(QStringLiteral("gpu/compositing"), on);
@@ -1087,6 +1093,28 @@ void MainWindow::createActions()
     hwDecodeAct->setCheckable(true);
     hwDecodeAct->setChecked(hw::settings().hardwareDecoding);
     options->addAction(hwDecodeAct);
+    // In the order of their headings (anything not named stays, at the end).
+    {
+        const std::pair<QString, std::vector<QAction*>> sections[] = {
+            {tr("Editing"), {m_snapAction, gridMenu->menuAction(), rippleMenu->menuAction(), crossfades}},
+            {tr("Playback"), {m_loopAction, m_clickJumpAction, scrubAct, syncAction}},
+            {tr("Rendering and speed"), {preRender, clearPreRender, gpuAct, hwDecodeAct}},
+            {tr("Projects"), {autosaveMenu->menuAction(), reopen}},
+            {tr("Program"), {shortcuts, liveLayout->menuAction(), updates}},
+            {tr("AI"), {aiControl, aiSetup}}};
+        QList<QAction*> rest = options->actions();
+        for (QAction* a : rest)
+            options->removeAction(a);
+        for (const auto& [title, actions] : sections) {
+            heading(options, title);
+            for (QAction* a : actions) {
+                options->addAction(a);
+                rest.removeAll(a);
+            }
+        }
+        for (QAction* a : rest)
+            options->addAction(a);
+    }
 
     // Transport (not in a menu: these live on the transport bar)
     auto* playStart = act(tr("Play From Start"), QKeySequence(QStringLiteral("Shift+Space")), [this] {
@@ -1182,6 +1210,7 @@ void MainWindow::createActions()
 
     // Help
     QMenu* help = menuBar()->addMenu(tr("&Help"));
+    heading(help, tr("Guide"));
     QAction* guide = act(tr("&User Guide"), QKeySequence(), [this] { showHelp(QStringLiteral("README.md")); });
     guide->setObjectName(QStringLiteral("userGuide"));
     help->addAction(guide);
@@ -1205,7 +1234,7 @@ void MainWindow::createActions()
     QAction* welcome = act(tr("&Welcome Window"), QKeySequence(), [this] { showWelcome(); });
     welcome->setObjectName(QStringLiteral("welcomeWindow"));
     help->addAction(welcome);
-    help->addSeparator();
+    heading(help, tr("About this computer and program"));
     help->addAction(act(tr("System &Check..."), QKeySequence(), [this] { showSystemCheck(); }));
     help->addAction(act(tr("Check for &Updates..."), QKeySequence(), [this] { checkForUpdates(true); }));
     help->addAction(act(tr("Supported &Formats..."), QKeySequence(), [this] { showFormats(); }));

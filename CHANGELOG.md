@@ -13,6 +13,9 @@ What changed in each version of Mutant Video Producer. The newest is first.
 
 ### Changed
 
+- **Menus**: File, Edit, View, Insert, Options and Help are grouped under headings, as Tools is. Options is sorted into
+  Editing, Playback, Rendering and speed, Projects, Program and AI; Insert Time moved to Insert's Time group, and
+  Properties next to the other project commands in File.
 - The **time selection bar** above the ruler is tinted, says "Drag here to select time" while empty, and "Loop" on
   the selection while looping.
 

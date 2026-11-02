@@ -18,6 +18,8 @@
 #include <QContextMenuEvent>
 #include <QDialog>
 #include <QMenu>
+#include <QMenuBar>
+#include <QWidgetAction>
 #include <QTabWidget>
 #include <QDir>
 #include <QEventLoop>
@@ -140,6 +142,33 @@ void MainWindow::runProductionToolsTest(const std::function<void(bool, const QSt
         check(labelled && saved && spectrum,
               QStringLiteral("colour labels on an event and its group (drawn in its colour, one undo step, saved with the "
                              "project); the Spectrogram window opens for an audio event, its cursor following the timeline's"));
+    }
+    {
+        // Every menu on the menu bar starts with a heading (a label, not a command), and Options keeps nothing
+        // outside its headings (the last, AI, holds just its two).
+        QStringList bare;
+        int afterLast = -1;
+        for (QAction* top : menuBar()->actions()) {
+            QMenu* menu = top->menu();
+            if (!menu)
+                continue;
+            const QList<QAction*> items = menu->actions();
+            auto isHeading = [](QAction* a) {
+                auto* w = qobject_cast<QWidgetAction*>(a);
+                return w && w->defaultWidget() && w->defaultWidget()->objectName() == QLatin1String("menuHeading");
+            };
+            if (items.isEmpty() || !isHeading(items.front()))
+                bare << QString(top->text()).remove(QLatin1Char('&'));
+            if (top->text() == tr("&Options")) {
+                afterLast = 0;
+                for (QAction* a : items)
+                    afterLast = isHeading(a) ? 0 : afterLast + 1;
+            }
+        }
+        check(bare.isEmpty() && afterLast == 2, QStringLiteral("every menu starts with a heading (without one: %1); Options keeps "
+                                                               "nothing past its last heading but AI's two (%2)")
+                                                    .arg(bare.join(QStringLiteral(", ")))
+                                                    .arg(afterLast));
     }
     {
         // The time selection bar: right-click offers Loop Playback; with it on, Play from inside the selection
