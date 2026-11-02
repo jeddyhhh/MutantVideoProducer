@@ -244,6 +244,7 @@ int main(int argc, char** argv)
         if (!gpu || !gpu->isGpu()) {
             QTextStream(stdout) << "SKIP  user effects on the GPU: no GPU here (" << err << ")" << Qt::endl;
         } else {
+            QTextStream(stdout) << "INFO  user effects on the GPU: " << gpu->name() << Qt::endl;
             const QImage pic = testPicture(QSize(640, 360));
             static const EffectChain kNoChain;
             {
@@ -278,7 +279,9 @@ int main(int argc, char** argv)
                 const QByteArray keep = qgetenv("MVP_SCREEN_SHADERS_DIR");
                 qputenv("MVP_SCREEN_SHADERS_DIR", zipDir.filePath(QStringLiteral("wrap/glsl-shaders-master")).toUtf8());
                 QString why;
+                QTextStream(stdout) << "INFO  a screen-shader zip: unpacking" << Qt::endl; // (where a crash happened, on CI)
                 const bool unpacked = retro::installZip(zipPath, &why);
+                QTextStream(stdout) << "INFO  a screen-shader zip: unpacked (" << why << "), running it" << Qt::endl;
                 // (Read from the folder above as well: GitHub's folder alone in it is looked into, as an older download left it.)
                 qputenv("MVP_SCREEN_SHADERS_DIR", zipDir.filePath(QStringLiteral("wrap")).toUtf8());
                 retro::reload();

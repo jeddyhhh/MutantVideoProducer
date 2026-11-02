@@ -15,6 +15,7 @@
 #include <QPushButton>
 #include <QTreeView>
 #include <QUrl>
+#include <memory>
 #include <QVBoxLayout>
 
 QString MainWindow::soundLibraryDir()
@@ -62,8 +63,9 @@ QWidget* MainWindow::createSoundsTab()
     note->setWordWrap(true);
     layout->addWidget(note);
 
-    auto* player = new QMediaPlayer(page);
-    player->setAudioOutput(new QAudioOutput(page));
+    // Made on the first listen, not with the page: on Linux, Qt 6.4's GStreamer player can crash when it is made
+    // without the GStreamer plugins it needs (an AppImage), and then only listening would.
+    auto player = std::make_shared<QMediaPlayer*>(nullptr);
     auto selected = [=] {
         const QModelIndex i = tree->currentIndex();
         return i.isValid() && !model->isDir(i) ? model->filePath(i) : QString();
@@ -72,9 +74,13 @@ QWidget* MainWindow::createSoundsTab()
         const QString path = selected();
         if (path.isEmpty())
             return;
-        player->stop();
-        player->setSource(QUrl::fromLocalFile(path));
-        player->play();
+        if (!*player) {
+            *player = new QMediaPlayer(page);
+            (*player)->setAudioOutput(new QAudioOutput(page));
+        }
+        (*player)->stop();
+        (*player)->setSource(QUrl::fromLocalFile(path));
+        (*player)->play();
     };
     connect(tree, &QTreeView::activated, page, listen);
     connect(play, &QPushButton::clicked, page, listen);
