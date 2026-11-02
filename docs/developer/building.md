@@ -46,7 +46,7 @@ Each is left out of the build when its folder is missing.
 ## Linux
 
 ```sh
-sudo apt install build-essential cmake ninja-build pkg-config qt6-base-dev qt6-multimedia-dev libqt6opengl6-dev libgl-dev \
+sudo apt install build-essential cmake ninja-build pkg-config qt6-base-dev qt6-base-private-dev qt6-multimedia-dev libqt6opengl6-dev libgl-dev \
      libavdevice-dev libavformat-dev libavcodec-dev libavfilter-dev libavutil-dev libswscale-dev libswresample-dev
 ./build.sh
 ```

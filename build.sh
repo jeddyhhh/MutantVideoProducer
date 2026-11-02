@@ -2,7 +2,7 @@
 # Builds Mutant Video Producer on Linux.
 # Dependencies (Debian/Ubuntu):
 #   sudo apt install build-essential cmake ninja-build pkg-config \
-#        qt6-base-dev qt6-multimedia-dev libqt6opengl6-dev libgl-dev \
+#        qt6-base-dev qt6-base-private-dev qt6-multimedia-dev libqt6opengl6-dev libgl-dev \
 #        libavdevice-dev libavformat-dev libavcodec-dev libavfilter-dev libavutil-dev libswscale-dev libswresample-dev
 # Fedora:
 #   sudo dnf install gcc-c++ cmake ninja-build qt6-qtbase-devel qt6-qtmultimedia-devel ffmpeg-devel
