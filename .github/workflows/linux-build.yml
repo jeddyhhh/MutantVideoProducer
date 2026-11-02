@@ -112,8 +112,18 @@ jobs:
           APPIMAGE_EXTRACT_AND_RUN: 1
           QT_QPA_PLATFORM: offscreen
         run: |
+          set +e
           timeout 120 "build/MutantVideoProducer-$MVP_VERSION-x86_64.AppImage" --screenshot "$PWD/build/appimage.png"
-          test -s build/appimage.png
+          code=$?
+          if [ "$code" = 0 ] && [ -s build/appimage.png ]; then exit 0; fi
+          # It didn't: what it lacks, and where it stopped (the program under gdb, with the AppImage's own settings).
+          echo "::error::The AppImage exited with $code"
+          cd build && "./MutantVideoProducer-$MVP_VERSION-x86_64.AppImage" --appimage-extract > /dev/null
+          ldd squashfs-root/usr/bin/MutantVideoProducer | grep 'not found'
+          sudo apt-get install -y -qq gdb > /dev/null
+          cd squashfs-root && export APPDIR="$PWD" && for hook in apprun-hooks/*.sh; do . "$hook"; done
+          gdb -batch -ex run -ex bt -ex 'info inferiors' --args usr/bin/MutantVideoProducer --screenshot "$PWD/../appimage.png" 2>&1 | tail -80
+          exit 1
 
       - name: Store development build downloads
         if: github.ref_type != 'tag'
