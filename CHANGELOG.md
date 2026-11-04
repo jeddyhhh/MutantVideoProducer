@@ -2,6 +2,18 @@
 
 What changed in each version of Mutant Video Producer. The newest is first.
 
+## 0.9.5 (2026-11-04)
+
+The first release built on GitHub again, for Windows and Linux. (0.9.4 was tagged, but its builds failed.)
+
+### Fixed
+
+- **GPU acceleration** on a computer whose OpenGL is older than 3.3 (no graphics driver, a basic display adapter)
+  crashed instead of falling back to drawing on the processor.
+- **Linux**: builds with the Qt 6.4 that Ubuntu 24.04 ships again (Qt's private headers, the zip reader, a list
+  search), and the AppImage no longer crashes at start: the sound library makes its player when you first listen.
+  (Listening in the AppImage still needs GStreamer's plugins on the system.)
+
 ## 0.9.4 (2026-11-02)
 
 ### Added
