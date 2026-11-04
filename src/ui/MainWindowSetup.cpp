@@ -537,6 +537,14 @@ void MainWindow::createActions()
     edit->addAction(act(tr("Cu&t"), QKeySequence::Cut, [this] { m_timeline->cutSelection(); }));
     edit->addAction(act(tr("&Copy"), QKeySequence::Copy, [this] { m_timeline->copySelection(); }));
     edit->addAction(act(tr("&Paste"), QKeySequence::Paste, [this] { m_timeline->paste(); }));
+    edit->addAction(act(tr("Paste Event &Attributes"), QKeySequence(QStringLiteral("Ctrl+Shift+V")), [this] {
+        if (editorActive())
+            m_timeline->pasteAttributes(ops::AttrAll);
+    }));
+    edit->addAction(act(tr("Selectively Paste Event Attributes..."), QKeySequence(), [this] {
+        if (editorActive())
+            m_timeline->selectivelyPasteAttributes();
+    }));
     edit->addAction(act(tr("&Duplicate"), QKeySequence(QStringLiteral("Ctrl+D")), [this] {
         if (editorActive())
             m_timeline->duplicateSelection();
@@ -1285,6 +1293,8 @@ void MainWindow::connectSignals()
     });
     connect(m_timeline, &TimelineWidget::message, this, [this](const QString& text) { statusBar()->showMessage(text, 5000); });
     connect(m_timeline, &TimelineWidget::relinkRequested, this, [this](int id) { relinkMissing(id); });
+    connect(m_timeline, &TimelineWidget::replaceMediaRequested, this, &MainWindow::replaceMedia);
+    connect(m_timeline, &TimelineWidget::stemsRequested, this, &MainWindow::separateStems);
     connect(m_timeline, &TimelineWidget::beatsRequested, this, &MainWindow::detectBeats);
     connect(m_timeline, &TimelineWidget::stabilizeRequested, this, &MainWindow::stabilizeClip);
     connect(m_timeline, &TimelineWidget::matchColourRequested, this, &MainWindow::matchColour);

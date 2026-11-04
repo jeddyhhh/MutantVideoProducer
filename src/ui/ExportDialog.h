@@ -48,6 +48,7 @@ private:
     QLabel* m_notes;
     QCheckBox* m_useGpu;
     QCheckBox* m_subtitles;
+    QCheckBox* m_smartRender;
     std::vector<Caption> m_captions;
     QComboBox* m_pixFmt;
     QComboBox* m_framing;

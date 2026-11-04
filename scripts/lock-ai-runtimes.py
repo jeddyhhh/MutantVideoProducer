@@ -15,7 +15,7 @@ if __name__ == '__main__':
     catalog = json.loads(catalog_path.read_text(encoding='utf-8'))
     if hashlib.sha256(args.uv.read_bytes()).hexdigest() != catalog['uv_sha256']:
         raise ValueError('Use the pinned official uv executable from download-ai-bootstrap.ps1')
-    for name in ('speech', 'speech-cuda', 'rvc', 'rvc-cuda'):
+    for name in ('speech', 'speech-cuda', 'rvc', 'rvc-cuda', 'stems', 'stems-cuda'):
         command = [str(args.uv.resolve()), 'pip', 'compile', f'data/runtime/{name}.in',
                    '--python-version', '3.12', '--python-platform', 'x86_64-pc-windows-msvc',
                    '--generate-hashes', '--only-binary', ':all:', '--no-header',

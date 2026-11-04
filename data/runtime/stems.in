@@ -1,0 +1,7 @@
+# Demucs itself is vendored (data/stems/vendor: PyPI has no wheel of it); these are what it runs on.
+soundfile==0.13.1
+numpy==1.26.4
+torch @ https://download-r2.pytorch.org/whl/cpu/torch-2.7.1%2Bcpu-cp312-cp312-win_amd64.whl#sha256=0bc887068772233f532b51a3e8c8cfc682ae62bef74bf4e0c53526c8b9e4138f
+einops==0.8.1
+tqdm==4.67.1
+PyYAML==6.0.2

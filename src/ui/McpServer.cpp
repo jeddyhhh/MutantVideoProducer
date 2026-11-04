@@ -1,5 +1,7 @@
 #include "core/Brand.h"
 #include "ui/McpServer.h"
+#include "ui/StemJob.h"
+#include "core/StemSeparation.h"
 
 #include "core/AudioEffects.h"
 #include "core/AudioFinishing.h"
@@ -503,7 +505,7 @@ struct McpServer::Render {
     std::thread thread;
     std::atomic<double> progress{0};
     std::atomic<bool> done{false}, ok{false}, cancel{false};
-    QString path, error, preset;
+    QString path, error, preset, smartNote;
     std::shared_ptr<RenderMonitor> monitor = std::make_shared<RenderMonitor>();
     std::unique_ptr<QOffscreenSurface> surface;
     ~Render()
@@ -1085,7 +1087,9 @@ QJsonArray McpServer::toolList()
                     prop("boolean", "Prefer an available GPU encoder (default true); false preserves the selected template encoder")},
                    {QStringLiteral("from"), prop("number", "Seconds")},
                    {QStringLiteral("to"), prop("number", "Seconds")},
-                   {QStringLiteral("overwrite"), prop("boolean", "Replace an existing file")}}));
+                   {QStringLiteral("overwrite"), prop("boolean", "Replace an existing file")},
+                   {QStringLiteral("smart_render"), prop("boolean", "Copy the video where it is plain cuts of files already in the template's "
+                                                                    "codec, size and frame rate (MP4/MOV); render_status says whether it did")}}));
     t.append(tool("render_status", "How the render started with render is going (progress 0..1, done, error); cancel stops it.",
                   {{QStringLiteral("cancel"), prop("boolean", "Stop it")}}));
     t.append(tool("undo", "Undoes the last change(s), the same as Ctrl+Z.",
@@ -1299,6 +1303,29 @@ QJsonArray McpServer::toolList()
                   {{QStringLiteral("event_ids"), arrayProp("integer", "Events")},
                    {QStringLiteral("at"), prop("number", "Seconds: where the earliest of them goes (default: the cursor)")}},
                   {QStringLiteral("event_ids")}));
+    t.append(tool("paste_attributes",
+                  "Edit > Selectively Paste Event Attributes: event from's effects (replacing theirs), Pan/Crop, fades... onto "
+                  "event_ids of the same kind (picture or sound). attributes: effects, pan_crop, fades, transitions, level, speed "
+                  "(each keeps its length), fixes (stabilize, noise reduction, slow-motion blending), label (default all). One undo step.",
+                  {{QStringLiteral("from"), prop("integer", "The event to copy from")},
+                   {QStringLiteral("event_ids"), arrayProp("integer", "Events to paste onto")},
+                   {QStringLiteral("attributes"), arrayProp("string", "Which (default all)")}},
+                  {QStringLiteral("from"), QStringLiteral("event_ids")}));
+    t.append(tool("separate_stems",
+                  "Right-click > Separate Stems (the Stem Separation engine: Tools > AI Components): start splits audio event "
+                  "event_id into voice and background (stems 2) or vocals, drums, bass and other (stems 4), in the background; "
+                  "status says how far it is, then the new events (each stem on a track under the event, which is muted). "
+                  "best: the fine-tuned model, about 4x slower. cancel stops it.",
+                  {{QStringLiteral("action"), enumProp({QStringLiteral("start"), QStringLiteral("status"), QStringLiteral("cancel")}, "What")},
+                   {QStringLiteral("event_id"), prop("integer", "start: an audio event from a file")},
+                   {QStringLiteral("stems"), prop("integer", "start: 2 or 4 (default 2)")},
+                   {QStringLiteral("best"), prop("boolean", "start: the slower, better model (default false)")}},
+                  {QStringLiteral("action")}));
+    t.append(tool("replace_media",
+                  "Right-click > Replace Media: event_ids (and their grouped sound or picture) show media_id instead, keeping "
+                  "their place, trims (where the new file is long enough), effects and keyframes. One undo step.",
+                  {{QStringLiteral("event_ids"), arrayProp("integer", "Events")}, {QStringLiteral("media_id"), prop("integer", "The new file (import_media first)")}},
+                  {QStringLiteral("event_ids"), QStringLiteral("media_id")}));
     t.append(tool("stabilize", "Smooths camera shake out of a video event (right-click > Stabilize), analysing the file the first time. "
                                "smoothing: seconds of shake smoothed (0 off, 0.5 light, 1.5 medium, 3 strong, 8 nearly a tripod).",
                   {{QStringLiteral("event_id"), prop("integer", "A video event")},
@@ -1652,6 +1679,9 @@ struct McpServer::ToolCall {
     QJsonObject tool_envelope();
     QJsonObject tool_group();
     QJsonObject tool_duplicate_events();
+    QJsonObject tool_paste_attributes();
+    QJsonObject tool_replace_media();
+    QJsonObject tool_separate_stems();
     QJsonObject tool_stabilize();
     QJsonObject tool_beat_montage();
     QJsonObject tool_media();
@@ -2973,6 +3003,7 @@ QJsonObject McpServer::ToolCall::tool_render()
     if (a.value(QStringLiteral("hardware_encoding")).toBool(true))
         s = withGpuEncoder(s);
     s.path = path;
+    s.smartRender = a.value(QStringLiteral("smart_render")).toBool();
     const auto snap = project->snapshot();
     s.rangeStart = us(std::max(0.0, num("from")));
     s.rangeEnd = has("to") ? us(num("to")) : snap->timeline.duration();
@@ -2994,6 +3025,7 @@ QJsonObject McpServer::ToolCall::tool_render()
             },
             r->surface.get(), [&](const ExportStatus& value) { r->monitor->update(value); });
         r->error = ok ? QString() : (r->cancel ? QStringLiteral("cancelled") : exporter.error());
+        r->smartNote = exporter.smartRenderNote();
         r->ok = ok;
         r->monitor->done = true;
         r->done = true;
@@ -3037,6 +3069,8 @@ QJsonObject McpServer::ToolCall::tool_render_status()
         o[QStringLiteral("ok")] = server.m_render->ok.load();
         if (!server.m_render->error.isEmpty())
             o[QStringLiteral("error")] = server.m_render->error;
+        if (!server.m_render->smartNote.isEmpty())
+            o[QStringLiteral("smart_render")] = server.m_render->smartNote;
     }
     return jsonResult(o);
 }
@@ -3177,7 +3211,7 @@ QJsonObject McpServer::ToolCall::tool_ai_components()
     const auto catalog = aiRuntimeCatalog();
     QJsonArray components;
     for (const auto& runtime : parseAiRuntimes(catalog)) {
-        const QString path = runtime.id == "speech" ? VoiceJob::workerPath() : rvcWorkerPath();
+        const QString path = runtime.id == "speech" ? VoiceJob::workerPath() : runtime.id == "stems" ? stems::workerPath() : rvcWorkerPath();
         components.append(QJsonObject{{"id", runtime.id},
                                       {"name", runtime.name},
                                       {"installed", QFileInfo::exists(path)},
@@ -4162,6 +4196,64 @@ QJsonObject McpServer::ToolCall::tool_duplicate_events()
     return jsonResult({{QStringLiteral("event_ids"), made}});
 }
 
+QJsonObject McpServer::ToolCall::tool_paste_attributes()
+{
+    Timeline tl = project->timeline();
+    int ti = -1;
+    const Clip* from = tl.findClip(integer("from", -1), &ti);
+    if (!from)
+        return errorResult(QStringLiteral("no event %1").arg(integer("from", -1)));
+    static const std::pair<const char*, unsigned> names[] = {
+        {"effects", ops::AttrEffects}, {"pan_crop", ops::AttrPanCrop}, {"fades", ops::AttrFades}, {"transitions", ops::AttrTransitions},
+        {"level", ops::AttrLevel},     {"speed", ops::AttrSpeed},      {"fixes", ops::AttrFixes}, {"label", ops::AttrLabel}};
+    unsigned what = has("attributes") ? 0 : ops::AttrAll;
+    for (const QJsonValue& v : a.value(QStringLiteral("attributes")).toArray()) {
+        const auto it = std::find_if(std::begin(names), std::end(names), [&](const auto& n) { return v.toString() == QLatin1String(n.first); });
+        if (it == std::end(names))
+            return errorResult(QStringLiteral("attributes are effects, pan_crop, fades, transitions, level, speed, fixes and label"));
+        what |= it->second;
+    }
+    const Clip source = *from;
+    const int changed = ops::pasteAttributes(tl, project->media(), source, isVisualTrack(tl.tracks[size_t(ti)].type),
+                                             idSet(a.value(QStringLiteral("event_ids"))), what, project->settings().fps);
+    if (!changed)
+        return errorResult(QStringLiteral("nothing changed: event_ids must be of the same kind as from (picture or sound), on unlocked tracks"));
+    apply(tl, QStringLiteral("Paste Event Attributes"));
+    return jsonResult({{QStringLiteral("changed"), changed}});
+}
+
+QJsonObject McpServer::ToolCall::tool_replace_media()
+{
+    Timeline tl = project->timeline();
+    QString why;
+    const int changed = ops::replaceMedia(tl, project->media(), idSet(a.value(QStringLiteral("event_ids"))), integer("media_id", -1),
+                                          project->settings().fps, &why);
+    if (!changed)
+        return errorResult(why);
+    apply(tl, QStringLiteral("Replace Media"));
+    return jsonResult({{QStringLiteral("changed"), changed}});
+}
+
+QJsonObject McpServer::ToolCall::tool_separate_stems()
+{
+    const QString action = str("action");
+    if (action == QLatin1String("status"))
+        return jsonResult(w->stemJob()->status());
+    if (action == QLatin1String("cancel")) {
+        w->stemJob()->cancel();
+        return jsonResult(w->stemJob()->status());
+    }
+    if (action != QLatin1String("start"))
+        return errorResult(QStringLiteral("action is start, status or cancel"));
+    const int stems = integer("stems", 2);
+    if (stems != 2 && stems != 4)
+        return errorResult(QStringLiteral("stems is 2 or 4"));
+    QString error;
+    if (!w->stemJob()->start(integer("event_id", -1), stems, a.value(QStringLiteral("best")).toBool(), &error))
+        return errorResult(error);
+    return jsonResult({{QStringLiteral("started"), true}, {QStringLiteral("note"), QStringLiteral("poll action status until done")}});
+}
+
 QJsonObject McpServer::ToolCall::tool_stabilize()
 {
     Timeline tl = project->timeline();
@@ -4901,6 +4993,9 @@ QJsonObject McpServer::callTool(const QString& name, const QJsonObject& a)
         {QStringLiteral("envelope"), {&ToolCall::tool_envelope, false}},
         {QStringLiteral("group"), {&ToolCall::tool_group, false}},
         {QStringLiteral("duplicate_events"), {&ToolCall::tool_duplicate_events, false}},
+        {QStringLiteral("paste_attributes"), {&ToolCall::tool_paste_attributes, false}},
+        {QStringLiteral("replace_media"), {&ToolCall::tool_replace_media, false}},
+        {QStringLiteral("separate_stems"), {&ToolCall::tool_separate_stems, false}},
         {QStringLiteral("stabilize"), {&ToolCall::tool_stabilize, false}},
         {QStringLiteral("beat_montage"), {&ToolCall::tool_beat_montage, false}},
         {QStringLiteral("media"), {&ToolCall::tool_media, false}},

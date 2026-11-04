@@ -16,7 +16,7 @@ class AiPackagingTests(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
         self.bin = self.root / 'bin'
-        for name in ('MutantVideoProducer.exe', 'Qt6Core.dll', 'runtime/uv.exe', 'voice/worker.py', 'voice/rvc/worker.py',
+        for name in ('MutantVideoProducer.exe', 'Qt6Core.dll', 'runtime/uv.exe', 'voice/worker.py', 'voice/rvc/worker.py', 'stems/worker.py',
                      'voice/worker/mvp-voice-worker.exe', 'voice/worker/_internal/gpu.dll',
                      'voice/rvc-worker/mvp-rvc-worker.exe', 'voice/rvc-worker/_internal/torch.dll',
                      'voice/assets/model.onnx', 'models/whisper/ggml-base.bin', 'voice/catalog.json',

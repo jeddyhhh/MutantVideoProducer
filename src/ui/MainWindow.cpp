@@ -464,10 +464,12 @@ void MainWindow::renderAs()
     std::unique_ptr<QOffscreenSurface> gpuSurface = hw::settings().gpuCompositing ? createGpuSurface() : nullptr;
     auto monitor = std::make_shared<RenderMonitor>();
     bool ok = false;
+    QString smartNote;
     std::thread worker([&] {
         Exporter exporter;
         ok = exporter.run(*snap, s, [&](double) { return !monitor->cancel.load(); }, gpuSurface.get(),
                           [&](const ExportStatus& value) { monitor->update(value); });
+        smartNote = exporter.smartRenderNote();
         monitor->done = true;
     });
     RenderStatusDialog status(s, *snap, monitor, this);
@@ -475,6 +477,8 @@ void MainWindow::renderAs()
     status.exec();
     monitor->cancel = true;
     worker.join();
+    if (ok && !smartNote.isEmpty())
+        statusBar()->showMessage(smartNote, 12000);
     if (ok) {
         DeliverView::remember(m_project->filePath(), s.path, dlg.templateName());
         Profiles::instance().remember({QJsonObject{{"path", s.path}, {"folder", "Exports"}, {"origin", "render"}}});
@@ -947,6 +951,39 @@ void MainWindow::rebuildRecentMenu()
         m_recentMenu->addAction(tr("(none yet)"))->setEnabled(false);
     m_recentMenu->addSeparator();
     m_recentMenu->addAction(tr("Clear List"), this, [] { QSettings().remove(Profiles::instance().settingsKey(QStringLiteral("recent/projects"))); })->setEnabled(!recent.isEmpty());
+}
+
+void MainWindow::replaceMedia()
+{
+    if (!editorActive())
+        return;
+    // The file selected in Project Media (one, and not what the events show already), else one chosen now.
+    const QList<int> picked = m_bin->selectedMediaIds();
+    int mediaId = picked.size() == 1 ? picked.front() : 0;
+    if (mediaId) {
+        bool same = true;
+        for (int id : m_timeline->selection())
+            if (const Clip* c = m_project->timeline().findClip(id); c && c->mediaId != mediaId)
+                same = false;
+        if (same)
+            mediaId = 0;
+    }
+    if (!mediaId) {
+        QSettings settings;
+        const QString path = QFileDialog::getOpenFileName(this, tr("Replace Media"),
+                                                          settings.value(Profiles::instance().settingsKey(QStringLiteral("dirs/media")),
+                                                                         Profiles::instance().folder(QStringLiteral("Media"))).toString(),
+                                                          formats::importFileFilter());
+        if (path.isEmpty())
+            return;
+        importFiles({path});
+        for (const auto& [id, m] : m_project->media())
+            if (m && QFileInfo(m->path).absoluteFilePath().compare(QFileInfo(path).absoluteFilePath(), kPathCase) == 0)
+                mediaId = id;
+        if (!mediaId)
+            return;
+    }
+    m_timeline->replaceMediaOnSelection(mediaId);
 }
 
 void MainWindow::relinkMissing(int focusMediaId)

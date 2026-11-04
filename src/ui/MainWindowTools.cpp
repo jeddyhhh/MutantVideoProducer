@@ -39,6 +39,9 @@
 #include "ui/Help.h"
 #include "ui/LiveClipsBrowser.h"
 #include "ui/LiveView.h"
+#include "ui/StemJob.h"
+#include "core/StemSeparation.h"
+#include <QRadioButton>
 #include "engine/LiveEngine.h"
 #include "ui/MediaBin.h"
 #include "ui/MixerWindow.h"
@@ -791,4 +794,71 @@ void MainWindow::deleteProxies(const QList<int>& mediaIds)
     statusBar()->showMessage(tr("Deleted %1 proxies").arg(n), 4000);
     m_bin->refreshIcons();
     refreshPreview();
+}
+
+StemJob* MainWindow::stemJob()
+{
+    if (!m_stemJob)
+        m_stemJob = new StemJob(m_project, this);
+    return m_stemJob;
+}
+
+void MainWindow::separateStems(int clipId)
+{
+    if (stems::workerPath().isEmpty()) {
+        if (QMessageBox::question(this, tr("Separate Stems"),
+                                  tr("Separating stems needs the Stem Separation engine (about 1 GB, or 3 GB for NVIDIA graphics cards). "
+                                     "Install it now?"))
+            == QMessageBox::Yes)
+            aiComponents();
+        return;
+    }
+    QDialog dlg(this);
+    dlg.setObjectName(QStringLiteral("separateStemsDialog"));
+    dlg.setWindowTitle(tr("Separate Stems"));
+    auto* layout = new QVBoxLayout(&dlg);
+    auto* two = new QRadioButton(tr("Voice and background (dialogue from music and noise)"));
+    auto* four = new QRadioButton(tr("Vocals, drums, bass and other (a song's parts)"));
+    two->setChecked(QSettings().value(QStringLiteral("stems/count"), 2).toInt() != 4);
+    four->setChecked(!two->isChecked());
+    auto* best = new QCheckBox(tr("Best quality (about four times slower)"));
+    best->setChecked(QSettings().value(QStringLiteral("stems/best"), false).toBool());
+    auto* note = new QLabel(tr("Each part goes on its own track under the event, which is muted (kept, to compare). The first "
+                               "separation downloads the model (about 80 MB)."));
+    note->setWordWrap(true);
+    theme::style(note, QStringLiteral("color: @dim;"));
+    auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
+    for (QWidget* w : std::initializer_list<QWidget*>{two, four, best, note, buttons})
+        layout->addWidget(w);
+    connect(buttons, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
+    connect(buttons, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
+    if (dlg.exec() != QDialog::Accepted)
+        return;
+    const int count = four->isChecked() ? 4 : 2;
+    QSettings().setValue(QStringLiteral("stems/count"), count);
+    QSettings().setValue(QStringLiteral("stems/best"), best->isChecked());
+    QString error;
+    if (!stemJob()->start(clipId, count, best->isChecked(), &error)) {
+        QMessageBox::warning(this, tr("Separate Stems"), error);
+        return;
+    }
+    auto* progress = new QProgressDialog(tr("Separating stems..."), tr("Cancel"), 0, 1000, this);
+    progress->setWindowTitle(tr("Separate Stems"));
+    progress->setAttribute(Qt::WA_DeleteOnClose);
+    progress->setMinimumDuration(0);
+    progress->setAutoClose(false);
+    progress->setAutoReset(false);
+    connect(progress, &QProgressDialog::canceled, stemJob(), &StemJob::cancel);
+    connect(stemJob(), &StemJob::progress, progress, [progress](double value, const QString& message) {
+        progress->setValue(int(value * 1000));
+        progress->setLabelText(message);
+    });
+    connect(stemJob(), &StemJob::completed, progress, [this, progress](bool ok, const QString& why) {
+        progress->close();
+        if (ok)
+            statusBar()->showMessage(tr("Stems separated: each on its own track under the event, which is muted."), 8000);
+        else if (why != tr("Cancelled"))
+            QMessageBox::warning(this, tr("Separate Stems"), why);
+    });
+    progress->show();
 }

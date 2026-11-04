@@ -113,6 +113,13 @@ ExportDialog::ExportDialog(const ProjectSettings& project, TimeUs projectDuratio
     if (!anyGpu)
         m_useGpu->setToolTip(tr("No hardware video encoder works on this PC"));
     top->addRow(QString(), m_useGpu);
+    m_smartRender = new QCheckBox(tr("Smart render: copy video that isn't changed (much faster, no quality lost)"));
+    m_smartRender->setObjectName(QStringLiteral("smartRender"));
+    m_smartRender->setToolTip(tr("Where the picture is plain cuts of files already in this template's codec, size and frame rate, their\n"
+                                 "video is copied instead of encoded again (MP4 and MOV; each cut after the first on a keyframe).\n"
+                                 "Otherwise it renders as usual, and says why. The sound is always mixed and encoded."));
+    m_smartRender->setChecked(QSettings().value(QStringLiteral("export/smartRender"), false).toBool());
+    top->addRow(QString(), m_smartRender);
     m_subtitles = new QCheckBox;
     m_subtitles->setToolTip(tr("The text of the Captions track as subtitles viewers can turn on or off (MP4, MOV, MKV and WebM)"));
     m_subtitles->setChecked(QSettings().value(QStringLiteral("export/subtitles"), true).toBool());
@@ -272,6 +279,7 @@ ExportDialog::ExportDialog(const ProjectSettings& project, TimeUs projectDuratio
         updateNotes();
     });
     connect(m_subtitles, &QCheckBox::toggled, this, [](bool on) { QSettings().setValue(QStringLiteral("export/subtitles"), on); });
+    connect(m_smartRender, &QCheckBox::toggled, this, [](bool on) { QSettings().setValue(QStringLiteral("export/smartRender"), on); });
     for (QRadioButton* r : {m_rangeAll, m_rangeRegion})
         connect(r, &QRadioButton::toggled, this, &ExportDialog::updateNotes);
     connect(m_videoCodec, qOverload<int>(&QComboBox::currentIndexChanged), this, &ExportDialog::updateNotes);
@@ -532,6 +540,7 @@ ExportSettings ExportDialog::settings() const
         s = withGpuEncoder(s);
     if (m_subtitles->isVisible() && m_subtitles->isChecked())
         s.captions = m_captions;
+    s.smartRender = m_smartRender->isChecked();
     return s;
 }
 

@@ -1,4 +1,5 @@
 #include "core/AiRuntime.h"
+#include <algorithm>
 #include "core/Brand.h"
 #include <QCoreApplication>
 #include <QCryptographicHash>
@@ -48,13 +49,15 @@ std::vector<AiRuntime> parseAiRuntimes(const QJsonObject& catalog,QString* error
     for(const auto& value:catalog["components"].toArray()) {
         const auto o=value.toObject();
         AiRuntime r{o["id"].toString(),o["name"].toString(),o["python"].toString(),o["lock"].toString(),o["lock_sha256"].toString(),o["cuda_lock"].toString(),o["cuda_lock_sha256"].toString()};
-        if((r.id!="speech" && r.id!="rvc") || r.name.isEmpty() || r.python!="3.12.12"
+        if((r.id!="speech" && r.id!="rvc" && r.id!="stems") || r.name.isEmpty() || r.python!="3.12.12"
             || r.lock!="locks/"+r.id+".txt" || r.cudaLock!="locks/"+r.id+"-cuda.txt"
             || !hashValid(r.lockSha256) || !hashValid(r.cudaSha256))return fail();
         for(const auto& previous:result)if(previous.id==r.id)return fail();
         result.push_back(r);
     }
-    return result.size()==2?result:fail();
+    // (speech and RVC always; stem separation where the catalog has it)
+    const auto has=[&](const char* id){return std::any_of(result.begin(),result.end(),[&](const AiRuntime& r){return r.id==id;});};
+    return has("speech") && has("rvc")?result:fail();
 }
 QJsonObject aiRuntimeCatalog() {
     QFile f(runtimeData()+"/catalog.json");
@@ -83,9 +86,9 @@ bool setAiRuntimeRoot(const QString& folder,QString* error) {
     return true;
 }
 QString aiRuntimeInstalledPath(const AiRuntime& r) {
-    if((r.id!="speech" && r.id!="rvc") || !hashValid(r.lockSha256) || !hashValid(r.cudaSha256))return {};
+    if((r.id!="speech" && r.id!="rvc" && r.id!="stems") || !hashValid(r.lockSha256) || !hashValid(r.cudaSha256))return {};
     const auto marker=readMarker(r.id);const QString generation=marker["generation"].toString();
-    static const QRegularExpression safe(QStringLiteral("^(speech|rvc)-[0-9a-f-]{36}$"));
+    static const QRegularExpression safe(QStringLiteral("^(speech|rvc|stems)-[0-9a-f-]{36}$"));
     if(!safe.match(generation).hasMatch() || !generation.startsWith(r.id+"-") || marker["fingerprint"]!=fingerprint(r))return {};
     const QString python=QDir(aiRuntimeRoot()).filePath(generation+"/Scripts/python.exe");
     return hashValid(marker["python_sha256"].toString()) && hashFile(python)==marker["python_sha256"].toString()?python:QString();
@@ -101,7 +104,7 @@ QString aiRuntimeWorkerPath(const QString& id,const QString& bundled) {
 QStringList aiRuntimeWorkerArguments(const QString& id,const QString& program) {
 #ifdef _WIN32
     for(const auto& r:parseAiRuntimes(aiRuntimeCatalog()))if(r.id==id && !program.isEmpty() && aiRuntimeInstalledPath(r)==program)
-        return {"-I",QCoreApplication::applicationDirPath()+(id=="speech"?"/voice/worker.py":"/voice/rvc/worker.py")};
+        return {"-I",QCoreApplication::applicationDirPath()+(id=="speech"?"/voice/worker.py":id=="stems"?"/stems/worker.py":"/voice/rvc/worker.py")};
 #endif
     return {};
 }
@@ -128,7 +131,7 @@ bool installAiRuntime(const AiRuntime& r,const QString& device,const AiRuntimePr
     const QStorageInfo disk(root);
     // Free space for the engine and uv's download cache. CUDA speech brings its own cuDNN, cuBLAS and
     // CUDA runtime (~2.3 GB installed); RVC CUDA brings PyTorch.
-    const qint64 required=(r.id=="speech"?(device=="cuda"?6LL:2LL):(device=="cuda"?12LL:5LL))*1024*1024*1024;
+    const qint64 required=(r.id=="speech"?(device=="cuda"?6LL:2LL):r.id=="stems"?(device=="cuda"?10LL:3LL):(device=="cuda"?12LL:5LL))*1024*1024*1024;
     // (it said only "not enough disk space": not which drive, how much, or that the engine brings its own CUDA libraries)
     if(disk.isValid() && disk.bytesAvailable()>=0 && disk.bytesAvailable()<required)
         return fail(QString("This AI engine needs about %1 GB free on %2 for itself and its download cache; there is %3 GB free.\n\n"
@@ -167,15 +170,16 @@ bool installAiRuntime(const AiRuntime& r,const QString& device,const AiRuntimePr
     const QString python=destination+"/Scripts/python.exe";
     bool ok=run(uv,{"python","install",r.python,"--no-bin"},.05,"Downloading private Python from Astral's upstream distribution")
         && run(uv,{"venv","--managed-python","--python",r.python,destination},.18,"Creating isolated AI environment");
-    if(ok)ok=run(uv,{"pip","sync","--python",python,"--require-hashes","--only-binary",":all:",device=="cuda" && r.id=="rvc"?cudaLock:lock},.25,"Downloading verified wheels from PyPI and PyTorch");
+    if(ok)ok=run(uv,{"pip","sync","--python",python,"--require-hashes","--only-binary",":all:",device=="cuda" && r.id!="speech"?cudaLock:lock},.25,"Downloading verified wheels from PyPI and PyTorch");
     if(ok && device=="cuda" && r.id=="speech") {
         ok=run(uv,{"pip","uninstall","--python",python,"onnxruntime"},.75,"Selecting the CUDA speech backend")
             && run(uv,{"pip","install","--python",python,"--no-deps","--require-hashes","--only-binary",":all:","-r",cudaLock},.8,"Downloading CUDA speech support from PyPI");
     }
     const QString smoke=r.id=="speech"?QString("import kokoro_onnx,phonemizer,espeakng_loader,onnxruntime%1; print(onnxruntime.get_available_providers())")
                                              .arg(device=="cuda"?",nvidia.cudnn,nvidia.cublas,nvidia.cuda_runtime,nvidia.cufft":""):
+        r.id=="stems"?QString("import sys; sys.path.insert(0,sys.argv[1]); import torch,numpy,soundfile; from demucs.apply import apply_model; from demucs.pretrained import get_model; print(torch.__version__, torch.cuda.is_available())"):
         "import torch,numpy,scipy,librosa,faiss,parselmouth,soundfile,transformers; import sys; sys.path.insert(0,sys.argv[1]); from infer.module.models import SynthesizerTrnMs768NSFsid; from infer.vc.pipeline import Pipeline; import infer.hubert; print(torch.__version__)";
-    if(ok)ok=run(python,{"-I","-c",smoke,QCoreApplication::applicationDirPath()+"/voice/rvc/vendor"},.92,"Checking the installed engine");
+    if(ok)ok=run(python,{"-I","-c",smoke,QCoreApplication::applicationDirPath()+(r.id=="stems"?"/stems/vendor":"/voice/rvc/vendor")},.92,"Checking the installed engine");
     if(ok && progress && !progress(.98,"Finishing AI setup"))ok=fail("Cancelled");
     if(ok) {
         const QString hash=hashFile(python);

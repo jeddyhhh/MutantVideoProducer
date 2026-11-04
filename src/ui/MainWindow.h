@@ -128,6 +128,12 @@ private:
     void newProjectDialog(); // File > New: the shape and frame rate first
     void openProjectDialog();
     void importDialog();
+    // Replace Media: the selected events show the file selected in Project Media (or one chosen) instead.
+    void replaceMedia();
+    // Right-click > Separate Stems... on an audio event.
+    void separateStems(int clipId);
+    class StemJob* stemJob();
+    class StemJob* m_stemJob = nullptr;
     bool save();
     bool saveAs();
     void collectProjectDialog();

@@ -7,12 +7,16 @@ Speech generation, RVC frameworks and model caches are excluded to keep it below
 Existing generated narration plays and renders without either AI engine.
 
 Open **Tools > AI Components...**, or **Install / Manage AI Components...** in Generate
-Voice. Choose **Speech Generation** or **RVC Conversion**, select CPU or NVIDIA CUDA,
+Voice. Choose **Speech Generation**, **RVC Conversion** or **Stem Separation**, select CPU or NVIDIA CUDA,
 and click **Download & Install / Repair**. The app downloads private Python from
 [Astral's managed distribution](https://docs.astral.sh/uv/concepts/python-versions/),
 dependencies from [PyPI](https://pypi.org/), and Windows PyTorch wheels from
 [PyTorch](https://pytorch.org/get-started/locally/). These are upstream downloads,
 not AI packs hosted in our releases, and work with private development builds too.
+
+**Stem Separation** is Meta's Demucs (MIT licence), on PyTorch: about 1 GB for CPU or 3 GB for CUDA, and its model
+(about 80 MB, from Meta) downloads into the AI components folder the first time you separate. See
+[Separating stems](audio.md#separating-stems).
 
 CPU speech is the smallest option. NVIDIA (CUDA) speech brings its own cuDNN, cuBLAS and
 CUDA runtime, about 2.3 GB, and needs 6 GB free while it installs; it does not need RVC.

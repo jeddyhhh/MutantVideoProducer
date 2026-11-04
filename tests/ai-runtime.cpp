@@ -26,17 +26,17 @@ int main(int argc,char** argv) {
         }
         qCritical()<<"Unknown component or invalid catalog"<<error;return 1;
     }
-    if(parseAiRuntimes(aiRuntimeCatalog()).size()!=2){qCritical()<<"Deployed upstream catalog is invalid";return 1;}
+    if(parseAiRuntimes(aiRuntimeCatalog()).size()!=3){qCritical()<<"Deployed upstream catalog is invalid";return 1;}
     QTemporaryDir temp;if(!temp.isValid())return 1;
     qputenv("MVP_AI_RUNTIME_DIR",temp.filePath("engines").toUtf8());qputenv("MVP_AI_CATALOG",temp.filePath("catalog.json").toUtf8());
     auto hash=[](const QByteArray& b){return QString::fromLatin1(QCryptographicHash::hash(b,QCryptographicHash::Sha256).toHex());};
     auto write=[](const QString& p,const QByteArray& b){QDir().mkpath(QFileInfo(p).absolutePath());QFile f(p);return f.open(QIODevice::WriteOnly)&&f.write(b)==b.size();};
     const QString digest=hash("locked dependencies");QJsonArray entries;
-    for(const QString& id:{QString("speech"),QString("rvc")})entries.append(QJsonObject{{"id",id},{"name",id},{"python","3.12.12"},{"lock","locks/"+id+".txt"},{"lock_sha256",digest},{"cuda_lock","locks/"+id+"-cuda.txt"},{"cuda_lock_sha256",digest}});
+    for(const QString& id:{QString("speech"),QString("rvc"),QString("stems")})entries.append(QJsonObject{{"id",id},{"name",id},{"python","3.12.12"},{"lock","locks/"+id+".txt"},{"lock_sha256",digest},{"cuda_lock","locks/"+id+"-cuda.txt"},{"cuda_lock_sha256",digest}});
     QJsonObject catalog{{"version",2},{"platform","windows-x86_64"},{"uv_sha256",hash("bootstrap")},{"components",entries}};
     int passed=0,failed=0;auto check=[&](bool ok,const QString& message){qInfo().noquote()<<(ok?"PASS":"FAIL")<<message;if(ok)++passed;else ++failed;};
-    auto runtimes=parseAiRuntimes(catalog);check(runtimes.size()==2,"valid upstream catalog");
-    if(runtimes.size()!=2)return 1;
+    auto runtimes=parseAiRuntimes(catalog);check(runtimes.size()==3,"valid upstream catalog");
+    if(runtimes.size()!=3)return 1;
     auto bad=catalog;bad["version"]=1;check(parseAiRuntimes(bad).empty(),"legacy pack catalog rejected");
     {   // The engines folder chosen in AI Components is used; an unwritable one is refused; Default goes back; the variable wins.
         const QByteArray env=qgetenv("MVP_AI_RUNTIME_DIR");qunsetenv("MVP_AI_RUNTIME_DIR");
@@ -65,6 +65,13 @@ int main(int argc,char** argv) {
 #ifdef _WIN32
     check(aiRuntimeWorkerArguments("speech",python).size()==2,"Python launch isolates user configuration and selects script");
 #endif
+    {   // Stem separation's engine is found the same way (its own marker and generation).
+        const auto stemsRuntime=runtimes.back();
+        const QString g="stems-22222222-2222-2222-2222-222222222222",sp=QDir(aiRuntimeRoot()).filePath(g+"/Scripts/python.exe");write(sp,"stems python");
+        const QJsonObject m{{"generation",g},{"fingerprint",hash((stemsRuntime.python+stemsRuntime.lockSha256+stemsRuntime.cudaSha256).toUtf8())},{"python_sha256",hash("stems python")}};
+        write(QDir(aiRuntimeRoot()).filePath("stems-active.json"),QJsonDocument(m).toJson());
+        check(stemsRuntime.id=="stems" && aiRuntimeInstalledPath(stemsRuntime)==sp,"the stem separation engine is found once installed");
+    }
     QString error;const QByteArray before=QJsonDocument(marker).toJson();
     check(!installAiRuntime(r,"cpu",{},&error),"missing or tampered setup helper fails before downloads");
     QFile f(active);f.open(QIODevice::ReadOnly);check(f.readAll()==before && aiRuntimeInstalledPath(r)==python,"failed repair preserves the existing active engine");f.close();

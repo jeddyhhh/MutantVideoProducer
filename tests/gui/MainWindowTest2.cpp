@@ -3,6 +3,7 @@
 #include "ui/MainWindow.h"
 
 #include "core/Compositor.h"
+#include "core/Effects.h"
 #include "core/PreviewCache.h"
 #include "core/Proxy.h"
 #include "core/TimelineOps.h"
@@ -142,6 +143,56 @@ void MainWindow::runProductionToolsTest(const std::function<void(bool, const QSt
         check(labelled && saved && spectrum,
               QStringLiteral("colour labels on an event and its group (drawn in its colour, one undo step, saved with the "
                              "project); the Spectrogram window opens for an audio event, its cursor following the timeline's"));
+    }
+    {
+        // Paste Event Attributes from the Edit menu: one picture's effects and Pan/Crop onto another, one undo step.
+        auto findPictures = [this] {
+            std::vector<int> ids;
+            for (const Track& t : m_project->timeline().tracks)
+                if (isVisualTrack(t.type) && !t.locked)
+                    for (const Clip& c : t.clips)
+                        if (!c.isGenerated() && !c.isSequence())
+                            ids.push_back(c.id);
+            return ids;
+        };
+        std::vector<int> pictures = findPictures();
+        int duplicated = 0;
+        if (pictures.size() == 1) { // (a copy to paste onto)
+            m_timeline->selectClips({pictures[0]});
+            m_timeline->duplicateSelection();
+            duplicated = 1;
+            pictures = findPictures();
+        }
+        bool pasted = false;
+        QString why = QStringLiteral("fewer than two video events");
+        if (pictures.size() >= 2) {
+            Timeline tl = m_project->timeline();
+            Clip* from = tl.findClip(pictures[0]);
+            from->effects = {makeEffectOfType(QStringLiteral("invert"), tl.allocId())};
+            from->panCrop[QStringLiteral("zoom")].value = 1.4;
+            m_project->applyEdit(tl, QStringLiteral("Test attributes"));
+            m_timeline->selectClips({pictures[0]});
+            m_timeline->copySelection();
+            m_timeline->selectClips({pictures[1]});
+            QAction* action = nullptr;
+            for (QAction* top : menuBar()->actions())
+                if (top->menu() && top->text() == tr("&Edit"))
+                    for (QAction* a : top->menu()->actions())
+                        if (a->text() == tr("Paste Event &Attributes"))
+                            action = a;
+            if (action)
+                action->trigger();
+            const Clip* to = m_project->timeline().findClip(pictures[1]);
+            pasted = action && to && to->effects.size() == 1 && to->effects[0].type == QStringLiteral("invert")
+                     && to->panCrop == m_project->timeline().findClip(pictures[0])->panCrop
+                     && m_project->undoStack()->undoText() == tr("Paste Event Attributes");
+            why = action ? QStringLiteral("pasted: %1").arg(pasted) : QStringLiteral("no Edit > Paste Event Attributes");
+            m_project->undoStack()->undo();
+            m_project->undoStack()->undo();
+        }
+        for (int i = 0; i < duplicated; ++i)
+            m_project->undoStack()->undo();
+        check(pasted, QStringLiteral("Edit > Paste Event Attributes gives one event's effects and Pan/Crop to another (%1)").arg(why));
     }
     {
         // Every menu on the menu bar starts with a heading (a label, not a command), and Options keeps nothing

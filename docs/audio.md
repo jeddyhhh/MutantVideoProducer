@@ -28,6 +28,7 @@ Setting, keyframing and grouping them works as for video: see [Effects](effects.
 | Stereo Tools | Width, balance, channel swap, per-channel phase invert, mono. |
 | Noise Reduction | Removes steady background noise (hiss, hum, fans) with FFmpeg's FFT denoiser. |
 | De-hum | Takes out mains hum: narrow notches at 50 or 60 Hz and its harmonics (up to 8), leaving the rest of the sound alone. Its picture in the device chain shows the notches. |
+| De-reverb | Dries out a voice recorded in an echoey room (a kitchen, a hall, a laptop's microphone across the room): after each sound, the room's ringing tail is turned down and the voice itself stays. Set **Reverb time** to how long the room rings (about 0.5 s for a small room, 2 s for a hall). **Most taken out** limits it, so very wet recordings don't sound hollow. |
 | De-click | Repairs clicks, pops and crackle (vinyl, mouth clicks, digital glitches): short bursts are found and filled in from the sound either side (FFmpeg's de-click). **Repair clipping too** also rebuilds clipped peaks. |
 | Pitch Shift | Changes the pitch without changing the speed (Rubber Band). |
 | VST3 Plugin | Runs an installed VST3 effect (see below). |
@@ -45,9 +46,24 @@ as colour, from black through red and orange to white.
 - **Hum** is flat lines at 50 or 60 Hz and the harmonics above: use **De-hum**.
 - **Clicks** are thin upright lines: use **De-click**.
 - **Hiss** is a haze across the top: use **Noise Reduction**.
+- **Echo** is each sound smeared to the right, fading: use **De-reverb**.
 - It shows the event as heard (its effects and level); tick **Before the event's effects** to compare.
 - Its white line follows the timeline's cursor, and the playhead while playing. Click it to move the
   cursor there. It shows the first 10 minutes of a longer event.
+
+## Separating stems
+
+**Right-click an audio event > Separate Stems...** splits its sound with the **Stem Separation** engine (Tools > AI
+Components):
+
+- **Voice and background**: the dialogue apart from the music and noise under it, to clean the voice or turn the
+  music down.
+- **Vocals, drums, bass and other**: a song's parts, to remix it or take the singing out.
+
+Each part goes on its own track right under the event, where the event is and as long, grouped together. The event
+itself is muted (kept, to compare). **Best quality** uses the fine-tuned model, about four times slower. With an
+NVIDIA graphics card and the CUDA engine, a song separates in seconds; on a CPU it takes about as long as the song.
+The stems are WAV files in a **Stems** folder next to the project.
 
 ## Sound effects library
 
@@ -74,7 +90,8 @@ About 100 factory presets.
   Delay *Slapback*, *Ping-Pong Echo*; Pitch *Chipmunk*, *Deep Voice*, *Monster*;
   FFmpeg *Loudness Normalize (EBU R128)*, *De-esser*.
 - **Preset Chains**:
-  - *Voice*: Podcast Voice, Radio DJ, Clean Up Dialogue, Audiobook Narration, Chipmunk, Monster,
+  - *Voice*: Speech Enhance (all the clean-up at once: rumble filter, noise reduction, de-reverb, de-esser,
+    levelling, presence and a limiter), Podcast Voice, Radio DJ, Clean Up Dialogue, Audiobook Narration, Chipmunk, Monster,
     Robot, Whisper.
   - *Character*: Telephone, Walkie-Talkie, Megaphone, AM Radio, Lo-Fi, Underwater, Next Room.
   - *Space*: Stadium PA, Cathedral, Concert Hall, Cave Echo, Space Echo, Haunted.

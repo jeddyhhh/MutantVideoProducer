@@ -784,4 +784,125 @@ void ungroupClips(Timeline& tl, const std::set<int>& ids)
                 c.groupId = 0;
 }
 
+int pasteAttributes(Timeline& tl, const MediaMap& media, const Clip& from, bool fromPicture, const std::set<int>& to, unsigned what,
+                    const FrameRate& fps)
+{
+    auto mediaOf = [&](const Clip& c) -> const MediaItem* {
+        const auto it = media.find(c.mediaId);
+        return it != media.end() ? it->second.get() : nullptr;
+    };
+    int changed = 0;
+    for (Track& t : tl.tracks) {
+        if (t.locked || isVisualTrack(t.type) != fromPicture)
+            continue;
+        for (Clip& c : t.clips) {
+            if (!to.count(c.id) || c.id == from.id)
+                continue;
+            const Clip before = c;
+            if (what & AttrEffects) {
+                c.effects = from.effects;
+                reassignEffectIds(c.effects, [&] { return tl.allocId(); });
+            }
+            if (what & AttrLevel)
+                c.gain = from.gain;
+            if (what & AttrFades) {
+                c.fadeIn = from.fadeIn;
+                c.fadeOut = from.fadeOut;
+                c.fadeInCurve = from.fadeInCurve;
+                c.fadeOutCurve = from.fadeOutCurve;
+            }
+            if (fromPicture) {
+                if (what & AttrPanCrop)
+                    c.panCrop = from.panCrop;
+                if (what & AttrTransitions) {
+                    c.transitionIn = from.transitionIn;
+                    c.transitionOut = from.transitionOut;
+                }
+                if (what & AttrFixes) {
+                    c.stabilize = from.stabilize;
+                    c.stabilizeZoom = from.stabilizeZoom;
+                    c.denoise = from.denoise;
+                    c.frameBlend = from.frameBlend;
+                    c.opticalFlow = from.opticalFlow;
+                }
+            }
+            if (what & AttrLabel)
+                c.label = from.label;
+            if ((what & AttrSpeed) && !c.isGenerated()) {
+                c.reverse = from.reverse;
+                c.preservePitch = from.preservePitch;
+                c.velocity = from.velocity;
+                setClipSpeed(c, mediaOf(c), from.speed, false, fps); // (keeps its length, as far as the file goes)
+            }
+            clampFades(c);
+            if (!(c == before))
+                ++changed;
+        }
+    }
+    return changed;
+}
+
+int replaceMedia(Timeline& tl, const MediaMap& media, const std::set<int>& ids, int mediaId, const FrameRate& fps, QString* why)
+{
+    const auto it = media.find(mediaId);
+    const MediaItem* item = it != media.end() ? it->second.get() : nullptr;
+    if (!item || !item->info.ok()) {
+        if (why)
+            *why = QStringLiteral("That media can't be read.");
+        return 0;
+    }
+    // The events asked for, and their group partners showing the same file (a clip's picture and its sound).
+    std::set<int> targets;
+    std::map<int, int> oldMedia; // event -> the file it showed
+    for (const Track& t : tl.tracks)
+        for (const Clip& c : t.clips)
+            if (ids.count(c.id) && !c.isGenerated() && !c.isSequence())
+                oldMedia[c.id] = c.mediaId;
+    for (const Track& t : tl.tracks)
+        for (const Clip& c : t.clips) {
+            if (oldMedia.count(c.id)) {
+                targets.insert(c.id);
+                continue;
+            }
+            if (!c.groupId)
+                continue;
+            for (const auto& [id, old] : oldMedia)
+                if (const Clip* o = tl.findClip(id); o && o->groupId == c.groupId && c.mediaId == old)
+                    targets.insert(c.id);
+        }
+    int changed = 0;
+    bool wrongKind = false;
+    for (Track& t : tl.tracks) {
+        if (t.locked)
+            continue;
+        for (Clip& c : t.clips) {
+            if (!targets.count(c.id))
+                continue;
+            const bool picture = isVisualTrack(t.type);
+            int stream = -1;
+            if (picture && item->info.hasVideo())
+                stream = item->info.video.front().index;
+            else if (!picture && item->info.hasAudio())
+                stream = item->info.audio.front().index;
+            else if (!(picture && item->info.isStill)) {
+                wrongKind = true;
+                continue;
+            }
+            c.mediaId = mediaId;
+            c.streamIndex = stream;
+            if (!item->info.isStill && c.sourceIn >= item->info.duration)
+                c.sourceIn = 0;
+            if (c.loopLength > 0)
+                c.loopLength = item->info.duration;
+            if (c.loopLength <= 0)
+                c.length = std::max(fps.frameDuration(), std::min(c.length, maxClipLength(item, c)));
+            clampFades(c);
+            ++changed;
+        }
+    }
+    if (!changed && why)
+        *why = wrongKind ? QStringLiteral("The new file has no picture (or no sound) for these events.") : QStringLiteral("Select events from files first.");
+    return changed;
+}
+
 } // namespace ops

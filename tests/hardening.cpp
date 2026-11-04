@@ -768,7 +768,7 @@ void editFuzz(const QString& mediaDir, int iterations)
     AudioMixer mixer(48000);
     for (int i = 0; i < iterations && problem.isEmpty(); ++i) {
         Timeline tl = project.timeline();
-        const int op = int(rng() % 22);
+        const int op = int(rng() % 24);
         const auto media = project.media();
         stage(QStringLiteral("editing step %1 (op %2)").arg(i).arg(op), 60);
         switch (op) {
@@ -874,6 +874,17 @@ void editFuzz(const QString& mediaDir, int iterations)
                 ops::removeTransition(tl, id, rng() % 2);
             }
             break;
+        case 21: { // Paste Event Attributes from any event onto some others
+            const std::set<int> ids = someClips(tl);
+            for (const Track& t : tl.tracks)
+                if (!t.clips.empty()) {
+                    const Clip from = t.clips[rng() % t.clips.size()];
+                    ops::pasteAttributes(tl, media, from, isVisualTrack(t.type), ids, unsigned(rng() % 256), settings.fps);
+                    break;
+                }
+            break;
+        }
+        case 22: ops::replaceMedia(tl, media, someClips(tl), mediaIds[rng() % mediaIds.size()], settings.fps); break;
         default: { // a marker or region
             Marker m;
             m.id = tl.allocId();

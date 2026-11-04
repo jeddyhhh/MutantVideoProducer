@@ -158,6 +158,8 @@ add_library(mvp_core STATIC
     src/core/PanCrop.h           src/core/PanCrop.cpp
     src/core/FormatRegistry.h    src/core/FormatRegistry.cpp
     src/core/Exporter.h          src/core/Exporter.cpp
+    src/core/SmartRender.h       src/core/SmartRender.cpp
+    src/core/StemSeparation.h    src/core/StemSeparation.cpp
     src/core/ExportPresets.cpp
 )
 target_include_directories(mvp_core PUBLIC "${CMAKE_SOURCE_DIR}/src")
@@ -251,6 +253,7 @@ add_executable(mvp WIN32
     tests/gui/MainWindowTest.cpp tests/gui/MainWindowTest2.cpp tests/gui/TimelineWidgetTest.cpp tests/gui/LiveViewTest.cpp
     src/ui/MainWindowStory.cpp
     src/ui/VoiceJob.h            src/ui/VoiceJob.cpp
+    src/ui/StemJob.h             src/ui/StemJob.cpp
     src/ui/VoiceOverDialog.h     src/ui/VoiceOverDialog.cpp
     src/ui/RegisteredTo.h
     src/ui/MainWindowYouTube.cpp
@@ -323,7 +326,8 @@ endif()
 add_custom_command(TARGET mvp POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_SOURCE_DIR}/data/runtime" "$<TARGET_FILE_DIR:mvp>/runtime"
     COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_SOURCE_DIR}/data/voice" "$<TARGET_FILE_DIR:mvp>/voice"
-    COMMENT "Copying the local voice catalog and worker source")
+    COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_SOURCE_DIR}/data/stems" "$<TARGET_FILE_DIR:mvp>/stems"
+    COMMENT "Copying the local voice catalog and the voice and stem worker sources")
 if(WIN32 AND EXISTS "${MVP_DEPS_DIR}/ai-bootstrap/uv.exe")
     add_custom_command(TARGET mvp POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_if_different "${MVP_DEPS_DIR}/ai-bootstrap/uv.exe" "${MVP_DEPS_DIR}/ai-bootstrap/UV-LICENSE-MIT.txt" "${MVP_DEPS_DIR}/ai-bootstrap/UV-LICENSE-APACHE.txt" "$<TARGET_FILE_DIR:mvp>/runtime")
@@ -477,7 +481,7 @@ if(MVP_BUILD_GUI)
 endif()
 find_package(Python3 COMPONENTS Interpreter QUIET)
 if(Python3_Interpreter_FOUND)
-    set(_python_tests ci_builds)
+    set(_python_tests ci_builds stems_worker)
     if(WIN32)
         list(APPEND _python_tests ai_packaging voice_worker)
     endif()

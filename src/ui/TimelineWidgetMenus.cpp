@@ -249,6 +249,14 @@ void TimelineWidget::contextMenuEvent(QContextMenuEvent* e)
                 }
             }
             menu.addAction(tr("Split at Cursor\tS"), this, &TimelineWidget::splitAtCursor);
+            menu.addAction(tr("Paste Event Attributes\tCtrl+Shift+V"), this, [this] { pasteAttributes(ops::AttrAll); })
+                ->setEnabled(canPasteAttributes());
+            menu.addAction(tr("Selectively Paste Event Attributes..."), this, &TimelineWidget::selectivelyPasteAttributes)
+                ->setEnabled(canPasteAttributes());
+            if (const Clip* rc = m_project->timeline().findClip(hit.clipId); rc && !rc->isGenerated() && !rc->isSequence())
+                menu.addAction(tr("Replace Media..."), this, [this] { emit replaceMediaRequested(); })
+                    ->setToolTip(tr("Show another file in this event, keeping its place, trims and effects (the file selected in "
+                                    "Project Media, or one you choose)"));
             menu.addSeparator();
             if (m_project->timeline().tracks[hit.track].type == TrackType::Audio) {
                 const int cid = hit.clipId;
@@ -259,6 +267,9 @@ void TimelineWidget::contextMenuEvent(QContextMenuEvent* e)
                 menu.addAction(tr("Detect Beats (Markers)..."), this, [this] { emit beatsRequested(); });
                 menu.addAction(tr("Spectrogram..."), this, [this, cid] { emit spectrogramRequested(cid); })
                     ->setToolTip(tr("The event's sound as a picture: hum shows as flat lines, clicks as thin upright ones"));
+                menu.addAction(tr("Separate Stems..."), this, [this, cid] { emit stemsRequested(cid); })
+                    ->setToolTip(tr("Split the sound into voice and background, or vocals, drums, bass and other, each on its own "
+                                    "track under it (the Stem Separation engine, Tools > AI Components)"));
                 menu.addAction(tr("Remove Fades / Transitions (both ends)"), this, &TimelineWidget::removeTransitionsFromSelection);
                 menu.addSeparator();
             }

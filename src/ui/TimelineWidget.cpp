@@ -13,7 +13,11 @@
 #include "ui/MediaBin.h"
 #include "ui/Theme.h"
 
+#include <QCheckBox>
 #include <QClipboard>
+#include <QDialog>
+#include <QDialogButtonBox>
+#include <QVBoxLayout>
 #include <QContextMenuEvent>
 #include <QCursor>
 #include <QPixmap>
@@ -421,6 +425,81 @@ void TimelineWidget::paste()
     rippleAfterInsert(tl, m_cursor, pasted); // auto ripple: paste inserts
     m_project->applyEdit(tl, m_ripple != RippleMode::Off ? tr("Paste Insert") : tr("Paste"));
     setSelection(pasted);
+}
+
+void TimelineWidget::pasteAttributes(unsigned what)
+{
+    if (m_clipboard.empty() || m_selection.empty() || !what)
+        return;
+    Timeline tl = m_project->timeline();
+    const std::set<int> ids = ops::expandToGroups(tl, m_selection);
+    // The first copied picture onto pictures, the first copied sound onto sounds.
+    const Clip* picture = nullptr;
+    const Clip* sound = nullptr;
+    for (const auto& [ti, c] : m_clipboard) {
+        const bool visual = ti < int(tl.tracks.size()) && isVisualTrack(tl.tracks[size_t(ti)].type);
+        (visual ? picture : sound) = (visual ? picture : sound) ? (visual ? picture : sound) : &c;
+    }
+    int changed = 0;
+    for (const Clip* from : {picture, sound})
+        if (from)
+            changed += ops::pasteAttributes(tl, m_project->media(), *from, from == picture, ids, what, m_project->settings().fps);
+    if (!changed) {
+        emit message(tr("Nothing to paste onto: select events of the same kind as the copied one (picture or sound)."));
+        return;
+    }
+    m_project->applyEdit(tl, tr("Paste Event Attributes"));
+    emit message(tr("Attributes pasted onto %n event(s).", nullptr, changed));
+}
+
+void TimelineWidget::selectivelyPasteAttributes()
+{
+    if (!canPasteAttributes()) {
+        emit message(tr("Copy an event (Ctrl+C), then select the events to paste its attributes onto."));
+        return;
+    }
+    QDialog dlg(this);
+    dlg.setObjectName(QStringLiteral("pasteAttributesDialog"));
+    dlg.setWindowTitle(tr("Selectively Paste Event Attributes"));
+    auto* layout = new QVBoxLayout(&dlg);
+    const std::pair<unsigned, QString> kinds[] = {
+        {ops::AttrEffects, tr("Event FX (replacing the event's own)")}, {ops::AttrPanCrop, tr("Pan/Crop")},
+        {ops::AttrFades, tr("Fades in and out")},       {ops::AttrTransitions, tr("Transitions")},
+        {ops::AttrLevel, tr("Opacity / volume")},       {ops::AttrSpeed, tr("Playback rate and speed ramp (each keeps its length)")},
+        {ops::AttrFixes, tr("Stabilize, noise reduction, slow-motion blending")}, {ops::AttrLabel, tr("Colour label")}};
+    const unsigned saved = QSettings().value(QStringLiteral("edit/pasteAttributes"), unsigned(ops::AttrEffects | ops::AttrPanCrop | ops::AttrFades)).toUInt();
+    std::vector<std::pair<unsigned, QCheckBox*>> boxes;
+    for (const auto& [flag, label] : kinds) {
+        auto* box = new QCheckBox(label);
+        box->setChecked(saved & flag);
+        layout->addWidget(box);
+        boxes.emplace_back(flag, box);
+    }
+    auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
+    layout->addWidget(buttons);
+    connect(buttons, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
+    connect(buttons, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
+    if (dlg.exec() != QDialog::Accepted)
+        return;
+    unsigned what = 0;
+    for (const auto& [flag, box] : boxes)
+        if (box->isChecked())
+            what |= flag;
+    QSettings().setValue(QStringLiteral("edit/pasteAttributes"), what);
+    pasteAttributes(what);
+}
+
+void TimelineWidget::replaceMediaOnSelection(int mediaId)
+{
+    Timeline tl = m_project->timeline();
+    QString why;
+    const int changed = ops::replaceMedia(tl, m_project->media(), m_selection, mediaId, m_project->settings().fps, &why);
+    if (!changed) {
+        emit message(why);
+        return;
+    }
+    m_project->applyEdit(tl, tr("Replace Media"));
+    emit message(tr("%n event(s) now show %1.", nullptr, changed).arg(m_project->mediaItem(mediaId)->displayName()));
 }
 
 void TimelineWidget::duplicateSelection()

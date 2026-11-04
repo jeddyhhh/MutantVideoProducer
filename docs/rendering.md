@@ -21,6 +21,19 @@ The template fills in the format and codecs. You can change any of them:
 - **Audio**: **Codec**, **Sample rate**, **Channels** (stereo or mono), **Bitrate**.
 - **Encode on the GPU when possible**: switches H.264, HEVC and AV1 templates to the graphics
   card's encoder (NVIDIA NVENC, AMD AMF or Intel Quick Sync). Much faster.
+- **Smart render**: where the picture is nothing but plain cuts of files that already have the template's codec,
+  frame size and frame rate, their video is copied into the file instead of encoded again. That is much faster and
+  loses no quality. The sound is still mixed and encoded. It needs:
+  - an MP4 or MOV file;
+  - one video track showing something, with no gaps, no effects, Pan/Crop, fades or transitions, and nothing
+    played at another speed;
+  - files encoded the same way as each other;
+  - every cut after the first on a keyframe of its file. The first cut can start anywhere. At the end, the last
+    picture or two may hold the one before, when the end isn't on a keyframe.
+
+  Codecs where every frame is a keyframe (ProRes, DNxHR, MJPEG) can be cut anywhere. When smart render isn't
+  possible, the render goes ahead as usual, and the status bar says why (for example "the cut at 12.40 s isn't on a
+  keyframe of interview.mp4").
 - **Other shapes**: how a project of another shape fills the frame, for example 16:9 into a vertical
   9:16 template:
   - **Fit** (black bars),

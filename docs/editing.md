@@ -49,6 +49,14 @@ its colour (Neon Green, Amber, LED Red and others, or a custom one).
 - **Ctrl+D** (Edit > Duplicate) puts a copy of the selected events right after them: one event's copy
   starts where it ends, with its grouped sound or picture. With auto ripple on, what follows moves
   along to make room. The copies are selected, so Ctrl+D again makes the next one.
+- **Ctrl+Shift+V** (Edit > Paste Event Attributes) gives the selected events what the copied event
+  has: its effects (in place of theirs), Pan/Crop, fades, transitions, opacity or volume, playback
+  rate, stabilizing and colour label. A copied picture goes onto pictures and a copied sound onto
+  sounds. **Edit > Selectively Paste Event Attributes...** lets you tick which (remembered for next
+  time). One undo step.
+- **Right-click > Replace Media...** makes the selected events show another file: the one selected
+  in Project Media, or one you choose. They keep their place, trims (as far as the new file goes),
+  effects and keyframes, and their grouped sound or picture changes too.
 
 ### Trimming and splitting
 

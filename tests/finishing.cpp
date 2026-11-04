@@ -7,7 +7,10 @@
 #include "core/AudioSync.h"
 #include "core/AudioDecoder.h"
 #include "core/Exporter.h"
+#include "core/Generators.h"
+#include "core/Compositor.h"
 #include "core/Multicam.h"
+#include "core/StemSeparation.h"
 #include "core/OpticalFlow.h"
 #include "core/ColorMatch.h"
 #include <random>
@@ -86,6 +89,47 @@ int main(int argc, char** argv)
         });
         check(limitedNoise.error.isEmpty() && limitedNoise.truePeak <= -2.85,
               QStringLiteral("the limiter holds a -3 dB ceiling on loud noise and clicks (true peak %1 dBTP)").arg(limitedNoise.truePeak, 0, 'f', 2));
+    }
+    {
+        // De-reverb: 1 kHz bursts in a room ringing for 0.8 s (decaying noise after each): the tail between them goes down
+        // by more than the bursts themselves.
+        const auto* def = findAudioEffect("a_dereverb");
+        auto dry = def ? def->create() : nullptr;
+        const int len = rate * 6, period = rate * 6 / 10, burst = rate / 10;
+        std::vector<float> wet(size_t(len) * 2);
+        uint32_t seed = 7;
+        for (int i = 0; i < len; ++i) {
+            const int t = i % period;
+            double v = t < burst ? 0.5 * std::sin(2 * pi * 1000 * i / rate) : 0.0;
+            seed = seed * 1664525u + 1013904223u;
+            const double noise = (double(seed >> 8) / double(1u << 24)) * 2 - 1;
+            v += 0.15 * noise * std::exp(-6.9 * double(t) / rate / 0.8);
+            wet[size_t(i) * 2] = wet[size_t(i) * 2 + 1] = float(v);
+        }
+        std::vector<float> out = wet;
+        ParamMap values;
+        const Params params = def ? resolveParams(def->params, values, 0) : Params();
+        int lat = 0;
+        if (dry) {
+            dry->reset(rate);
+            lat = dry->latency(params);
+            for (int i = 0; i < len; i += 512)
+                dry->process(out.data() + size_t(i) * 2, std::min(512, len - i), params);
+        }
+        auto energy = [&](const std::vector<float>& x, int shift, int from, int to) {
+            double e = 0;
+            for (int k = 2; k < len / period; ++k) // (after the first bursts: the processor has settled)
+                for (int t = from; t < to; ++t) {
+                    const int i = k * period + t + shift;
+                    if (i < len)
+                        e += double(x[size_t(i) * 2]) * x[size_t(i) * 2];
+                }
+            return 10 * std::log10(e + 1e-12);
+        };
+        const double burstDrop = energy(wet, 0, burst / 5, burst) - energy(out, lat, burst / 5, burst);
+        const double tailDrop = energy(wet, 0, burst + rate / 5, period) - energy(out, lat, burst + rate / 5, period);
+        check(dry && tailDrop > 6 && burstDrop < 3,
+              QStringLiteral("De-reverb: a room's tail down %1 dB, the sound itself %2 dB").arg(tailDrop, 0, 'f', 1).arg(burstDrop, 0, 'f', 1));
     }
     auto crest = finishing::analyze(rate, frames, [&](int64_t pos, int n, float* out) {
         for (int i = 0; i < n; ++i) {
@@ -531,6 +575,92 @@ int main(int argc, char** argv)
               "the multicam is saved with the project");
     }
     {
+        // Paste Event Attributes and Replace Media: event b gets a's effects (new ids), Pan/Crop, fade, level and label;
+        // its grouped sound is left (a picture's attributes); then b shows a 10 s file: its sound follows, the trim that
+        // went past the new file's end starts again from 0 and its length fits the file.
+        MediaMap media;
+        for (int id : {1, 2}) {
+            auto m = std::make_shared<MediaItem>();
+            m->id = id;
+            m->info.duration = (id == 1 ? 60 : 10) * kUsPerSecond;
+            m->info.video.push_back({});
+            m->info.video.back().index = 0;
+            m->info.audio.push_back({});
+            m->info.audio.back().index = 1;
+            media[id] = m;
+        }
+        Timeline tl = defaultTimeline();
+        const int vt = ops::addTrack(tl, TrackType::Video, 0), at = ops::addTrack(tl, TrackType::Audio, -1);
+        auto event = [&](int track, int stream, TimeUs start, TimeUs in) {
+            Clip c;
+            c.id = tl.allocId();
+            c.mediaId = 1;
+            c.streamIndex = stream;
+            c.start = start;
+            c.sourceIn = in;
+            c.length = 8 * kUsPerSecond;
+            tl.tracks[size_t(track)].clips.push_back(c);
+            return c.id;
+        };
+        const int a = event(vt, 0, 0, 0), b = event(vt, 0, 10 * kUsPerSecond, 20 * kUsPerSecond), c = event(at, 1, 10 * kUsPerSecond, 20 * kUsPerSecond);
+        tl.findClip(b)->groupId = tl.findClip(c)->groupId = tl.allocId();
+        Clip* ca = tl.findClip(a);
+        ca->effects.push_back(makeEffectOfType(QStringLiteral("invert"), tl.allocId()));
+        ca->panCrop[QStringLiteral("zoom")].value = 1.5;
+        ca->fadeIn = kUsPerSecond;
+        ca->gain = 0.5f;
+        ca->label = 3;
+        const FrameRate fps{30, 1};
+        const Clip from = *ca;
+        const int pasted = ops::pasteAttributes(tl, media, from, true, {b, c}, ops::AttrAll, fps);
+        const Clip& pb = *tl.findClip(b);
+        const bool attributes = pasted == 1 && pb.effects.size() == 1 && pb.effects[0].type == QStringLiteral("invert")
+                                && pb.effects[0].id != from.effects[0].id && pb.panCrop == from.panCrop && pb.fadeIn == kUsPerSecond
+                                && pb.gain == 0.5f && pb.label == 3 && tl.findClip(c)->effects.empty() && tl.findClip(c)->gain == 1.0f;
+        check(attributes, "Paste Event Attributes: effects (new ids), Pan/Crop, fade, level and label onto a picture, not its sound");
+        QString why;
+        const int replaced = ops::replaceMedia(tl, media, {b}, 2, fps, &why);
+        const Clip& rb = *tl.findClip(b);
+        const Clip& rc = *tl.findClip(c);
+        check(replaced == 2 && rb.mediaId == 2 && rc.mediaId == 2 && rb.sourceIn == 0 && rb.length <= 10 * kUsPerSecond && rb.effects.size() == 1
+                  && rb.start == 10 * kUsPerSecond && rc.streamIndex == 1 && timelineProblem(tl).isEmpty(),
+              QStringLiteral("Replace Media: the event and its grouped sound show the new file, keeping place and effects (%1)").arg(why));
+    }
+    {
+        // Separate Stems' two ends: the event's sound as the engine gets it (its span of the file, 44.1 kHz), and the
+        // stems back on tracks right under it, grouped, the event muted.
+        Project p;
+        const int tone = p.addMedia(probeMedia(wav));
+        Timeline tl = p.timeline();
+        const int at = ops::addTrack(tl, TrackType::Audio);
+        Clip c;
+        c.id = tl.allocId();
+        c.mediaId = tone;
+        c.streamIndex = p.mediaItem(tone)->info.audio.front().index;
+        c.start = 3 * kUsPerSecond;
+        c.sourceIn = kUsPerSecond;
+        c.length = 2 * kUsPerSecond;
+        tl.tracks[size_t(at)].clips.push_back(c);
+        p.applyEdit(tl, "event");
+        QString why;
+        const QString cut = tmp.filePath("event.wav");
+        const bool written = stems::writeEventWav(*p.snapshot(), c, cut, &why);
+        const MediaInfo info = written ? probeMedia(cut) : MediaInfo();
+        check(written && info.ok() && info.audio.front().sampleRate == 44100 && std::abs(double(info.duration) - 2e6) < 30000,
+              QStringLiteral("Separate Stems hands the engine the event's 2 s of sound at 44.1 kHz (%1)").arg(why));
+        Timeline st = p.timeline();
+        const int a = p.addMedia(info), b = p.addMedia(info);
+        const std::vector<int> made = stems::place(st, p.media(), c.id, {a, b}, {"voice", "background"}, &why);
+        int ti = -1;
+        st.findClip(c.id, &ti);
+        int t0 = -1, t1 = -1;
+        const Clip* s0 = made.size() == 2 ? st.findClip(made[0], &t0) : nullptr;
+        const Clip* s1 = made.size() == 2 ? st.findClip(made[1], &t1) : nullptr;
+        check(s0 && s1 && t0 == ti + 1 && t1 == ti + 2 && s0->start == c.start && s1->length == c.length && s0->groupId && s0->groupId == s1->groupId
+                  && st.findClip(c.id)->muted && st.tracks[size_t(t0)].name.endsWith(QLatin1String("voice")) && timelineProblem(st).isEmpty(),
+              QStringLiteral("the stems go on tracks under the event, where it is, grouped, the event muted (%1)").arg(why));
+    }
+    {
         // Stems: a track's own file has only its sound (a 1 kHz tone and a 440 Hz one on two tracks).
         QTemporaryDir dir;
         const QString low = dir.filePath("low.wav");
@@ -594,6 +724,87 @@ int main(int argc, char** argv)
         const double p440 = power(440), p1000 = power(1000);
         check(read && p440 > 1000 * std::max(1e-9, p1000), QStringLiteral("a stem has only its track's sound (440 Hz %1x the other track's 1 kHz)")
                                                              .arg(p440 / std::max(1e-9, p1000), 0, 'g', 3));
+    }
+    {
+        // Smart render: a file cut at 0.5-2 s and 2-3.5 s (2 s a keyframe: one a second) is copied, not encoded again: the
+        // pictures are the file's own, the first cut starting mid-GOP (the MP4's edit list hides the frames before it).
+        // A cut off a keyframe renders as usual and says why.
+        QTemporaryDir sdir;
+        Project gen;
+        Timeline gt = gen.timeline();
+        const int clock = ops::insertGenerated(gt, *findGeneratorPreset("timecode"), 0, -1, gen.settings().fps);
+        gt.findClip(clock)->length = 4 * kUsPerSecond;
+        gen.applyEdit(gt, "clock");
+        ExportSettings make;
+        make.path = sdir.filePath("source.mp4");
+        make.videoEncoder = "libx264";
+        make.audioEncoder = "aac";
+        make.width = 640;
+        make.height = 360;
+        make.fps = gen.settings().fps;
+        make.gopSeconds = 1;
+        make.rangeEnd = 4 * kUsPerSecond;
+        Exporter maker;
+        const bool made = maker.run(*gen.snapshot(), make);
+        auto frameOf = [&](const QString& path, TimeUs t) {
+            Project q;
+            const int id = q.addMedia(probeMedia(path));
+            Timeline qt = q.timeline();
+            ops::insertMedia(qt, *q.mediaItem(id), 0, -1, q.settings().fps);
+            q.applyEdit(qt, "frame");
+            Compositor cpu(true);
+            return cpu.render(*q.snapshot(), t, QSize(320, 180));
+        };
+        auto differ = [](const QImage& a, const QImage& b) {
+            if (a.size() != b.size() || a.isNull())
+                return 999.0;
+            double sum = 0;
+            for (int y = 0; y < a.height(); y += 3)
+                for (int x = 0; x < a.width(); x += 3)
+                    sum += std::abs(qGray(a.pixel(x, y)) - qGray(b.pixel(x, y)));
+            return sum / ((a.height() / 3 + 1) * (a.width() / 3 + 1));
+        };
+        auto cutAndRender = [&](TimeUs secondIn, QString* note) {
+            Project p;
+            const int id = p.addMedia(probeMedia(make.path));
+            Timeline tl = p.timeline();
+            int vt = -1;
+            for (size_t i = 0; i < tl.tracks.size(); ++i)
+                if (tl.tracks[i].type == TrackType::Video && vt < 0)
+                    vt = int(i);
+            for (const auto& [at, in] : {std::pair<TimeUs, TimeUs>{0, kUsPerSecond / 2}, {3 * kUsPerSecond / 2, secondIn}}) {
+                Clip c;
+                c.id = tl.allocId();
+                c.mediaId = id;
+                c.streamIndex = p.mediaItem(id)->info.video.front().index;
+                c.start = at;
+                c.sourceIn = in;
+                c.length = 3 * kUsPerSecond / 2;
+                tl.tracks[size_t(vt)].clips.push_back(c);
+            }
+            p.applyEdit(tl, "cuts");
+            ExportSettings s = make;
+            s.path = sdir.filePath(QStringLiteral("smart%1.mp4").arg(secondIn));
+            s.rangeEnd = 3 * kUsPerSecond;
+            s.smartRender = true;
+            Exporter ex;
+            const bool ok = ex.run(*p.snapshot(), s);
+            *note = ex.smartRenderNote();
+            return ok ? s.path : QString();
+        };
+        QString copiedNote, renderedNote;
+        const QString copied = made ? cutAndRender(2 * kUsPerSecond, &copiedNote) : QString();
+        const QString rendered = made ? cutAndRender(5 * kUsPerSecond / 2, &renderedNote) : QString();
+        const MediaInfo out = copied.isEmpty() ? MediaInfo() : probeMedia(copied);
+        const double first = copied.isEmpty() ? 999 : differ(frameOf(copied, kUsPerSecond / 10), frameOf(make.path, kUsPerSecond * 6 / 10));
+        const double second = copied.isEmpty() ? 999 : differ(frameOf(copied, 2 * kUsPerSecond), frameOf(make.path, 5 * kUsPerSecond / 2));
+        check(made && copiedNote.contains(QLatin1String("copied")) && out.ok() && std::abs(double(out.duration) / kUsPerSecond - 3.0) < 0.15
+                  && first < 1.0 && second < 1.0,
+              QStringLiteral("smart render: straight cuts of an H.264 file copied (%1; %2 s long; the first cut's picture %3 off, the "
+                             "second's %4 off)")
+                  .arg(copiedNote).arg(double(out.duration) / kUsPerSecond, 0, 'f', 2).arg(first, 0, 'f', 2).arg(second, 0, 'f', 2));
+        check(!rendered.isEmpty() && renderedNote.contains(QLatin1String("keyframe")),
+              QStringLiteral("smart render: a cut off a keyframe renders as usual and says so (%1)").arg(renderedNote));
     }
     {
         // Match Colour's curves: a picture with every level, against a copy with other levels in each channel, give

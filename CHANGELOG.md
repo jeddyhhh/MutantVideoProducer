@@ -2,6 +2,22 @@
 
 What changed in each version of Mutant Video Producer. The newest is first.
 
+## Unreleased
+
+### Added
+
+- **Paste Event Attributes** (Edit, Ctrl+Shift+V) gives the selected events the copied event's effects, Pan/Crop,
+  fades, transitions, level, playback rate, fixes and label; **Selectively Paste Event Attributes...** picks which.
+- **Replace Media** (right-click an event): it shows another file, keeping its place, trims, effects and keyframes
+  (its grouped sound or picture too).
+- **Smart render** (Render As): plain cuts of files already in the template's codec, size and frame rate have their
+  video copied, not encoded again (MP4/MOV; cuts after the first on keyframes); otherwise it renders and says why.
+- **Separate Stems** (right-click an audio event): voice and background, or vocals, drums, bass and other, each on a
+  track under it, with the new **Stem Separation** AI component (Meta's Demucs).
+- **De-reverb** (audio effect) takes a room's echo out of a voice, and the **Speech Enhance** preset chain does all
+  the voice clean-up at once.
+- AI control: paste_attributes, replace_media, separate_stems; render takes smart_render.
+
 ## 0.9.5 (2026-11-04)
 
 The first release built on GitHub again, for Windows and Linux. (0.9.4 was tagged, but its builds failed.)

@@ -4,6 +4,7 @@
 #include "core/FrameRenderer.h"
 #include "core/Hardware.h"
 #include "core/FFmpeg.h"
+#include "core/SmartRender.h"
 
 #include <QElapsedTimer>
 #include <QDir>
@@ -248,6 +249,7 @@ bool Exporter::run(const ProjectSnapshot& snap, const ExportSettings& s, const P
 {
     m_error.clear();
     m_rendererName.clear();
+    m_smartNote.clear();
     ExportStatus info;
     QElapsedTimer clock, publishClock;
     clock.start(); publishClock.start();
@@ -323,6 +325,17 @@ bool Exporter::run(const ProjectSnapshot& snap, const ExportSettings& s, const P
     AVFormatContext* oc = out.oc;
     const bool globalHeader = oc->oformat->flags & AVFMT_GLOBALHEADER;
 
+    smartrender::Plan smart;
+    if (s.smartRender && !sequence) {
+        stage(QStringLiteral("Smart render"), QStringLiteral("Checking whether the video can be copied: codecs, sizes, keyframes at the cuts"));
+        smart = smartrender::plan(snap, s);
+        m_smartNote = smart.ok ? QStringLiteral("Video copied from %1 piece(s) of the files (smart render)").arg(smart.pieces.size())
+                               : QStringLiteral("Video rendered: smart render isn't possible (%1)").arg(smart.why);
+        if (smart.ok && smart.heldFrames > 0)
+            m_smartNote += QStringLiteral("; the end isn't on a keyframe, so its last %1 picture(s) hold the one before").arg(smart.heldFrames);
+        stage(QStringLiteral("Smart render"), m_smartNote);
+    }
+
     stage(QStringLiteral("Opening encoders"), QStringLiteral("Configuring video codec, pixel format and rate control"));
     // ---- Video stream ------------------------------------------------------
     ff::CodecContextPtr venc;
@@ -330,7 +343,17 @@ bool Exporter::run(const ProjectSnapshot& snap, const ExportSettings& s, const P
     ff::FramePtr vframe;
     ff::SwsPtr sws;
     int width = s.width, height = s.height;
-    if (!s.videoEncoder.isEmpty()) {
+    if (smart.ok) { // copied: the files' own stream
+        vst = avformat_new_stream(oc, nullptr);
+        AVRational tb{1, 1};
+        if ((ret = smartrender::copyParameters(smart, vst->codecpar, &tb)) < 0)
+            return fail(QStringLiteral("Could not read the video to copy"), ret);
+        vst->time_base = tb;
+        vst->avg_frame_rate = AVRational{s.fps.num, s.fps.den};
+        info.videoEncoder = QStringLiteral("copied (smart render)");
+        info.width = width; info.height = height;
+        publish(true);
+    } else if (!s.videoEncoder.isEmpty()) {
         const QByteArray name = s.videoEncoder.toUtf8();
         const AVCodec* codec = avcodec_find_encoder_by_name(name.constData());
         if (!codec)
@@ -603,7 +626,7 @@ bool Exporter::run(const ProjectSnapshot& snap, const ExportSettings& s, const P
 
     // ---- Main loop -----------------------------------------------------------
     const TimeUs duration = s.rangeEnd - s.rangeStart;
-    const int64_t totalFrames = venc ? s.fps.frameAt(duration - 1) + 1 : 0;
+    const int64_t totalFrames = venc || smart.ok ? s.fps.frameAt(duration - 1) + 1 : 0;
     const int64_t totalSamples = aenc ? usToSamples(duration, rate) : 0;
     const int64_t rangeStartSample = usToSamples(s.rangeStart, rate);
     info.totalFrames = totalFrames; info.totalSamples = totalSamples;
@@ -781,6 +804,30 @@ bool Exporter::run(const ProjectSnapshot& snap, const ExportSettings& s, const P
             if (progress && !progress(info.progress))
                 return failAndRemove(QStringLiteral("Cancelled"));
         }
+    }
+
+    if (smart.ok) {
+        stage(QStringLiteral("Copying video"), m_smartNote);
+        int audioError = 0;
+        ret = smartrender::copy(smart, oc, vst, [&](TimeUs t, qint64 bytes) {
+            if (t >= 0) {
+                if (aenc && (audioError = pumpAudio(std::min(totalSamples, usToSamples(t, rate)))) < 0)
+                    return false;
+                ++info.videoPackets;
+                info.packetBytes += bytes;
+                info.frames = std::min<qint64>(totalFrames, s.fps.frameAt(t) + 1);
+                info.position = double(s.rangeStart + t) / kUsPerSecond;
+                info.progress = std::clamp(double(t) / double(std::max<TimeUs>(1, duration)), 0.0, 1.0);
+                publish();
+            }
+            return !progress || progress(info.progress);
+        });
+        if (audioError < 0)
+            return failAndRemove(QStringLiteral("Audio encoding failed"), audioError);
+        if (ret == AVERROR_EXIT || (progress && !progress(info.progress)))
+            return failAndRemove(QStringLiteral("Cancelled"));
+        if (ret < 0)
+            return failAndRemove(QStringLiteral("Copying the video failed"), ret);
     }
 
     if (aenc) {

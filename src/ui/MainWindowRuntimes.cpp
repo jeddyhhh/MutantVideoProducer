@@ -1,4 +1,5 @@
 #include "ui/MainWindow.h"
+#include "core/StemSeparation.h"
 #include "ui/VoiceJob.h"
 #include "core/AiRuntime.h"
 #include <QApplication>
@@ -127,7 +128,7 @@ void MainWindow::aiComponents()
         status->setWordWrap(true);
         layout->addWidget(status);
         auto refresh = [=] {
-            const QString path = runtime.id == "speech" ? VoiceJob::workerPath() : rvcWorkerPath();
+            const QString path = runtime.id == "speech" ? VoiceJob::workerPath() : runtime.id == "stems" ? stems::workerPath() : rvcWorkerPath();
             status->setText(QFileInfo::exists(path) ? tr("Installed — ready to use. Install again to repair or change acceleration.")
                                                     : tr("Not installed."));
         };
@@ -141,6 +142,10 @@ void MainWindow::aiComponents()
             runtime.id == "speech"
                 ? tr("Speech: roughly 100–500 MB of engine downloads. CUDA speech shares CUDA/cuDNN libraries with the CUDA RVC engine; "
                      "install that too for NVIDIA acceleration. CPU fallback remains available.")
+                : runtime.id == "stems"
+                ? tr("Stem Separation (Demucs): splits sound into voice and background, or vocals, drums, bass and other "
+                     "(right-click an audio event > Separate Stems). Roughly 1 GB for CPU, or 3 GB for CUDA (much faster); "
+                     "its model (about 80 MB) downloads on first use. Allow 3 GB (CPU) or 10 GB (CUDA) of free space during setup.")
                 : tr("RVC: roughly 500 MB for CPU, or 3 GB for CUDA. Allow 5 GB (CPU) or 12 GB (CUDA) of free space during setup."));
         detail->setWordWrap(true);
         layout->addWidget(detail);

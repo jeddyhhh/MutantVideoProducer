@@ -39,6 +39,7 @@ struct ExportSettings {
     double gopSeconds = 0;       // keyframe interval; 0 = 2 seconds
     std::vector<Caption> captions; // a subtitle track (timeline times), where the format has one
     int onlyAudioTrack = 0;        // a stem: only this audio track is heard (its ducking still applied); 0 = the mix
+    bool smartRender = false;      // copy the video where it is straight cuts of matching files (SmartRender.h)
 };
 
 struct ExportPreset {
@@ -101,8 +102,11 @@ public:
              QOffscreenSurface* gpuSurface = nullptr, const std::function<void(const ExportStatus&)>& status = {});
     const QString& error() const { return m_error; }
     const QString& rendererName() const { return m_rendererName; }
+    // With smartRender: whether the video was copied, or why not.
+    const QString& smartRenderNote() const { return m_smartNote; }
 
 private:
     QString m_error;
     QString m_rendererName;
+    QString m_smartNote;
 };

@@ -83,7 +83,7 @@ def package(bin_dir, output, version):
                 target = base / relative
                 target.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(path, target)
-        for name in ('runtime/uv.exe', 'runtime/catalog.json', 'voice/worker.py', 'voice/rvc/worker.py'):
+        for name in ('runtime/uv.exe', 'runtime/catalog.json', 'voice/worker.py', 'voice/rvc/worker.py', 'stems/worker.py'):
             if not (base / name).is_file():
                 raise ValueError(f'The upstream AI setup file is missing: {name}')
         catalog = json.loads((base / 'runtime/catalog.json').read_text(encoding='utf-8'))

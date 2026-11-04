@@ -21,6 +21,15 @@
       "cuda_lock": "locks/rvc-cuda.txt",
       "lock_sha256": "33a60cd0b30028e77536e2a2d41285fca2f00d5b60770ee94bba17a91bffea97",
       "cuda_lock_sha256": "aed36a6489c647f6380d2ec57cced57523cfdbbd6e09585b745d2edbf4e555ba"
+    },
+    {
+      "id": "stems",
+      "name": "Stem Separation",
+      "python": "3.12.12",
+      "lock": "locks/stems.txt",
+      "cuda_lock": "locks/stems-cuda.txt",
+      "lock_sha256": "1fad8250e749c61bbcc03e95560c741ac88e19785653337a14f2203b655f5791",
+      "cuda_lock_sha256": "32ef830d6d58bc0a660eaff170f20d24a1c6bc7163887ed7fed043793584ccf3"
     }
   ]
 }

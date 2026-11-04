@@ -6,6 +6,7 @@
 #include "core/Vst3Host.h"
 
 #include "core/FFmpeg.h"
+#include "core/Fft.h"
 
 extern "C" {
 #include <libavfilter/avfilter.h>
@@ -287,6 +288,106 @@ public:
 private:
     int m_rate = 48000;
     Biquad m_notches[8];
+};
+
+// ---- De-reverb --------------------------------------------------------------------------
+
+// Takes out a room's late reverberation: the sound is cut into overlapping frames (an STFT), and in each frequency the
+// part that is only the tail of what came before (its level from 50 ms earlier, decayed at the room's reverb time:
+// Lebart's late-reverb estimate) is turned down, by one gain per frequency for both channels (the stereo picture
+// stays). The direct sound, louder than its own tail, passes.
+class DereverbProcessor : public AudioProcessor {
+public:
+    static constexpr int kSize = 2048, kHop = kSize / 4;
+
+    void reset(int rate) override
+    {
+        m_rate = rate;
+        m_window.resize(kSize);
+        for (int i = 0; i < kSize; ++i)
+            m_window[size_t(i)] = float(0.5 - 0.5 * std::cos(2 * std::numbers::pi * i / kSize));
+        for (auto& b : m_in)
+            b.assign(kSize, 0.0f);
+        for (auto& b : m_out)
+            b.assign(kSize, 0.0f);
+        m_fill = 0;
+        m_read = 0;
+        m_delay = std::max(1, int(std::lround(0.05 * rate / kHop)));
+        m_history.assign(size_t(m_delay), std::vector<float>(kSize / 2 + 1, 0.0f));
+        m_smoothed.assign(kSize / 2 + 1, 0.0f);
+        m_gain.assign(kSize / 2 + 1, 1.0f);
+        m_frames = 0;
+    }
+    int latency(const Params&) override { return kSize - kHop; }
+    void process(float* s, int frames, const Params& p) override
+    {
+        const double amount = std::clamp(p.num(QStringLiteral("amount")), 0.0, 1.0);
+        const double t60 = std::clamp(p.num(QStringLiteral("reverb")), 0.1, 6.0);
+        const float floorGain = float(std::pow(10.0, std::clamp(p.num(QStringLiteral("floor")), -60.0, 0.0) / 20.0));
+        // The tail's share after the delay: e^(-2 * delta * Td), delta = 3 ln 10 / T60.
+        const float decay = float(std::exp(-2.0 * 3.0 * std::log(10.0) / t60 * (double(m_delay) * kHop / m_rate)));
+        for (int i = 0; i < frames; ++i) {
+            for (int c = 0; c < 2; ++c) {
+                m_in[c][size_t(kSize - kHop + m_fill)] = s[2 * i + c];
+                s[2 * i + c] = m_out[c][size_t(m_read)];
+            }
+            ++m_read;
+            if (++m_fill == kHop) {
+                frame(amount, decay, floorGain);
+                m_fill = 0;
+                m_read = 0;
+            }
+        }
+    }
+
+private:
+    void frame(double amount, float decay, float floorGain)
+    {
+        const size_t bins = kSize / 2 + 1;
+        std::array<std::vector<std::complex<float>>, 2> spec;
+        for (int c = 0; c < 2; ++c) {
+            spec[size_t(c)].resize(kSize);
+            for (int i = 0; i < kSize; ++i)
+                spec[size_t(c)][size_t(i)] = {m_in[c][size_t(i)] * m_window[size_t(i)], 0.0f};
+            fftInPlace(spec[size_t(c)]);
+        }
+        std::vector<float>& before = m_history[size_t(m_frames % m_delay)]; // (the level m_delay frames ago)
+        for (size_t k = 0; k < bins; ++k) {
+            const float power = 0.5f * (std::norm(spec[0][k]) + std::norm(spec[1][k]));
+            m_smoothed[k] = 0.6f * m_smoothed[k] + 0.4f * power;
+            const float tail = decay * before[k];
+            float g = 1.0f - float(amount) * tail / (std::max(power, m_smoothed[k]) * 0.5f + m_smoothed[k] * 0.5f + 1e-12f);
+            g = std::clamp(g, floorGain, 1.0f);
+            m_gain[k] = 0.5f * m_gain[k] + 0.5f * g; // (smoothed: no warble)
+            before[k] = m_smoothed[k];
+        }
+        ++m_frames;
+        for (int c = 0; c < 2; ++c) {
+            auto& x = spec[size_t(c)];
+            for (size_t k = 0; k < bins; ++k) {
+                x[k] *= m_gain[k];
+                if (k > 0 && k < kSize / 2)
+                    x[kSize - k] = std::conj(x[k]);
+            }
+            for (auto& v : x)
+                v = std::conj(v);
+            fftInPlace(x); // (the inverse: conjugate, forward, conjugate, scale)
+            // Overlap-add: Hann in and out at 75% overlap adds up to 1.5.
+            std::vector<float>& out = m_out[c];
+            std::move(out.begin() + kHop, out.end(), out.begin());
+            std::fill(out.end() - kHop, out.end(), 0.0f);
+            for (int i = 0; i < kSize; ++i)
+                out[size_t(i)] += x[size_t(i)].real() / kSize * m_window[size_t(i)] / 1.5f;
+            std::vector<float>& in = m_in[c];
+            std::move(in.begin() + kHop, in.end(), in.begin());
+        }
+    }
+
+    int m_rate = 48000, m_fill = 0, m_read = 0, m_delay = 1;
+    int64_t m_frames = 0;
+    std::vector<float> m_window, m_smoothed, m_gain;
+    std::vector<std::vector<float>> m_history;
+    std::array<std::vector<float>, 2> m_in, m_out;
 };
 
 // ---- Compressor -------------------------------------------------------------------------
@@ -1022,6 +1123,18 @@ std::vector<AudioEffectDef> buildAudioEffects()
     d.params = {choice("mains", "Mains", {QStringLiteral("50 Hz"), QStringLiteral("60 Hz")}),
                 num("harmonics", "Harmonics", 1, 8, 4, 0), num("q", "Narrowness (Q)", 2, 60, 18, 0, "", true)};
     d.create = make([] { return new DehumProcessor; });
+    list.push_back(d);
+
+    d = {};
+    d.id = QStringLiteral("a_dereverb");
+    d.name = QStringLiteral("De-reverb");
+    d.category = QStringLiteral("Restoration");
+    d.description = QStringLiteral("Dries out a voice recorded in an echoey room (a kitchen, a hall, a laptop's microphone across the "
+                                   "room): the room's tail after each sound is turned down, the voice itself stays. Set Reverb time "
+                                   "to how long the room rings.");
+    d.params = {num("amount", "Reduction", 0, 1, 0.85, 2), num("reverb", "Reverb time", 0.1, 4, 0.8, 2, " s"),
+                num("floor", "Most taken out", -40, 0, -18, 0, " dB")};
+    d.create = make([] { return new DereverbProcessor; });
     list.push_back(d);
 
     d = {};

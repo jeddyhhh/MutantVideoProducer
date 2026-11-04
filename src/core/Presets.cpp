@@ -171,6 +171,8 @@ std::vector<Preset> buildFactory()
     single("a_denoise", "Heavy Noise Reduction", "Strong reduction; may sound processed.", {{"amount", 24}, {"floor", -35}});
     single("a_denoise", "Changing Noise", "For noise that changes over time.", {{"amount", 12}, {"floor", -40}, {"adaptive", 1}});
 
+    single("a_dereverb", "Small Echoey Room", "A kitchen or a bathroom.", {{"amount", 0.85}, {"reverb", 0.5}, {"floor", -18}});
+    single("a_dereverb", "Hall", "A hall or a church: long tails.", {{"amount", 0.9}, {"reverb", 2.0}, {"floor", -24}});
     single("a_pitch", "Chipmunk", "Up 7 semitones.", {{"semitones", 7}});
     single("a_pitch", "Octave Up", "Up 12 semitones.", {{"semitones", 12}});
     single("a_pitch", "Deep Voice", "Down 4 semitones.", {{"semitones", -4}});
@@ -216,6 +218,10 @@ std::vector<Preset> buildFactory()
     chain("Voice", "Clean Up Dialogue", "Rumble filter, soft gate, hiss removal, de-esser and gentle compression.",
           {hp80, {"a_gate", {{"threshold", -50}, {"range", -20}, {"attack", 5}, {"hold", 100}, {"release", 400}}},
            {"a_denoise", {{"amount", 12}, {"floor", -40}}}, {"a_ffmpeg", {}, "deesser=i=0.5"}, gentleComp});
+    chain("Voice", "Speech Enhance", "A voice made clear: rumble filter, noise reduction, the room's echo taken out, "
+          "de-esser, levelling, presence EQ and a -1 dB limiter.",
+          {hp80, {"a_denoise", {{"amount", 12}, {"floor", -45}}}, {"a_dereverb", {{"amount", 0.85}, {"reverb", 0.8}, {"floor", -18}}},
+           {"a_ffmpeg", {}, "deesser=i=0.4"}, podcastComp, presence, limit1});
     chain("Voice", "Audiobook Narration", "Warm, even and close.",
           {{"a_filter", {{"type", 1}, {"frequency", 70}, {"q", 0.707}, {"slope", 0}}}, gentleComp,
            {"a_eq", {{"lowFreq", 180}, {"lowGain", 2}, {"highFreq", 9000}, {"highGain", -1}}}, limit1});

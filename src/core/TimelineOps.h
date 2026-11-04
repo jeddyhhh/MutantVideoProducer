@@ -74,6 +74,20 @@ int insertGenerated(Timeline& tl, const GeneratorPreset& preset, TimeUs at, int 
 // Moves an event's keyframes (effects, generator and velocity envelope) by delta.
 void shiftClipKeyframes(Clip& c, TimeUs delta);
 
+// Paste Event Attributes: parts of event `from` given to the events `to` (each of the same kind: picture or sound;
+// Pan/Crop, transitions and the picture fixes only between pictures). Effects replace the event's own (with new ids);
+// a playback rate keeps each event's length (as much as its file allows). Returns how many events changed.
+enum EventAttribute : unsigned {
+    AttrEffects = 1, AttrPanCrop = 2, AttrFades = 4, AttrTransitions = 8, AttrLevel = 16, AttrSpeed = 32, AttrFixes = 64,
+    AttrLabel = 128, AttrAll = 255
+};
+int pasteAttributes(Timeline& tl, const MediaMap& media, const Clip& from, bool fromPicture, const std::set<int>& to, unsigned what,
+                    const FrameRate& fps);
+// Replace Media: the events `ids` (and the events grouped with them that show the same file) show `mediaId` instead,
+// keeping where they are, their trims (where the new file is long enough), effects and keyframes. Events of a kind
+// the new file lacks (a picture from a sound file) are left. Returns how many changed; `why` says why none did.
+int replaceMedia(Timeline& tl, const MediaMap& media, const std::set<int>& ids, int mediaId, const FrameRate& fps, QString* why = nullptr);
+
 // Removes the transition at one end of an event so it starts / ends with a
 // hard cut: its fade goes and its transition type resets. Where it overlaps
 // the event before it (a crossfade), that event (and the ones grouped with

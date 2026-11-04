@@ -124,6 +124,14 @@ public:
     void paste();
     // Ctrl+D: a copy of the selected events (and their groups) right after them, starting where they end. Selected.
     void duplicateSelection();
+    // Edit > Paste Event Attributes: the copied event's effects, Pan/Crop, fades... onto the selected events
+    // (`what`: ops::EventAttribute flags; the copied picture's onto pictures, its sound's onto sounds).
+    void pasteAttributes(unsigned what);
+    // The same, choosing the attributes first (remembered for next time).
+    void selectivelyPasteAttributes();
+    bool canPasteAttributes() const { return !m_clipboard.empty() && !m_selection.empty(); }
+    // Replace Media: the selected events (and their grouped sound or picture) show `mediaId` instead.
+    void replaceMediaOnSelection(int mediaId);
     void toggleMuteSelection();
     void insertTrack(TrackType type);
     // Timeline drops give each video its own tracks; cursor placement can reuse tracks.
@@ -176,6 +184,7 @@ signals:
     void matchColourRequested();
     void autoColourRequested();
     void spectrogramRequested(int clipId);
+    void stemsRequested(int clipId); // right-click > Separate Stems...
     void selectionChanged();
     void filesDropped(const QStringList& paths, TimeUs at, int trackIndex);
     void clipEffectsRequested(int clipId);
@@ -187,6 +196,7 @@ signals:
     void panCropRequested(int clipId);
     void propertiesRequested(int clipId);
     void relinkRequested(int mediaId);
+    void replaceMediaRequested(); // right-click > Replace Media...
     // The cursor was dragged on the ruler or stepped by a frame (for audio scrubbing).
     void scrubbed(TimeUs t);
     void message(const QString& text); // for the status bar
