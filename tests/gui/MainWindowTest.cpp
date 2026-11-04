@@ -897,15 +897,19 @@ int MainWindow::runEditorTest(QStringList& log)
             audio->effects.push_back(slow);
             m_project->applyEdit(tl, QStringLiteral("slow effect"));
             seekTo(0);
+            const int dropoutsBefore = m_engine->mixDropouts();
             togglePlay();
             wait(1500);
             const TimeUs shown = m_engine->position(), heard = m_engine->heardPosition();
+            const int dropouts = m_engine->mixDropouts() - dropoutsBefore;
             togglePlay();
             m_project->undoStack()->undo();
-            check(std::abs(shown - heard) < 40000,
-                  QStringLiteral("the picture stays with the sound when the mix starts late (picture %1 s, sound %2 s)")
+            check(std::abs(shown - heard) < 40000 && dropouts == 0,
+                  QStringLiteral("the picture stays with the sound when the mix starts late (picture %1 s, sound %2 s), "
+                                 "and the sound waits for the mix instead of starting with silence (%3 short)")
                       .arg(double(shown) / kUsPerSecond, 0, 'f', 3)
-                      .arg(double(heard) / kUsPerSecond, 0, 'f', 3));
+                      .arg(double(heard) / kUsPerSecond, 0, 'f', 3)
+                      .arg(dropouts));
         }
     }
 

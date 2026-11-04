@@ -579,6 +579,7 @@ int main(int argc, char** argv)
             c.start = at;
             c.sourceIn = in;
             c.length = 30 * kUsPerSecond;
+            c.effects.push_back(makeEffectOfType(QStringLiteral("invert"), tl.allocId())); // (each piece's copy needs its own id)
             tl.tracks[size_t(track)].clips.push_back(c);
             return c.id;
         };

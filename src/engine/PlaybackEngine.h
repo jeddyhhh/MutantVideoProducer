@@ -50,6 +50,7 @@ public:
     void play(TimeUs from);
     void stop();
     bool isPlaying() const { return m_playing; }
+    int mixDropouts() const { return m_mixDropouts; } // times the device asked while playing and the mix wasn't ready
     TimeUs position() const { return m_clock; }
     // How long the sound takes from the device to the ears beyond what the device reports (HDMI and monitor speakers,
     // Bluetooth): the picture waits that long, so mouths and hits line up with what is heard. Exports don't change.
@@ -132,7 +133,7 @@ private:
     float m_peakL = 0, m_peakR = 0;     // guarded by m_ringMutex
     // Dropouts while playing (guarded by m_ringMutex): the device asked and the mix wasn't ready (the mixer behind).
     // MVP_AUDIO_LOG prints each, the device's state changes, and every 2 s how much it has played.
-    int m_mixDropouts = 0;
+    std::atomic<int> m_mixDropouts{0};
     int64_t m_ringReadPos = 0;          // timeline sample at the ring's read head (guarded by m_ringMutex)
     // Track peaks per mixed chunk, by the timeline sample the chunk ends at.
     std::deque<std::pair<int64_t, std::map<int, std::pair<float, float>>>> m_meterQueue;
@@ -161,6 +162,11 @@ private:
 
     QTimer m_tick;
     QElapsedTimer m_wallClock;
+    // Play waits (the clock held at the start) until the mixer has filled the ring, so the sound doesn't start with
+    // a moment of silence while the mix opens its files and effects; at most kSoundWaitMs. (GUI thread only.)
+    bool m_waitingForSound = false;
+    QElapsedTimer m_soundWait;
+    bool startWhenMixed();
     TimeUs m_startPos = 0;
     TimeUs m_clockAdjust = 0;
     TimeUs m_outputLatency = 0;

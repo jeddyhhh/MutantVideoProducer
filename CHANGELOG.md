@@ -23,6 +23,10 @@ What changed in each version of Mutant Video Producer. The newest is first.
 - **Clicks in a voice with Pitch Shift** (a cast's pitch setting puts it on the voice tracks): on real speech the
   pitch shifter held back a little more sound than it was measured to, so every few blocks a couple of samples of
   silence were played. It now keeps a tenth of a second spare.
+- **Playback starting with a moment of silence**: Play now waits (the picture held on the first frame) until the
+  sound is mixed, usually a fraction of a second, instead of starting the sound card on silence.
+- **Make Multicam** gave the Multicam track's events the same effect ids as the angles they came from (an angle
+  with an effect on it then broke the project's ids).
 - **Sound output** runs on its own thread, so a busy moment in the window (a repaint, a dialog) can't leave the sound
   card without sound.
 

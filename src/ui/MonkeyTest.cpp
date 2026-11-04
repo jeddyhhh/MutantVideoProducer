@@ -503,13 +503,18 @@ private:
             // Drags on our own canvases and editors; on Qt's widgets and ours that drag and drop, a click only.
             const bool ours = !QString::fromLatin1(w->metaObject()->className()).startsWith(QLatin1Char('Q')) && !w->inherits("DeviceChainView")
                               && !w->inherits("LivePadPanel") && !w->inherits("MediaBin") && !w->inherits("TimelineWidget");
+            // Out of this timer's call, as a button press is: Return on the dialog presses its default button, and a
+            // dialog that opens (a folder picker) is answered by this timer, which can't run again inside its own call.
             const int how = pick(10);
-            if (how < 7)
-                mouse(w, ours || draggable(w));
-            else if (how < 9)
-                wheel(w);
-            else
-                key(w);
+            const bool drag = ours || draggable(w);
+            QTimer::singleShot(0, w, [this, w, how, drag] {
+                if (how < 7)
+                    mouse(w, drag);
+                else if (how < 9)
+                    wheel(w);
+                else
+                    key(w);
+            });
         }
     }
 

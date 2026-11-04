@@ -288,7 +288,7 @@ void PlaybackEngine::reopenAudioOutput()
                 qWarning("audio: the device is now %d (error %d)", int(st), int(m_sink->error()));
             });
     });
-    if (m_playing) {
+    if (m_playing && !m_waitingForSound) { // (still waiting: startWhenMixed starts it)
         // Carry on from the sound already played: the new device counts from 0.
         {
             std::lock_guard lock(m_ringMutex);
@@ -391,9 +391,27 @@ void PlaybackEngine::play(TimeUs from)
     { std::lock_guard lock(m_ringMutex); }
     m_videoCv.notify_all();
     m_audioCv.notify_all();
+    m_waitingForSound = true;
+    m_soundWait.start();
+    m_tick.start();
+}
+
+bool PlaybackEngine::startWhenMixed()
+{
+    constexpr qint64 kSoundWaitMs = 1500;
+    bool mixed;
+    {
+        std::lock_guard lock(m_ringMutex);
+        mixed = m_ringFill + size_t(kAudioChunk) > m_ring.size() / 2; // as full as the mixer fills it
+    }
+    if (!mixed && m_sink && m_soundWait.elapsed() < kSoundWaitMs)
+        return false;
+    m_waitingForSound = false;
+    if (qEnvironmentVariableIsSet("MVP_AUDIO_LOG"))
+        qWarning("audio: started after %lld ms of mixing (%s)", m_soundWait.elapsed(), mixed ? "mixed" : "gave up waiting");
     startSink();
     m_wallClock.start();
-    m_tick.start();
+    return true;
 }
 
 void PlaybackEngine::stop()
@@ -401,6 +419,7 @@ void PlaybackEngine::stop()
     if (!m_playing)
         return;
     m_playing = false;
+    m_waitingForSound = false;
     m_tick.stop();
     stopSink();
     {
@@ -431,6 +450,8 @@ TimeUs PlaybackEngine::heardPosition()
 
 TimeUs PlaybackEngine::computeClock()
 {
+    if (m_waitingForSound)
+        return m_startPos;
     TimeUs wall = m_startPos + m_wallClock.nsecsElapsed() / 1000 + m_clockAdjust;
     if (m_sinkRunning) {
         if (m_sinkProcessedUs > 0) {
@@ -452,6 +473,8 @@ void PlaybackEngine::onTick()
 {
     if (!m_playing)
         return;
+    if (m_waitingForSound)
+        startWhenMixed();
     const TimeUs clock = computeClock();
     m_clock = clock;
     std::optional<std::pair<TimeUs, QImage>> due;

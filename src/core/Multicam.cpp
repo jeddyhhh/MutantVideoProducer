@@ -35,6 +35,7 @@ std::optional<Clip> piece(Timeline& tl, int number, TimeUs t0, TimeUs t1, QStrin
     }
     Clip c = *a;
     c.id = tl.allocId();
+    reassignEffectIds(c.effects, [&] { return tl.allocId(); }); // (effect ids are unique too)
     c.start = t0;
     c.length = t1 - t0;
     c.sourceIn = a->sourceIn + (t0 - a->start);
