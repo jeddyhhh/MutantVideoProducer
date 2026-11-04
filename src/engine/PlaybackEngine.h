@@ -8,7 +8,9 @@
 #include <QElapsedTimer>
 #include <QImage>
 #include <QObject>
+#include <QThread>
 #include <QTimer>
+#include <functional>
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
@@ -128,6 +130,9 @@ private:
     uint64_t m_audioGeneration = 0;
     int m_sampleRate = 48000;
     float m_peakL = 0, m_peakR = 0;     // guarded by m_ringMutex
+    // Dropouts while playing (guarded by m_ringMutex): the device asked and the mix wasn't ready (the mixer behind).
+    // MVP_AUDIO_LOG prints each, the device's state changes, and every 2 s how much it has played.
+    int m_mixDropouts = 0;
     int64_t m_ringReadPos = 0;          // timeline sample at the ring's read head (guarded by m_ringMutex)
     // Track peaks per mixed chunk, by the timeline sample the chunk ends at.
     std::deque<std::pair<int64_t, std::map<int, std::pair<float, float>>>> m_meterQueue;
@@ -135,8 +140,19 @@ private:
     bool m_scrubSink = false;             // the sink runs for scrubbing (GUI thread)
     QTimer m_scrubStop;
 
-    QAudioSink* m_sink = nullptr;
-    AudioRingDevice* m_device = nullptr;
+    // The sink and the device it pulls from live on their own thread (m_soundThread): Qt asks for sound on the thread
+    // that owns the sink, and on the GUI thread a busy moment (a repaint, a dialog) left the device without sound for a
+    // moment: a click. Calls go there through onSound(); what the clock needs from the sink is copied every 5 ms.
+    QThread m_soundThread;
+    QObject* m_soundContext = nullptr; // lives on m_soundThread
+    QTimer* m_soundPoll = nullptr;     // on m_soundThread
+    void onSound(const std::function<void()>& f); // runs f on the sound thread and waits for it
+    void startSink();
+    void stopSink();
+    std::atomic<bool> m_sinkRunning{false};
+    std::atomic<qint64> m_sinkProcessedUs{0}, m_sinkBufferedBytes{0};
+    QAudioSink* m_sink = nullptr;         // made, used and deleted on the sound thread
+    AudioRingDevice* m_device = nullptr;  // likewise
     QAudioFormat m_format;
     QByteArray m_outputId; // the device the sink plays to
 

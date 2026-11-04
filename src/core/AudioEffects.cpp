@@ -849,9 +849,12 @@ private:
             return;
         const Probe probe = measure(spec);
         m_failed = probe.queue < 0 || !build(spec);
-        m_latency = probe.queue + probe.delay;
+        // On real sound a filter can hold back more than it did on the probe's silence (Rubber Band, the pitch shift,
+        // does): a margin on top, so the FIFO doesn't run dry and play a moment of silence (a click every few blocks).
+        const int margin = m_rate / 10;
+        m_latency = probe.queue + margin + probe.delay;
         if (!m_failed)
-            m_fifo.assign(size_t(probe.queue) * 2, 0.0f);
+            m_fifo.assign(size_t(probe.queue + margin) * 2, 0.0f);
     }
 
     struct Probe {

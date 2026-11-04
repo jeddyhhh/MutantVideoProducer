@@ -97,8 +97,8 @@ void MainWindow::runProductionToolsTest(const std::function<void(bool, const QSt
         }
         check(shot && ready && off < 6 && keyChanged && again,
               QStringLiteral("pre-rendering: frames near the cursor made in the background and shown done on the ruler (%1), "
-                             "the same picture as rendering it (%2 off), an edit makes them new and they are made again (%3)")
-                  .arg(ready ? "yes" : "no").arg(off, 0, 'f', 1).arg(keyChanged && again ? "yes" : "no"));
+                             "the same picture as rendering it (%2 off), an edit makes them new (%3) and they are made again (%4)")
+                  .arg(ready ? "yes" : "no").arg(off, 0, 'f', 1).arg(keyChanged ? "yes" : "no").arg(again ? "yes" : "no"));
     }
     {
         // Colour labels: on an event and its group, one undo step, drawn in its colour, kept in the project file;

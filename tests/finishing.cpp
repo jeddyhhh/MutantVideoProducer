@@ -91,6 +91,40 @@ int main(int argc, char** argv)
               QStringLiteral("the limiter holds a -3 dB ceiling on loud noise and clicks (true peak %1 dBTP)").arg(limitedNoise.truePeak, 0, 'f', 2));
     }
     {
+        // Pitch Shift (Rubber Band) holds back more on real sound than on the silence its delay is measured with: a tone
+        // that changes (a sweep under a moving level, like a voice) through it in the mixer's blocks never drops out.
+        const auto* def = findAudioEffect("a_pitch");
+        auto shift = def ? def->create() : nullptr;
+        ParamMap values;
+        values["semitones"].value = -0.5;
+        const Params params = def ? resolveParams(def->params, values, 0) : Params();
+        int dropouts = 0, lat = 0;
+        if (shift) {
+            shift->reset(rate);
+            lat = shift->latency(params);
+            const int len = rate * 12;
+            std::vector<float> buf(size_t(len) * 2);
+            double phase = 0;
+            uint32_t seed = 99;
+            for (int i = 0; i < len; ++i) { // syllables: a voiced tone and a breath of noise, 180 ms on, 60 ms off
+                const double t = double(i) / rate, f = 120 + 60 * std::sin(2 * pi * 0.9 * t);
+                phase += 2 * pi * f / rate;
+                seed = seed * 1664525u + 1013904223u;
+                const double noise = (double(seed >> 8) / double(1u << 24)) * 2 - 1;
+                const double syllable = std::fmod(t, 0.24) < 0.18 ? std::sin(pi * std::fmod(t, 0.24) / 0.18) : 0.0;
+                buf[size_t(i) * 2] = buf[size_t(i) * 2 + 1] = float(syllable * (0.35 * std::sin(phase) + 0.1 * noise));
+            }
+            for (int i = 0; i < len; i += 1024)
+                shift->process(buf.data() + size_t(i) * 2, std::min(1024, len - i), params);
+            // A dropout: a sample of exact silence between sounding ones (the FIFO short by a sample or two: a click).
+            for (int i = lat + rate; i + 3 < len; ++i)
+                if (buf[size_t(i) * 2] == 0.0f && std::abs(buf[size_t(i - 1) * 2]) > 0.01f
+                    && (std::abs(buf[size_t(i + 1) * 2]) > 0.01f || std::abs(buf[size_t(i + 2) * 2]) > 0.01f))
+                    ++dropouts;
+        }
+        check(shift && dropouts == 0, QStringLiteral("Pitch Shift never drops out on changing sound (%1 dropouts, %2 samples of delay)").arg(dropouts).arg(lat));
+    }
+    {
         // De-reverb: 1 kHz bursts in a room ringing for 0.8 s (decaying noise after each): the tail between them goes down
         // by more than the bursts themselves.
         const auto* def = findAudioEffect("a_dereverb");

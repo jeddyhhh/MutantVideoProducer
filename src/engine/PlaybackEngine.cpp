@@ -41,6 +41,12 @@ protected:
         auto& ring = m_engine->m_ring;
         const size_t ringFrames = ring.size() / 2;
         const size_t n = std::min(frames, m_engine->m_ringFill);
+        if (m_engine->m_playing && n < frames) {
+            ++m_engine->m_mixDropouts;
+            static const bool log = qEnvironmentVariableIsSet("MVP_AUDIO_LOG");
+            if (log)
+                qWarning("audio: the mix was %d frames short at %.2f s", int(frames - n), double(m_engine->m_ringReadPos) / m_engine->m_sampleRate);
+        }
         for (size_t i = 0; i < n; ++i) {
             const size_t idx = ((m_engine->m_ringRead + i) % ringFrames) * 2;
             float l = std::clamp(ring[idx], -1.0f, 1.0f);
@@ -75,8 +81,8 @@ PlaybackEngine::PlaybackEngine(QObject* parent) : QObject(parent)
     m_scrubStop.setSingleShot(true);
     m_scrubStop.setInterval(500);
     connect(&m_scrubStop, &QTimer::timeout, this, [this] {
-        if (m_scrubSink && !m_playing && m_sink)
-            m_sink->stop();
+        if (m_scrubSink && !m_playing)
+            stopSink();
         m_scrubSink = false;
     });
     m_tick.setTimerType(Qt::PreciseTimer);
@@ -103,14 +109,50 @@ PlaybackEngine::~PlaybackEngine()
     m_videoThread.join();
     m_audioThread.join();
     m_preThread.join();
-    // The sink pulls from the ring device: stop and delete it first.
-    if (m_sink) {
-        m_sink->stop();
-        delete m_sink;
-        m_sink = nullptr;
-    }
-    delete m_device;
-    m_device = nullptr;
+    // The sink pulls from the ring device: stop and delete it first (on its thread), then end the thread.
+    onSound([this] {
+        delete m_soundPoll;
+        m_soundPoll = nullptr;
+        if (m_sink) {
+            m_sink->stop();
+            delete m_sink;
+            m_sink = nullptr;
+        }
+        delete m_device;
+        m_device = nullptr;
+        delete m_soundContext;
+        m_soundContext = nullptr;
+    });
+    m_soundThread.quit();
+    m_soundThread.wait();
+}
+
+void PlaybackEngine::onSound(const std::function<void()>& f)
+{
+    if (!m_soundContext || QThread::currentThread() == &m_soundThread)
+        f();
+    else
+        QMetaObject::invokeMethod(m_soundContext, f, Qt::BlockingQueuedConnection);
+}
+
+void PlaybackEngine::startSink()
+{
+    onSound([this] {
+        if (m_sink && m_device)
+            m_sink->start(m_device);
+        m_sinkRunning = m_sink != nullptr;
+    });
+}
+
+void PlaybackEngine::stopSink()
+{
+    onSound([this] {
+        if (m_sink)
+            m_sink->stop();
+        m_sinkRunning = false;
+        m_sinkProcessedUs = 0;
+        m_sinkBufferedBytes = 0;
+    });
 }
 
 std::pair<float, float> PlaybackEngine::takePeaks()
@@ -148,7 +190,7 @@ void PlaybackEngine::scrubAudio(TimeUs t)
     m_audioCv.notify_all();
     if (!m_scrubSink) {
         m_scrubSink = true;
-        m_sink->start(m_device);
+        startSink();
     }
     m_scrubStop.start(); // the sink stops a moment after the last scrub
 }
@@ -171,8 +213,39 @@ void PlaybackEngine::setupAudio()
     }
     m_sampleRate = m_format.sampleRate();
     m_ring.assign(size_t(m_sampleRate * kRingSeconds) * 2, 0.0f);
-    m_device = new AudioRingDevice(this);
-    m_device->open(QIODevice::ReadOnly);
+    m_soundThread.setObjectName(QStringLiteral("Sound output"));
+    m_soundThread.start(QThread::TimeCriticalPriority);
+    m_soundContext = new QObject;
+    m_soundContext->moveToThread(&m_soundThread);
+    onSound([this] {
+        m_device = new AudioRingDevice(this);
+        m_device->open(QIODevice::ReadOnly);
+        // What the playback clock needs from the sink, copied where the GUI thread can read it.
+        m_soundPoll = new QTimer;
+        m_soundPoll->setTimerType(Qt::PreciseTimer);
+        m_soundPoll->setInterval(5);
+        QObject::connect(m_soundPoll, &QTimer::timeout, m_soundContext, [this] {
+            if (!m_sink || m_sink->state() == QAudio::StoppedState) {
+                m_sinkRunning = false;
+                return;
+            }
+            m_sinkProcessedUs = m_sink->processedUSecs();
+            m_sinkBufferedBytes = std::max<qint64>(0, m_sink->bufferSize() - m_sink->bytesFree());
+            static const bool log = qEnvironmentVariableIsSet("MVP_AUDIO_LOG");
+            static QElapsedTimer since;
+            static qint64 lastLog = 0;
+            if (log) {
+                if (!since.isValid())
+                    since.start();
+                if (since.elapsed() - lastLog >= 2000) {
+                    lastLog = since.elapsed();
+                    qWarning("audio: played %.3f s of sound at %.3f s (state %d, %lld bytes held)", m_sinkProcessedUs / 1e6,
+                             since.nsecsElapsed() / 1e9, int(m_sink->state()), qint64(m_sinkBufferedBytes));
+                }
+            }
+        });
+        m_soundPoll->start();
+    });
     followDefaultOutput();
     connect(new QMediaDevices(this), &QMediaDevices::audioOutputsChanged, this, &PlaybackEngine::followDefaultOutput);
 }
@@ -188,11 +261,14 @@ void PlaybackEngine::followDefaultOutput()
 void PlaybackEngine::reopenAudioOutput()
 {
     const QAudioDevice dev = QMediaDevices::defaultAudioOutput();
-    if (m_sink) {
-        m_sink->stop();
-        delete m_sink;
-        m_sink = nullptr;
-    }
+    onSound([this] {
+        if (m_sink) {
+            m_sink->stop();
+            delete m_sink;
+            m_sink = nullptr;
+        }
+        m_sinkRunning = false;
+    });
     m_scrubSink = false;
     m_scrubStop.stop();
     m_outputId = dev.id();
@@ -204,8 +280,14 @@ void PlaybackEngine::reopenAudioOutput()
     if (dev.isNull() || !dev.isFormatSupported(format))
         return; // silent until a device that takes this rate (the picture plays on)
     m_format = format;
-    m_sink = new QAudioSink(dev, m_format, this);
-    m_sink->setBufferSize(m_format.bytesForDuration(80000)); // 80 ms device buffer
+    onSound([this, dev] {
+        m_sink = new QAudioSink(dev, m_format);
+        m_sink->setBufferSize(m_format.bytesForDuration(80000)); // 80 ms device buffer
+        if (qEnvironmentVariableIsSet("MVP_AUDIO_LOG"))
+            QObject::connect(m_sink, &QAudioSink::stateChanged, m_soundContext, [this](QAudio::State st) {
+                qWarning("audio: the device is now %d (error %d)", int(st), int(m_sink->error()));
+            });
+    });
     if (m_playing) {
         // Carry on from the sound already played: the new device counts from 0.
         {
@@ -214,7 +296,7 @@ void PlaybackEngine::reopenAudioOutput()
         }
         m_clockAdjust = 0;
         m_wallClock.start();
-        m_sink->start(m_device);
+        startSink();
     }
 }
 
@@ -233,7 +315,7 @@ void PlaybackEngine::setSnapshot(std::shared_ptr<const ProjectSnapshot> snap)
     }
     if (projectChanged && m_scrubSink) {
         m_scrubStop.stop();
-        if (m_sink) m_sink->stop();
+        stopSink();
         m_scrubSink = false;
     }
     std::lock_guard lock(m_ringMutex);
@@ -273,9 +355,9 @@ void PlaybackEngine::requestFrame(TimeUs t)
 void PlaybackEngine::play(TimeUs from)
 {
     stop();
-    if (m_scrubSink && m_sink) {
+    if (m_scrubSink) {
         m_scrubStop.stop();
-        m_sink->stop();
+        stopSink();
         m_scrubSink = false;
     }
     std::shared_ptr<const ProjectSnapshot> snap;
@@ -309,8 +391,7 @@ void PlaybackEngine::play(TimeUs from)
     { std::lock_guard lock(m_ringMutex); }
     m_videoCv.notify_all();
     m_audioCv.notify_all();
-    if (m_sink)
-        m_sink->start(m_device);
+    startSink();
     m_wallClock.start();
     m_tick.start();
 }
@@ -321,8 +402,7 @@ void PlaybackEngine::stop()
         return;
     m_playing = false;
     m_tick.stop();
-    if (m_sink)
-        m_sink->stop();
+    stopSink();
     {
         std::lock_guard lock(m_mutex);
         ++m_generation;
@@ -345,15 +425,15 @@ TimeUs PlaybackEngine::heardPosition()
         std::lock_guard lock(m_ringMutex);
         handed = m_ringReadPos;
     }
-    const qint64 buffered = m_sink ? m_format.durationForBytes(std::max<qint64>(0, m_sink->bufferSize() - m_sink->bytesFree())) : 0;
+    const qint64 buffered = m_sinkRunning ? m_format.durationForBytes(m_sinkBufferedBytes.load()) : 0;
     return samplesToUs(handed, m_sampleRate) - buffered;
 }
 
 TimeUs PlaybackEngine::computeClock()
 {
     TimeUs wall = m_startPos + m_wallClock.nsecsElapsed() / 1000 + m_clockAdjust;
-    if (m_sink && m_sink->state() != QAudio::StoppedState) {
-        if (m_sink->processedUSecs() > 0) {
+    if (m_sinkRunning) {
+        if (m_sinkProcessedUs > 0) {
             const TimeUs audioClock = heardPosition();
             // The device reports in coarse steps; follow it smoothly.
             const TimeUs diff = audioClock - wall;

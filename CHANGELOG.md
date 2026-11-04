@@ -18,6 +18,14 @@ What changed in each version of Mutant Video Producer. The newest is first.
   the voice clean-up at once.
 - AI control: paste_attributes, replace_media, separate_stems; render takes smart_render.
 
+### Fixed
+
+- **Clicks in a voice with Pitch Shift** (a cast's pitch setting puts it on the voice tracks): on real speech the
+  pitch shifter held back a little more sound than it was measured to, so every few blocks a couple of samples of
+  silence were played. It now keeps a tenth of a second spare.
+- **Sound output** runs on its own thread, so a busy moment in the window (a repaint, a dialog) can't leave the sound
+  card without sound.
+
 ## 0.9.5 (2026-11-04)
 
 The first release built on GitHub again, for Windows and Linux. (0.9.4 was tagged, but its builds failed.)
