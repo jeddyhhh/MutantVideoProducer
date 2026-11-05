@@ -449,6 +449,7 @@ void shiftClipKeyframes(Clip& c, TimeUs delta)
 {
     shiftKeyframes(c.effects, delta);
     shiftKeyframes(c.generator.params, delta);
+    shiftKeyframes(c.panCrop, delta);
     for (auto& k : c.velocity.points)
         k.time += delta;
 }

@@ -48,6 +48,13 @@ QString formatTime(TimeUs t, QChar decimal)
         .arg(ms % 1000, 3, 10, QLatin1Char('0'));
 }
 
+// A blank line ends a cue in SRT and WebVTT: one inside the text would cut the caption short there.
+QString cueText(const QString& text)
+{
+    static const QRegularExpression blank(QStringLiteral("\\n\\s*\\n"));
+    return QString(text).replace(QLatin1String("\r\n"), QLatin1String("\n")).replace(blank, QStringLiteral("\n")).trimmed();
+}
+
 } // namespace
 
 std::vector<Caption> timelineCaptions(const Timeline& tl, int clipId)
@@ -105,7 +112,7 @@ QString writeSrt(const std::vector<Caption>& captions)
     QString s;
     int n = 0;
     for (const Caption& c : captions)
-        s += QStringLiteral("%1\n%2 --> %3\n%4\n\n").arg(++n).arg(formatTime(c.start, QLatin1Char(',')), formatTime(c.end, QLatin1Char(',')), c.text);
+        s += QStringLiteral("%1\n%2 --> %3\n%4\n\n").arg(++n).arg(formatTime(c.start, QLatin1Char(',')), formatTime(c.end, QLatin1Char(',')), cueText(c.text));
     return s;
 }
 
@@ -113,7 +120,7 @@ QString writeVtt(const std::vector<Caption>& captions)
 {
     QString s = QStringLiteral("WEBVTT\n\n");
     for (const Caption& c : captions)
-        s += QStringLiteral("%1 --> %2\n%3\n\n").arg(formatTime(c.start, QLatin1Char('.')), formatTime(c.end, QLatin1Char('.')), c.text);
+        s += QStringLiteral("%1 --> %2\n%3\n\n").arg(formatTime(c.start, QLatin1Char('.')), formatTime(c.end, QLatin1Char('.')), cueText(c.text));
     return s;
 }
 

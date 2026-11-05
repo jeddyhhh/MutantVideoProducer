@@ -20,6 +20,10 @@ What changed in each version of Mutant Video Producer. The newest is first.
 
 ### Fixed
 
+- **Split, trimmed or frozen events lost their place in an animated Pan/Crop** (a Ken Burns move, or Reframe's
+  tracking): the right-hand piece started the move over. Multicam cuts started each angle's keyframes over too.
+- **Compound sequences** moved a track rack's chain keyframes (a chain's level) out of step with the clips.
+- **Captions with a blank line** were cut short at it in exported SRT and WebVTT files.
 - **Clicks in a voice with Pitch Shift** (a cast's pitch setting puts it on the voice tracks): on real speech the
   pitch shifter held back a little more sound than it was measured to, so every few blocks a couple of samples of
   silence were played. It now keeps a tenth of a second spare.

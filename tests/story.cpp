@@ -256,5 +256,29 @@ int main(int argc, char** argv)
                   && story::updateChapter(tl, chapters[4], "Last", "", 1000000, 500000, fps, &error) && aligned(),
               "later chapters still update: " + error);
     }
+    {
+        // A track rack's chain settings are keyframed in timeline time: packed into a compound, they move with the clips.
+        Timeline tl = original;
+        Track& t = tl.tracks[size_t(audio)];
+        EffectInstance rack = makeRack(tl.allocId());
+        rack.chains.push_back(makeRackChain(true, "c"));
+        rack.chains.back().params["level"].addKey(3 * kUsPerSecond, 50);
+        t.effects.push_back(rack);
+        QString why;
+        const auto made = story::compound(tl, ids, "Rack", &why);
+        const Clip* sound = nullptr;
+        for (int id : made)
+            if (const Clip* c = tl.findClip(id); c && !c->sequence.value->tracks.empty())
+                for (const Track& inner : c->sequence.value->tracks)
+                    if (!isVisualTrack(inner.type))
+                        sound = c;
+        TimeUs key = -1;
+        if (sound)
+            for (const Track& inner : sound->sequence.value->tracks)
+                for (const EffectInstance& e : inner.effects)
+                    if (e.isRack())
+                        key = e.chains.front().params.at("level").keys.front().time;
+        check(key == kUsPerSecond, QStringLiteral("compound: a track rack chain's keyframes move with the clips (%1 us) %2").arg(key).arg(why));
+    }
     return failures;
 }

@@ -34,21 +34,11 @@ bool fail(QString* error, const QString& text)
         *error = text;
     return false;
 }
-void shiftChain(EffectChain& chain, TimeUs delta)
-{
-    for (auto& e : chain) {
-        for (auto& [key, value] : e.params)
-            for (auto& k : value.keys)
-                k.time += delta;
-        for (auto& rc : e.chains)
-            shiftChain(rc.effects, delta);
-    }
-}
 void shiftTrack(Track& track, TimeUs delta)
 {
     for (auto& c : track.clips)
         c.start += delta;
-    shiftChain(track.effects, delta);
+    shiftKeyframes(track.effects, delta); // (a rack chain's own settings too)
     for (auto* e : {&track.volume, &track.panEnvelope, &track.composite})
         for (auto& k : e->points)
             k.time += delta;

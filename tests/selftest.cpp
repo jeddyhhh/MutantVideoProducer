@@ -31,6 +31,7 @@
 #include "core/Vst3Host.h"
 #include "core/YouTube.h"
 #include "core/EffectMask.h"
+#include "core/Multicam.h"
 #include "core/PanCrop.h"
 #include "core/Compositor.h"
 #include "core/ColorMatch.h"
@@ -3109,6 +3110,38 @@ int cmdRacks(const QString& mediaDir, const QString& outDir)
         const auto& right = split.tracks[0].clips[1].effects.front();
         check(int(ids.size()) == count && count == 10 && right.chains[1].params.at(QStringLiteral("level")).keys.front().time == -kUsPerSecond,
               QStringLiteral("split: nested effects get fresh ids, rack keyframes move with the event"));
+    }
+    {
+        // Pan/Crop keyframes count from the event's start: a split piece and a multicam piece keep the motion in place.
+        const TimeUs S = kUsPerSecond;
+        Timeline tl = defaultTimeline();
+        for (int i = 0; i < 2; ++i) {
+            Clip c;
+            c.id = tl.allocId();
+            c.length = 10 * S;
+            c.generator.type = QStringLiteral("solid");
+            c.panCrop[QStringLiteral("zoom")].addKey(4 * S, 2.0);
+            c.effects.push_back(fx("gaussian_blur"));
+            c.effects.back().id = tl.allocId();
+            c.effects.back().params[QStringLiteral("radius")].addKey(4 * S, 5.0);
+            tl.tracks[0].clips.push_back(c);
+        }
+        const int a1 = tl.tracks[0].clips[0].id, a2 = tl.tracks[0].clips[1].id;
+        Timeline split = tl;
+        ops::splitClips(split, {a1}, 1 * S);
+        const Clip* right = nullptr;
+        for (const Clip& c : split.tracks[0].clips)
+            if (c.start == 1 * S)
+                right = &c;
+        const bool splitOk = right && right->panCrop.at(QStringLiteral("zoom")).keys.front().time == 3 * S;
+        QString err;
+        bool cutOk = multicam::create(tl, {}, {a1, a2}, &err) && multicam::cut(tl, {}, 2, 3 * S, &err);
+        const int mi = multicam::trackIndex(tl);
+        const Clip* piece = mi >= 0 && tl.tracks[size_t(mi)].clips.size() == 2 ? &tl.tracks[size_t(mi)].clips[1] : nullptr;
+        cutOk = cutOk && piece && piece->panCrop.at(QStringLiteral("zoom")).keys.front().time == 1 * S
+                && piece->effects.front().params.at(QStringLiteral("radius")).keys.front().time == 1 * S;
+        check(splitOk && cutOk, QStringLiteral("split and multicam pieces keep Pan/Crop and effect keyframes in place (split %1, multicam %2 %3)")
+                                    .arg(splitOk).arg(cutOk).arg(err));
     }
 
     // ---- Video -----------------------------------------------------------------------------------
@@ -7849,6 +7882,10 @@ int cmdTools(const QString& mediaDir, const QString& outDir)
                   && c[1].start == 62 * kUsPerSecond && c[1].text == QStringLiteral("Top") && v == c && parseSubtitles(writeSrt(c)) == c
                   && parseSubtitles(writeVtt(c)) == c && writeVtt(c).startsWith(QStringLiteral("WEBVTT")),
               QStringLiteral("subtitles: SRT and WebVTT read (tags dropped, hours optional) and written back the same"));
+        const std::vector<Caption> para{{0, kUsPerSecond, QStringLiteral("One\n\nTwo"), 0}, {kUsPerSecond, 2 * kUsPerSecond, QStringLiteral("Three"), 0}};
+        const std::vector<Caption> back = parseSubtitles(writeSrt(para)), backVtt = parseSubtitles(writeVtt(para));
+        check(back.size() == 2 && back[0].text == QStringLiteral("One\nTwo") && backVtt.size() == 2 && backVtt[0].text == QStringLiteral("One\nTwo"),
+              QStringLiteral("subtitles: a blank line inside a caption does not end its cue (%1 read back)").arg(back.size()));
     }
     {
         // ";" (drop-frame) only for NTSC rates; whole rates read with ":".

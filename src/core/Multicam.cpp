@@ -39,6 +39,7 @@ std::optional<Clip> piece(Timeline& tl, int number, TimeUs t0, TimeUs t1, QStrin
     c.start = t0;
     c.length = t1 - t0;
     c.sourceIn = a->sourceIn + (t0 - a->start);
+    ops::shiftClipKeyframes(c, -(t0 - a->start)); // (keyframes count from the event's start)
     if (a->isGenerated()) // (an animated angle: each piece carries on in the same picture)
         c.generatorSpan = a->generatedLength();
     c.groupId = 0;
