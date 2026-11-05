@@ -1595,6 +1595,7 @@ void TimelineWidget::normalizeSelection()
             // Reuse a Gain effect at the front of the chain, else add one there.
             if (c.effects.empty() || c.effects.front().type != QLatin1String("a_gain"))
                 c.effects.insert(c.effects.begin(), makeEffectOfType(QStringLiteral("a_gain"), tl.allocId()));
+            c.effects.front().enabled = true; // (a Gain left switched off would leave the event as it was)
             ParamValue& g = c.effects.front().params[QStringLiteral("gain")];
             g.keys.clear();
             g.value = std::clamp(gainDb, -60.0, 24.0);

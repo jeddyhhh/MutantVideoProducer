@@ -482,6 +482,16 @@ int Project::addMedia(const MediaInfo& info)
     for (const auto& [id, m] : m_media)
         if (identity(m->path).compare(incoming, pathCase) == 0)
             return id;
+    for (auto it = m_removedMedia.begin(); it != m_removedMedia.end(); ++it) // imported again: the same item (and id)
+        if (identity(it->second->path).compare(incoming, pathCase) == 0) {
+            const int id = it->first;
+            m_media.insert(*it);
+            m_removedMedia.erase(it);
+            m_dirtyExtra = true;
+            m_snapshot.reset();
+            mediaChangedNow();
+            return id;
+        }
     auto item = std::make_shared<MediaItem>();
     item->id = m_nextMediaId++;
     // Imported relative files are relative to the current working directory, not

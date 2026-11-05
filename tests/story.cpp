@@ -295,6 +295,9 @@ int main(int argc, char** argv)
         q.undoStack()->undo();
         check(removed && q.mediaItem(m) && q.isMediaUsed(m) && q.snapshot()->media.count(m),
               "undoing a delete brings back media removed from the project after it");
+        q.undoStack()->redo();
+        const bool again = q.removeMedia(m) && q.addMedia(info) == m && q.media().size() == 1;
+        check(again, "importing a removed file again gives back the same item");
     }
     return failures;
 }

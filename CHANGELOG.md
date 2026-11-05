@@ -20,8 +20,10 @@ What changed in each version of Mutant Video Producer. The newest is first.
 
 ### Fixed
 
+- **Normalize Audio Events** did nothing on an event whose first effect was a Gain switched off.
 - **Undo after Remove from Project** brought events back with no file to play (their media gone, nothing to relink):
-  the file now comes back into Project Media with them. Pasting events whose file was removed does the same.
+  the file now comes back into Project Media with them. Pasting events whose file was removed does the same, and
+  importing the file again gives back the same item (not a second copy).
 - **Importing subtitles** broke the accents of older Windows .srt files and didn't read UTF-16 ones at all ("No
   subtitles were found").
 - **A damaged project with repeated ids** lost its multicam angles when the ids were repaired on loading.
