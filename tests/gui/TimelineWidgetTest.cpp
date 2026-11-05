@@ -7,6 +7,7 @@
 #include "core/PanCrop.h"
 #include "core/Presets.h"
 #include "core/TimelineOps.h"
+#include "core/Story.h"
 #include "engine/MediaCache.h"
 #include "ui/EffectsBrowser.h"
 #include "ui/AudioLevels.h"
@@ -515,6 +516,24 @@ int TimelineWidget::runEditTest(QStringList& log)
           QStringLiteral("ripple paste inserts: A split at 1 s, the rest moves 2 s later (%1)").arg(layout.join(QStringLiteral(", "))));
     reset();
     m_ripple = RippleMode::Off;
+    {
+        // A compound sequence (no file of its own) pastes back with its picture as well as its sound.
+        Timeline tl = m_project->timeline();
+        const std::vector<int> made = story::compound(tl, ops::expandToGroups(tl, {clipAt(videoTrack, 0).id}), QStringLiteral("Seq"));
+        m_project->applyEdit(tl, QStringLiteral("compound"));
+        setSelection({made.begin(), made.end()});
+        copySelection();
+        setCursorTime(m_project->timeline().duration());
+        paste();
+        int pictures = 0, sounds = 0;
+        for (const Track& t : m_project->timeline().tracks)
+            for (const Clip& c : t.clips)
+                if (c.isSequence())
+                    ++(isVisualTrack(t.type) ? pictures : sounds);
+        check(made.size() == 2 && pictures == 2 && sounds == 2,
+              QStringLiteral("a copied compound sequence pastes its picture and its sound (%1 pictures, %2 sounds)").arg(pictures).arg(sounds));
+        reset();
+    }
 
     // ---- Removing transitions ----
     {

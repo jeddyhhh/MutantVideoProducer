@@ -2263,7 +2263,7 @@ int cmdAudioFx(const QString& mediaDir, const QString& outDir)
         };
         // White noise: no repeating pattern, so the correlation peak is unique.
         const std::vector<float> dryOut = mixRange(fresh(noise), 1.0, 2.0);
-        for (const char* fx : {"a_pitch", "a_denoise", "a_limiter", "a_ffmpeg"}) {
+        for (const char* fx : {"a_pitch", "a_denoise", "a_limiter", "a_ffmpeg", "a_dereverb", "a_declick", "a_dehum"}) {
             ProjectSnapshot s = fresh(noise);
             EffectInstance e = makeEffectOfType(QString::fromLatin1(fx), 905);
             if (QLatin1String(fx) == QLatin1String("a_pitch"))
@@ -2487,10 +2487,12 @@ int cmdAudioFx(const QString& mediaDir, const QString& outDir)
         precache::Store again(dir); // (as after a restart: found on disk)
         const QImage back = again.load(before.front().key, 7);
         again.trim(0);
+        // (Trimmed by another MVP sharing the folder: the first store finds it gone and makes it again.)
+        const bool goneSeen = store.has(before.front().key, 7) && store.load(before.front().key, 7).isNull() && !store.has(before.front().key, 7);
         check(before.size() == 3 && firstChanged && othersKept && labelKept && !back.isNull() && qGreen(back.pixel(10, 10)) > 150
-                  && !precache::Store(dir).has(before.front().key, 7) && precache::stretchAt(before, 6 * kUsPerSecond) == &before[2],
+                  && !precache::Store(dir).has(before.front().key, 7) && goneSeen && precache::stretchAt(before, 6 * kUsPerSecond) == &before[2],
               QStringLiteral("pre-rendering: an edit makes only its own stretch new (%1 stretches), a colour label none; frames come back "
-                             "from disk and are trimmed").arg(before.size()));
+                             "from disk and are trimmed, and one trimmed by another MVP is made again (%2)").arg(before.size()).arg(goneSeen ? "yes" : "no"));
     }
     {
         // A realistic voice chain on one track: EQ + compressor + reverb + limiter.

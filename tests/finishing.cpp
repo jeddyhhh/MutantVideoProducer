@@ -21,6 +21,7 @@
 #include <QGuiApplication>
 #include <QDataStream>
 #include <QFile>
+#include <QFileInfo>
 #include <QDir>
 #include <QTemporaryDir>
 #include <QTextStream>
@@ -161,7 +162,8 @@ int main(int argc, char** argv)
             return 10 * std::log10(e + 1e-12);
         };
         const double burstDrop = energy(wet, 0, burst / 5, burst) - energy(out, lat, burst / 5, burst);
-        const double tailDrop = energy(wet, 0, burst + rate / 5, period) - energy(out, lat, burst + rate / 5, period);
+        // (The tail up to 50 ms before the next burst: an STFT frame smears a burst's onset that far ahead of it.)
+        const double tailDrop = energy(wet, 0, burst + rate / 5, period - rate / 20) - energy(out, lat, burst + rate / 5, period - rate / 20);
         check(dry && tailDrop > 6 && burstDrop < 3,
               QStringLiteral("De-reverb: a room's tail down %1 dB, the sound itself %2 dB").arg(tailDrop, 0, 'f', 1).arg(burstDrop, 0, 'f', 1));
     }
@@ -799,9 +801,9 @@ int main(int argc, char** argv)
                     sum += std::abs(qGray(a.pixel(x, y)) - qGray(b.pixel(x, y)));
             return sum / ((a.height() / 3 + 1) * (a.width() / 3 + 1));
         };
-        auto cutAndRender = [&](TimeUs secondIn, QString* note) {
+        auto cutAndRender = [&](TimeUs secondIn, QString* note, const QString& from) {
             Project p;
-            const int id = p.addMedia(probeMedia(make.path));
+            const int id = p.addMedia(probeMedia(from));
             Timeline tl = p.timeline();
             int vt = -1;
             for (size_t i = 0; i < tl.tracks.size(); ++i)
@@ -819,7 +821,7 @@ int main(int argc, char** argv)
             }
             p.applyEdit(tl, "cuts");
             ExportSettings s = make;
-            s.path = sdir.filePath(QStringLiteral("smart%1.mp4").arg(secondIn));
+            s.path = sdir.filePath(QStringLiteral("smart%1-%2.mp4").arg(secondIn).arg(QFileInfo(from).suffix()));
             s.rangeEnd = 3 * kUsPerSecond;
             s.smartRender = true;
             Exporter ex;
@@ -828,8 +830,8 @@ int main(int argc, char** argv)
             return ok ? s.path : QString();
         };
         QString copiedNote, renderedNote;
-        const QString copied = made ? cutAndRender(2 * kUsPerSecond, &copiedNote) : QString();
-        const QString rendered = made ? cutAndRender(5 * kUsPerSecond / 2, &renderedNote) : QString();
+        const QString copied = made ? cutAndRender(2 * kUsPerSecond, &copiedNote, make.path) : QString();
+        const QString rendered = made ? cutAndRender(5 * kUsPerSecond / 2, &renderedNote, make.path) : QString();
         const MediaInfo out = copied.isEmpty() ? MediaInfo() : probeMedia(copied);
         const double first = copied.isEmpty() ? 999 : differ(frameOf(copied, kUsPerSecond / 10), frameOf(make.path, kUsPerSecond * 6 / 10));
         const double second = copied.isEmpty() ? 999 : differ(frameOf(copied, 2 * kUsPerSecond), frameOf(make.path, 5 * kUsPerSecond / 2));
@@ -840,6 +842,36 @@ int main(int argc, char** argv)
                   .arg(copiedNote).arg(double(out.duration) / kUsPerSecond, 0, 'f', 2).arg(first, 0, 'f', 2).arg(second, 0, 'f', 2));
         check(!rendered.isEmpty() && renderedNote.contains(QLatin1String("keyframe")),
               QStringLiteral("smart render: a cut off a keyframe renders as usual and says so (%1)").arg(renderedNote));
+        // A file whose times start later (an MPEG-TS: 0.05 s in; a camera's .MTS ~1 s) is cut where the preview shows it.
+        ExportSettings makeTs = make;
+        makeTs.path = sdir.filePath("source.ts");
+        Exporter tsMaker;
+        const bool madeTs = tsMaker.run(*gen.snapshot(), makeTs);
+        AVFormatContext* probe = nullptr;
+        TimeUs tsStart = 0, tsKey = 0; // (the keyframe after 1.5 s, as the preview counts: its pictures start a little later)
+        if (madeTs && avformat_open_input(&probe, makeTs.path.toUtf8().constData(), nullptr, nullptr) >= 0) {
+            avformat_find_stream_info(probe, nullptr);
+            tsStart = ff::formatStartTime(probe);
+            const int vi = av_find_best_stream(probe, AVMEDIA_TYPE_VIDEO, -1, -1, nullptr, 0);
+            ff::PacketPtr pkt = ff::makePacket();
+            while (vi >= 0 && !tsKey && av_read_frame(probe, pkt.get()) >= 0) {
+                if (pkt->stream_index == vi && (pkt->flags & AV_PKT_FLAG_KEY) && pkt->pts != AV_NOPTS_VALUE) {
+                    const TimeUs t = av_rescale_q(pkt->pts, probe->streams[vi]->time_base, AVRational{1, int(kUsPerSecond)}) - tsStart;
+                    if (t > 3 * kUsPerSecond / 2)
+                        tsKey = t;
+                }
+                av_packet_unref(pkt.get());
+            }
+            avformat_close_input(&probe);
+        }
+        QString tsNote;
+        const QString tsCopied = tsKey ? cutAndRender(tsKey, &tsNote, makeTs.path) : QString();
+        const double tsFirst = tsCopied.isEmpty() ? 999 : differ(frameOf(tsCopied, kUsPerSecond / 10), frameOf(makeTs.path, kUsPerSecond * 6 / 10));
+        const double tsSecond = tsCopied.isEmpty() ? 999 : differ(frameOf(tsCopied, 2 * kUsPerSecond), frameOf(makeTs.path, tsKey + kUsPerSecond / 2));
+        check(tsStart > kUsPerSecond / 50 && tsNote.contains(QLatin1String("copied")) && tsFirst < 1.0 && tsSecond < 1.0,
+              QStringLiteral("smart render: a file starting %1 s in is cut where the preview shows it (%2; the first cut's picture %3 off, "
+                             "the second's %4 off)")
+                  .arg(double(tsStart) / kUsPerSecond, 0, 'f', 2).arg(tsNote).arg(tsFirst, 0, 'f', 2).arg(tsSecond, 0, 'f', 2));
     }
     {
         // Match Colour's curves: a picture with every level, against a copy with other levels in each channel, give

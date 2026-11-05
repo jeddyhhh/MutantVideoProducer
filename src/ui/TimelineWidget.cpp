@@ -382,11 +382,11 @@ void TimelineWidget::copySelection()
     for (size_t ti = 0; ti < tl.tracks.size(); ++ti)
         for (const auto& c : tl.tracks[ti].clips)
             if (m_selection.count(c.id)) {
-                m_clipboard.emplace_back(int(ti), c);
+                m_clipboard.push_back({int(ti), c, isVisualTrack(tl.tracks[ti].type)});
                 earliest = std::min(earliest, c.start);
             }
-    for (auto& [ti, c] : m_clipboard)
-        c.start -= earliest;
+    for (auto& copied : m_clipboard)
+        copied.clip.start -= earliest;
 }
 
 void TimelineWidget::cutSelection()
@@ -402,12 +402,9 @@ void TimelineWidget::paste()
     Timeline tl = m_project->timeline();
     std::map<int, int> groupMap;
     std::set<int> pasted;
-    for (auto [ti, c] : m_clipboard) {
+    for (auto [ti, c, visual] : m_clipboard) {
         // Clips go back to the track they were copied from, if it still fits.
-        auto media = m_project->mediaItem(c.mediaId);
-        const TrackType wanted = media && media->info.isStill ? TrackType::Image
-                               : c.isGenerated() || (media && media->info.videoStream(c.streamIndex)) ? TrackType::Video : TrackType::Audio;
-        if (ti >= int(tl.tracks.size()) || isVisualTrack(tl.tracks[ti].type) != isVisualTrack(wanted) || tl.tracks[ti].locked)
+        if (ti >= int(tl.tracks.size()) || isVisualTrack(tl.tracks[ti].type) != visual || tl.tracks[ti].locked)
             continue;
         c.id = tl.allocId();
         c.start += m_cursor;
@@ -436,8 +433,7 @@ void TimelineWidget::pasteAttributes(unsigned what)
     // The first copied picture onto pictures, the first copied sound onto sounds.
     const Clip* picture = nullptr;
     const Clip* sound = nullptr;
-    for (const auto& [ti, c] : m_clipboard) {
-        const bool visual = ti < int(tl.tracks.size()) && isVisualTrack(tl.tracks[size_t(ti)].type);
+    for (const auto& [ti, c, visual] : m_clipboard) {
         (visual ? picture : sound) = (visual ? picture : sound) ? (visual ? picture : sound) : &c;
     }
     int changed = 0;

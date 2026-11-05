@@ -24,6 +24,7 @@ QString at(TimeUs t)
 struct Source {
     ff::InputFormatPtr fmt;
     AVStream* st = nullptr;
+    TimeUs offset = 0; // where the file's times start (as the decoder counts from it: a camera's .MTS starts ~1 s in)
 };
 
 bool open(const QString& path, int stream, Source& src)
@@ -35,6 +36,7 @@ bool open(const QString& path, int stream, Source& src)
     if (avformat_find_stream_info(raw, nullptr) < 0 || stream < 0 || stream >= int(raw->nb_streams))
         return false;
     src.st = raw->streams[stream];
+    src.offset = ff::formatStartTime(raw);
     return src.st->codecpar->codec_type == AVMEDIA_TYPE_VIDEO;
 }
 
@@ -53,15 +55,38 @@ Scan scan(Source& src, const Piece& p, bool first, const std::function<bool(AVPa
     Scan out;
     AVStream* st = src.st;
     const AVRational us{1, int(kUsPerSecond)};
-    const int64_t in = av_rescale_q(p.sourceIn, us, st->time_base);
-    const int64_t end = av_rescale_q(p.sourceIn + p.length, us, st->time_base);
+    const int64_t in = av_rescale_q(p.sourceIn + src.offset, us, st->time_base);
+    const int64_t end = av_rescale_q(p.sourceIn + src.offset + p.length, us, st->time_base);
     const AVRational rate = st->avg_frame_rate.num ? st->avg_frame_rate : st->r_frame_rate;
     const int64_t half = rate.num ? av_rescale_q(1, av_inv_q(rate), st->time_base) / 2 : 1;
     const int64_t slack = av_rescale_q(2 * kUsPerSecond, us, st->time_base);
-    av_seek_frame(src.fmt.get(), st->index, in, AVSEEK_FLAG_BACKWARD);
     ff::PacketPtr pkt = ff::makePacket();
+    // The keyframe to start from: the last one at the start (or, for the first piece, before it). A seek lands on or
+    // before it in an MP4; in an MPEG-TS it can land past it, so then again a second earlier, and so on.
+    int64_t keyPts = AV_NOPTS_VALUE, target = in;
+    for (int tries = 0; tries < 10 && keyPts == AV_NOPTS_VALUE; ++tries) {
+        if (tries)
+            target -= slack / 2;
+        av_seek_frame(src.fmt.get(), st->index, target, AVSEEK_FLAG_BACKWARD);
+        while (av_read_frame(src.fmt.get(), pkt.get()) >= 0) {
+            const bool ours = pkt->stream_index == st->index && pkt->pts != AV_NOPTS_VALUE;
+            const bool key = pkt->flags & AV_PKT_FLAG_KEY;
+            const int64_t pts = pkt->pts, dts = pkt->dts != AV_NOPTS_VALUE ? pkt->dts : pkt->pts;
+            av_packet_unref(pkt.get());
+            if (!ours)
+                continue;
+            if (key && pts <= in + half)
+                keyPts = std::max(keyPts, pts);
+            if (dts > in + half)
+                break; // (decoded after the start: no keyframe at or before it from here on)
+        }
+        if (st->start_time != AV_NOPTS_VALUE && target <= st->start_time)
+            break;
+    }
+    if (keyPts == AV_NOPTS_VALUE)
+        return out; // no keyframe before the start
+    av_seek_frame(src.fmt.get(), st->index, target, AVSEEK_FLAG_BACKWARD);
     bool started = false, pastEnd = false;
-    int64_t keyPts = 0;
     while (av_read_frame(src.fmt.get(), pkt.get()) >= 0) {
         if (pkt->stream_index != st->index || pkt->pts == AV_NOPTS_VALUE) {
             av_packet_unref(pkt.get());
@@ -69,10 +94,9 @@ Scan scan(Source& src, const Piece& p, bool first, const std::function<bool(AVPa
         }
         const int64_t pts = pkt->pts;
         if (!started) {
-            // The keyframe to start from: the one at the start, or (the first piece) the last one before it.
-            if (!(pkt->flags & AV_PKT_FLAG_KEY) || pts > in + half) {
-                if (pts > in + half)
-                    break; // no keyframe before the start
+            if (!(pkt->flags & AV_PKT_FLAG_KEY) || pts != keyPts) {
+                if (pkt->dts != AV_NOPTS_VALUE && pkt->dts > in + slack)
+                    break; // (not met again)
                 av_packet_unref(pkt.get());
                 continue;
             }
@@ -163,6 +187,8 @@ Plan plan(const ProjectSnapshot& snap, const ExportSettings& s)
             || !c.transitionOut.type.isEmpty())
             return no(QStringLiteral("the event at %1 fades or has a transition").arg(at(c.start)));
         const VideoStreamInfo* vs = m->info.videoStream(c.streamIndex);
+        if (vs->rotation != 0 || (vs->sarNum > 0 && vs->sarDen > 0 && vs->sarNum != vs->sarDen)) // (a copy shows it as stored)
+            return no(QStringLiteral("the event at %1 is from a rotated file or one with non-square pixels").arg(at(c.start)));
         p.pieces.push_back({m->path, vs->index, c.sourceIn + (a - c.start), b - a, a - s.rangeStart});
         covered = b;
     }
@@ -231,7 +257,7 @@ int copy(const Plan& plan, AVFormatContext* oc, AVStream* vst, const std::functi
         if (!open(piece.path, piece.stream, src))
             return AVERROR(ENOENT);
         const AVRational tb = src.st->time_base;
-        const int64_t shift = av_rescale_q(piece.start, us, tb) - av_rescale_q(piece.sourceIn, us, tb);
+        const int64_t shift = av_rescale_q(piece.start, us, tb) - av_rescale_q(piece.sourceIn + src.offset, us, tb);
         scan(src, piece, i == 0, [&](AVPacket* pkt) {
             pkt->pts += shift;
             if (pkt->dts != AV_NOPTS_VALUE)

@@ -320,7 +320,9 @@ public:
         m_gain.assign(kSize / 2 + 1, 1.0f);
         m_frames = 0;
     }
-    int latency(const Params&) override { return kSize - kHop; }
+    // (A sample comes out four hops after it went in: written at the frame's end, it is out once three more frames
+    // have moved it to the front, and read out over the hop after that.)
+    int latency(const Params&) override { return kSize; }
     void process(float* s, int frames, const Params& p) override
     {
         const double amount = std::clamp(p.num(QStringLiteral("amount")), 0.0, 1.0);

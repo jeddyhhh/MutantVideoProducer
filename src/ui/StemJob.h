@@ -35,6 +35,7 @@ private:
     QJsonObject m_stems;
     QJsonArray m_made;
     int m_clipId = 0, m_count = 2;
+    std::shared_ptr<const int> m_session; // the project it was started in (another opened meanwhile: not placed there)
     double m_progress = 0;
     bool m_busy = false, m_done = false, m_ok = false, m_cancelled = false;
 };

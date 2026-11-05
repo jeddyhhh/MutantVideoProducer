@@ -428,7 +428,12 @@ private:
     // track (header or empty lane) whose Track FX it would join.
     int m_fxDropClip = 0;
     int m_fxDropTrack = -1;
-    std::vector<std::pair<int, Clip>> m_clipboard; // track index, clip (start relative)
+    struct Copied {
+        int track;   // the track index it was copied from
+        Clip clip;   // (start relative)
+        bool visual; // copied from a picture track (a nested sequence's or a title's kind isn't in the clip)
+    };
+    std::vector<Copied> m_clipboard;
     struct GeneratedThumb {
         GeneratorSpec spec;
         TimeUs length = 0;

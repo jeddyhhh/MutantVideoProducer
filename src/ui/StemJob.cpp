@@ -73,6 +73,7 @@ bool StemJob::start(int clipId, int stems, bool best, QString* error)
     if (!file.open(QIODevice::WriteOnly) || file.write(QJsonDocument(request).toJson()) < 0 || !file.commit())
         return fail(tr("Can't write the request in %1").arg(QDir::toNativeSeparators(m_folder)));
     m_clipId = clipId;
+    m_session = m_project->session();
     m_count = stems == 4 ? 4 : 2;
     m_busy = true;
     m_done = m_ok = m_cancelled = false;
@@ -136,8 +137,12 @@ void StemJob::finish(const QString& failure)
         return;
     QString error = failure;
     const QStringList order = m_count == 4 ? QStringList{"vocals", "drums", "bass", "other"} : QStringList{"voice", "background"};
+    if (error.isEmpty() && m_project->session() != m_session)
+        error = tr("The project was closed before the stems were ready. They are in %1").arg(QDir::toNativeSeparators(m_folder));
+    if (error.isEmpty() && !m_project->timeline().findClip(m_clipId))
+        error = tr("The event was deleted before the stems were ready. They are in %1").arg(QDir::toNativeSeparators(m_folder));
     if (error.isEmpty()) {
-        std::vector<int> ids;
+        std::vector<MediaInfo> infos; // (all read before any is added: none left in Project Media when one is missing)
         QStringList names;
         for (const QString& key : order) {
             const QString path = m_stems.value(key).toString();
@@ -146,10 +151,13 @@ void StemJob::finish(const QString& failure)
                 error = tr("The engine didn't write the %1 stem.").arg(key);
                 break;
             }
-            ids.push_back(m_project->addMedia(info));
+            infos.push_back(info);
             names << key;
         }
         if (error.isEmpty()) {
+            std::vector<int> ids;
+            for (const MediaInfo& info : infos)
+                ids.push_back(m_project->addMedia(info));
             Timeline tl = m_project->timeline();
             QString why;
             const std::vector<int> made = stems::place(tl, m_project->media(), m_clipId, ids, names, &why);

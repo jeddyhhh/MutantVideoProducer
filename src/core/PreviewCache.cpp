@@ -83,16 +83,23 @@ QImage Store::load(const QByteArray& key, int64_t frame)
             return {};
     }
     QImage img(path(key, frame));
-    return img.isNull() ? img : img.convertToFormat(QImage::Format_ARGB32_Premultiplied);
+    if (img.isNull()) { // (gone: cleared by another MVP sharing the folder) made again
+        std::lock_guard lock(m_mutex);
+        const_cast<std::set<int64_t>&>(framesOf(key)).erase(frame);
+        return img;
+    }
+    return img.convertToFormat(QImage::Format_ARGB32_Premultiplied);
 }
 
 void Store::save(const QByteArray& key, int64_t frame, const QImage& image)
 {
     QDir().mkpath(QDir(m_dir).filePath(QString::fromLatin1(key)));
-    if (!image.convertToFormat(QImage::Format_RGB32).save(path(key, frame), "JPG", 92))
+    const QString file = path(key, frame);
+    if (!image.convertToFormat(QImage::Format_RGB32).save(file, "JPG", 92))
         return;
     std::lock_guard lock(m_mutex);
-    const_cast<std::set<int64_t>&>(framesOf(key)).insert(frame);
+    if (QFileInfo::exists(file)) // (not when cleared while it was being saved)
+        const_cast<std::set<int64_t>&>(framesOf(key)).insert(frame);
 }
 
 void Store::trim(qint64 bytes)
@@ -126,8 +133,8 @@ void Store::trim(qint64 bytes)
 
 void Store::clear()
 {
+    std::lock_guard lock(m_mutex); // (held throughout, so a frame saved meanwhile isn't counted kept)
     QDir(m_dir).removeRecursively();
-    std::lock_guard lock(m_mutex);
     m_frames.clear();
 }
 

@@ -33,6 +33,10 @@ What changed in each version of Mutant Video Producer. The newest is first.
   with an effect on it then broke the project's ids).
 - **Sound output** runs on its own thread, so a busy moment in the window (a repaint, a dialog) can't leave the sound
   card without sound.
+- **Pasting a compound sequence** pasted only its sound: its picture (no file of its own) was taken for sound and
+  left out. Copied events now remember whether they were picture or sound.
+- **Pre-rendered frames** cleared while one was being saved, or cleared by another MVP window (they share the folder),
+  were still shown done on the ruler and never made again.
 
 ## 0.9.5 (2026-11-04)
 
