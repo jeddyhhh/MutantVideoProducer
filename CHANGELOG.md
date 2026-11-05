@@ -35,6 +35,8 @@ What changed in each version of Mutant Video Producer. The newest is first.
   card without sound.
 - **Pasting a compound sequence** pasted only its sound: its picture (no file of its own) was taken for sound and
   left out. Copied events now remember whether they were picture or sound.
+- **Closing the Effect Builder** with a node selected could crash: deleting the node told the closing window that
+  the selection changed.
 - **Pre-rendered frames** cleared while one was being saved, or cleared by another MVP window (they share the folder),
   were still shown done on the ruler and never made again.
 

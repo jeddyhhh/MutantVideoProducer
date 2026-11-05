@@ -23,6 +23,7 @@
 #ifdef Q_OS_WIN
 #include <windows.h>
 #include <dbghelp.h>
+#include <crtdbg.h>
 #else
 #include <execinfo.h>
 #include <fcntl.h>
@@ -258,6 +259,14 @@ void install()
     });
     rearm->start(5000);
     _set_abort_behavior(0, _WRITE_ABORT_MSG | _CALL_REPORTFAULT); // no "abort() was called" box: the report says it
+#ifdef _DEBUG
+    // A failed assert (Qt's too) in a debug build: said on stderr and aborted (the report), not a box nobody answers in
+    // a test, which then sat until its time ran out.
+    for (int type : {_CRT_ERROR, _CRT_ASSERT}) {
+        _CrtSetReportMode(type, _CRTDBG_MODE_FILE | _CRTDBG_MODE_DEBUG);
+        _CrtSetReportFile(type, _CRTDBG_FILE_STDERR);
+    }
+#endif
     std::signal(SIGABRT, [](int) {
         writeReport("abort (a fatal error)", nullptr);
         std::signal(SIGABRT, SIG_DFL);

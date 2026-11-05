@@ -643,7 +643,12 @@ NodeEffectEditor::NodeEffectEditor(const std::vector<std::pair<QString, QString>
     timer->start(0);
 }
 
-NodeEffectEditor::~NodeEffectEditor() = default;
+NodeEffectEditor::~NodeEffectEditor()
+{
+    // (The scene goes with the children, after this: deleting a selected node then says the selection changed, which
+    // must not reach this editor, already gone.)
+    m_scene->disconnect(this);
+}
 
 // ---- the example ----
 void NodeEffectEditor::setExample(const QString& path)
