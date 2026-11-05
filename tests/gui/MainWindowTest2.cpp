@@ -60,10 +60,15 @@ void MainWindow::runProductionToolsTest(const std::function<void(bool, const QSt
             // (The cursor itself: the pre-render works round the cursor, and the preview asks for the cursor's frame
             // after an edit, so a frame asked for elsewhere was forgotten when that came after it.)
             seekTo(at);
-            for (int i = 0; i < 300 && !doneAt(at); ++i)
-                wait(100);
-            ready = doneAt(at);
             const QSize size(m_project->settings().width / m_engine->previewDivisor(), m_project->settings().height / m_engine->previewDivisor());
+            auto keptNow = [&] { // (as below: the ruler alone can be a word late)
+                const auto now = precache::stretches(*m_project->snapshot(), size, proxy::enabled());
+                const precache::Stretch* s = precache::stretchAt(now, at);
+                return s && m_engine->preRenderStore().has(s->key, m_project->settings().fps.frameAt(at));
+            };
+            for (int i = 0; i < 300 && !(doneAt(at) && keptNow()); ++i)
+                wait(100);
+            ready = doneAt(at) && keptNow();
             const auto before = precache::stretches(*m_project->snapshot(), size, proxy::enabled());
             if (const precache::Stretch* s = precache::stretchAt(before, at)) {
                 const QImage kept = m_engine->preRenderStore().load(s->key, m_project->settings().fps.frameAt(at));
@@ -89,9 +94,11 @@ void MainWindow::runProductionToolsTest(const std::function<void(bool, const QSt
             keyChanged = a0 && a1 && a0->key != a1->key && !m_engine->preRenderStore().has(a1->key, m_project->settings().fps.frameAt(at));
             spans.clear();
             seekTo(at);
-            for (int i = 0; i < 300 && !doneAt(at); ++i)
+            // (Until made too: the ruler's last word from before the edit can still arrive after the clear.)
+            auto madeNow = [&] { return a1 && m_engine->preRenderStore().has(a1->key, m_project->settings().fps.frameAt(at)); };
+            for (int i = 0; i < 300 && !(doneAt(at) && madeNow()); ++i)
                 wait(100);
-            made = m_engine->preRenderStore().has(a1->key, m_project->settings().fps.frameAt(at));
+            made = madeNow();
             again = doneAt(at) && made;
             m_project->undoStack()->undo();
             qunsetenv("MVP_PRERENDER_ALL");
