@@ -10,6 +10,7 @@
 #include <QAbstractItemView>
 #include <QAbstractSlider>
 #include <QPushButton>
+#include <QProgressDialog>
 #include <QApplication>
 #include <QDesktopServices>
 #include <QDialog>
@@ -416,6 +417,8 @@ private:
             write(QStringLiteral("    dialog \"%1\": %2").arg(dialog->windowTitle(), accept ? QStringLiteral("OK") : QStringLiteral("Cancel")));
             if (accept)
                 dialog->accept();
+            else if (auto* progress = qobject_cast<QProgressDialog*>(dialog))
+                progress->cancel(); // (as its Cancel button or Esc: reject() only hid it, the work going on unseen)
             else
                 dialog->reject();
             return;
