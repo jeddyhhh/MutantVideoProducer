@@ -480,6 +480,8 @@ if(MVP_BUILD_GUI)
     foreach(_seed 1 2 3)
         mvp_test(monkey-${_seed} "gui;local" ${CMAKE_COMMAND} -DEXE=$<TARGET_FILE:mvp> -DSRC=${CMAKE_SOURCE_DIR} -DOUT=${MVP_TEST_OUT}
                  -DSEED=${_seed} -DSTEPS=1500 -P ${CMAKE_SOURCE_DIR}/tests/monkey.cmake)
+        # (alone: with ctest -j, several GPU-heavy tests starting at once crashed the OpenGL driver making a context)
+        set_tests_properties(monkey-${_seed} PROPERTIES RUN_SERIAL TRUE)
     endforeach()
 endif()
 find_package(Python3 COMPONENTS Interpreter QUIET)

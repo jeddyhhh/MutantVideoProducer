@@ -3664,6 +3664,8 @@ QJsonObject McpServer::ToolCall::tool_edit_track()
             const int under = integer("duck_under", -1);
             if (under >= int(tl.tracks.size()) || under == index)
                 return errorResult(QStringLiteral("no other track %1").arg(under));
+            if (under >= 0 && tl.tracks[size_t(under)].type != TrackType::Audio)
+                return errorResult(QStringLiteral("track %1 is not an audio track: ducking follows another track's sound").arg(under));
             t.duckUnder = under < 0 ? 0 : tl.tracks[size_t(under)].id;
         }
         if (has("duck_amount"))
