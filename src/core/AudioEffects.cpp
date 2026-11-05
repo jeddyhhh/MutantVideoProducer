@@ -14,6 +14,8 @@ extern "C" {
 #include <libavfilter/buffersrc.h>
 }
 
+#include <QElapsedTimer>
+
 #include <algorithm>
 #include <cmath>
 #include <complex>
@@ -873,6 +875,8 @@ private:
                 return it->second;
         }
         Probe result;
+        QElapsedTimer took;
+        took.start();
         if (build(spec)) {
             // Feed silence with one impulse after a warm-up (some filters emit a
             // start-up transient), pushing and draining in the same block
@@ -882,9 +886,13 @@ private:
             constexpr int kProbeSeconds = 8; // loudnorm looks 3 s ahead
             std::vector<float> in(size_t(kBlock) * 2, 0.0f);
             std::vector<float> outStream;
-            int64_t fed = 0, produced = 0, worst = 0;
+            int64_t fed = 0, produced = 0, worst = 0, worstSince = 0;
+            bool heard = false; // the impulse has come out
+            size_t scanned = size_t(kImpulseBlock) * kBlock * 2;
             ff::FramePtr out = ff::makeFrame();
-            for (int b = 0; b < m_rate * kProbeSeconds / kBlock; ++b) {
+            // Up to kProbeSeconds, but done once the impulse is out and the hold-back hasn't grown for a second:
+            // a Pitch Shift measured in 8 s of sound stalled the mix 200 ms each time its value changed.
+            for (int b = 0; b < m_rate * kProbeSeconds / kBlock && !(heard && fed - worstSince >= m_rate); ++b) {
                 std::fill(in.begin(), in.end(), 0.0f);
                 if (b == kImpulseBlock)
                     in[0] = in[1] = 0.9f;
@@ -907,7 +915,12 @@ private:
                     produced += out->nb_samples;
                     av_frame_unref(out.get());
                 }
-                worst = std::max(worst, fed - produced);
+                if (fed - produced > worst) {
+                    worst = fed - produced;
+                    worstSince = fed;
+                }
+                for (; !heard && scanned < outStream.size(); scanned += 2)
+                    heard = std::abs(outStream[scanned]) > 1e-4f;
             }
             int peakAt = 0;
             float peak = 0;
@@ -920,6 +933,8 @@ private:
             result.delay = peak > 1e-4f ? std::clamp(peakAt - kImpulseBlock * kBlock, 0, m_rate * 6) : 0;
             release();
         }
+        if (qEnvironmentVariableIsSet("MVP_AUDIO_LOG"))
+            qWarning("audio: measured \"%s\" in %lld ms (holds %d, delay %d)", qPrintable(spec), took.elapsed(), result.queue, result.delay);
         std::lock_guard lock(mutex);
         cache[{spec, m_rate}] = result;
         return result;
@@ -1238,6 +1253,27 @@ bool audioFilterSpecValid(const QString& spec, int rate)
     p.reset(rate);
     p.latency(Params{});
     return !p.failed();
+}
+
+void measureAudioEffects(const EffectChain& chain, int rate)
+{
+    for (const EffectInstance& e : chain) {
+        if (!e.enabled)
+            continue;
+        if (e.isRack()) {
+            for (const RackChain* c : activeRackChains(e))
+                measureAudioEffects(c->effects, rate);
+            continue;
+        }
+        const AudioEffectDef* def = findAudioEffect(e.type);
+        if (!def || def->id == QLatin1String("a_vst3"))
+            continue; // (not a plugin: loading one is the mixer's business)
+        const std::unique_ptr<AudioProcessor> p = def->create();
+        if (!dynamic_cast<FfmpegAudioProcessor*>(p.get()))
+            continue;
+        p->reset(rate);
+        p->latency(resolveParams(def->params, e.params, 0));
+    }
 }
 
 const std::vector<AudioEffectDef>& audioEffects()

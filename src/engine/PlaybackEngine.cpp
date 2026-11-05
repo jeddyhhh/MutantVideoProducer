@@ -1,5 +1,6 @@
 #include "engine/PlaybackEngine.h"
 
+#include "core/AudioEffects.h"
 #include "core/AudioMixer.h"
 #include "core/FrameRenderer.h"
 #include "core/Proxy.h"
@@ -91,6 +92,7 @@ PlaybackEngine::PlaybackEngine(QObject* parent) : QObject(parent)
     m_videoThread = std::thread(&PlaybackEngine::videoThreadMain, this);
     m_audioThread = std::thread(&PlaybackEngine::audioThreadMain, this);
     m_preThread = std::thread(&PlaybackEngine::preRenderThreadMain, this);
+    m_measureThread = std::thread(&PlaybackEngine::measureThreadMain, this);
 }
 
 PlaybackEngine::~PlaybackEngine()
@@ -106,6 +108,8 @@ PlaybackEngine::~PlaybackEngine()
     m_videoCv.notify_all();
     m_audioCv.notify_all();
     m_preCv.notify_all();
+    m_measureCv.notify_all();
+    m_measureThread.join();
     m_videoThread.join();
     m_audioThread.join();
     m_preThread.join();
@@ -307,12 +311,14 @@ void PlaybackEngine::setSnapshot(std::shared_ptr<const ProjectSnapshot> snap)
         std::lock_guard lock(m_mutex);
         projectChanged = m_snap && snap && m_snap->session != snap->session;
         m_snap = std::move(snap);
+        m_toMeasure = m_snap;
         m_snapChanged = std::chrono::steady_clock::now();
         if (projectChanged) {
             ++m_generation;
             m_queue.clear();
         }
     }
+    m_measureCv.notify_one();
     if (projectChanged && m_scrubSink) {
         m_scrubStop.stop();
         stopSink();
@@ -598,6 +604,35 @@ void PlaybackEngine::clearPreRender()
     m_preCv.notify_all();
 }
 
+void PlaybackEngine::measureThreadMain()
+{
+    std::function<void(const Timeline&)> measure = [&](const Timeline& tl) {
+        measureAudioEffects(tl.audioMasterEffects, m_sampleRate);
+        for (const Track& t : tl.tracks) {
+            const bool audio = t.type == TrackType::Audio;
+            if (audio)
+                measureAudioEffects(t.effects, m_sampleRate);
+            for (const Clip& c : t.clips) {
+                if (audio)
+                    measureAudioEffects(c.effects, m_sampleRate);
+                if (c.isSequence() && c.sequence.value)
+                    measure(*c.sequence.value);
+            }
+        }
+    };
+    std::unique_lock lock(m_mutex);
+    for (;;) {
+        m_measureCv.wait(lock, [&] { return m_quit || m_toMeasure; });
+        if (m_quit)
+            return;
+        const auto snap = std::move(m_toMeasure);
+        m_toMeasure.reset();
+        lock.unlock();
+        measure(snap->timeline);
+        lock.lock();
+    }
+}
+
 void PlaybackEngine::preRenderThreadMain()
 {
     using namespace std::chrono;
@@ -621,8 +656,12 @@ void PlaybackEngine::preRenderThreadMain()
             if (m_quit)
                 return;
             // Not while playing, and not until an edit has settled (dragging a knob).
-            if (m_playing || !m_preRender || !m_snap || steady_clock::now() - m_snapChanged < milliseconds(900))
+            if (m_playing || !m_preRender || !m_snap || steady_clock::now() - m_snapChanged < milliseconds(900)) {
+                if (qEnvironmentVariableIsSet("MVP_PRERENDER_LOG"))
+                    qWarning("prerender: waiting (playing %d, on %d, settled %lld ms)", int(m_playing.load()), int(m_preRender.load()),
+                             qint64(duration_cast<milliseconds>(steady_clock::now() - m_snapChanged).count()));
                 continue;
+            }
             snap = m_snap;
             size = previewSize(*snap);
         }
@@ -735,6 +774,9 @@ void PlaybackEngine::preRenderThreadMain()
             }
         }
         publish();
+        if (qEnvironmentVariableIsSet("MVP_PRERENDER_LOG"))
+            qWarning("prerender: round at %.2f s, %d stretches, %d in range, worked %d, stale %d", double(cursor) / kUsPerSecond,
+                     int(list.size()), int(order.size()), int(worked), int(stale()));
         if (worked && ++rounds % 8 == 0)
             m_store.trim(kCacheBytes);
     }

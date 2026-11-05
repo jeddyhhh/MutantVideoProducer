@@ -43,7 +43,7 @@ void MainWindow::runProductionToolsTest(const std::function<void(bool, const QSt
                 for (const Clip& c : t.clips)
                     if (!shot && !c.isGenerated() && c.length > 2 * kUsPerSecond)
                         shot = &c;
-        bool ready = false, again = false, keyChanged = false;
+        bool ready = false, again = false, keyChanged = false, made = false;
         double off = 999;
         if (shot) {
             const int shotId = shot->id;
@@ -57,7 +57,9 @@ void MainWindow::runProductionToolsTest(const std::function<void(bool, const QSt
             qputenv("MVP_PRERENDER_ALL", "1");
             m_engine->setPreRender(true);
             m_engine->clearPreRender();
-            m_engine->requestFrame(at);
+            // (The cursor itself: the pre-render works round the cursor, and the preview asks for the cursor's frame
+            // after an edit, so a frame asked for elsewhere was forgotten when that came after it.)
+            seekTo(at);
             for (int i = 0; i < 300 && !doneAt(at); ++i)
                 wait(100);
             ready = doneAt(at);
@@ -86,10 +88,11 @@ void MainWindow::runProductionToolsTest(const std::function<void(bool, const QSt
             const precache::Stretch* a1 = precache::stretchAt(after, at);
             keyChanged = a0 && a1 && a0->key != a1->key && !m_engine->preRenderStore().has(a1->key, m_project->settings().fps.frameAt(at));
             spans.clear();
-            m_engine->requestFrame(at);
+            seekTo(at);
             for (int i = 0; i < 300 && !doneAt(at); ++i)
                 wait(100);
-            again = doneAt(at) && m_engine->preRenderStore().has(a1->key, m_project->settings().fps.frameAt(at));
+            made = m_engine->preRenderStore().has(a1->key, m_project->settings().fps.frameAt(at));
+            again = doneAt(at) && made;
             m_project->undoStack()->undo();
             qunsetenv("MVP_PRERENDER_ALL");
             m_engine->clearPreRender();
@@ -97,8 +100,9 @@ void MainWindow::runProductionToolsTest(const std::function<void(bool, const QSt
         }
         check(shot && ready && off < 6 && keyChanged && again,
               QStringLiteral("pre-rendering: frames near the cursor made in the background and shown done on the ruler (%1), "
-                             "the same picture as rendering it (%2 off), an edit makes them new (%3) and they are made again (%4)")
-                  .arg(ready ? "yes" : "no").arg(off, 0, 'f', 1).arg(keyChanged ? "yes" : "no").arg(again ? "yes" : "no"));
+                             "the same picture as rendering it (%2 off), an edit makes them new (%3) and they are made again (%4: made %5)")
+                  .arg(ready ? "yes" : "no").arg(off, 0, 'f', 1).arg(keyChanged ? "yes" : "no").arg(again ? "yes" : "no")
+                  .arg(made ? "yes" : "no"));
     }
     {
         // Colour labels: on an event and its group, one undo step, drawn in its colour, kept in the project file;

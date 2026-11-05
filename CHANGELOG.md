@@ -25,6 +25,10 @@ What changed in each version of Mutant Video Producer. The newest is first.
   silence were played. It now keeps a tenth of a second spare.
 - **Playback starting with a moment of silence**: Play now waits (the picture held on the first frame) until the
   sound is mixed, usually a fraction of a second, instead of starting the sound card on silence.
+- **A gap in the sound when an event with an FFmpeg effect starts playing** (a loudness normaliser, a de-noiser, the
+  pitch shift): the effect's delay was measured right then, taking up to a third of a second. Effects are measured in
+  the background when the project changes, in a quarter of the time, so changing a pitch during playback doesn't
+  stutter either.
 - **Make Multicam** gave the Multicam track's events the same effect ids as the angles they came from (an angle
   with an effect on it then broke the project's ids).
 - **Sound output** runs on its own thread, so a busy moment in the window (a repaint, a dialog) can't leave the sound

@@ -100,6 +100,7 @@ private:
     void onTick();
     void videoThreadMain();
     void preRenderThreadMain();
+    void measureThreadMain();
     QImage cachedFrame(const std::shared_ptr<const ProjectSnapshot>& snap, TimeUs t, QSize size);
     void audioThreadMain();
     TimeUs computeClock();
@@ -188,4 +189,9 @@ private:
     std::chrono::steady_clock::time_point m_snapChanged; // guarded by m_mutex
     std::unique_ptr<QOffscreenSurface> m_preSurface;     // created on the GUI thread
     std::thread m_preThread;
+    // Measures the project's FFmpeg effect chains after each change, so the mixer doesn't stall on one when its event
+    // starts playing (measureAudioEffects). The latest snapshot waits in m_toMeasure (guarded by m_mutex).
+    std::shared_ptr<const ProjectSnapshot> m_toMeasure;
+    std::condition_variable m_measureCv;
+    std::thread m_measureThread;
 };

@@ -35,3 +35,7 @@ double audioEffectResponseDb(const QString& type, const Params& p, double freq, 
 double audioEffectTransferDb(const QString& type, const Params& p, double inputDb);
 // True if an FFmpeg audio filter chain (as used by the FFmpeg Audio Filter effect) builds.
 bool audioFilterSpecValid(const QString& spec, int rate = 48000);
+// Measures the delay of every FFmpeg filter chain in these effects (racks included) ahead of time, as the mixer would on
+// first use, so playback doesn't stall when an event with one starts (a loudness normaliser takes 0.1 s, a de-noiser 0.3).
+// Slow: for a background thread. Measurements are kept for the session, so a second call costs little.
+void measureAudioEffects(const EffectChain& chain, int rate);

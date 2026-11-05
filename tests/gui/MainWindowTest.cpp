@@ -913,6 +913,34 @@ int MainWindow::runEditorTest(QStringList& log)
         }
     }
 
+    // ---- An event whose effect has never been measured starts during playback without a gap: the chain is measured
+    // in the background when the project changes, not by the mixer when the event starts (a de-noiser takes 0.3 s) ----
+    {
+        Timeline tl = m_project->timeline();
+        auto audio = std::find_if(tl.tracks.begin(), tl.tracks.end(), [](const Track& t) { return t.type == TrackType::Audio && !t.clips.empty(); });
+        if (audio != tl.tracks.end()) {
+            Clip later = audio->clips.front();
+            later.id = tl.allocId();
+            later.groupId = 0;
+            later.start = audio->clips.back().end() + 2 * kUsPerSecond;
+            later.length = std::min<TimeUs>(later.length, 2 * kUsPerSecond);
+            EffectInstance slow = makeEffectOfType(QStringLiteral("a_ffmpeg"), tl.allocId());
+            slow.params[QStringLiteral("filter")].text =
+                QStringLiteral("aecho=0.8:0.88:%1:0.3,anlmdn").arg(QRandomGenerator::global()->bounded(20, 400)); // (never measured)
+            later.effects = {slow};
+            audio->clips.push_back(later);
+            m_project->applyEdit(tl, QStringLiteral("slow event effect"));
+            seekTo(later.start - kUsPerSecond);
+            const int dropoutsBefore = m_engine->mixDropouts();
+            togglePlay();
+            wait(2500);
+            const int dropouts = m_engine->mixDropouts() - dropoutsBefore;
+            togglePlay();
+            m_project->undoStack()->undo();
+            check(dropouts == 0, QStringLiteral("an event whose effect was never measured starts playing without a gap (%1 short)").arg(dropouts));
+        }
+    }
+
     // ---- Moving the cursor while playing carries on from there; Space stops there ----
     {
         seekTo(0);
