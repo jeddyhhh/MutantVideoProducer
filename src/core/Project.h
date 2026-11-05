@@ -452,6 +452,8 @@ private:
     std::shared_ptr<const int> m_session = std::make_shared<const int>(0);
     ProjectSettings m_settings;
     MediaMap m_media;
+    // Media taken out of the project (that isn't undoable): it comes back when an undo or a paste uses it again.
+    MediaMap m_removedMedia;
     int m_mediaBatch = 0;        // MediaBatch
     bool m_mediaPending = false; // a change told when the batch ends
     void mediaChangedNow() { if (m_mediaBatch) m_mediaPending = true; else emit mediaChanged(); }

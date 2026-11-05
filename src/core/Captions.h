@@ -25,6 +25,9 @@ std::vector<Caption> timelineCaptions(const Timeline& tl, int clipId = 0);
 
 // Reads SRT or WebVTT (the format is told from the text); tags like <i> are dropped.
 std::vector<Caption> parseSubtitles(const QString& text);
+// A subtitle file's text: UTF-8, UTF-16 (with its byte-order mark) or, when it isn't valid UTF-8, the system code page
+// (older .srt files are often Windows-1252).
+QString subtitleText(const QByteArray& bytes);
 // Cuts captions longer than maxChars on words, each piece timed by its share of the characters.
 void splitLongCaptions(std::vector<Caption>& captions, int maxChars);
 QString writeSrt(const std::vector<Caption>& captions);

@@ -433,6 +433,16 @@ Project::Project(QObject* parent) : QObject(parent), m_timeline(defaultTimeline(
 
 void Project::touch()
 {
+    for (auto it = m_removedMedia.begin(); it != m_removedMedia.end();) {
+        if (isMediaUsed(it->first)) {
+            m_media.insert(*it);
+            it = m_removedMedia.erase(it);
+            m_dirtyExtra = true;
+            mediaChangedNow();
+        } else {
+            ++it;
+        }
+    }
     m_snapshot.reset();
     emit changed();
 }
@@ -517,8 +527,11 @@ bool Project::isMediaUsed(int id) const
 
 bool Project::removeMedia(int id)
 {
-    if (isMediaUsed(id) || !m_media.erase(id))
+    const auto it = m_media.find(id);
+    if (isMediaUsed(id) || it == m_media.end())
         return false;
+    m_removedMedia.insert(*it);
+    m_media.erase(it);
     m_dirtyExtra = true;
     m_snapshot.reset();
     mediaChangedNow();
@@ -644,6 +657,7 @@ void Project::clear(const ProjectSettings& settings)
     m_undo.clear();
     m_packed.reset();
     m_media.clear();
+    m_removedMedia.clear();
     m_nextMediaId = 1;
     m_settings = settings;
     m_timeline = defaultTimeline();
@@ -848,8 +862,9 @@ void repairTimeline(Timeline& tl)
     std::map<int, int> remapped;
     for (auto [old, id] : originals)
         if (old > 0 && occurrences[old] == 1) remapped[old] = *id;
-    std::set<int> audioTracks, clips, markers;
+    std::set<int> audioTracks, allTracks, clips, markers;
     for (const auto& t : tl.tracks) {
+        allTracks.insert(t.id);
         if (t.type == TrackType::Audio) audioTracks.insert(t.id);
         for (const auto& c : t.clips) clips.insert(c.id);
     }
@@ -864,6 +879,13 @@ void repairTimeline(Timeline& tl)
         if (!t.duckUnder) t.duckAmount = -12.0f; // inactive ducking is omitted when saved
         for (auto& c : t.clips) if (c.narration.contains("caption_owner"))
             c.narration["caption_owner"] = reference(c.narration["caption_owner"].toInt(), clips);
+    }
+    if (!tl.multicam.isEmpty()) { // (the Multicam track and its angles, by id)
+        QJsonArray angles;
+        for (auto value : tl.multicam["angles"].toArray())
+            angles.append(reference(value.toInt(), clips));
+        tl.multicam["angles"] = angles;
+        tl.multicam["track"] = reference(tl.multicam["track"].toInt(), allTracks);
     }
     for (int i = 0; i < tl.chapters.size(); ++i) {
         auto chapter = tl.chapters[i].toObject();
@@ -1505,6 +1527,7 @@ bool Project::loadFile(const QString& path, QString* error, QStringList* missing
     m_session = std::make_shared<const int>(0);
     m_settings = settings;
     m_media = std::move(media);
+    m_removedMedia.clear();
     m_nextMediaId = nextMediaId;
     m_timeline = std::move(timeline);
     m_filePath = path;
@@ -1670,7 +1693,7 @@ Timeline nestedTimelineFromJson(const QJsonObject& root)
 
 void Project::shareMediaPool(const MediaMap& media)
 {
-    m_media = media; m_nextMediaId = 1;
+    m_media = media; m_removedMedia.clear(); m_nextMediaId = 1;
     for(const auto& [id,item]:media) m_nextMediaId = std::max(m_nextMediaId,id+1);
     m_snapshot.reset(); mediaChangedNow();
 }

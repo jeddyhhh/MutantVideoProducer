@@ -20,6 +20,11 @@ What changed in each version of Mutant Video Producer. The newest is first.
 
 ### Fixed
 
+- **Undo after Remove from Project** brought events back with no file to play (their media gone, nothing to relink):
+  the file now comes back into Project Media with them. Pasting events whose file was removed does the same.
+- **Importing subtitles** broke the accents of older Windows .srt files and didn't read UTF-16 ones at all ("No
+  subtitles were found").
+- **A damaged project with repeated ids** lost its multicam angles when the ids were repaired on loading.
 - **Split, trimmed or frozen events lost their place in an animated Pan/Crop** (a Ken Burns move, or Reframe's
   tracking): the right-hand piece started the move over. Multicam cuts started each angle's keyframes over too.
 - **Compound sequences** moved a track rack's chain keyframes (a chain's level) out of step with the clips.

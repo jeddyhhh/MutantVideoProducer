@@ -7886,6 +7886,14 @@ int cmdTools(const QString& mediaDir, const QString& outDir)
         const std::vector<Caption> back = parseSubtitles(writeSrt(para)), backVtt = parseSubtitles(writeVtt(para));
         check(back.size() == 2 && back[0].text == QStringLiteral("One\nTwo") && backVtt.size() == 2 && backVtt[0].text == QStringLiteral("One\nTwo"),
               QStringLiteral("subtitles: a blank line inside a caption does not end its cue (%1 read back)").arg(back.size()));
+        const QByteArray ansi("1\r\n00:00:01,000 --> 00:00:02,000\r\nCaf\xe9\r\n");
+        QByteArray utf16("\xff\xfe", 2);
+        const QString wide = QStringLiteral("1\n00:00:01,000 --> 00:00:02,000\nCaf\u00e9\n");
+        utf16.append(reinterpret_cast<const char*>(wide.utf16()), wide.size() * 2);
+        const auto a = parseSubtitles(subtitleText(ansi)), w = parseSubtitles(subtitleText(utf16));
+        check(a.size() == 1 && a[0].text == QStringLiteral("Caf\u00e9") && w.size() == 1 && w[0].text == QStringLiteral("Caf\u00e9")
+                  && subtitleText(QByteArray("Caf\xc3\xa9")) == QStringLiteral("Caf\u00e9"),
+              QStringLiteral("subtitles: Windows-1252 and UTF-16 files read (%1, %2)").arg(a.empty() ? QString() : a[0].text, w.empty() ? QString() : w[0].text));
     }
     {
         // ";" (drop-frame) only for NTSC rates; whole rates read with ":".

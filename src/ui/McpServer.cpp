@@ -3163,7 +3163,7 @@ QJsonObject McpServer::ToolCall::tool_captions()
     if (action == QLatin1String("import")) {
         QFile f(path);
         const std::vector<Caption> caps =
-            f.open(QIODevice::ReadOnly) ? parseSubtitles(QString::fromUtf8(f.readAll())) : std::vector<Caption>();
+            f.open(QIODevice::ReadOnly) ? parseSubtitles(subtitleText(f.readAll())) : std::vector<Caption>();
         if (caps.empty())
             return errorResult(QStringLiteral("no subtitles in %1").arg(path));
         w->addCaptions(caps, 0, kinetic);

@@ -5,6 +5,7 @@
 #include "core/Project.h"
 
 #include <QRegularExpression>
+#include <QStringDecoder>
 #include <QStringList>
 #include <QThread>
 #include <algorithm>
@@ -105,6 +106,20 @@ std::vector<Caption> parseSubtitles(const QString& text)
     }
     std::sort(out.begin(), out.end(), [](const Caption& a, const Caption& b) { return a.start < b.start; });
     return out;
+}
+
+QString subtitleText(const QByteArray& bytes)
+{
+    if (const auto bom = QStringConverter::encodingForData(bytes)) {
+        QStringDecoder decode(*bom);
+        return decode(bytes);
+    }
+    QStringDecoder utf8(QStringConverter::Utf8);
+    const QString text = utf8(bytes);
+    if (!utf8.hasError())
+        return text;
+    QStringDecoder local(QStringConverter::System);
+    return local(bytes);
 }
 
 QString writeSrt(const std::vector<Caption>& captions)

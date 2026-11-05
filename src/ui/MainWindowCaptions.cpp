@@ -256,7 +256,7 @@ void MainWindow::importSubtitles()
         return;
     settings.setValue(Profiles::instance().settingsKey(QStringLiteral("dirs/subtitles")), QFileInfo(path).absolutePath());
     QFile f(path);
-    const std::vector<Caption> captions = f.open(QIODevice::ReadOnly) ? parseSubtitles(QString::fromUtf8(f.readAll())) : std::vector<Caption>();
+    const std::vector<Caption> captions = f.open(QIODevice::ReadOnly) ? parseSubtitles(subtitleText(f.readAll())) : std::vector<Caption>();
     if (captions.empty()) {
         QMessageBox::warning(this, tr("Import Subtitles"), tr("No subtitles were found in %1.").arg(QFileInfo(path).fileName()));
         return;

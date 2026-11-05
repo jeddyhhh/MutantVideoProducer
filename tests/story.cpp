@@ -280,5 +280,21 @@ int main(int argc, char** argv)
                         key = e.chains.front().params.at("level").keys.front().time;
         check(key == kUsPerSecond, QStringLiteral("compound: a track rack chain's keyframes move with the clips (%1 us) %2").arg(key).arg(why));
     }
+    {
+        // Remove from Project isn't undoable: undoing the delete before it brings the file back with its events.
+        Project q;
+        const int m = q.addMedia(info);
+        Timeline tl = q.timeline();
+        ops::insertMedia(tl, *q.mediaItem(m), 0, -1, q.settings().fps, true);
+        q.applyEdit(tl, "insert");
+        Timeline empty = q.timeline();
+        for (auto& t : empty.tracks)
+            t.clips.clear();
+        q.applyEdit(empty, "delete");
+        const bool removed = q.removeMedia(m) && !q.mediaItem(m);
+        q.undoStack()->undo();
+        check(removed && q.mediaItem(m) && q.isMediaUsed(m) && q.snapshot()->media.count(m),
+              "undoing a delete brings back media removed from the project after it");
+    }
     return failures;
 }
