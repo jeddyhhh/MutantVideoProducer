@@ -7844,7 +7844,8 @@ int cmdTools(const QString& mediaDir, const QString& outDir)
             es.path = QDir(outDir).filePath(QStringLiteral("subs.%1").arg(QLatin1String(ext)));
             es.rangeStart = kUsPerSecond / 2;
             es.rangeEnd = 3 * kUsPerSecond;
-            es.captions = {{0, kUsPerSecond, QStringLiteral("First line")}, {2 * kUsPerSecond, 5 * kUsPerSecond, QStringLiteral("Second")}};
+            es.captions = {{0, kUsPerSecond, QStringLiteral("First line")}, {kUsPerSecond / 5, kUsPerSecond, QStringLiteral("Also")}, // (both start at the range: one after the other)
+                           {2 * kUsPerSecond, 5 * kUsPerSecond, QStringLiteral("Second")}};
             Exporter ex;
             const bool ok = ex.run(s, es);
             // Read the subtitle packets back.
@@ -7866,7 +7867,7 @@ int cmdTools(const QString& mediaDir, const QString& outDir)
                 avformat_close_input(&fc);
             }
             found << QStringLiteral("%1: %2 %3").arg(QLatin1String(ext), texts.join(QStringLiteral(", ")), ex.error());
-            check(ok && texts == QStringList{QStringLiteral("First line@0.0"), QStringLiteral("Second@1.5")},
+            check(ok && texts == QStringList{QStringLiteral("First line@0.0"), QStringLiteral("Also@0.0"), QStringLiteral("Second@1.5")},
                   QStringLiteral("captions become a subtitle track in a %1 render, timed from the range's start (%2)").arg(QLatin1String(ext), found.last()));
         }
     }
