@@ -271,8 +271,11 @@ void MainWindow::narrationStudio(const std::vector<Caption>& supplied, const QJs
         c = tl.findClip(current);
 
         c->mediaId = selected["media"].toInt();
+        if (const auto media = m_project->mediaItem(c->mediaId); media && !media->info.audioStream(c->streamIndex) && media->info.hasAudio())
+            c->streamIndex = media->info.audio.front().index; // (the take's own file)
         c->sourceIn = 0;
         c->length = length;
+        ops::clampFades(*c); // (a shorter take)
         c->speed = selected["speed"].toDouble(1);
         c->name = selected["text"].toString();
         c->narration["text"] = c->name;

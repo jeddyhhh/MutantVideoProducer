@@ -20,6 +20,8 @@ What changed in each version of Mutant Video Producer. The newest is first.
 
 ### Fixed
 
+- **Alternate Take**: switching a narration line to a shorter take kept fades longer than the event, and a take whose
+  file has its sound in another stream played silence.
 - **Smart render** copied the video of an event that was switched off (the render shows it as not there), and copied
   it too when the file had to fit a size (the messaging templates, which could then come out over their limit) or was
   asked for in another pixel format, or when the file isn't the project's shape (the render shows it with bars, the
