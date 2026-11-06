@@ -20,6 +20,12 @@ What changed in each version of Mutant Video Producer. The newest is first.
 
 ### Fixed
 
+- **Ripple delete** of events that overlap (a crossfade) closed the overlap twice, pulling what came after too far
+  back, onto the events before. Rippling all tracks left an event that started inside the deleted time where it was,
+  with the next one pulled back on top of it.
+- **WebVTT captions**: importing one (YouTube's, for example) showed `&amp;`, `&gt;` and the like as they are; exporting
+  a caption with `<` or `&` in it (an exported .vtt or a WebM's subtitle track) wrote it bare, so players took it for
+  a tag and lost the text.
 - **Normalize Audio Events** did nothing on an event whose first effect was a Gain switched off.
 - **Undo after Remove from Project** brought events back with no file to play (their media gone, nothing to relink):
   the file now comes back into Project Media with them. Pasting events whose file was removed does the same, and

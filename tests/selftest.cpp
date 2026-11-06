@@ -3610,6 +3610,28 @@ int cmdEditing(const QString& mediaDir, const QString& outDir)
         check(starts(del.tracks[0]) == QStringLiteral("0.0 4.0") && starts(del.tracks[1]) == QStringLiteral("1.0") && del.markers[0].time == 5 * S,
               QStringLiteral("ripple delete on all tracks closes the 2 s on every track and moves markers (%1)").arg(starts(del.tracks[0])));
 
+        Timeline inside = layout(); // the sound at 4-5 s starts in the deleted 3-5 s; one more at 6 s
+        inside.tracks[1].clips[0].start = 4 * S;
+        inside.tracks[1].clips[0].length = S;
+        Clip after = inside.tracks[1].clips[0];
+        after.id = inside.allocId();
+        after.start = 6 * S;
+        inside.tracks[1].clips.push_back(after);
+        ops::rippleRemoveClipsAll(inside, {inside.tracks[0].clips[1].id}, true);
+        check(starts(inside.tracks[1]) == QStringLiteral("3.0 4.0"),
+              QStringLiteral("ripple delete on all tracks: an event starting in the gap moves to its start, not under the next (%1)")
+                  .arg(starts(inside.tracks[1])));
+
+        Timeline xf = layout(); // the 3 s event runs to 6.5 s, over the 6 s one (a crossfade); one more at 9 s
+        xf.tracks[0].clips[1].length = 3 * S + S / 2;
+        Clip last = xf.tracks[0].clips[2];
+        last.id = xf.allocId();
+        last.start = 9 * S;
+        xf.tracks[0].clips.push_back(last);
+        ops::rippleRemoveClips(xf, {xf.tracks[0].clips[1].id, xf.tracks[0].clips[2].id});
+        check(starts(xf.tracks[0]) == QStringLiteral("0.0 4.0"),
+              QStringLiteral("ripple delete of crossfaded events closes the 5 s they cover, the overlap once (%1)").arg(starts(xf.tracks[0])));
+
         Timeline locked = layout();
         locked.tracks[1].locked = true; // the audio event, 1-5 s
         ops::rippleRemoveClipsAll(locked, {locked.tracks[0].clips[1].id}, true);
@@ -7887,6 +7909,11 @@ int cmdTools(const QString& mediaDir, const QString& outDir)
         const std::vector<Caption> back = parseSubtitles(writeSrt(para)), backVtt = parseSubtitles(writeVtt(para));
         check(back.size() == 2 && back[0].text == QStringLiteral("One\nTwo") && backVtt.size() == 2 && backVtt[0].text == QStringLiteral("One\nTwo"),
               QStringLiteral("subtitles: a blank line inside a caption does not end its cue (%1 read back)").arg(back.size()));
+        const std::vector<Caption> marks{{0, kUsPerSecond, QStringLiteral("Tom & Jerry: 3 < 4 > 2 \"ok\""), 0}};
+        const auto yt = parseSubtitles(QStringLiteral("WEBVTT\n\n00:00.000 --> 00:01.000\n&gt;&gt; Fish &amp; chips&nbsp;<c>now</c>\n"));
+        check(parseSubtitles(writeVtt(marks)) == marks && !writeVtt(marks).contains(QLatin1String("3 < 4")) && yt.size() == 1
+                  && yt[0].text == QStringLiteral(">> Fish & chips now"),
+              QStringLiteral("subtitles: WebVTT & < > written and read as entities (%1)").arg(yt.empty() ? QString() : yt[0].text));
         const QByteArray ansi("1\r\n00:00:01,000 --> 00:00:02,000\r\nCaf\xe9\r\n");
         QByteArray utf16("\xff\xfe", 2);
         const QString wide = QStringLiteral("1\n00:00:01,000 --> 00:00:02,000\nCaf\u00e9\n");

@@ -571,47 +571,66 @@ void overwriteOverlaps(Timeline& tl, const std::set<int>& ids)
     tl.sortClips();
 }
 
+namespace {
+// The time the events in `ids` cover (overlapping ones, a crossfade, counted once), as sorted separate spans.
+using Spans = std::vector<std::pair<TimeUs, TimeUs>>;
+Spans removedSpans(const std::vector<const Track*>& tracks, const std::set<int>& ids)
+{
+    Spans spans;
+    for (const Track* t : tracks)
+        for (const Clip& c : t->clips)
+            if (ids.count(c.id))
+                spans.emplace_back(c.start, c.end());
+    std::sort(spans.begin(), spans.end());
+    Spans merged;
+    for (const auto& s : spans)
+        if (!merged.empty() && s.first <= merged.back().second)
+            merged.back().second = std::max(merged.back().second, s.second);
+        else
+            merged.push_back(s);
+    return merged;
+}
+
+// Where time t lands once the spans are taken out: back by what was removed before it (a time inside one
+// goes to its start, so nothing that started in the gap is left behind what came after it).
+TimeUs closeSpans(const Spans& spans, TimeUs t)
+{
+    TimeUs removed = 0;
+    for (const auto& [a, b] : spans)
+        removed += std::max<TimeUs>(0, std::min(t, b) - a);
+    return std::max<TimeUs>(0, t - removed);
+}
+} // namespace
+
 void rippleRemoveClips(Timeline& tl, const std::set<int>& ids)
 {
     for (auto& track : tl.tracks) {
-        std::vector<Clip> kept;
-        TimeUs shift = 0;
-        for (const Clip& c : track.clips) {
-            if (ids.count(c.id)) {
-                shift += c.length;
-                continue;
-            }
-            Clip k = c;
-            k.start = std::max<TimeUs>(0, k.start - shift);
-            kept.push_back(k);
-        }
-        track.clips = std::move(kept);
+        const Spans spans = removedSpans({&track}, ids);
+        std::erase_if(track.clips, [&](const Clip& c) { return ids.count(c.id) > 0; });
+        for (Clip& c : track.clips)
+            c.start = closeSpans(spans, c.start);
     }
     tl.sortClips();
 }
 
 void rippleRemoveClipsAll(Timeline& tl, const std::set<int>& ids, bool markers)
 {
-    // The time the removed events used, merged into separate spans.
-    std::vector<std::pair<TimeUs, TimeUs>> spans;
-    for (const auto& track : tl.tracks)
-        for (const Clip& c : track.clips)
-            if (ids.count(c.id))
-                spans.emplace_back(c.start, c.end());
+    std::vector<const Track*> all;
+    for (const Track& t : tl.tracks)
+        all.push_back(&t);
+    const Spans spans = removedSpans(all, ids);
     if (spans.empty())
         return;
-    std::sort(spans.begin(), spans.end());
-    std::vector<std::pair<TimeUs, TimeUs>> merged{spans.front()};
-    for (const auto& s : spans) {
-        if (s.first <= merged.back().second)
-            merged.back().second = std::max(merged.back().second, s.second);
-        else
-            merged.push_back(s);
-    }
     removeClips(tl, ids);
-    // Latest first, so earlier spans still find their events in place.
-    for (auto it = merged.rbegin(); it != merged.rend(); ++it)
-        rippleShift(tl, it->second, it->first - it->second, {}, {}, markers);
+    for (Track& t : tl.tracks)
+        if (!t.locked)
+            for (Clip& c : t.clips)
+                c.start = closeSpans(spans, c.start);
+    if (markers)
+        for (Marker& m : tl.markers)
+            m.time = closeSpans(spans, m.time);
+    tl.sortClips();
+    tl.sortMarkers();
 }
 
 void rippleShift(Timeline& tl, TimeUs from, TimeUs delta, const std::set<int>& trackIds, const std::set<int>& exclude,
