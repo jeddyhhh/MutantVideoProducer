@@ -1,0 +1,157 @@
+{
+    "description": "The colour's subcarrier delayed by a wandering fraction of a sample against its burst: every hue swings slowly round and back (it starts true).",
+    "exposed": [
+        {
+            "id": "n3_wobble",
+            "name": "Swing",
+            "node": 3,
+            "param": "wobble"
+        },
+        {
+            "id": "n3_wobbleHz",
+            "name": "Speed",
+            "node": 3,
+            "param": "wobbleHz"
+        }
+    ],
+    "format": "mvp-node-effect",
+    "links": [
+        [
+            1,
+            2,
+            0
+        ],
+        [
+            2,
+            3,
+            0
+        ],
+        [
+            3,
+            4,
+            0
+        ],
+        [
+            2,
+            5,
+            0
+        ],
+        [
+            4,
+            6,
+            0
+        ],
+        [
+            5,
+            6,
+            2
+        ],
+        [
+            6,
+            7,
+            0
+        ],
+        [
+            7,
+            8,
+            0
+        ]
+    ],
+    "name": "Hue Wobble",
+    "nextId": 9,
+    "nodes": [
+        {
+            "id": 1,
+            "params": {},
+            "type": "source",
+            "x": 0,
+            "y": 0
+        },
+        {
+            "id": 2,
+            "params": {},
+            "type": "composite_encode",
+            "x": 250,
+            "y": 0
+        },
+        {
+            "id": 3,
+            "params": {
+                "delay": {
+                    "v": 0
+                },
+                "wobble": {
+                    "v": 0.08
+                },
+                "wobbleHz": {
+                    "v": 0.35
+                }
+            },
+            "type": "composite_delay_line",
+            "x": 500,
+            "y": 0
+        },
+        {
+            "id": 4,
+            "params": {
+                "burst": {
+                    "v": 0
+                }
+            },
+            "type": "composite_sync_mixer",
+            "x": 750,
+            "y": 0
+        },
+        {
+            "id": 5,
+            "params": {
+                "luma": {
+                    "v": 0
+                },
+                "chroma": {
+                    "v": 0
+                },
+                "burst": {
+                    "v": 1
+                }
+            },
+            "type": "composite_sync_mixer",
+            "x": 500,
+            "y": 170
+        },
+        {
+            "id": 6,
+            "params": {
+                "lowPass": {
+                    "v": 0.5
+                },
+                "luma": {
+                    "v": 2
+                },
+                "chroma": {
+                    "v": 2
+                },
+                "burst": {
+                    "v": 2
+                }
+            },
+            "type": "composite_sync_mixer",
+            "x": 1000,
+            "y": 0
+        },
+        {
+            "id": 7,
+            "params": {},
+            "type": "composite_decode",
+            "x": 1250,
+            "y": 0
+        },
+        {
+            "id": 8,
+            "params": {},
+            "type": "output",
+            "x": 1500,
+            "y": 0
+        }
+    ]
+}

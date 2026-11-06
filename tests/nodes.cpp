@@ -18,6 +18,7 @@
 #include "core/Project.h"
 #include "core/TimelineOps.h"
 #include <QDir>
+#include <QDirIterator>
 #include <QFileInfo>
 #include <QGuiApplication>
 #include <QElapsedTimer>
@@ -43,6 +44,17 @@ QImage testPicture(QSize size)
     p.setCompositionMode(QPainter::CompositionMode_Clear);
     p.fillRect(QRect(0, 0, size.width() / 8, size.height() / 8), Qt::transparent);
     return img;
+}
+
+// The example effects under a folder, its sub-folders (submenus of Examples) too.
+QFileInfoList examplesIn(const QString& folder)
+{
+    QFileInfoList list;
+    QDirIterator it(folder, {QStringLiteral("*.mvpfx")}, QDir::Files, QDirIterator::Subdirectories);
+    while (it.hasNext())
+        list << QFileInfo(it.next());
+    std::sort(list.begin(), list.end(), [](const QFileInfo& x, const QFileInfo& y) { return x.completeBaseName() < y.completeBaseName(); });
+    return list;
 }
 
 double difference(const QImage& a0, const QImage& b0)
@@ -108,7 +120,7 @@ int main(int argc, char** argv)
         // and runs without an error.
         QStringList bad;
         int count = 0;
-        for (const QFileInfo& fi : QDir(QStringLiteral("data/effects")).entryInfoList({QStringLiteral("*.mvpfx")}, QDir::Files)) {
+        for (const QFileInfo& fi : examplesIn(QStringLiteral("data/effects"))) {
             ++count;
             nodes::Graph g;
             QString err;
@@ -175,6 +187,12 @@ int main(int argc, char** argv)
                              "drawn again the same")
                   .arg(off, 0, 'f', 1).arg(qRed(red)).arg(qGreen(red)).arg(qBlue(red)));
 
+        nodes::Evaluator played, cold; // (a TV started at frame 100, as when playing starts there, against one played up to it)
+        played.run(tv, bars, at(98));
+        played.run(tv, bars, at(99));
+        const double settle = difference(played.run(tv, bars, at(100)), cold.run(tv, bars, at(100)));
+        check(settle < 0.5, QStringLiteral("composite: the TV starts locked wherever playing starts (%1 off the one that played up to it)").arg(settle, 0, 'f', 2));
+
         nodes::Graph cut = nodes::starter(); // the picture's sync taken off, the Sync input given none
         const int enc = cut.addNode(QStringLiteral("composite_encode"), {}), sep = cut.addNode(QStringLiteral("composite_sync_separator"), {});
         const int mixer = cut.addNode(QStringLiteral("composite_sync_mixer"), {}), dec = cut.addNode(QStringLiteral("composite_decode"), {});
@@ -207,7 +225,7 @@ int main(int argc, char** argv)
         save(softOut, "lowpass");
         save(plainOut, "plain");
         if (dump) // (each example that uses them, as it looks on frame 30 of a picture and colour bars side by side)
-            for (const QFileInfo& fi : QDir(QStringLiteral("data/effects")).entryInfoList({QStringLiteral("*.mvpfx")}, QDir::Files)) {
+            for (const QFileInfo& fi : examplesIn(QStringLiteral("data/effects"))) {
                 nodes::Graph example;
                 nodes::load(fi.absoluteFilePath(), &example, nullptr);
                 if (std::none_of(example.nodes.begin(), example.nodes.end(), [](const nodes::Node& n) { return n.type.startsWith(QLatin1String("composite_")); }))
@@ -451,15 +469,16 @@ int main(int argc, char** argv)
                 auto fresh = createFrameRenderer(false, surface.get(), nullptr); // (its own effect states)
                 QImage a, b;
                 QElapsedTimer t;
-                qint64 gpuNs = 0;
+                std::vector<qint64> gpuNs; // (the median frame: one slow one, the machine busy, doesn't decide it)
                 for (int f = 0; f < frames; ++f) {
                     a = cpu.renderLive(pic, chain, TimeUs(f) * 33333, 30, true);
                     t.start();
                     b = fresh->renderLive(pic, chain, TimeUs(f) * 33333, 30, true);
-                    gpuNs += t.nsecsElapsed();
+                    gpuNs.push_back(t.nsecsElapsed());
                 }
+                std::sort(gpuNs.begin(), gpuNs.end());
                 if (ms)
-                    *ms = gpuNs / 1e6 / frames;
+                    *ms = gpuNs.empty() ? 0 : gpuNs[gpuNs.size() / 2] / 1e6;
                 return difference(a, b);
             };
             // Each node with what it takes: the source, and a checkerboard (drawn the same on both) as a second picture.
@@ -506,7 +525,7 @@ int main(int argc, char** argv)
                                      .arg(worst, 0, 'f', 2)
                                      .arg(off.isEmpty() ? QStringLiteral("none") : off.join(QStringLiteral(", "))));
             QStringList slowOrOff;
-            for (const QFileInfo& fi : QDir(nodes::examplesFolder()).entryInfoList({QStringLiteral("*.mvpfx")})) {
+            for (const QFileInfo& fi : examplesIn(nodes::examplesFolder())) {
                 nodes::Graph g;
                 if (!nodes::load(fi.absoluteFilePath(), &g, nullptr))
                     continue;

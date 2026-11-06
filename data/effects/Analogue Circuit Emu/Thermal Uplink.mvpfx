@@ -1,0 +1,105 @@
+{
+    "description": "A thermal camera's picture sent over a noisy link: false colour, hum and snow, the colour pushed.",
+    "exposed": [
+        {
+            "id": "n4_snow",
+            "name": "Snow",
+            "node": 4,
+            "param": "snow"
+        },
+        {
+            "id": "n4_hum",
+            "name": "Hum",
+            "node": 4,
+            "param": "hum"
+        }
+    ],
+    "format": "mvp-node-effect",
+    "links": [
+        [
+            1,
+            2,
+            0
+        ],
+        [
+            2,
+            3,
+            0
+        ],
+        [
+            3,
+            4,
+            0
+        ],
+        [
+            4,
+            5,
+            0
+        ],
+        [
+            5,
+            6,
+            0
+        ]
+    ],
+    "name": "Thermal Uplink",
+    "nextId": 7,
+    "nodes": [
+        {
+            "id": 1,
+            "params": {},
+            "type": "source",
+            "x": 0,
+            "y": 0
+        },
+        {
+            "id": 2,
+            "params": {},
+            "type": "fx.gradient_map",
+            "x": 250,
+            "y": 0
+        },
+        {
+            "id": 3,
+            "params": {},
+            "type": "composite_encode",
+            "x": 500,
+            "y": 0
+        },
+        {
+            "id": 4,
+            "params": {
+                "snow": {
+                    "v": 10
+                },
+                "hum": {
+                    "v": 6
+                },
+                "humSpeed": {
+                    "v": -0.15
+                }
+            },
+            "type": "composite_rf_noise",
+            "x": 750,
+            "y": 0
+        },
+        {
+            "id": 5,
+            "params": {
+                "colour": {
+                    "v": 1.3
+                }
+            },
+            "type": "composite_decode",
+            "x": 1000,
+            "y": 0
+        },
+        {
+            "id": 6,
+            "params": {},
+            "type": "output",
+            "x": 1250,
+            "y": 0
+        }
+    ]
+}

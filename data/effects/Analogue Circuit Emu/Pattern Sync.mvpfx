@@ -1,0 +1,122 @@
+{
+    "description": "The TV given its sync from a retro grid's signal, sliced too high: the grid's dark squares come out as sync and the picture is torn along them.",
+    "exposed": [
+        {
+            "id": "n4_slice",
+            "name": "Slice level",
+            "node": 4,
+            "param": "slice"
+        },
+        {
+            "id": "n4_correction",
+            "name": "Sync strength",
+            "node": 4,
+            "param": "correction"
+        }
+    ],
+    "format": "mvp-node-effect",
+    "links": [
+        [
+            2,
+            3,
+            0
+        ],
+        [
+            3,
+            4,
+            0
+        ],
+        [
+            1,
+            5,
+            0
+        ],
+        [
+            5,
+            6,
+            0
+        ],
+        [
+            4,
+            6,
+            1
+        ],
+        [
+            6,
+            7,
+            0
+        ],
+        [
+            7,
+            8,
+            0
+        ]
+    ],
+    "name": "Pattern Sync",
+    "nextId": 9,
+    "nodes": [
+        {
+            "id": 1,
+            "params": {},
+            "type": "source",
+            "x": 0,
+            "y": 0
+        },
+        {
+            "id": 2,
+            "params": {},
+            "type": "gen.retro_grid",
+            "x": 250,
+            "y": 0
+        },
+        {
+            "id": 3,
+            "params": {},
+            "type": "composite_encode",
+            "x": 250,
+            "y": 170
+        },
+        {
+            "id": 4,
+            "params": {
+                "slice": {
+                    "v": 18
+                },
+                "hysteresis": {
+                    "v": 3
+                }
+            },
+            "type": "composite_sync_separator",
+            "x": 250,
+            "y": 340
+        },
+        {
+            "id": 5,
+            "params": {},
+            "type": "composite_encode",
+            "x": 250,
+            "y": 510
+        },
+        {
+            "id": 6,
+            "params": {},
+            "type": "composite_sync_mixer",
+            "x": 500,
+            "y": 0
+        },
+        {
+            "id": 7,
+            "params": {},
+            "type": "composite_decode",
+            "x": 750,
+            "y": 0
+        },
+        {
+            "id": 8,
+            "params": {},
+            "type": "output",
+            "x": 1000,
+            "y": 0
+        }
+    ]
+}

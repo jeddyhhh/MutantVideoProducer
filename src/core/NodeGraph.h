@@ -82,7 +82,12 @@ struct NodeContext {
     SignalBus* bus = nullptr;    // this frame's signals (null: none kept)
     int node = 0;            // the node being run
     std::vector<int> inputs; // the node wired into each of its inputs (0: none)
+    bool pictureWanted = true; // false: only Composite Signal nodes read its picture, and no thumbnails are drawn
 };
+
+// Whether node `id`'s picture is looked at (thumbnails, or a node that isn't a Composite Signal one wired from it):
+// a signal node's picture is only a view of its signal, not worth drawing for the signal nodes after it.
+bool pictureWanted(const Graph& g, int id, bool thumbnails);
 
 struct NodeDef {
     QString id;

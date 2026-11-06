@@ -812,6 +812,11 @@ void MainWindow::createActions()
             userEffectsMenu->addAction(tr("(none yet)"))->setEnabled(false);
         // The examples that come with the program: open one to see how it's made, or start from it.
         QMenu* examples = userEffectsMenu->addMenu(tr("Examples"));
+        for (const QFileInfo& sub : QDir(nodes::examplesFolder()).entryInfoList(QDir::Dirs | QDir::NoDotAndDotDot, QDir::Name)) {
+            QMenu* folder = examples->addMenu(QString(sub.fileName()).replace(QLatin1Char('&'), QStringLiteral("&&")));
+            for (const QFileInfo& fi : QDir(sub.absoluteFilePath()).entryInfoList({QStringLiteral("*.mvpfx")}, QDir::Files, QDir::Name))
+                folder->addAction(fi.completeBaseName(), this, [this, path = fi.absoluteFilePath()] { effectBuilder(path); });
+        }
         for (const QFileInfo& fi : QDir(nodes::examplesFolder()).entryInfoList({QStringLiteral("*.mvpfx")}, QDir::Files, QDir::Name))
             examples->addAction(fi.completeBaseName(), this, [this, path = fi.absoluteFilePath()] { effectBuilder(path); });
         examples->setEnabled(!examples->isEmpty());

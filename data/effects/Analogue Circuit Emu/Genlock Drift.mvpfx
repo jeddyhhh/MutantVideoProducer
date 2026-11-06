@@ -1,0 +1,143 @@
+{
+    "description": "The picture's sync put back from a delay line that drifts: it starts held, then the picture slides down the screen as the sync slips against it, a little later each line too.",
+    "exposed": [
+        {
+            "id": "n3_drift",
+            "name": "Drift",
+            "node": 3,
+            "param": "drift"
+        },
+        {
+            "id": "n3_wobble",
+            "name": "Wobble",
+            "node": 3,
+            "param": "wobble"
+        },
+        {
+            "id": "n6_vHold",
+            "name": "Vertical hold",
+            "node": 6,
+            "param": "vHold"
+        }
+    ],
+    "format": "mvp-node-effect",
+    "links": [
+        [
+            1,
+            2,
+            0
+        ],
+        [
+            2,
+            3,
+            0
+        ],
+        [
+            3,
+            4,
+            0
+        ],
+        [
+            2,
+            5,
+            0
+        ],
+        [
+            4,
+            5,
+            1
+        ],
+        [
+            5,
+            6,
+            0
+        ],
+        [
+            6,
+            7,
+            0
+        ],
+        [
+            7,
+            8,
+            0
+        ]
+    ],
+    "name": "Genlock Drift",
+    "nextId": 9,
+    "nodes": [
+        {
+            "id": 1,
+            "params": {},
+            "type": "source",
+            "x": 0,
+            "y": 0
+        },
+        {
+            "id": 2,
+            "params": {},
+            "type": "composite_encode",
+            "x": 250,
+            "y": 0
+        },
+        {
+            "id": 3,
+            "params": {
+                "delay": {
+                    "v": 0
+                },
+                "drift": {
+                    "v": 4
+                },
+                "wobble": {
+                    "v": 0.15
+                },
+                "wobbleHz": {
+                    "v": 0.5
+                }
+            },
+            "type": "composite_delay_line",
+            "x": 500,
+            "y": 0
+        },
+        {
+            "id": 4,
+            "params": {},
+            "type": "composite_sync_separator",
+            "x": 750,
+            "y": 0
+        },
+        {
+            "id": 5,
+            "params": {},
+            "type": "composite_sync_mixer",
+            "x": 1000,
+            "y": 0
+        },
+        {
+            "id": 6,
+            "params": {},
+            "type": "composite_decode",
+            "x": 1250,
+            "y": 0
+        },
+        {
+            "id": 7,
+            "params": {
+                "curvature": {
+                    "v": 0.08
+                }
+            },
+            "type": "fx.crt",
+            "x": 1500,
+            "y": 0
+        },
+        {
+            "id": 8,
+            "params": {},
+            "type": "output",
+            "x": 1750,
+            "y": 0
+        }
+    ]
+}

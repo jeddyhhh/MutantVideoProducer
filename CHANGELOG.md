@@ -19,10 +19,11 @@ What changed in each version of Mutant Video Producer. The newest is first.
 - AI control: paste_attributes, replace_media, separate_stems; render takes smart_render.
 - **Composite Signal nodes** (Effect Builder): the picture as an NTSC composite video signal (sync, colour burst,
   subcarrier) through emulated analogue circuits onto a TV: Composite Encode, Sync Separator, Sync Mixer, RC Low
-  Pass, an Enhancer (a one-transistor amplifier solved as a circuit) and Composite Decode, a TV that locks to the
-  sync it's given, so damaged sync rolls and tears the picture as on a real one. Seventeen examples use them
-  (Composite Circuit wires up the whole chain; Vertical Roll, Horizontal Tear, Weak Signal, Shadow Sync, Signal
-  Inversion, Third-Generation Dub, Neon Bleed, Off-Air Tint and more).
+  Pass, Delay Line, RF Noise, an Enhancer (a one-transistor amplifier solved as a circuit) and Composite Decode, a
+  TV that locks to the sync it's given, so damaged sync rolls and tears the picture as on a real one. 37 examples
+  use them, in their own submenu, **User Created > Examples > Analogue Circuit Emu** (a folder of examples is a
+  submenu): Composite Circuit wires up the whole chain; Genlock Drift, Multipath Ghosts, Hue Wobble, Generation
+  Loss, Feedback Tube, Pattern Sync and the rest push it further.
 
 ### Fixed
 

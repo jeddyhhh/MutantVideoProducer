@@ -1103,10 +1103,18 @@ DeviceChainView::DeviceChainView(Project* project, std::function<TimeUs()> curso
     connect(userMenu, &QMenu::aboutToShow, this, [this, userMenu] {
         userMenu->clear();
         QMenu* examples = nullptr;
+        std::map<QString, QMenu*> folders; // (Examples > a folder of them)
         for (const EffectDef* e : nodes::userEffects()) {
             QMenu* into = userMenu;
-            if (e->category.endsWith(QLatin1String("/Examples"))) // (the ones that come with the program)
+            if (e->category.startsWith(QLatin1String("User Created/Examples"))) { // (the ones that come with the program)
                 into = examples ? examples : (examples = userMenu->addMenu(tr("Examples")));
+                if (const QString sub = e->category.section(QLatin1Char('/'), 2); !sub.isEmpty()) {
+                    QMenu*& folder = folders[sub];
+                    if (!folder)
+                        folder = examples->addMenu(QString(sub).replace(QLatin1Char('&'), QStringLiteral("&&")));
+                    into = folder;
+                }
+            }
             QAction* a = into->addAction(QString(e->name).replace(QLatin1Char('&'), QStringLiteral("&&")));
             a->setToolTip(e->description);
             connect(a, &QAction::triggered, this, [this, id = e->id] { addEffect(id); });

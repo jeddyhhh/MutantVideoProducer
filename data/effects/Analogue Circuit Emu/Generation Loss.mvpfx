@@ -1,0 +1,138 @@
+{
+    "description": "Dubbed twice through the whole chain: each generation smears the colour and sharpens the edges, onto a second TV.",
+    "exposed": [
+        {
+            "id": "n6_resistance",
+            "name": "Smear",
+            "node": 6,
+            "param": "resistance"
+        },
+        {
+            "id": "n3_gain",
+            "name": "Gain",
+            "node": 3,
+            "param": "gain"
+        }
+    ],
+    "format": "mvp-node-effect",
+    "links": [
+        [
+            1,
+            2,
+            0
+        ],
+        [
+            2,
+            3,
+            0
+        ],
+        [
+            3,
+            4,
+            0
+        ],
+        [
+            4,
+            5,
+            0
+        ],
+        [
+            5,
+            6,
+            0
+        ],
+        [
+            6,
+            7,
+            0
+        ],
+        [
+            7,
+            8,
+            0
+        ]
+    ],
+    "name": "Generation Loss",
+    "nextId": 9,
+    "nodes": [
+        {
+            "id": 1,
+            "params": {},
+            "type": "source",
+            "x": 0,
+            "y": 0
+        },
+        {
+            "id": 2,
+            "params": {
+                "chroma": {
+                    "v": 0.7
+                }
+            },
+            "type": "composite_encode",
+            "x": 250,
+            "y": 0
+        },
+        {
+            "id": 3,
+            "params": {
+                "gain": {
+                    "v": 200
+                }
+            },
+            "type": "composite_enhancer",
+            "x": 500,
+            "y": 0
+        },
+        {
+            "id": 4,
+            "params": {},
+            "type": "composite_decode",
+            "x": 750,
+            "y": 0
+        },
+        {
+            "id": 5,
+            "params": {
+                "chroma": {
+                    "v": 0.6
+                }
+            },
+            "type": "composite_encode",
+            "x": 1000,
+            "y": 0
+        },
+        {
+            "id": 6,
+            "params": {
+                "resistance": {
+                    "v": 470
+                },
+                "capacitor": {
+                    "v": 1
+                }
+            },
+            "type": "composite_low_pass",
+            "x": 1250,
+            "y": 0
+        },
+        {
+            "id": 7,
+            "params": {
+                "colour": {
+                    "v": 0.9
+                }
+            },
+            "type": "composite_decode",
+            "x": 1500,
+            "y": 0
+        },
+        {
+            "id": 8,
+            "params": {},
+            "type": "output",
+            "x": 1750,
+            "y": 0
+        }
+    ]
+}

@@ -1,0 +1,133 @@
+{
+    "description": "A spinning kaleidoscope sent down the yellow cable through a hot amplifier, laid over the picture.",
+    "exposed": [
+        {
+            "id": "n2_segments",
+            "name": "Segments",
+            "node": 2,
+            "param": "segments"
+        },
+        {
+            "id": "n6_opacity",
+            "name": "Mix",
+            "node": 6,
+            "param": "opacity"
+        }
+    ],
+    "format": "mvp-node-effect",
+    "links": [
+        [
+            1,
+            2,
+            0
+        ],
+        [
+            2,
+            3,
+            0
+        ],
+        [
+            3,
+            4,
+            0
+        ],
+        [
+            4,
+            5,
+            0
+        ],
+        [
+            1,
+            6,
+            0
+        ],
+        [
+            5,
+            6,
+            1
+        ],
+        [
+            6,
+            7,
+            0
+        ]
+    ],
+    "name": "Kaleido Transmission",
+    "nextId": 8,
+    "nodes": [
+        {
+            "id": 1,
+            "params": {},
+            "type": "source",
+            "x": 0,
+            "y": 0
+        },
+        {
+            "id": 2,
+            "params": {
+                "segments": {
+                    "v": 8
+                },
+                "spin": {
+                    "v": 20
+                }
+            },
+            "type": "fx.kaleidoscope",
+            "x": 250,
+            "y": 0
+        },
+        {
+            "id": 3,
+            "params": {
+                "saturation": {
+                    "v": 1.3
+                }
+            },
+            "type": "composite_encode",
+            "x": 500,
+            "y": 0
+        },
+        {
+            "id": 4,
+            "params": {
+                "gain": {
+                    "v": 160
+                },
+                "gainChannel": {
+                    "v": 2
+                }
+            },
+            "type": "composite_enhancer",
+            "x": 750,
+            "y": 0
+        },
+        {
+            "id": 5,
+            "params": {},
+            "type": "composite_decode",
+            "x": 1000,
+            "y": 0
+        },
+        {
+            "id": 6,
+            "params": {
+                "mode": {
+                    "v": 4
+                },
+                "opacity": {
+                    "v": 0.85
+                }
+            },
+            "type": "blend",
+            "x": 1250,
+            "y": 0
+        },
+        {
+            "id": 7,
+            "params": {},
+            "type": "output",
+            "x": 1500,
+            "y": 0
+        }
+    ]
+}

@@ -1,0 +1,122 @@
+{
+    "description": "The TV's noisy, spiking picture used to push the clean picture around: it shudders with the interference.",
+    "exposed": [
+        {
+            "id": "n5_amountX",
+            "name": "Push",
+            "node": 5,
+            "param": "amountX"
+        },
+        {
+            "id": "n3_spikes",
+            "name": "Spikes",
+            "node": 3,
+            "param": "spikes"
+        }
+    ],
+    "format": "mvp-node-effect",
+    "links": [
+        [
+            1,
+            2,
+            0
+        ],
+        [
+            2,
+            3,
+            0
+        ],
+        [
+            3,
+            4,
+            0
+        ],
+        [
+            1,
+            5,
+            0
+        ],
+        [
+            4,
+            5,
+            1
+        ],
+        [
+            5,
+            6,
+            0
+        ],
+        [
+            6,
+            7,
+            0
+        ]
+    ],
+    "name": "Displaced Reception",
+    "nextId": 8,
+    "nodes": [
+        {
+            "id": 1,
+            "params": {},
+            "type": "source",
+            "x": 0,
+            "y": 0
+        },
+        {
+            "id": 2,
+            "params": {},
+            "type": "composite_encode",
+            "x": 250,
+            "y": 0
+        },
+        {
+            "id": 3,
+            "params": {
+                "snow": {
+                    "v": 10
+                },
+                "spikes": {
+                    "v": 0.5
+                }
+            },
+            "type": "composite_rf_noise",
+            "x": 500,
+            "y": 0
+        },
+        {
+            "id": 4,
+            "params": {},
+            "type": "composite_decode",
+            "x": 750,
+            "y": 0
+        },
+        {
+            "id": 5,
+            "params": {
+                "amountX": {
+                    "v": 24
+                },
+                "amountY": {
+                    "v": 0
+                }
+            },
+            "type": "displace",
+            "x": 1000,
+            "y": 0
+        },
+        {
+            "id": 6,
+            "params": {},
+            "type": "fx.crt",
+            "x": 1250,
+            "y": 0
+        },
+        {
+            "id": 7,
+            "params": {},
+            "type": "output",
+            "x": 1500,
+            "y": 0
+        }
+    ]
+}

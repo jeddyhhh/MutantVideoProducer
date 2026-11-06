@@ -1,0 +1,133 @@
+{
+    "description": "The enhancer driven into ringing, and the TV's picture's edges traced in neon on top of it.",
+    "exposed": [
+        {
+            "id": "n3_gain",
+            "name": "Gain",
+            "node": 3,
+            "param": "gain"
+        },
+        {
+            "id": "n6_opacity",
+            "name": "Burn",
+            "node": 6,
+            "param": "opacity"
+        }
+    ],
+    "format": "mvp-node-effect",
+    "links": [
+        [
+            1,
+            2,
+            0
+        ],
+        [
+            2,
+            3,
+            0
+        ],
+        [
+            3,
+            4,
+            0
+        ],
+        [
+            4,
+            5,
+            0
+        ],
+        [
+            4,
+            6,
+            0
+        ],
+        [
+            5,
+            6,
+            1
+        ],
+        [
+            6,
+            7,
+            0
+        ]
+    ],
+    "name": "Edge Burn",
+    "nextId": 8,
+    "nodes": [
+        {
+            "id": 1,
+            "params": {},
+            "type": "source",
+            "x": 0,
+            "y": 0
+        },
+        {
+            "id": 2,
+            "params": {},
+            "type": "composite_encode",
+            "x": 250,
+            "y": 0
+        },
+        {
+            "id": 3,
+            "params": {
+                "gain": {
+                    "v": 150
+                },
+                "gainChannel": {
+                    "v": 3
+                }
+            },
+            "type": "composite_enhancer",
+            "x": 500,
+            "y": 0
+        },
+        {
+            "id": 4,
+            "params": {
+                "colour": {
+                    "v": 0.6
+                }
+            },
+            "type": "composite_decode",
+            "x": 750,
+            "y": 0
+        },
+        {
+            "id": 5,
+            "params": {
+                "strength": {
+                    "v": 4
+                },
+                "glow": {
+                    "v": 8
+                }
+            },
+            "type": "fx.neon_edges",
+            "x": 1000,
+            "y": 0
+        },
+        {
+            "id": 6,
+            "params": {
+                "mode": {
+                    "v": 2
+                },
+                "opacity": {
+                    "v": 0.8
+                }
+            },
+            "type": "blend",
+            "x": 1250,
+            "y": 0
+        },
+        {
+            "id": 7,
+            "params": {},
+            "type": "output",
+            "x": 1500,
+            "y": 0
+        }
+    ]
+}

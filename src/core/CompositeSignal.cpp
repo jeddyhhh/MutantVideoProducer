@@ -357,12 +357,12 @@ QImage decode(const Signal& s, const Params& p, QSize size, std::unique_ptr<Effe
         tv->now = tv->atStart;
         tv->tail = tv->tailAtStart;
         tv->raster = tv->rasterAtStart;
-    } else if (s.frame != tv->lastFrame + 1) { // a jump: a fresh TV, warmed up on this frame
-        tv->now = Beam{};
+    } else if (s.frame != tv->lastFrame + 1) { // a jump: a TV as it is at a frame's start when locked (the frame
+        tv->now = Beam{};                       // before's last line ending, the vertical sync to come), so it starts
+        tv->now.y = tv->now.lineY = kLines;     // steady wherever playing starts, whatever its holds
         tv->tail.assign(Tv::kTail, 0.0f);
         tv->raster = QImage(kActiveWidth, kActiveLines, QImage::Format_RGB32);
         tv->raster.fill(Qt::black);
-        runTv(*tv, s, set);
     }
     tv->atStart = tv->now;
     tv->tailAtStart = tv->tail;
@@ -428,20 +428,97 @@ Signal mix(const Signal* video, const Signal* sync, const Signal* lowPass, const
     const float luma = float(p.num(QStringLiteral("luma"))), chroma = float(p.num(QStringLiteral("chroma")));
     const float burst = float(p.num(QStringLiteral("burst"))), k = lowPass ? float(p.num(QStringLiteral("lowPass"))) : 0.0f;
     const bool strip = sync && p.flag(QStringLiteral("strip"));
-    auto in = [&](int64_t n) {
-        n = std::clamp<int64_t>(n, 0, kSamples - 1);
-        const float a = video ? video->v[size_t(n)] : 0.0f;
-        return lowPass ? a * (1 - k) + lowPass->v[size_t(n)] * k : a;
-    };
+    // The video crossfaded with the low-pass input, first (each sample's neighbours are read below).
+    std::vector<float> buf(size_t(kSamples), 0.0f);
     parallelFor(kLines, [&](int l0, int l1) {
-        for (int64_t n = int64_t(l0) * kLine; n < int64_t(l1) * kLine; ++n) {
-            const float here = in(n);
-            float y = (0.5f * in(n - 2) + in(n - 1) + here + in(n + 1) + 0.5f * in(n + 2)) / 4.0f;
-            const float c = here - y;
-            if (strip)
-                y = std::max(y, 0.0f);
-            const int x = int(n % kLine);
-            out.v[size_t(n)] = luma * y + (x >= kBurstStart && x < kBurstEnd ? burst : chroma) * c + (sync ? sync->v[size_t(n)] : 0.0f);
+        for (size_t n = size_t(l0) * kLine; n < size_t(l1) * kLine; ++n) {
+            const float a = video ? video->v[n] : 0.0f;
+            buf[n] = lowPass ? a * (1 - k) + lowPass->v[n] * k : a;
+        }
+    });
+    auto in = [&](int64_t n) { return buf[size_t(std::clamp<int64_t>(n, 0, kSamples - 1))]; };
+    parallelFor(kLines, [&](int l0, int l1) {
+        for (int line = l0; line < l1; ++line) {
+            const int64_t base = int64_t(line) * kLine;
+            const bool edge = line == 0 || line == kLines - 1; // (only there do the neighbours run off the frame)
+            const float* b = buf.data() + base;
+            for (int x = 0; x < kLine; ++x) {
+                const int64_t n = base + x;
+                const float here = b[x];
+                float y = edge || x < 2 || x >= kLine - 2 ? (0.5f * in(n - 2) + in(n - 1) + here + in(n + 1) + 0.5f * in(n + 2)) / 4.0f
+                                                          : (0.5f * b[x - 2] + b[x - 1] + here + b[x + 1] + 0.5f * b[x + 2]) / 4.0f;
+                const float c = here - y;
+                if (strip)
+                    y = std::max(y, 0.0f);
+                out.v[size_t(n)] = luma * y + (x >= kBurstStart && x < kBurstEnd ? burst : chroma) * c + (sync ? sync->v[size_t(n)] : 0.0f);
+            }
+        }
+    });
+    return out;
+}
+
+// A delay line: the signal later by a number of lines and microseconds (in between samples too: a fraction of a
+// sample turns the colour's phase), drifting by Drift lines a second and wobbling along the frame. Delayed sync
+// slips the picture against it (a genlock gone wrong), a delayed copy mixed back is a ghost (multipath).
+Signal delayLine(const Signal& in, const Params& p, double seconds)
+{
+    Signal out;
+    out.frame = in.frame;
+    out.v.resize(size_t(kSamples));
+    const double perUs = kRate / 1e6;
+    const double base = p.num(QStringLiteral("lines")) * kLine + p.num(QStringLiteral("delay")) * perUs
+                        + p.num(QStringLiteral("drift")) * seconds * kLine;
+    const double wobble = p.num(QStringLiteral("wobble")) * perUs, rate = p.num(QStringLiteral("wobbleHz"));
+    parallelFor(kLines, [&](int l0, int l1) {
+        for (int line = l0; line < l1; ++line) {
+            const double at = seconds + double(line) * kLine / kRate; // (when the line comes)
+            const double d = base + wobble * std::sin(2 * pi * rate * at);
+            // (the same delay along the line: one whole-sample offset and one fraction for all of it)
+            const double start = double(int64_t(line) * kLine) - d, whole = std::floor(start);
+            const float t = float(start - whole);
+            int64_t a = (int64_t(whole) % kSamples + kSamples) % kSamples; // (round the frame)
+            float* o = out.v.data() + size_t(line) * kLine;
+            for (int x = 0; x < kLine; ++x) {
+                const int64_t b = a + 1 < kSamples ? a + 1 : 0;
+                o[x] = in.v[size_t(a)] * (1 - t) + in.v[size_t(b)] * t;
+                a = b;
+            }
+        }
+    });
+    return out;
+}
+
+// Interference on the way: snow (noise in every sample), a mains hum bar rolling slowly up the picture, and
+// spikes (bursts that blank a stretch of a line, or knock its sync out).
+Signal rfNoise(const Signal& in, const Params& p, double seconds)
+{
+    Signal out;
+    out.frame = in.frame;
+    out.v.resize(size_t(kSamples));
+    const float snow = float(p.num(QStringLiteral("snow"))), hum = float(p.num(QStringLiteral("hum")));
+    const double humPhase = p.num(QStringLiteral("humSpeed")) * seconds;
+    const double spikes = p.num(QStringLiteral("spikes"));
+    const uint32_t seed = uint32_t(p.num(QStringLiteral("seed"))) * 2654435761u + uint32_t(in.frame) * 40503u;
+    parallelFor(kLines, [&](int l0, int l1) {
+        for (int line = l0; line < l1; ++line) {
+            const float bar = hum * float(std::sin(2 * pi * (double(line) / kLines + humPhase)));
+            int spikeFrom = kLine, spikeTo = kLine;
+            float spikeLevel = 0;
+            if (spikes > 0 && fx::hash01(uint32_t(line), 1, seed) < spikes * 0.15) {
+                spikeFrom = int(fx::hash01(uint32_t(line), 2, seed) * kLine);
+                spikeTo = spikeFrom + 10 + int(fx::hash01(uint32_t(line), 3, seed) * 180);
+                spikeLevel = fx::hash01(uint32_t(line), 4, seed) < 0.5f ? -60.0f : 110.0f;
+            }
+            const float* src = in.v.data() + size_t(line) * kLine;
+            float* dst = out.v.data() + size_t(line) * kLine;
+            for (int x = 0; x < kLine; ++x) {
+                float v = src[x] + bar;
+                if (snow > 0)
+                    v += snow * 2.0f * (fx::hash01(uint32_t(x), uint32_t(line), seed) - 0.5f);
+                if (x >= spikeFrom && x < spikeTo)
+                    v = spikeLevel;
+                dst[x] = v;
+            }
         }
     });
     return out;
@@ -653,7 +730,7 @@ QImage publish(Signal&& s, const nodes::NodeContext& c)
     auto shared = std::make_shared<const Signal>(std::move(s));
     if (c.bus)
         (*c.bus)[c.node] = shared;
-    return view(*shared, c.size);
+    return c.pictureWanted ? view(*shared, c.size) : QImage(); // (only signal nodes after it: no picture needed)
 }
 
 } // namespace
@@ -753,6 +830,42 @@ void addNodes(std::vector<nodes::NodeDef>& list)
     d.eval = [](const Inputs& in, const Params& p, const ParamMap&, const nodes::NodeContext& c, std::unique_ptr<EffectState>&) {
         const auto s = input(in, 0, c);
         return s ? publish(lowPass(*s, p), c) : publish(Signal{std::vector<float>(size_t(kSamples), 0.0f), frameOf(c)}, c);
+    };
+    list.push_back(d);
+
+    d = {};
+    d.id = QStringLiteral("composite_delay_line");
+    d.name = QStringLiteral("Delay Line");
+    d.category = category;
+    d.description = QStringLiteral(
+        "The signal later, by lines and microseconds (a fraction of a sample turns its colour), drifting and wobbling. "
+        "Delay the sync a Sync Mixer puts back and the picture slips against it; mix a delayed copy back in for ghosts.");
+    d.inputs = {signalIn};
+    d.params = {num("delay", "Delay", 0, 63.5, 2, 3, " µs"), num("lines", "Lines", 0, 262, 0, 0),
+                num("drift", "Drift", -60, 60, 0, 2, " lines/s"), num("wobble", "Wobble", 0, 2, 0, 3, " µs"),
+                num("wobbleHz", "Wobble rate", 0, 30, 1, 2, " Hz")};
+    d.eval = [](const Inputs& in, const Params& p, const ParamMap&, const nodes::NodeContext& c, std::unique_ptr<EffectState>&) {
+        const auto s = input(in, 0, c);
+        return s ? publish(delayLine(*s, p, double(c.render.timelineTime) / 1e6), c)
+                 : publish(Signal{std::vector<float>(size_t(kSamples), 0.0f), frameOf(c)}, c);
+    };
+    list.push_back(d);
+
+    d = {};
+    d.id = QStringLiteral("composite_rf_noise");
+    d.name = QStringLiteral("RF Noise");
+    d.category = category;
+    d.description = QStringLiteral(
+        "Interference on the signal: snow, a mains hum bar rolling up the picture, and spikes that blank a stretch of "
+        "a line or knock its sync out (enough of them and the TV loses its hold).");
+    d.inputs = {signalIn};
+    d.params = {num("snow", "Snow", 0, 80, 12, 1, " IRE"), num("hum", "Hum", 0, 40, 0, 1, " IRE"),
+                num("humSpeed", "Hum speed", -2, 2, 0.06, 2, " bars/s"), num("spikes", "Spikes", 0, 1, 0, 2),
+                num("seed", "Seed", 0, 1000, 1, 0)};
+    d.eval = [](const Inputs& in, const Params& p, const ParamMap&, const nodes::NodeContext& c, std::unique_ptr<EffectState>&) {
+        const auto s = input(in, 0, c);
+        return s ? publish(rfNoise(*s, p, double(c.render.timelineTime) / 1e6), c)
+                 : publish(Signal{std::vector<float>(size_t(kSamples), 0.0f), frameOf(c)}, c);
     };
     list.push_back(d);
 

@@ -1,0 +1,125 @@
+{
+    "description": "A fringe-area picture: snow all over, spikes tearing across lines, softened by the tuner, on a curved screen.",
+    "exposed": [
+        {
+            "id": "n3_snow",
+            "name": "Snow",
+            "node": 3,
+            "param": "snow"
+        },
+        {
+            "id": "n3_spikes",
+            "name": "Spikes",
+            "node": 3,
+            "param": "spikes"
+        }
+    ],
+    "format": "mvp-node-effect",
+    "links": [
+        [
+            1,
+            2,
+            0
+        ],
+        [
+            2,
+            3,
+            0
+        ],
+        [
+            3,
+            4,
+            0
+        ],
+        [
+            4,
+            5,
+            0
+        ],
+        [
+            5,
+            6,
+            0
+        ],
+        [
+            6,
+            7,
+            0
+        ]
+    ],
+    "name": "Snowstorm",
+    "nextId": 8,
+    "nodes": [
+        {
+            "id": 1,
+            "params": {},
+            "type": "source",
+            "x": 0,
+            "y": 0
+        },
+        {
+            "id": 2,
+            "params": {},
+            "type": "composite_encode",
+            "x": 250,
+            "y": 0
+        },
+        {
+            "id": 3,
+            "params": {
+                "snow": {
+                    "v": 32
+                },
+                "spikes": {
+                    "v": 0.25
+                }
+            },
+            "type": "composite_rf_noise",
+            "x": 500,
+            "y": 0
+        },
+        {
+            "id": 4,
+            "params": {
+                "resistance": {
+                    "v": 470
+                },
+                "capacitor": {
+                    "v": 1
+                }
+            },
+            "type": "composite_low_pass",
+            "x": 750,
+            "y": 0
+        },
+        {
+            "id": 5,
+            "params": {
+                "colour": {
+                    "v": 0.8
+                }
+            },
+            "type": "composite_decode",
+            "x": 1000,
+            "y": 0
+        },
+        {
+            "id": 6,
+            "params": {
+                "curvature": {
+                    "v": 0.12
+                }
+            },
+            "type": "fx.crt",
+            "x": 1250,
+            "y": 0
+        },
+        {
+            "id": 7,
+            "params": {},
+            "type": "output",
+            "x": 1500,
+            "y": 0
+        }
+    ]
+}

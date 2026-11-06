@@ -1,0 +1,105 @@
+{
+    "description": "A ground loop: a broad dark and light bar from the mains rolling slowly up the picture, a little snow with it.",
+    "exposed": [
+        {
+            "id": "n3_hum",
+            "name": "Hum",
+            "node": 3,
+            "param": "hum"
+        },
+        {
+            "id": "n3_humSpeed",
+            "name": "Hum speed",
+            "node": 3,
+            "param": "humSpeed"
+        }
+    ],
+    "format": "mvp-node-effect",
+    "links": [
+        [
+            1,
+            2,
+            0
+        ],
+        [
+            2,
+            3,
+            0
+        ],
+        [
+            3,
+            4,
+            0
+        ],
+        [
+            4,
+            5,
+            0
+        ],
+        [
+            5,
+            6,
+            0
+        ]
+    ],
+    "name": "Hum Bars",
+    "nextId": 7,
+    "nodes": [
+        {
+            "id": 1,
+            "params": {},
+            "type": "source",
+            "x": 0,
+            "y": 0
+        },
+        {
+            "id": 2,
+            "params": {},
+            "type": "composite_encode",
+            "x": 250,
+            "y": 0
+        },
+        {
+            "id": 3,
+            "params": {
+                "snow": {
+                    "v": 3
+                },
+                "hum": {
+                    "v": 16
+                },
+                "humSpeed": {
+                    "v": 0.25
+                }
+            },
+            "type": "composite_rf_noise",
+            "x": 500,
+            "y": 0
+        },
+        {
+            "id": 4,
+            "params": {},
+            "type": "composite_decode",
+            "x": 750,
+            "y": 0
+        },
+        {
+            "id": 5,
+            "params": {
+                "scanlines": {
+                    "v": 0.35
+                }
+            },
+            "type": "fx.crt",
+            "x": 1000,
+            "y": 0
+        },
+        {
+            "id": 6,
+            "params": {},
+            "type": "output",
+            "x": 1250,
+            "y": 0
+        }
+    ]
+}

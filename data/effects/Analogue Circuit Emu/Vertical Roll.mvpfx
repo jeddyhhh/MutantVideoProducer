@@ -1,5 +1,5 @@
 {
-    "description": "The TV's vertical hold set wrong: it can't catch the frame's sync and the picture rolls up the screen, the black bar of the blanking going past.",
+    "description": "The TV's vertical hold: it starts held; turn Vertical hold down (below about -0.15) and the TV can't catch the frame's sync any more, so the picture rolls up the screen, the black bar of the blanking going past.",
     "exposed": [
         {
             "id": "n3_vHold",
@@ -47,7 +47,7 @@
             "id": 3,
             "params": {
                 "vHold": {
-                    "v": -1
+                    "v": 0.2
                 }
             },
             "type": "composite_decode",

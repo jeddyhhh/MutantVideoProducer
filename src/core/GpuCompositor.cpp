@@ -2624,6 +2624,7 @@ struct GpuCompositor::Impl : protected QOpenGLExtraFunctions {
             nodes::NodeContext here = nc;
             here.node = id;
             here.inputs.assign(in.size(), 0);
+            here.pictureWanted = nodes::pictureWanted(g, id, thumbs != nullptr);
             for (int i = 0; i < int(in.size()); ++i)
                 if (const nodes::Link* l = g.input(id, i)) {
                     in[size_t(i)] = eval(l->from);

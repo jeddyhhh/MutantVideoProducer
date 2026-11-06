@@ -638,6 +638,17 @@ const NodeDef* findNode(const QString& id)
     return it == index.end() ? nullptr : it->second;
 }
 
+bool pictureWanted(const Graph& g, int id, bool thumbnails)
+{
+    if (thumbnails)
+        return true;
+    for (const Link& l : g.links)
+        if (l.from == id)
+            if (const Node* to = g.find(l.to); !to || !to->type.startsWith(QLatin1String("composite_")))
+                return true;
+    return false;
+}
+
 // ---- Evaluator ----
 QImage Evaluator::run(const Graph& g, const QImage& source0, const RenderContext& ctx, bool keepOutputs)
 {
@@ -677,6 +688,7 @@ QImage Evaluator::run(const Graph& g, const QImage& source0, const RenderContext
             NodeContext here = nc;
             here.node = id;
             here.inputs.assign(ins.size(), 0);
+            here.pictureWanted = pictureWanted(g, id, keepOutputs);
             for (int i = 0; i < int(ins.size()); ++i)
                 if (const Link* l = g.input(id, i)) {
                     ins[size_t(i)] = eval(l->from);
@@ -785,12 +797,12 @@ QString effectId(const QString& name)
 }
 
 namespace {
-const EffectDef* registerAs(const Graph& g, const QString& id, bool example = false)
+const EffectDef* registerAs(const Graph& g, const QString& id, const QString& category = QStringLiteral("User Created"))
 {
     EffectDef d;
     d.id = id;
     d.name = g.name.trimmed().isEmpty() ? QStringLiteral("User Effect") : g.name.trimmed();
-    d.category = example ? QStringLiteral("User Created/Examples") : QStringLiteral("User Created");
+    d.category = category;
     d.description = g.description.trimmed().isEmpty() ? QStringLiteral("Made in the Effect Builder (Tools > Effect Builder).") : g.description.trimmed();
     for (const Exposed& x : g.exposed) {
         const Node* n = g.find(x.node);
@@ -838,14 +850,17 @@ const EffectDef* registerEffect(const Graph& g) { return registerAs(g, effectId(
 
 void loadUserEffects()
 {
-    for (const bool example : {true, false}) {
-        const QDir dir(example ? examplesFolder() : userEffectsFolder());
+    // The examples (a folder of them a submenu of their own: User Created > Examples > that folder), then the user's.
+    std::vector<std::pair<QDir, QString>> folders{{QDir(examplesFolder()), QStringLiteral("User Created/Examples")}};
+    for (const QFileInfo& sub : QDir(examplesFolder()).entryInfoList(QDir::Dirs | QDir::NoDotAndDotDot, QDir::Name))
+        folders.emplace_back(QDir(sub.absoluteFilePath()), QStringLiteral("User Created/Examples/") + sub.fileName());
+    folders.emplace_back(QDir(userEffectsFolder()), QStringLiteral("User Created"));
+    for (const auto& [dir, category] : folders)
         for (const QFileInfo& fi : dir.entryInfoList({QStringLiteral("*.mvpfx")}, QDir::Files, QDir::Name)) {
             Graph g;
             if (load(fi.absoluteFilePath(), &g, nullptr))
-                registerAs(g, effectId(g.name), example);
+                registerAs(g, effectId(g.name), category);
         }
-    }
 }
 
 std::vector<const EffectDef*> userEffects()

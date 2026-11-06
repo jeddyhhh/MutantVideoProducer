@@ -362,17 +362,22 @@ Every graph runs from **Source** (the picture the effect is on) to **Output**. T
   Separator** (the sync pulses taken out as clean new ones), **Sync Mixer** (luma, chroma and burst
   at their own levels, crossfaded with a low-pass input, with sync put back from the Sync input:
   sync from another signal and the TV follows that one), **RC Low Pass** (a resistor into a
-  capacitor: smearing) and **Enhancer** (a one-transistor amplifier solved as a circuit: Gain and
+  capacitor: smearing), **Delay Line** (the signal later by lines and microseconds, drifting and
+  wobbling: delayed sync slips the picture, a delayed copy mixed back is a ghost), **RF Noise**
+  (snow, a rolling hum bar, spikes) and **Enhancer** (a one-transistor amplifier solved as a circuit: Gain and
   its Gain Channel capacitor sharpen and ring, the Feedback resistors and capacitor take it back or
   smear it, and pushed hard it clips). A node's picture is a view of its raw signal (sync black,
   white at the top); wire Composite Decode before the Output to see the picture.
 
-Twenty-eight examples come with the program, under **User Created > Examples**: Chroma Time Slip,
+Forty-eight examples come with the program, under **User Created > Examples**: Chroma Time Slip,
 Fractal Tunnel, Glitch Letters, Hologram, Hyperspace Geyser, Kaleido Feedback, Liquid Planet, Motion
-Fire, Neon Plasma Title, Plasma Possession and Split Reality, and seventeen made of the Composite
-Signal nodes: Composite Circuit (the whole chain), Dot Crawl, Horizontal Tear, Long Smear,
-Monochrome Set, Neon Bleed, Night Broadcast, Off-Air Tint, Over-Sharpened, Overdriven Amp, Phase
-Shift, Shadow Sync, Signal Inversion, Soft Amp, Third-Generation Dub, Vertical Roll and Weak Signal. Put one on an event, or open it from **Tools >
+Fire, Neon Plasma Title, Plasma Possession and Split Reality, and in its own submenu, **Analogue
+Circuit Emu**, thirty-seven made of the Composite Signal nodes: from single faults (Vertical Roll,
+Horizontal Tear, Weak Signal, Shadow Sync, Neon Bleed, Off-Air Tint, Dot Crawl...) to big graphs
+that mix them with the other nodes (Genlock Drift, Multipath Ghosts, Snowstorm, Hum Bars, Hue Wobble,
+Chroma Delay, Generation Loss, Two Sets One Signal, Keyed Broadcast, Feedback Tube, Pattern Sync,
+Tape Flagging and more). Composite Circuit wires up the whole chain from the manual's diagram. Each
+starts with the TV held steady; turn its hold or drift settings to make it roll. Put one on an event, or open it from **Tools >
 Edit User Effect > Examples** to see how it's wired and make your own from it (saving puts your
 version in your own effects).
 
