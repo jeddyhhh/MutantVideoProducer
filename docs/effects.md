@@ -369,15 +369,16 @@ Every graph runs from **Source** (the picture the effect is on) to **Output**. T
   smear it, and pushed hard it clips). A node's picture is a view of its raw signal (sync black,
   white at the top); wire Composite Decode before the Output to see the picture.
 
-Forty-eight examples come with the program, under **User Created > Examples**: Chroma Time Slip,
-Fractal Tunnel, Glitch Letters, Hologram, Hyperspace Geyser, Kaleido Feedback, Liquid Planet, Motion
-Fire, Neon Plasma Title, Plasma Possession and Split Reality, and in its own submenu, **Analogue
-Circuit Emu**, thirty-seven made of the Composite Signal nodes: from single faults (Vertical Roll,
-Horizontal Tear, Weak Signal, Shadow Sync, Neon Bleed, Off-Air Tint, Dot Crawl...) to big graphs
-that mix them with the other nodes (Genlock Drift, Multipath Ghosts, Snowstorm, Hum Bars, Hue Wobble,
-Chroma Delay, Generation Loss, Two Sets One Signal, Keyed Broadcast, Feedback Tube, Pattern Sync,
-Tape Flagging and more). Composite Circuit wires up the whole chain from the manual's diagram. Each
-starts with the TV held steady; turn its hold or drift settings to make it roll. Put one on an event, or open it from **Tools >
+Forty-eight examples come with the program. Eleven are in the effect menus' **Node Editor** menu:
+Chroma Time Slip, Fractal Tunnel, Glitch Letters, Hologram, Hyperspace Geyser, Kaleido Feedback,
+Liquid Planet, Motion Fire, Neon Plasma Title, Plasma Possession and Split Reality. Thirty-seven made
+of the Composite Signal nodes are in **Broken VGS > Analogue Circuit Emu**: from single faults
+(Vertical Roll, Horizontal Tear, Weak Signal, Shadow Sync, Neon Bleed, Off-Air Tint, Dot Crawl...) to
+big graphs that mix them with the other nodes (Genlock Drift, Multipath Ghosts, Snowstorm, Hum Bars,
+Hue Wobble, Chroma Delay, Generation Loss, Two Sets One Signal, Keyed Broadcast, Feedback Tube,
+Pattern Sync, Tape Flagging and more). Composite Circuit wires up the whole chain from the manual's
+diagram. Each starts with the TV held steady; turn its hold or drift settings to make it roll.
+**User Created** has only the effects you make. Put an example on an event, or open it from **Tools >
 Edit User Effect > Examples** to see how it's wired and make your own from it (saving puts your
 version in your own effects).
 

@@ -116,6 +116,6 @@ void render(const Plan& plan, QImage& layer, std::unique_ptr<EffectState>& state
 bool isConsoleEffect(const QString& id);
 Plan buildPlan(const QString& id, const Params& p, const RenderContext& ctx, QSize layer);
 void addEffects(std::vector<EffectDef>& list);
-QString categoryRoot(); // "Broken Video Game Systems"
+QString categoryRoot(); // "Broken VGS" (Broken Video Game Systems)
 
 } // namespace vg

@@ -110,10 +110,12 @@ About 30 presets sit under the effects, for example Pixel Sort *Melting Highligh
 *Wrong Stride*. **Preset Chains > Glitch** has *Broken Stream*, *Datamosh Trip*, *Panic Attack*
 and *Corrupted Tape*.
 
-## Broken Video Game Systems
+## Broken VGS
 
-A folder for each of 34 consoles and computers, with 128 glitches modelled on how that machine's
-picture really breaks. For example:
+Broken Video Game Systems: a folder for each of 34 consoles and computers, with 128 glitches
+modelled on how that machine's picture really breaks, and **Analogue Circuit Emu**, 37 effects made
+in the Effect Builder that send the picture down an emulated composite video cable, through analogue
+circuits, onto an old TV (see [Effect Builder](effects.md#effect-builder)). For example:
 
 - **NES**: dirty cartridge, blinking lockout, scroll-split errors, sprite overflow flicker.
 - **Game Boy**: vertical line death, Glitch City.

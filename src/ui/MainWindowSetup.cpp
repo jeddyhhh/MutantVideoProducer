@@ -128,6 +128,7 @@
 #include <QWidgetAction>
 #include <atomic>
 #include <thread>
+#include <functional>
 
 void MainWindow::createLayout()
 {
@@ -812,13 +813,14 @@ void MainWindow::createActions()
             userEffectsMenu->addAction(tr("(none yet)"))->setEnabled(false);
         // The examples that come with the program: open one to see how it's made, or start from it.
         QMenu* examples = userEffectsMenu->addMenu(tr("Examples"));
-        for (const QFileInfo& sub : QDir(nodes::examplesFolder()).entryInfoList(QDir::Dirs | QDir::NoDotAndDotDot, QDir::Name)) {
-            QMenu* folder = examples->addMenu(QString(sub.fileName()).replace(QLatin1Char('&'), QStringLiteral("&&")));
-            for (const QFileInfo& fi : QDir(sub.absoluteFilePath()).entryInfoList({QStringLiteral("*.mvpfx")}, QDir::Files, QDir::Name))
-                folder->addAction(fi.completeBaseName(), this, [this, path = fi.absoluteFilePath()] { effectBuilder(path); });
-        }
-        for (const QFileInfo& fi : QDir(nodes::examplesFolder()).entryInfoList({QStringLiteral("*.mvpfx")}, QDir::Files, QDir::Name))
-            examples->addAction(fi.completeBaseName(), this, [this, path = fi.absoluteFilePath()] { effectBuilder(path); });
+        // (their folders as menus: Broken VGS > Analogue Circuit Emu, as in the effect menus)
+        std::function<void(QMenu*, const QString&)> addFolder = [&](QMenu* menu, const QString& folder) {
+            for (const QFileInfo& sub : QDir(folder).entryInfoList(QDir::Dirs | QDir::NoDotAndDotDot, QDir::Name))
+                addFolder(menu->addMenu(QString(sub.fileName()).replace(QLatin1Char('&'), QStringLiteral("&&"))), sub.absoluteFilePath());
+            for (const QFileInfo& fi : QDir(folder).entryInfoList({QStringLiteral("*.mvpfx")}, QDir::Files, QDir::Name))
+                menu->addAction(fi.completeBaseName(), this, [this, path = fi.absoluteFilePath()] { effectBuilder(path); });
+        };
+        addFolder(examples, nodes::examplesFolder());
         examples->setEnabled(!examples->isEmpty());
         userEffectsMenu->addSeparator();
         userEffectsMenu->addAction(tr("Open the Folder"), this, [] {

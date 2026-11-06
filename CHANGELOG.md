@@ -17,13 +17,14 @@ What changed in each version of Mutant Video Producer. The newest is first.
 - **De-reverb** (audio effect) takes a room's echo out of a voice, and the **Speech Enhance** preset chain does all
   the voice clean-up at once.
 - AI control: paste_attributes, replace_media, separate_stems; render takes smart_render.
+- The effect menus have a **Node Editor** menu with the Effect Builder's examples; **User Created** has only the
+  effects you make. **Broken Video Game Systems** is now **Broken VGS**.
 - **Composite Signal nodes** (Effect Builder): the picture as an NTSC composite video signal (sync, colour burst,
   subcarrier) through emulated analogue circuits onto a TV: Composite Encode, Sync Separator, Sync Mixer, RC Low
   Pass, Delay Line, RF Noise, an Enhancer (a one-transistor amplifier solved as a circuit) and Composite Decode, a
   TV that locks to the sync it's given, so damaged sync rolls and tears the picture as on a real one. 37 examples
-  use them, in their own submenu, **User Created > Examples > Analogue Circuit Emu** (a folder of examples is a
-  submenu): Composite Circuit wires up the whole chain; Genlock Drift, Multipath Ghosts, Hue Wobble, Generation
-  Loss, Feedback Tube, Pattern Sync and the rest push it further.
+  use them, in **Broken VGS > Analogue Circuit Emu**: Composite Circuit wires up the whole chain; Genlock Drift,
+  Multipath Ghosts, Hue Wobble, Generation Loss, Feedback Tube, Pattern Sync and the rest push it further.
 
 ### Fixed
 

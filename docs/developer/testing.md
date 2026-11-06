@@ -139,7 +139,7 @@ If a file of yours fails to import, `mvp_selftest probe <file>` prints what was 
 - **presets**: every factory preset (known effects, settings in range, FFmpeg chains that build,
   audible and stable output), delay compensation, and saving, reloading, overwriting and deleting
   user presets.
-- **consoles**: every Broken Video Game Systems effect over a run of frames on the CPU and GPU (they
+- **consoles**: every Broken VGS (Broken Video Game Systems) effect over a run of frames on the CPU and GPU (they
   must match, with no CPU fallback), and one labelled sheet per console (`console_<name>.png`).
 - **live**: capture sources, the recorder, audio capture, picture / sound sync, modulation, video
   files as a source, the replay buffer, MIDI clock, scenes, overlays and setlists, portrait framing

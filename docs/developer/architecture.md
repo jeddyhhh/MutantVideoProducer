@@ -16,7 +16,7 @@ src/core/      no UI dependencies; linked by the app and the self-test
                in C++ and once in GLSL with the same uniforms, so both renderers agree
   GlitchEffects  glitch, analog and psychedelic effects; per-row/random "plans" shared with
                the GPU shaders (GpuGlitchShaders.h) so both renderers agree
-  ConsoleEngine / ConsoleEffects   "Broken Video Game Systems": a virtual console screen
+  ConsoleEngine / ConsoleEffects   "Broken VGS" (Broken Video Game Systems): a virtual console screen
                (resolution, palette, dither, CRT/LCD) driven by per-row, per-column and per-tile
                tables plus a triangle-mesh stage; the GPU shader (GpuConsoleShaders.h) runs the
                same per-pixel program on the same packed tables

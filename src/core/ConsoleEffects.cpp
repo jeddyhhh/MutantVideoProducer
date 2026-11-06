@@ -16,7 +16,7 @@
 
 namespace vg {
 
-QString categoryRoot() { return QStringLiteral("Broken Video Game Systems"); }
+QString categoryRoot() { return QStringLiteral("Broken VGS"); }
 
 namespace {
 

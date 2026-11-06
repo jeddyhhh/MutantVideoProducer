@@ -8,6 +8,7 @@
 
 #include <QCoreApplication>
 #include <QDir>
+#include <QDirIterator>
 #include <QFile>
 #include <QFileInfo>
 #include <QJsonArray>
@@ -850,10 +851,15 @@ const EffectDef* registerEffect(const Graph& g) { return registerAs(g, effectId(
 
 void loadUserEffects()
 {
-    // The examples (a folder of them a submenu of their own: User Created > Examples > that folder), then the user's.
-    std::vector<std::pair<QDir, QString>> folders{{QDir(examplesFolder()), QStringLiteral("User Created/Examples")}};
-    for (const QFileInfo& sub : QDir(examplesFolder()).entryInfoList(QDir::Dirs | QDir::NoDotAndDotDot, QDir::Name))
-        folders.emplace_back(QDir(sub.absoluteFilePath()), QStringLiteral("User Created/Examples/") + sub.fileName());
+    // The examples: those in the folder itself under Node Editor, those in a folder of it where that path says (a
+    // folder "Broken VGS/Analogue Circuit Emu" puts them in that menu, with the console effects); then the user's.
+    std::vector<std::pair<QDir, QString>> folders{{QDir(examplesFolder()), QStringLiteral("Node Editor")}};
+    const QDir root(examplesFolder());
+    QDirIterator sub(examplesFolder(), QDir::Dirs | QDir::NoDotAndDotDot, QDirIterator::Subdirectories);
+    while (sub.hasNext()) {
+        const QString path = sub.next();
+        folders.emplace_back(QDir(path), root.relativeFilePath(path));
+    }
     folders.emplace_back(QDir(userEffectsFolder()), QStringLiteral("User Created"));
     for (const auto& [dir, category] : folders)
         for (const QFileInfo& fi : dir.entryInfoList({QStringLiteral("*.mvpfx")}, QDir::Files, QDir::Name)) {

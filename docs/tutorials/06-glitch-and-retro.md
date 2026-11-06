@@ -1,6 +1,6 @@
 # 6. Glitch and Retro Looks
 
-You learn: glitch effects, Broken Video Game Systems, analog looks, limiting a glitch to part of the
+You learn: glitch effects, Broken VGS (Broken Video Game Systems), analog looks, limiting a glitch to part of the
 picture, and glitch presets.
 
 **Example project:** [glitch-and-retro](../../data/examples/glitch-and-retro.mvp)
@@ -8,7 +8,7 @@ picture, and glitch presets.
 ## What's in it
 
 Nine 4-second looks on the sample clip, named on the **Looks** track: **VHS**, **CRT Monitor**,
-**RGB Split**, **Pixel Sort**, **Datamosh**, a **NES** effect from Broken Video Game Systems,
+**RGB Split**, **Pixel Sort**, **Datamosh**, a **NES** effect from Broken VGS,
 **Old Film**, **Kaleidoscope**, and the preset chain **Broken Stream**.
 
 ## 1. Tweak the looks
@@ -29,10 +29,10 @@ Every glitch effect has **Mix** and **Apply to**.
 3. Set **Apply to** to *Bright areas*: only the highlights split. **Mask threshold** sets how bright.
 4. Lower **Mix** to blend it with the clean picture.
 
-## 3. Broken Video Game Systems
+## 3. Broken VGS
 
 1. Click the *NES* event.
-2. In the Video FX tab, open **Broken Video Game Systems > Nintendo NES (Famicom)** and drag another
+2. In the Video FX tab, open **Broken VGS > Nintendo NES (Famicom)** and drag another
    NES glitch onto the event.
 3. Change **Console Look** to leave out the console's resolution and colours and keep just the glitch.
 4. Raise **Intensity**, and change the **Seed** for a different pattern.

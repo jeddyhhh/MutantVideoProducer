@@ -45,6 +45,7 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QMenu>
+#include <QPointer>
 #include <QMessageBox>
 #include <QMimeData>
 #include <QMouseEvent>
@@ -1070,7 +1071,7 @@ DeviceChainView::DeviceChainView(Project* project, std::function<TimeUs()> curso
     l->addWidget(m_scroll, 1);
     setMinimumHeight(kBodyHeight + 70);
 
-    auto buildMenu = [this](QMenu* menu, const auto& list, bool audio) {
+    auto buildMenu = [this](QMenu* menu, const auto& list, bool audio) -> std::map<QString, QMenu*> {
         std::map<QString, QMenu*> categories;
         for (const auto& e : list) {
             // "Parent/Child" categories become nested sub-menus.
@@ -1095,27 +1096,54 @@ DeviceChainView::DeviceChainView(Project* project, std::function<TimeUs()> curso
                 root.push_back(std::move(rack));
             }, tr("Add Rack"));
         });
+        return categories;
     };
     m_videoMenu = new QMenu(this);
-    buildMenu(m_videoMenu, videoEffects(), false);
+    const auto videoCategories = std::make_shared<const std::map<QString, QMenu*>>(buildMenu(m_videoMenu, videoEffects(), false));
     QMenu* userMenu = new QMenu(tr("User Created"), m_videoMenu);
     m_videoMenu->insertMenu(m_videoMenu->actions().value(m_videoMenu->actions().size() - 2), userMenu);
-    connect(userMenu, &QMenu::aboutToShow, this, [this, userMenu] {
-        userMenu->clear();
-        QMenu* examples = nullptr;
-        std::map<QString, QMenu*> folders; // (Examples > a folder of them)
+    // The Effect Builder's examples, put in their categories each time the menu opens (they can change): Node
+    // Editor, or a category of the effects' own ("Broken VGS/Analogue Circuit Emu" joins the console effects).
+    const auto exampleItems = std::make_shared<std::vector<QPointer<QObject>>>();
+    connect(m_videoMenu, &QMenu::aboutToShow, this, [this, videoCategories, exampleItems, userMenu] {
+        for (const QPointer<QObject>& o : *exampleItems)
+            delete o.data();
+        exampleItems->clear();
+        std::map<QString, QMenu*> made;
         for (const EffectDef* e : nodes::userEffects()) {
-            QMenu* into = userMenu;
-            if (e->category.startsWith(QLatin1String("User Created/Examples"))) { // (the ones that come with the program)
-                into = examples ? examples : (examples = userMenu->addMenu(tr("Examples")));
-                if (const QString sub = e->category.section(QLatin1Char('/'), 2); !sub.isEmpty()) {
-                    QMenu*& folder = folders[sub];
-                    if (!folder)
-                        folder = examples->addMenu(QString(sub).replace(QLatin1Char('&'), QStringLiteral("&&")));
-                    into = folder;
+            if (e->category == QLatin1String("User Created"))
+                continue;
+            QMenu* into = m_videoMenu;
+            QString path;
+            for (const QString& part : e->category.split(QLatin1Char('/'))) {
+                path += (path.isEmpty() ? QString() : QStringLiteral("/")) + part;
+                if (const auto it = videoCategories->find(path); it != videoCategories->end()) {
+                    into = it->second;
+                    continue;
                 }
+                QMenu*& m = made[path];
+                if (!m) {
+                    m = new QMenu(QString(part).replace(QLatin1Char('&'), QStringLiteral("&&")), into);
+                    if (into == m_videoMenu)
+                        m_videoMenu->insertMenu(userMenu->menuAction(), m); // (top level: before User Created)
+                    else
+                        into->addMenu(m);
+                    exampleItems->push_back(m);
+                }
+                into = m;
             }
             QAction* a = into->addAction(QString(e->name).replace(QLatin1Char('&'), QStringLiteral("&&")));
+            a->setToolTip(e->description);
+            exampleItems->push_back(a);
+            connect(a, &QAction::triggered, this, [this, id = e->id] { addEffect(id); });
+        }
+    });
+    connect(userMenu, &QMenu::aboutToShow, this, [this, userMenu] {
+        userMenu->clear();
+        for (const EffectDef* e : nodes::userEffects()) {
+            if (e->category != QLatin1String("User Created")) // (the examples are in their own menus)
+                continue;
+            QAction* a = userMenu->addAction(QString(e->name).replace(QLatin1Char('&'), QStringLiteral("&&")));
             a->setToolTip(e->description);
             connect(a, &QAction::triggered, this, [this, id = e->id] { addEffect(id); });
         }

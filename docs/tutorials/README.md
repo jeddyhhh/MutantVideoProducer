@@ -18,7 +18,7 @@ your own.
 | 3 | [Transitions](03-transitions.md) | All 27 transitions, their settings, fades and removing them | transitions |
 | 4 | [Effects and Keyframes](04-effects-and-keyframes.md) | The device chain, keyframes, racks, track and output effects, presets, masks, Track Motion | effects-and-keyframes |
 | 5 | [Colour Grading and Scopes](05-colour-grading.md) | Curves, Color Wheels, LUTs, grading presets, the scopes | colour-grading |
-| 6 | [Glitch and Retro Looks](06-glitch-and-retro.md) | Glitch effects, Broken Video Game Systems, analog looks, Apply to, presets | glitch-and-retro |
+| 6 | [Glitch and Retro Looks](06-glitch-and-retro.md) | Glitch effects, Broken VGS, analog looks, Apply to, presets | glitch-and-retro |
 | 7 | [Mixing Audio](07-mixing-audio.md) | The Mixer, auto ducking, envelopes, voice chains, master effects, VST3 | audio-mixing |
 | 8 | [Captions and Subtitles](08-captions.md) | Auto Captions, styles, translation, SRT / WebVTT, subtitle tracks | audio-mixing |
 | 9 | [Cutting to the Beat](09-cutting-to-the-beat.md) | Detect Beats, markers, the beat grid, Split at Markers, Beat Montage | cutting-to-the-beat |

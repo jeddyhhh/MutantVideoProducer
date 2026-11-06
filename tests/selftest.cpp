@@ -5251,7 +5251,7 @@ int cmdFormats()
 
 } // namespace
 
-// "Broken Video Game Systems": every console effect on video (CPU against
+// "Broken VGS" (Broken Video Game Systems): every console effect on video (CPU against
 // GPU over a run of frames, so freezes, ghosting and interlace are covered),
 // exactness on generated pictures, and one labelled sheet per console.
 int cmdConsoles(const QString& mediaDir, const QString& outDir)
@@ -7125,7 +7125,7 @@ int cmdExamples(const QString& outDir, const QString& narrationWav)
         const std::pair<QString, QString> looks[] = {
             {QStringLiteral("vhs"), QStringLiteral("VHS")}, {QStringLiteral("crt"), QStringLiteral("CRT Monitor")},
             {QStringLiteral("rgb_split"), QStringLiteral("RGB Split")}, {QStringLiteral("pixel_sort"), QStringLiteral("Pixel Sort")},
-            {QStringLiteral("datamosh"), QStringLiteral("Datamosh")}, {console, QStringLiteral("Broken Video Game Systems: NES")},
+            {QStringLiteral("datamosh"), QStringLiteral("Datamosh")}, {console, QStringLiteral("Broken VGS: NES")},
             {QStringLiteral("old_film"), QStringLiteral("Old Film")}, {QStringLiteral("kaleidoscope"), QStringLiteral("Kaleidoscope")},
             {QString(), QStringLiteral("Preset chain: Broken Stream")}};
         double at = 0;

@@ -28,7 +28,7 @@ guide, and **Help > Tutorials** to open the step-by-step tutorials and their exa
 - [Effects](effects.md): the device chain, keyframes, presets, racks, masks and freehand masks, motion
   tracking, Follow Audio, Pan/Crop and stabilisation.
 - [Video Effects](video-effects.md): every video effect: colour and grading, stylise, keying and
-  Remove Background (AI), glitch, Broken Video Game Systems, analog and retro, psychedelic and
+  Remove Background (AI), glitch, Broken VGS (Broken Video Game Systems), analog and retro, psychedelic and
   distort; and the video scopes.
 - [Transitions](transitions.md): crossfades, fades and the 27 transitions.
 - [Titles and Generators](titles-and-generators.md): text, titles, kinetic text, credits, animated

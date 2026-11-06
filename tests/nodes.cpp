@@ -132,6 +132,14 @@ int main(int argc, char** argv)
                 bad << fi.fileName();
         }
         check(count >= 10 && bad.isEmpty(), QStringLiteral("the %1 example effects read and run %2").arg(count).arg(bad.join(QStringLiteral(", "))));
+        // Where they're listed: the examples folder's own under Node Editor, a folder of them where its path says.
+        nodes::loadUserEffects();
+        const EffectDef* hologram = nodes::findUserEffect(nodes::effectId(QStringLiteral("Hologram")));
+        const EffectDef* circuit = nodes::findUserEffect(nodes::effectId(QStringLiteral("Composite Circuit")));
+        check(hologram && hologram->category == QLatin1String("Node Editor") && circuit
+                  && circuit->category == QLatin1String("Broken VGS/Analogue Circuit Emu"),
+              QStringLiteral("the examples are in the Node Editor menu, the analogue circuits in Broken VGS > Analogue Circuit Emu (%1; %2)")
+                  .arg(hologram ? hologram->category : QString(), circuit ? circuit->category : QString()));
     }
     {
         // Composite signal: colour bars encoded and decoded by the TV come back (locked, in colour), the same frame twice
