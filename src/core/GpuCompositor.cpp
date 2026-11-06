@@ -2299,7 +2299,7 @@ struct GpuCompositor::Impl : protected QOpenGLExtraFunctions {
         std::vector<QImage> images(in.size());
         std::vector<const QImage*> ptrs(in.size(), nullptr);
         for (size_t i = 0; i < in.size(); ++i)
-            if (in[i]) {
+            if (in[i] && !(nc.bus && i < nc.inputs.size() && nc.bus->count(nc.inputs[i]))) { // (a signal: from the bus)
                 images[i] = download(*in[i]);
                 ptrs[i] = &images[i];
             }
@@ -2609,7 +2609,8 @@ struct GpuCompositor::Impl : protected QOpenGLExtraFunctions {
         for (auto it = s->states.begin(); it != s->states.end();) // (nodes deleted since)
             it = g.find(it->first) ? std::next(it) : s->states.erase(it);
         const QSize size = layer->size();
-        const nodes::NodeContext nc{size, ctx};
+        nodes::SignalBus bus;
+        const nodes::NodeContext nc{size, ctx, &bus};
         std::map<int, Layer> done;
         std::set<int> visiting;
         std::function<const Target*(int)> eval = [&](int id) -> const Target* {
@@ -2620,9 +2621,14 @@ struct GpuCompositor::Impl : protected QOpenGLExtraFunctions {
                 return (done[id] = acquire(size)).get();
             const nodes::NodeDef* def = nodes::findNode(n->type);
             std::vector<const Target*> in(def ? size_t(def->inputs.size()) : 0, nullptr);
+            nodes::NodeContext here = nc;
+            here.node = id;
+            here.inputs.assign(in.size(), 0);
             for (int i = 0; i < int(in.size()); ++i)
-                if (const nodes::Link* l = g.input(id, i))
+                if (const nodes::Link* l = g.input(id, i)) {
                     in[size_t(i)] = eval(l->from);
+                    here.inputs[size_t(i)] = l->from;
+                }
             const QString& type = n->type;
             Layer out;
             if (!def) {
@@ -2640,7 +2646,7 @@ struct GpuCompositor::Impl : protected QOpenGLExtraFunctions {
                     st.state.reset();
                     st.type = type;
                 }
-                out = gpuNode(*def, *n, in, pr, nc, *s, st.state);
+                out = gpuNode(*def, *n, in, pr, here, *s, st.state);
             }
             visiting.erase(id);
             if (thumbs && out) { // (drawn small on the GPU, so only that is read back)

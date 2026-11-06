@@ -354,10 +354,22 @@ Every graph runs from **Source** (the picture the effect is on) to **Output**. T
   Threshold.
 - **Distort**: Displace (push pixels around by another picture), Place (move, scale, turn).
 - **Time**: Delay (the picture from frames before: blend it with the present for echoes).
+- **Composite Signal**: the picture as an analogue video signal, through emulated circuits, onto a
+  TV. **Composite Encode** turns it into an NTSC signal (sync pulses, colour burst, the colour on its
+  subcarrier); **Composite Decode** is the TV, which locks to the signal's sync and burst as a real
+  one does, so damaged or missing sync rolls and tears the picture (Horizontal and Vertical Hold set
+  how its oscillators run free) and a shifted burst shifts the colours. In between: **Sync
+  Separator** (the sync pulses taken out as clean new ones), **Sync Mixer** (luma, chroma and burst
+  at their own levels, crossfaded with a low-pass input, with sync put back from the Sync input:
+  sync from another signal and the TV follows that one), **RC Low Pass** (a resistor into a
+  capacitor: smearing) and **Enhancer** (a one-transistor amplifier solved as a circuit: Gain and
+  its Gain Channel capacitor sharpen and ring, the Feedback resistors and capacitor take it back or
+  smear it, and pushed hard it clips). A node's picture is a view of its raw signal (sync black,
+  white at the top); wire Composite Decode before the Output to see the picture.
 
-Eleven examples come with the program, under **User Created > Examples** (Chroma Time Slip, Fractal
-Tunnel, Glitch Letters, Hologram, Hyperspace Geyser, Kaleido Feedback, Liquid Planet, Motion Fire,
-Neon Plasma Title, Plasma Possession, Split Reality). Put one on an event, or open it from **Tools >
+Twelve examples come with the program, under **User Created > Examples** (Chroma Time Slip,
+Composite Circuit, Fractal Tunnel, Glitch Letters, Hologram, Hyperspace Geyser, Kaleido Feedback,
+Liquid Planet, Motion Fire, Neon Plasma Title, Plasma Possession, Split Reality). Put one on an event, or open it from **Tools >
 Edit User Effect > Examples** to see how it's wired and make your own from it (saving puts your
 version in your own effects).
 

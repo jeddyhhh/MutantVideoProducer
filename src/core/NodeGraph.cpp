@@ -1,5 +1,6 @@
 #include "core/NodeGraph.h"
 #include "core/Brand.h"
+#include "core/CompositeSignal.h"
 #include "core/EffectHelpers.h"
 #include "core/Generators.h"
 #include "core/ImageOps.h"
@@ -414,6 +415,7 @@ std::vector<NodeDef> nativeNodes()
 std::vector<NodeDef> buildNodes()
 {
     std::vector<NodeDef> list = nativeNodes();
+    composite::addNodes(list); // (CompositeSignal.h)
     // Every video effect, one input to one output.
     for (const EffectDef& e : videoEffects()) {
         NodeDef d;
@@ -652,7 +654,8 @@ QImage Evaluator::run(const Graph& g, const QImage& source0, const RenderContext
     }
     for (auto it = m_states.begin(); it != m_states.end();) // (nodes deleted since)
         it = g.find(it->first) ? std::next(it) : m_states.erase(it);
-    NodeContext nc{source.size(), ctx};
+    SignalBus bus;
+    NodeContext nc{source.size(), ctx, &bus};
     std::map<int, QImage> done;
     std::set<int> visiting;
     std::function<QImage(int)> eval = [&](int id) -> QImage {
@@ -671,10 +674,14 @@ QImage Evaluator::run(const Graph& g, const QImage& source0, const RenderContext
         } else {
             std::vector<QImage> ins(size_t(def->inputs.size()));
             Inputs ptrs(ins.size(), nullptr);
+            NodeContext here = nc;
+            here.node = id;
+            here.inputs.assign(ins.size(), 0);
             for (int i = 0; i < int(ins.size()); ++i)
                 if (const Link* l = g.input(id, i)) {
                     ins[size_t(i)] = eval(l->from);
                     ptrs[size_t(i)] = &ins[size_t(i)];
+                    here.inputs[size_t(i)] = l->from;
                 }
             if (!def->output) {
                 result = ptrs.empty() || !ptrs[0] ? source : ins[0];
@@ -684,7 +691,7 @@ QImage Evaluator::run(const Graph& g, const QImage& source0, const RenderContext
                     st.state.reset();
                     st.type = n->type;
                 }
-                result = def->eval(ptrs, resolveParams(def->params, n->params, ctx.time), n->params, nc, st.state);
+                result = def->eval(ptrs, resolveParams(def->params, n->params, ctx.time), n->params, here, st.state);
                 if (result.size() != nc.size)
                     result = result.isNull() ? transparent(nc.size) : result.scaled(nc.size, Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
             }

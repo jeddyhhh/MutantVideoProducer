@@ -19,7 +19,15 @@
 #include <memory>
 #include <vector>
 
+namespace composite {
+struct Signal;
+}
+
 namespace nodes {
+
+// The composite video signals the Composite Signal nodes made this frame, by node id: they pass the signal itself
+// between them this way (the picture each gives back is only a view of it).
+using SignalBus = std::map<int, std::shared_ptr<const composite::Signal>>;
 
 struct Node {
     int id = 0;
@@ -71,6 +79,9 @@ Graph fromJson(const QJsonObject& o);
 struct NodeContext {
     QSize size;              // the picture's size
     RenderContext render;    // time, scale (pixel sizes and generators follow it), fps
+    SignalBus* bus = nullptr;    // this frame's signals (null: none kept)
+    int node = 0;            // the node being run
+    std::vector<int> inputs; // the node wired into each of its inputs (0: none)
 };
 
 struct NodeDef {

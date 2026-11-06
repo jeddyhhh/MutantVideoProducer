@@ -1,0 +1,130 @@
+{
+    "description": "The picture as a composite video signal, through a sync separator and mixer, a transistor enhancer and an RC low pass, onto a TV. Turn Gain down for a hot, ringing picture; Sync and Horizontal hold off for tearing.",
+    "exposed": [
+        {
+            "id": "n4_gain",
+            "name": "Gain",
+            "node": 4,
+            "param": "gain"
+        },
+        {
+            "id": "n4_feedbackA",
+            "name": "Feedback",
+            "node": 4,
+            "param": "feedbackA"
+        },
+        {
+            "id": "n6_luma",
+            "name": "Luma",
+            "node": 6,
+            "param": "luma"
+        },
+        {
+            "id": "n6_chroma",
+            "name": "Chroma",
+            "node": 6,
+            "param": "chroma"
+        },
+        {
+            "id": "n3_correction",
+            "name": "Sync",
+            "node": 3,
+            "param": "correction"
+        },
+        {
+            "id": "n7_hHold",
+            "name": "Horizontal hold",
+            "node": 7,
+            "param": "hHold"
+        }
+    ],
+    "format": "mvp-node-effect",
+    "links": [
+        [1, 2, 0],
+        [2, 3, 0],
+        [2, 4, 0],
+        [2, 5, 0],
+        [4, 6, 0],
+        [3, 6, 1],
+        [5, 6, 2],
+        [6, 7, 0],
+        [7, 8, 0]
+    ],
+    "name": "Composite Circuit",
+    "nextId": 9,
+    "nodes": [
+        {
+            "id": 1,
+            "params": {
+            },
+            "type": "source",
+            "x": 0,
+            "y": 0
+        },
+        {
+            "id": 2,
+            "params": {
+            },
+            "type": "composite_encode",
+            "x": 250,
+            "y": 0
+        },
+        {
+            "id": 3,
+            "params": {
+            },
+            "type": "composite_sync_separator",
+            "x": 500,
+            "y": -180
+        },
+        {
+            "id": 4,
+            "params": {
+            },
+            "type": "composite_enhancer",
+            "x": 500,
+            "y": 0
+        },
+        {
+            "id": 5,
+            "params": {
+                "capacitor": {
+                    "v": 1
+                },
+                "resistance": {
+                    "v": 1000
+                }
+            },
+            "type": "composite_low_pass",
+            "x": 500,
+            "y": 180
+        },
+        {
+            "id": 6,
+            "params": {
+                "lowPass": {
+                    "v": 0.3
+                }
+            },
+            "type": "composite_sync_mixer",
+            "x": 750,
+            "y": 0
+        },
+        {
+            "id": 7,
+            "params": {
+            },
+            "type": "composite_decode",
+            "x": 1000,
+            "y": 0
+        },
+        {
+            "id": 8,
+            "params": {
+            },
+            "type": "output",
+            "x": 1250,
+            "y": 0
+        }
+    ]
+}

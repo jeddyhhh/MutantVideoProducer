@@ -127,6 +127,7 @@ add_library(mvp_core STATIC
     src/core/OpticalFlow.h       src/core/OpticalFlow.cpp
     src/core/ColorMatch.h        src/core/ColorMatch.cpp
     src/core/NodeGraph.h         src/core/NodeGraph.cpp
+    src/core/CompositeSignal.h   src/core/CompositeSignal.cpp
     src/core/BeatMarkers.h       src/core/BeatMarkers.cpp
     src/core/EffectMask.h        src/core/EffectMask.cpp
     src/core/Stabilizer.h        src/core/Stabilizer.cpp

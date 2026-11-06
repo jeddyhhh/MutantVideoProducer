@@ -122,6 +122,99 @@ int main(int argc, char** argv)
         check(count >= 10 && bad.isEmpty(), QStringLiteral("the %1 example effects read and run %2").arg(count).arg(bad.join(QStringLiteral(", "))));
     }
     {
+        // Composite signal: colour bars encoded and decoded by the TV come back (locked, in colour), the same frame twice
+        // draws the same; sync taken off, the TV runs free (the picture moves from frame to frame); the Enhancer's wide
+        // gain channel sharpens, a big RC low pass smears.
+        QImage bars(320, 240, QImage::Format_ARGB32_Premultiplied);
+        {
+            QPainter p(&bars);
+            const QColor colours[] = {Qt::white, Qt::yellow, Qt::cyan, Qt::green, Qt::magenta, Qt::red, Qt::blue, Qt::black};
+            for (int i = 0; i < 8; ++i)
+                p.fillRect(QRect(i * 40, 0, 40, 240), colours[i]);
+        }
+        auto chain = [](const QStringList& types, std::vector<int>* ids = nullptr) {
+            nodes::Graph g = nodes::starter();
+            int prev = g.nodes[0].id;
+            for (const QString& t : types) {
+                const int n = g.addNode(t, {});
+                g.connect(prev, n, 0);
+                prev = n;
+                if (ids)
+                    ids->push_back(n);
+            }
+            g.connect(prev, g.nodes[1].id, 0);
+            return g;
+        };
+        auto at = [&](int frame) {
+            RenderContext r = ctx;
+            r.fps = 30;
+            r.time = r.timelineTime = frame * kUsPerSecond / 30;
+            return r;
+        };
+        auto edges = [](const QImage& img) { // how much the picture changes from pixel to pixel along its lines
+            double sum = 0;
+            for (int y = 0; y < img.height(); ++y)
+                for (int x = 1; x < img.width(); ++x)
+                    sum += std::abs(qGray(img.pixel(x, y)) - qGray(img.pixel(x - 1, y)));
+            return sum / (double(img.width()) * img.height());
+        };
+        const bool dump = qEnvironmentVariableIsSet("MVP_COMPOSITE_DUMP");
+        auto save = [&](const QImage& img, const char* name) {
+            if (dump)
+                img.save(QDir::temp().filePath(QStringLiteral("mvp-composite-%1.png").arg(QLatin1String(name))));
+        };
+        nodes::Evaluator ev;
+        const nodes::Graph tv = chain({QStringLiteral("composite_encode"), QStringLiteral("composite_decode")});
+        ev.run(tv, bars, at(10));
+        const QImage f11 = ev.run(tv, bars, at(11)), again = ev.run(tv, bars, at(11));
+        save(f11, "roundtrip");
+        const QRgb red = f11.pixel(5 * 40 + 20, 120), blue = f11.pixel(6 * 40 + 20, 120);
+        const double off = difference(f11, bars);
+        check(off < 20 && difference(f11, again) == 0 && qRed(red) > 150 && qGreen(red) < 100 && qBlue(blue) > 150 && qRed(blue) < 100,
+              QStringLiteral("composite: colour bars through the signal and the TV come back (%1 off; red bar %2,%3,%4), the same frame "
+                             "drawn again the same")
+                  .arg(off, 0, 'f', 1).arg(qRed(red)).arg(qGreen(red)).arg(qBlue(red)));
+
+        nodes::Graph cut = nodes::starter(); // the picture's sync taken off, the Sync input given none
+        const int enc = cut.addNode(QStringLiteral("composite_encode"), {}), sep = cut.addNode(QStringLiteral("composite_sync_separator"), {});
+        const int mixer = cut.addNode(QStringLiteral("composite_sync_mixer"), {}), dec = cut.addNode(QStringLiteral("composite_decode"), {});
+        cut.connect(cut.nodes[0].id, enc, 0);
+        cut.connect(enc, sep, 0);
+        cut.connect(enc, mixer, 0);
+        cut.connect(sep, mixer, 1);
+        cut.connect(mixer, dec, 0);
+        cut.connect(dec, cut.nodes[1].id, 0);
+        cut.find(sep)->params[QStringLiteral("correction")].value = 0;
+        nodes::Evaluator loose;
+        loose.run(cut, bars, at(20));
+        const QImage r21 = loose.run(cut, bars, at(21)), r24 = loose.run(cut, bars, at(24));
+        save(r24, "nosync");
+        check(difference(r21, r24) > 8 && difference(r24, bars) > 15,
+              QStringLiteral("composite: without sync the TV runs free, the picture moving (%1 between frames)").arg(difference(r21, r24), 0, 'f', 1));
+
+        std::vector<int> ids;
+        nodes::Graph sharp = chain({QStringLiteral("composite_encode"), QStringLiteral("composite_enhancer"), QStringLiteral("composite_decode")}, &ids);
+        sharp.find(ids[1])->params[QStringLiteral("gainChannel")].value = 2;
+        std::vector<int> lids;
+        nodes::Graph soft = chain({QStringLiteral("composite_encode"), QStringLiteral("composite_low_pass"), QStringLiteral("composite_decode")}, &lids);
+        soft.find(lids[1])->params[QStringLiteral("resistance")].value = 4700;
+        soft.find(lids[1])->params[QStringLiteral("capacitor")].value = 2;
+        const QImage sharpOut = nodes::Evaluator().run(sharp, picture.scaled(320, 240), at(30));
+        const QImage softOut = nodes::Evaluator().run(soft, picture.scaled(320, 240), at(30));
+        const QImage plainOut = nodes::Evaluator().run(tv, picture.scaled(320, 240), at(30));
+        save(sharpOut, "enhancer");
+        save(softOut, "lowpass");
+        save(plainOut, "plain");
+        if (dump) {
+            nodes::Graph example;
+            nodes::load(QStringLiteral("data/effects/Composite Circuit.mvpfx"), &example, nullptr);
+            save(nodes::Evaluator().run(example, picture.scaled(320, 240), at(30)), "example");
+        }
+        check(edges(sharpOut) > edges(plainOut) * 1.2 && edges(softOut) < edges(plainOut) * 0.8,
+              QStringLiteral("composite: the Enhancer sharpens (%1), a 4.7k into 1 nF low pass smears (%2; through the TV alone %3)")
+                  .arg(edges(sharpOut), 0, 'f', 2).arg(edges(softOut), 0, 'f', 2).arg(edges(plainOut), 0, 'f', 2));
+    }
+    {
         // A text source late in a long event still shows its text (a source is as long as any event it's on).
         nodes::Graph g = nodes::starter();
         const int title = g.addNode(QStringLiteral("gen.title"), {});

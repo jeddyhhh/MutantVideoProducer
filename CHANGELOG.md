@@ -17,6 +17,11 @@ What changed in each version of Mutant Video Producer. The newest is first.
 - **De-reverb** (audio effect) takes a room's echo out of a voice, and the **Speech Enhance** preset chain does all
   the voice clean-up at once.
 - AI control: paste_attributes, replace_media, separate_stems; render takes smart_render.
+- **Composite Signal nodes** (Effect Builder): the picture as an NTSC composite video signal (sync, colour burst,
+  subcarrier) through emulated analogue circuits onto a TV: Composite Encode, Sync Separator, Sync Mixer, RC Low
+  Pass, an Enhancer (a one-transistor amplifier solved as a circuit) and Composite Decode, a TV that locks to the
+  sync it's given, so damaged sync rolls and tears the picture as on a real one. The **Composite Circuit** example
+  wires them up.
 
 ### Fixed
 
