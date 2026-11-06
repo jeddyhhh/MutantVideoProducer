@@ -123,10 +123,19 @@ public:
         m_watch->mainThread = GetCurrentThreadId();
 #endif
         std::thread([watch = m_watch] {
+            int64_t woke = now();
             for (;;) {
                 std::this_thread::sleep_for(std::chrono::seconds(1));
                 if (watch->done)
                     return;
+                // A second's sleep that took far longer: the process was suspended (the test runner's Pause, the PC
+                // asleep). Not a hang: the minute starts again.
+                if (const int64_t t = now(); t - woke > 10000) {
+                    watch->lastStep = t;
+                    woke = t;
+                    continue;
+                }
+                woke = now();
                 if (now() - watch->lastStep > 60000) {
                     QFile log(watch->logPath);
                     log.open(QIODevice::Append | QIODevice::Text);

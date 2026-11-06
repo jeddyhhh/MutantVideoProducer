@@ -5,12 +5,15 @@ happen, the overall progress (weighted by how long each test took last time) and
 
     python scripts/test_gui.py
     python scripts/test_gui.py --run [--no-build] [--targets mvp_selftest ...] [--only REGEX] [--exclude REGEX] [--noisy]
+    python scripts/test_gui.py --run --no-build --monkey 10 11 --projects transitions first-edit [--steps 1500]
 
 With --run it starts at once, closes an earlier runner window, echoes all output to stdout and ends it with a
 "RESULT: ..." line (the window stays open to look at).
 """
 import argparse
+import ctypes
 import sys
+from ctypes import wintypes
 import tempfile
 import os
 import queue
@@ -34,12 +37,55 @@ OUTPUT = re.compile(r"^(\d+): ?(.*)$")
 LISTED = re.compile(r"Test\s+#(\d+):\s+(\S+)\s*$")
 NINJA = re.compile(r"^\[(\d+)/(\d+)\]\s*(.*)")
 PIDFILE = Path(tempfile.gettempdir()) / "mvp-test-gui.pid"
+PAUSEFILE = Path(tempfile.gettempdir()) / "mvp-test-gui.pause"  # "pause" / "resume", from --pause / --resume
 CTEST_NOISE = ("Test command:", "Working Directory:", "Environment variables:", "Test timeout computed")
 
 
 def fmt(seconds):
     seconds = int(max(0, seconds))
     return f"{seconds // 3600}:{seconds // 60 % 60:02d}:{seconds % 60:02d}" if seconds >= 3600 else f"{seconds // 60}:{seconds % 60:02d}"
+
+
+def descendants(root_pid):
+    # The processes under root_pid (children, theirs...), from a snapshot of all processes.
+    class Entry(ctypes.Structure):
+        _fields_ = [("dwSize", wintypes.DWORD), ("cntUsage", wintypes.DWORD), ("th32ProcessID", wintypes.DWORD),
+                    ("th32DefaultHeapID", ctypes.c_size_t), ("th32ModuleID", wintypes.DWORD), ("cntThreads", wintypes.DWORD),
+                    ("th32ParentProcessID", wintypes.DWORD), ("pcPriClassBase", ctypes.c_long), ("dwFlags", wintypes.DWORD),
+                    ("szExeFile", ctypes.c_char * 260)]
+    k32 = ctypes.windll.kernel32
+    k32.CreateToolhelp32Snapshot.restype = ctypes.c_void_p
+    k32.Process32First.argtypes = k32.Process32Next.argtypes = [ctypes.c_void_p, ctypes.POINTER(Entry)]
+    k32.CloseHandle.argtypes = [ctypes.c_void_p]
+    snap = k32.CreateToolhelp32Snapshot(2, 0)  # TH32CS_SNAPPROCESS
+    entry = Entry()
+    entry.dwSize = ctypes.sizeof(Entry)
+    children = {}
+    ok = k32.Process32First(snap, ctypes.byref(entry))
+    while ok:
+        children.setdefault(entry.th32ParentProcessID, []).append(entry.th32ProcessID)
+        ok = k32.Process32Next(snap, ctypes.byref(entry))
+    k32.CloseHandle(snap)
+    found, todo = [], [root_pid]
+    while todo:
+        for pid in children.get(todo.pop(), []):
+            if pid != root_pid and pid not in found:
+                found.append(pid)
+                todo.append(pid)
+    return found
+
+
+def set_suspended(pids, suspend):
+    k32, ntdll = ctypes.windll.kernel32, ctypes.windll.ntdll
+    k32.OpenProcess.restype = ctypes.c_void_p
+    k32.CloseHandle.argtypes = [ctypes.c_void_p]
+    call = ntdll.NtSuspendProcess if suspend else ntdll.NtResumeProcess
+    call.argtypes = [ctypes.c_void_p]
+    for pid in pids:
+        handle = k32.OpenProcess(0x0800, False, pid)  # PROCESS_SUSPEND_RESUME
+        if handle:
+            call(handle)
+            k32.CloseHandle(handle)
 
 
 def echo(text):
@@ -70,6 +116,7 @@ class App:
         self.build_progress = (0, 0)
         self.view = None  # test whose output the log shows (None: everything)
         self.editor_seen = 0.0
+        self.paused_at = None  # when Pause suspended the tests
 
         bar = ttk.Frame(root, padding=6)
         bar.pack(fill="x")
@@ -79,6 +126,7 @@ class App:
         self.config.pack(side="left", padx=(4, 12))
         self.build = tk.BooleanVar(value=not opts.no_build)
         self.targets = opts.targets
+        self.monkey = (opts.monkey, opts.projects, opts.steps) if opts.monkey else None
         self.exclude = opts.exclude
         ttk.Checkbutton(bar, text="Build first", variable=self.build).pack(side="left")
         self.noisy = tk.BooleanVar(value=opts.noisy)
@@ -101,6 +149,8 @@ class App:
         self.rerun_button.pack(side="left", padx=6)
         self.stop_button = ttk.Button(buttons, text="Stop", command=self.stop, state="disabled")
         self.stop_button.pack(side="left")
+        self.pause_button = ttk.Button(buttons, text="Pause", command=lambda: self.set_paused(self.paused_at is None), state="disabled")
+        self.pause_button.pack(side="left", padx=6)
 
         status = ttk.Frame(root, padding=6)
         status.pack(fill="x")
@@ -179,6 +229,8 @@ class App:
         for b in (self.run_button, self.rerun_button):
             b.configure(state="disabled")
         self.stop_button.configure(state="normal")
+        self.pause_button.configure(state="normal", text="Pause")
+        self.paused_at = None
         args, jobs, build, config = self.ctest_args(rerun), self.jobs.get(), self.build.get(), self.config.get()
         threading.Thread(target=self.work, args=(args, jobs, build, config), daemon=True).start()
 
@@ -191,6 +243,9 @@ class App:
                 if code != 0 or self.stopping:
                     self.events.put(("done", code if code else -1, "Build failed" if code else "Stopped"))
                     return
+            if self.monkey:
+                self.run_monkeys(config)
+                return
             cwd = ROOT / "build" / config
             listed = subprocess.run(args + ["-N"], cwd=cwd, env=self.env, capture_output=True, text=True, errors="replace",
                                     creationflags=subprocess.CREATE_NO_WINDOW)
@@ -206,6 +261,30 @@ class App:
             self.events.put(("line", "build", f"ERROR {e}"))
             self.events.put(("done", 1, str(e)))
 
+    def run_monkeys(self, config):
+        # Extra monkey runs (tests/monkey.cmake) one at a time: each seed on each example project.
+        seeds, projects, steps = self.monkey
+        runs = [(p, s) for p in projects for s in seeds]
+        names = [(i + 1, f"{p} #{s}", steps * 0.09) for i, (p, s) in enumerate(runs)]
+        self.events.put(("list", names))
+        self.events.put(("phase", "test"))
+        cmake = shutil.which("cmake", path=self.env["PATH"]) or "cmake"
+        exe = (ROOT / "build" / config / "bin" / "MutantVideoProducer.exe").as_posix()
+        failed = 0
+        for (number, name, _), (proj, seed) in zip(names, runs):
+            while self.paused_at is not None and not self.stopping:  # (paused between two runs)
+                time.sleep(0.2)
+            if self.stopping:
+                break
+            out = ROOT / "build" / config / "test-output" / f"monkey-{proj}"
+            self.events.put(("start", name, out / f"monkey-{seed}" / "monkey.txt", steps))
+            t0 = time.time()
+            code = self.stream([cmake, f"-DEXE={exe}", f"-DSRC={ROOT.as_posix()}", f"-DOUT={out.as_posix()}", f"-DSEED={seed}",
+                                f"-DSTEPS={steps}", f"-DPROJ={proj}", "-P", (ROOT / "tests" / "monkey.cmake").as_posix()], ROOT, ("monkey", name))
+            failed += code != 0
+            self.events.put(("result", name, "stopped" if self.stopping else "passed" if code == 0 else "failed", time.time() - t0))
+        self.events.put(("done", 1 if failed else 0, "Stopped" if self.stopping else None))
+
     def stream(self, args, cwd, phase):
         self.proc = subprocess.Popen(args, cwd=cwd, env=self.env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
                                      errors="replace", bufsize=1, creationflags=subprocess.CREATE_NO_WINDOW)
@@ -213,6 +292,26 @@ class App:
             echo(line.rstrip())
             self.events.put(("line", phase, line.rstrip("\r\n")))
         return self.proc.wait()
+
+    def set_paused(self, pause):
+        # Suspends (or resumes) every process the run started: the build or ctest, and the tests under them.
+        if not self.running or pause == (self.paused_at is not None):
+            return
+        if self.proc and self.proc.poll() is None:
+            set_suspended([self.proc.pid] + descendants(self.proc.pid), pause)
+        if pause:
+            self.paused_at = time.time()
+            self.status.configure(text="Paused (Resume carries on; a very long pause can trip a test's own time limit)")
+        else:
+            gone = time.time() - self.paused_at
+            self.started += gone  # (the clocks leave the pause out)
+            for t in self.tests.values():
+                if t["status"] == "running":
+                    t["start"] += gone
+            self.paused_at = None
+        self.pause_button.configure(text="Resume" if pause else "Pause")
+        self.root.title("MVP tests: paused" if pause else "MVP tests")
+        echo("PAUSED" if pause else "RESUMED")
 
     def stop(self):
         self.stopping = True
@@ -242,8 +341,8 @@ class App:
             self.phase = event[1]
         elif kind == "list":
             costs = self.expected_times()
-            for number, name in event[1]:
-                expected = costs.get(name)
+            for number, name, *guess in event[1]:
+                expected = costs.get(name) or (guess[0] if guess else None)
                 self.tests[name] = dict(number=number, status="queued", passes=0, fails=0, start=0.0, time=None,
                                         expected=expected if expected else DEFAULT_EXPECTED, known=expected is not None,
                                         activity="", lines=[])
@@ -252,12 +351,31 @@ class App:
                 self.dirty.add(name)
         elif kind == "line":
             self.line(event[1], event[2])
+        elif kind == "start":  # (a monkey run: its log shows the step it is on)
+            _, name, log, steps = event
+            self.tests[name].update(status="running", start=time.time(), log=log, steps=steps, step=0, seen=0.0)
+            self.dirty.add(name)
+        elif kind == "result":
+            _, name, status, seconds = event
+            t = self.tests[name]
+            t.update(status=status, time=seconds)
+            if status == "failed":
+                self.failures.insert("end", f"{name}: failed at step {t.get('step', 0)} (replay: --monkey {name.split('#')[-1]} "
+                                            f"--projects {name.split(' #')[0]})\n")
+                self.failures.see("end")
+            self.dirty.add(name)
         elif kind == "done":
             self.finish(event[1], event[2])
 
     def line(self, phase, text):
         name = None
-        if phase == "build":
+        if isinstance(phase, tuple):  # ("monkey", name): cmake's output for one monkey run
+            name = phase[1]
+            self.tests[name]["lines"].append(text)
+            if "CMake Error" in text or "monkey seed" in text:
+                self.failures.insert("end", f"{name}: {text.strip()}\n")
+                self.failures.see("end")
+        elif phase == "build":
             m = NINJA.match(text)
             if m:
                 self.build_progress = (int(m.group(1)), int(m.group(2)))
@@ -308,6 +426,8 @@ class App:
         for b in (self.run_button, self.rerun_button):
             b.configure(state="normal")
         self.stop_button.configure(state="disabled")
+        self.pause_button.configure(state="disabled", text="Pause")
+        self.paused_at = None
         failed = [n for n, t in self.tests.items() if t["status"] not in ("passed", "queued")]
         for name, t in self.tests.items():
             if t["status"] == "running":  # (stopped)
@@ -347,20 +467,51 @@ class App:
             t["activity"] = lines[-1][:200]
         self.dirty.add("editor")
 
+    def monkey_progress(self):
+        # A monkey run logs each step as "<n> <what>" (details indented under it).
+        for name, t in self.tests.items():
+            if t["status"] != "running" or "log" not in t:
+                continue
+            try:
+                stamp = t["log"].stat().st_mtime
+                if stamp <= max(t["seen"], t["start"]):
+                    continue
+                t["seen"] = stamp
+                lines = [l for l in t["log"].read_text(errors="replace").splitlines() if l.strip()]
+            except OSError:
+                continue
+            steps = [l for l in lines if l.split(" ", 1)[0].isdigit()]
+            if steps:
+                t["step"] = int(steps[-1].split(" ", 1)[0])
+                t["activity"] = steps[-1][:200]
+            self.dirty.add(name)
+
     def poll(self):
         for _ in range(3000):
             try:
                 self.handle(self.events.get_nowait())
             except queue.Empty:
                 break
+        try:  # (--pause / --resume from the command line)
+            request = PAUSEFILE.read_text().strip()
+            PAUSEFILE.unlink()
+            self.set_paused(request == "pause")
+        except OSError:
+            pass
+        if self.paused_at is not None:
+            self.root.after(200, self.poll)
+            return
         if self.running:
             self.editor_progress()
+            self.monkey_progress()
         now = time.time()
         for name in self.dirty:
             t = self.tests.get(name)
             if not t or not self.tree.exists(name):
                 continue
             checks = f"{t['passes']} ok" + (f", {t['fails']} FAIL" if t["fails"] else "") if t["passes"] or t["fails"] else ""
+            if "steps" in t:
+                checks = f"step {t['step']}/{t['steps']}"
             shown = f"{t['time']:.1f} s" if t["time"] is not None else ""
             tag = "passed" if t["status"] == "passed" else "running" if t["status"] == "running" else "" if t["status"] == "queued" else "failed"
             self.tree.item(name, values=(t["status"], checks, shown, f"{t['expected']:.{0 if t['expected'] >= 10 else 1}f} s" if t["known"] else "", t["activity"]),
@@ -383,8 +534,15 @@ class App:
             self.root.title(f"MVP tests: building {100 * done // total if total else 0}%")
             return
         total = sum(t["expected"] for t in self.tests.values())
-        done = sum(t["expected"] if t["status"] not in ("queued", "running") else min(now - t["start"], t["expected"] * 0.95)
-                   if t["status"] == "running" else 0 for t in self.tests.values())
+        def part(t):
+            if t["status"] == "queued":
+                return 0
+            if t["status"] != "running":
+                return t["expected"]
+            if t.get("steps"):  # (a monkey run: how many of its steps are done)
+                return t["expected"] * min(1.0, t["step"] / t["steps"])
+            return min(now - t["start"], t["expected"] * 0.95)
+        done = sum(part(t) for t in self.tests.values())
         left = max(0.0, total - done)
         jobs = max(1, min(int(self.jobs.get() or 1), max(1, len(running))))
         finished = [t for t in self.tests.values() if t["status"] not in ("queued", "running")]
@@ -423,7 +581,15 @@ if __name__ == "__main__":
     parser.add_argument("--exclude", default="", help="ctest -E regex (on top of the GUI tests unless --noisy)")
     parser.add_argument("--noisy", action="store_true", help="include the GUI tests (sound)")
     parser.add_argument("--jobs", type=int, default=0)
+    parser.add_argument("--monkey", nargs="+", type=int, metavar="SEED", help="extra monkey runs instead of ctest: these seeds...")
+    parser.add_argument("--projects", nargs="+", default=["titles-and-generators"], help="...on these example projects")
+    parser.add_argument("--steps", type=int, default=1500, help="monkey steps per run")
+    parser.add_argument("--pause", action="store_true", help="pause the open runner window's tests")
+    parser.add_argument("--resume", action="store_true", help="resume them")
     opts = parser.parse_args()
+    if opts.pause or opts.resume:
+        PAUSEFILE.write_text("pause" if opts.pause else "resume")
+        sys.exit(0)
     if opts.run:
         replace_previous()
     root = tk.Tk()
