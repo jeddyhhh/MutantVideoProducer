@@ -573,7 +573,8 @@ bool Exporter::run(const ProjectSnapshot& snap, const ExportSettings& s, const P
             const TimeUs a = std::max(c.start, s.rangeStart), b = std::min(c.end, s.rangeEnd);
             if (b <= a)
                 continue;
-            QByteArray text = c.text.toUtf8();
+            QByteArray text = (sst->codecpar->codec_id == AV_CODEC_ID_WEBVTT ? c.text.toHtmlEscaped().replace(QLatin1String("&quot;"), QLatin1String("\""))
+                                                                             : c.text).toUtf8(); // (in WebVTT a < starts a tag)
             if (sst->codecpar->codec_id == AV_CODEC_ID_MOV_TEXT) // (a 16-bit length, then the text)
                 text.prepend(char(text.size() & 0xff)).prepend(char((text.size() >> 8) & 0xff));
             if (av_new_packet(pkt.get(), int(text.size())) < 0)

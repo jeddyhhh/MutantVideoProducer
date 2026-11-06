@@ -98,8 +98,10 @@ std::vector<Caption> parseSubtitles(const QString& text)
         if (!parseTime(times[0], c.start) || !parseTime(times.value(1), c.end) || c.end <= c.start)
             continue;
         QStringList body;
-        for (int i = arrow + 1; i < lines.size(); ++i)
-            body << QString(lines[i]).remove(tags).trimmed();
+        for (int i = arrow + 1; i < lines.size(); ++i) // WebVTT (YouTube's too) writes & < > as entities
+            body << QString(lines[i]).remove(tags).replace(QLatin1String("&lt;"), QLatin1String("<")).replace(QLatin1String("&gt;"), QLatin1String(">"))
+                        .replace(QLatin1String("&nbsp;"), QLatin1String(" ")).replace(QLatin1String("&lrm;"), QString()).replace(QLatin1String("&rlm;"), QString())
+                        .replace(QLatin1String("&amp;"), QLatin1String("&")).trimmed();
         c.text = body.join(QLatin1Char('\n')).trimmed();
         if (!c.text.isEmpty())
             out.push_back(c);
@@ -135,7 +137,8 @@ QString writeVtt(const std::vector<Caption>& captions)
 {
     QString s = QStringLiteral("WEBVTT\n\n");
     for (const Caption& c : captions)
-        s += QStringLiteral("%1 --> %2\n%3\n\n").arg(formatTime(c.start, QLatin1Char('.')), formatTime(c.end, QLatin1Char('.')), cueText(c.text));
+        s += QStringLiteral("%1 --> %2\n%3\n\n").arg(formatTime(c.start, QLatin1Char('.')), formatTime(c.end, QLatin1Char('.')),
+                                                    cueText(c.text).toHtmlEscaped().replace(QLatin1String("&quot;"), QLatin1String("\""))); // < would start a tag
     return s;
 }
 
