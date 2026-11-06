@@ -20,6 +20,10 @@ What changed in each version of Mutant Video Producer. The newest is first.
 
 ### Fixed
 
+- **Smart render** copied the video of an event that was switched off (the render shows it as not there), and copied
+  it too when the file had to fit a size (the messaging templates, which could then come out over their limit) or was
+  asked for in another pixel format, or when the file isn't the project's shape (the render shows it with bars, the
+  copy without). Those now render as usual and say why.
 - **Ripple delete** of events that overlap (a crossfade) closed the overlap twice, pulling what came after too far
   back, onto the events before. Rippling all tracks left an event that started inside the deleted time where it was,
   with the next one pulled back on top of it.

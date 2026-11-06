@@ -149,6 +149,9 @@ Plan plan(const ProjectSnapshot& snap, const ExportSettings& s)
     const Timeline& tl = snap.timeline;
     if (active(tl.outputEffects))
         return no(QStringLiteral("the Video Output FX change the picture"));
+    if (s.targetSizeBytes > 0)
+        return no(QStringLiteral("the file has to fit a size, so its video is encoded to that"));
+    const AVPixelFormat askedFormat = s.pixelFormat.isEmpty() ? AV_PIX_FMT_NONE : av_get_pix_fmt(s.pixelFormat.toUtf8().constData());
     const bool anySolo = std::any_of(tl.tracks.begin(), tl.tracks.end(), [](const Track& t) { return isVisualTrack(t.type) && t.solo; });
     const Track* shown = nullptr;
     for (const Track& t : tl.tracks) {
@@ -176,6 +179,8 @@ Plan plan(const ProjectSnapshot& snap, const ExportSettings& s)
             return no(QStringLiteral("events overlap at %1").arg(at(c.start)));
         const auto mit = snap.media.find(c.mediaId);
         const MediaItem* m = mit != snap.media.end() ? mit->second.get() : nullptr;
+        if (c.muted) // (not drawn: the render shows what's under it, or black)
+            return no(QStringLiteral("the event at %1 is switched off").arg(at(c.start)));
         if (c.isGenerated() || c.isSequence() || !m || m->info.isStill || !m->info.videoStream(c.streamIndex))
             return no(QStringLiteral("the event at %1 isn't a video file").arg(at(c.start)));
         if (c.speed != 1.0 || c.reverse || c.hasRamp() || c.loops())
@@ -189,6 +194,9 @@ Plan plan(const ProjectSnapshot& snap, const ExportSettings& s)
         const VideoStreamInfo* vs = m->info.videoStream(c.streamIndex);
         if (vs->rotation != 0 || (vs->sarNum > 0 && vs->sarDen > 0 && vs->sarNum != vs->sarDen)) // (a copy shows it as stored)
             return no(QStringLiteral("the event at %1 is from a rotated file or one with non-square pixels").arg(at(c.start)));
+        const double shape = double(snap.settings.width) / std::max(1, snap.settings.height);
+        if (const QSize d = vs->displaySize(); d.isEmpty() || std::abs(double(d.width()) / d.height() - shape) > shape * 0.005)
+            return no(QStringLiteral("the event at %1 isn't the project's shape (the render shows it with bars)").arg(at(c.start)));
         p.pieces.push_back({m->path, vs->index, c.sourceIn + (a - c.start), b - a, a - s.rangeStart});
         covered = b;
     }
@@ -213,6 +221,8 @@ Plan plan(const ProjectSnapshot& snap, const ExportSettings& s)
         const AVRational rate = src.st->avg_frame_rate.num ? src.st->avg_frame_rate : src.st->r_frame_rate;
         if (!rate.num || std::abs(av_q2d(rate) / s.fps.toDouble() - 1.0) > 0.001)
             return no(QStringLiteral("%1 runs at %2 fps, not %3").arg(name).arg(av_q2d(rate), 0, 'f', 3).arg(s.fps.toDouble(), 0, 'f', 3));
+        if (askedFormat != AV_PIX_FMT_NONE && par->format != askedFormat)
+            return no(QStringLiteral("%1 is %2, not %3").arg(name, QString::fromLatin1(av_get_pix_fmt_name(AVPixelFormat(par->format))), s.pixelFormat));
         const QByteArray extra(reinterpret_cast<const char*>(par->extradata), par->extradata_size);
         if (i == 0) {
             extradata = extra;

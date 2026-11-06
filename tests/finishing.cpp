@@ -18,6 +18,7 @@
 #include "core/TimelineOps.h"
 #include "core/YouTubeUpload.h"
 #include "core/FFmpeg.h"
+#include "core/SmartRender.h"
 #include <QGuiApplication>
 #include <QDataStream>
 #include <QFile>
@@ -842,6 +843,36 @@ int main(int argc, char** argv)
                   .arg(copiedNote).arg(double(out.duration) / kUsPerSecond, 0, 'f', 2).arg(first, 0, 'f', 2).arg(second, 0, 'f', 2));
         check(!rendered.isEmpty() && renderedNote.contains(QLatin1String("keyframe")),
               QStringLiteral("smart render: a cut off a keyframe renders as usual and says so (%1)").arg(renderedNote));
+        if (made) { // what the copy can't give: a switched-off event, a size to fit, another pixel format
+            Project p;
+            const int id = p.addMedia(probeMedia(make.path));
+            Timeline tl = p.timeline();
+            ops::insertMedia(tl, *p.mediaItem(id), 0, -1, p.settings().fps);
+            p.applyEdit(tl, "one");
+            ExportSettings s = make;
+            s.path = sdir.filePath("plan.mp4");
+            s.rangeEnd = 3 * kUsPerSecond;
+            const bool straight = smartrender::plan(*p.snapshot(), s).ok;
+            ExportSettings sized = s, other = s;
+            sized.targetSizeBytes = 1 << 20;
+            other.pixelFormat = QStringLiteral("yuv444p");
+            const smartrender::Plan fit = smartrender::plan(*p.snapshot(), sized), fmt = smartrender::plan(*p.snapshot(), other);
+            ProjectSettings tall = p.settings();
+            std::swap(tall.width, tall.height); // a vertical project shows the 16:9 file with bars
+            const ProjectSettings wide = p.settings();
+            p.setSettings(tall);
+            const smartrender::Plan bars = smartrender::plan(*p.snapshot(), s);
+            p.setSettings(wide);
+            for (Track& t : tl.tracks)
+                for (Clip& c : t.clips)
+                    c.muted = isVisualTrack(t.type);
+            p.applyEdit(tl, "off");
+            const smartrender::Plan off = smartrender::plan(*p.snapshot(), s);
+            check(straight && !fit.ok && !fmt.ok && !bars.ok && !off.ok && off.why.contains(QLatin1String("switched off")),
+                  QStringLiteral("smart render: not for a switched-off event, a size to fit, another pixel format or another shape "
+                                 "(%1; %2; %3; %4)")
+                      .arg(fit.why, fmt.why, bars.why, off.why));
+        }
         // A file whose times start later (an MPEG-TS: 0.05 s in; a camera's .MTS ~1 s) is cut where the preview shows it.
         ExportSettings makeTs = make;
         makeTs.path = sdir.filePath("source.ts");
