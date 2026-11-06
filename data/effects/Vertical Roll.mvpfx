@@ -1,0 +1,65 @@
+{
+    "description": "The TV's vertical hold set wrong: it can't catch the frame's sync and the picture rolls up the screen, the black bar of the blanking going past.",
+    "exposed": [
+        {
+            "id": "n3_vHold",
+            "name": "Vertical hold",
+            "node": 3,
+            "param": "vHold"
+        }
+    ],
+    "format": "mvp-node-effect",
+    "links": [
+        [
+            1,
+            2,
+            0
+        ],
+        [
+            2,
+            3,
+            0
+        ],
+        [
+            3,
+            4,
+            0
+        ]
+    ],
+    "name": "Vertical Roll",
+    "nextId": 5,
+    "nodes": [
+        {
+            "id": 1,
+            "params": {},
+            "type": "source",
+            "x": 0,
+            "y": 0
+        },
+        {
+            "id": 2,
+            "params": {},
+            "type": "composite_encode",
+            "x": 250,
+            "y": 0
+        },
+        {
+            "id": 3,
+            "params": {
+                "vHold": {
+                    "v": -1
+                }
+            },
+            "type": "composite_decode",
+            "x": 500,
+            "y": 0
+        },
+        {
+            "id": 4,
+            "params": {},
+            "type": "output",
+            "x": 750,
+            "y": 0
+        }
+    ]
+}

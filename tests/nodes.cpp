@@ -186,15 +186,16 @@ int main(int argc, char** argv)
         cut.connect(dec, cut.nodes[1].id, 0);
         cut.find(sep)->params[QStringLiteral("correction")].value = 0;
         nodes::Evaluator loose;
-        loose.run(cut, bars, at(20));
-        const QImage r21 = loose.run(cut, bars, at(21)), r24 = loose.run(cut, bars, at(24));
+        const QImage shapes = picture.scaled(320, 240); // (something that changes down the picture: the roll shows)
+        loose.run(cut, shapes, at(20));
+        const QImage r21 = loose.run(cut, shapes, at(21)), r24 = loose.run(cut, shapes, at(24));
         save(r24, "nosync");
-        check(difference(r21, r24) > 8 && difference(r24, bars) > 15,
+        check(difference(r21, r24) > 8 && difference(r24, shapes) > 15,
               QStringLiteral("composite: without sync the TV runs free, the picture moving (%1 between frames)").arg(difference(r21, r24), 0, 'f', 1));
 
         std::vector<int> ids;
         nodes::Graph sharp = chain({QStringLiteral("composite_encode"), QStringLiteral("composite_enhancer"), QStringLiteral("composite_decode")}, &ids);
-        sharp.find(ids[1])->params[QStringLiteral("gainChannel")].value = 2;
+        sharp.find(ids[1])->params[QStringLiteral("gainChannel")].value = 3;
         std::vector<int> lids;
         nodes::Graph soft = chain({QStringLiteral("composite_encode"), QStringLiteral("composite_low_pass"), QStringLiteral("composite_decode")}, &lids);
         soft.find(lids[1])->params[QStringLiteral("resistance")].value = 4700;
@@ -205,11 +206,22 @@ int main(int argc, char** argv)
         save(sharpOut, "enhancer");
         save(softOut, "lowpass");
         save(plainOut, "plain");
-        if (dump) {
-            nodes::Graph example;
-            nodes::load(QStringLiteral("data/effects/Composite Circuit.mvpfx"), &example, nullptr);
-            save(nodes::Evaluator().run(example, picture.scaled(320, 240), at(30)), "example");
-        }
+        if (dump) // (each example that uses them, as it looks on frame 30 of a picture and colour bars side by side)
+            for (const QFileInfo& fi : QDir(QStringLiteral("data/effects")).entryInfoList({QStringLiteral("*.mvpfx")}, QDir::Files)) {
+                nodes::Graph example;
+                nodes::load(fi.absoluteFilePath(), &example, nullptr);
+                if (std::none_of(example.nodes.begin(), example.nodes.end(), [](const nodes::Node& n) { return n.type.startsWith(QLatin1String("composite_")); }))
+                    continue;
+                QImage both(640, 240, QImage::Format_ARGB32_Premultiplied);
+                QPainter p(&both);
+                p.drawImage(0, 0, testPicture(QSize(320, 240)));
+                p.drawImage(320, 0, bars);
+                p.end();
+                nodes::Evaluator e;
+                for (int f = 26; f < 30; ++f)
+                    e.run(example, both, at(f));
+                e.run(example, both, at(30)).save(QDir::temp().filePath(QStringLiteral("mvp-ex-%1.png").arg(fi.completeBaseName())));
+            }
         check(edges(sharpOut) > edges(plainOut) * 1.2 && edges(softOut) < edges(plainOut) * 0.8,
               QStringLiteral("composite: the Enhancer sharpens (%1), a 4.7k into 1 nF low pass smears (%2; through the TV alone %3)")
                   .arg(edges(sharpOut), 0, 'f', 2).arg(edges(softOut), 0, 'f', 2).arg(edges(plainOut), 0, 'f', 2));

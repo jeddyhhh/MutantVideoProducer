@@ -367,9 +367,12 @@ Every graph runs from **Source** (the picture the effect is on) to **Output**. T
   smear it, and pushed hard it clips). A node's picture is a view of its raw signal (sync black,
   white at the top); wire Composite Decode before the Output to see the picture.
 
-Twelve examples come with the program, under **User Created > Examples** (Chroma Time Slip,
-Composite Circuit, Fractal Tunnel, Glitch Letters, Hologram, Hyperspace Geyser, Kaleido Feedback,
-Liquid Planet, Motion Fire, Neon Plasma Title, Plasma Possession, Split Reality). Put one on an event, or open it from **Tools >
+Twenty-eight examples come with the program, under **User Created > Examples**: Chroma Time Slip,
+Fractal Tunnel, Glitch Letters, Hologram, Hyperspace Geyser, Kaleido Feedback, Liquid Planet, Motion
+Fire, Neon Plasma Title, Plasma Possession and Split Reality, and seventeen made of the Composite
+Signal nodes: Composite Circuit (the whole chain), Dot Crawl, Horizontal Tear, Long Smear,
+Monochrome Set, Neon Bleed, Night Broadcast, Off-Air Tint, Over-Sharpened, Overdriven Amp, Phase
+Shift, Shadow Sync, Signal Inversion, Soft Amp, Third-Generation Dub, Vertical Roll and Weak Signal. Put one on an event, or open it from **Tools >
 Edit User Effect > Examples** to see how it's wired and make your own from it (saving puts your
 version in your own effects).
 

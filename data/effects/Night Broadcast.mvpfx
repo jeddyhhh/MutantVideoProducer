@@ -1,0 +1,96 @@
+{
+    "description": "A late-night picture on an old set: soft, dim, the colour turned down and the blacks crushed.",
+    "exposed": [
+        {
+            "id": "n4_brightness",
+            "name": "Brightness",
+            "node": 4,
+            "param": "brightness"
+        },
+        {
+            "id": "n4_colour",
+            "name": "Colour",
+            "node": 4,
+            "param": "colour"
+        }
+    ],
+    "format": "mvp-node-effect",
+    "links": [
+        [
+            1,
+            2,
+            0
+        ],
+        [
+            2,
+            3,
+            0
+        ],
+        [
+            3,
+            4,
+            0
+        ],
+        [
+            4,
+            5,
+            0
+        ]
+    ],
+    "name": "Night Broadcast",
+    "nextId": 6,
+    "nodes": [
+        {
+            "id": 1,
+            "params": {},
+            "type": "source",
+            "x": 0,
+            "y": 0
+        },
+        {
+            "id": 2,
+            "params": {},
+            "type": "composite_encode",
+            "x": 250,
+            "y": 0
+        },
+        {
+            "id": 3,
+            "params": {
+                "resistance": {
+                    "v": 470
+                },
+                "capacitor": {
+                    "v": 1
+                }
+            },
+            "type": "composite_low_pass",
+            "x": 500,
+            "y": 0
+        },
+        {
+            "id": 4,
+            "params": {
+                "brightness": {
+                    "v": -0.08
+                },
+                "contrast": {
+                    "v": 0.85
+                },
+                "colour": {
+                    "v": 0.55
+                }
+            },
+            "type": "composite_decode",
+            "x": 750,
+            "y": 0
+        },
+        {
+            "id": 5,
+            "params": {},
+            "type": "output",
+            "x": 1000,
+            "y": 0
+        }
+    ]
+}

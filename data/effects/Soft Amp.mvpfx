@@ -1,0 +1,80 @@
+{
+    "description": "The amplifier's capacitor feedback turned up: it takes the fine detail back, the picture soft and its colour smeared, like a cheap RF converter.",
+    "exposed": [
+        {
+            "id": "n3_feedbackA",
+            "name": "Feedback",
+            "node": 3,
+            "param": "feedbackA"
+        }
+    ],
+    "format": "mvp-node-effect",
+    "links": [
+        [
+            1,
+            2,
+            0
+        ],
+        [
+            2,
+            3,
+            0
+        ],
+        [
+            3,
+            4,
+            0
+        ],
+        [
+            4,
+            5,
+            0
+        ]
+    ],
+    "name": "Soft Amp",
+    "nextId": 6,
+    "nodes": [
+        {
+            "id": 1,
+            "params": {},
+            "type": "source",
+            "x": 0,
+            "y": 0
+        },
+        {
+            "id": 2,
+            "params": {},
+            "type": "composite_encode",
+            "x": 250,
+            "y": 0
+        },
+        {
+            "id": 3,
+            "params": {
+                "feedbackA": {
+                    "v": 1000
+                },
+                "feedbackPath": {
+                    "v": 0
+                }
+            },
+            "type": "composite_enhancer",
+            "x": 500,
+            "y": 0
+        },
+        {
+            "id": 4,
+            "params": {},
+            "type": "composite_decode",
+            "x": 750,
+            "y": 0
+        },
+        {
+            "id": 5,
+            "params": {},
+            "type": "output",
+            "x": 1000,
+            "y": 0
+        }
+    ]
+}

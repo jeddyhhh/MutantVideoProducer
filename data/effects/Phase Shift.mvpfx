@@ -1,0 +1,90 @@
+{
+    "description": "The amplifier's wide gain channel: the colour boosted and turned against its burst, so every hue moves round.",
+    "exposed": [
+        {
+            "id": "n3_gain",
+            "name": "Gain",
+            "node": 3,
+            "param": "gain"
+        },
+        {
+            "id": "n4_colour",
+            "name": "Colour",
+            "node": 4,
+            "param": "colour"
+        }
+    ],
+    "format": "mvp-node-effect",
+    "links": [
+        [
+            1,
+            2,
+            0
+        ],
+        [
+            2,
+            3,
+            0
+        ],
+        [
+            3,
+            4,
+            0
+        ],
+        [
+            4,
+            5,
+            0
+        ]
+    ],
+    "name": "Phase Shift",
+    "nextId": 6,
+    "nodes": [
+        {
+            "id": 1,
+            "params": {},
+            "type": "source",
+            "x": 0,
+            "y": 0
+        },
+        {
+            "id": 2,
+            "params": {},
+            "type": "composite_encode",
+            "x": 250,
+            "y": 0
+        },
+        {
+            "id": 3,
+            "params": {
+                "gain": {
+                    "v": 330
+                },
+                "gainChannel": {
+                    "v": 3
+                }
+            },
+            "type": "composite_enhancer",
+            "x": 500,
+            "y": 0
+        },
+        {
+            "id": 4,
+            "params": {
+                "colour": {
+                    "v": 0.8
+                }
+            },
+            "type": "composite_decode",
+            "x": 750,
+            "y": 0
+        },
+        {
+            "id": 5,
+            "params": {},
+            "type": "output",
+            "x": 1000,
+            "y": 0
+        }
+    ]
+}

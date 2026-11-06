@@ -1,0 +1,65 @@
+{
+    "description": "The horizontal hold off: the TV's line oscillator runs too fast to lock, and the picture tears into diagonal bands that drift.",
+    "exposed": [
+        {
+            "id": "n3_hHold",
+            "name": "Horizontal hold",
+            "node": 3,
+            "param": "hHold"
+        }
+    ],
+    "format": "mvp-node-effect",
+    "links": [
+        [
+            1,
+            2,
+            0
+        ],
+        [
+            2,
+            3,
+            0
+        ],
+        [
+            3,
+            4,
+            0
+        ]
+    ],
+    "name": "Horizontal Tear",
+    "nextId": 5,
+    "nodes": [
+        {
+            "id": 1,
+            "params": {},
+            "type": "source",
+            "x": 0,
+            "y": 0
+        },
+        {
+            "id": 2,
+            "params": {},
+            "type": "composite_encode",
+            "x": 250,
+            "y": 0
+        },
+        {
+            "id": 3,
+            "params": {
+                "hHold": {
+                    "v": -0.6
+                }
+            },
+            "type": "composite_decode",
+            "x": 500,
+            "y": 0
+        },
+        {
+            "id": 4,
+            "params": {},
+            "type": "output",
+            "x": 750,
+            "y": 0
+        }
+    ]
+}

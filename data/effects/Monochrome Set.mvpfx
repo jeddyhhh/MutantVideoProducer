@@ -1,0 +1,77 @@
+{
+    "description": "The colour burst taken out: the TV's colour killer switches off and shows black and white.",
+    "exposed": [
+        {
+            "id": "n3_burst",
+            "name": "Colour burst",
+            "node": 3,
+            "param": "burst"
+        }
+    ],
+    "format": "mvp-node-effect",
+    "links": [
+        [
+            1,
+            2,
+            0
+        ],
+        [
+            2,
+            3,
+            0
+        ],
+        [
+            3,
+            4,
+            0
+        ],
+        [
+            4,
+            5,
+            0
+        ]
+    ],
+    "name": "Monochrome Set",
+    "nextId": 6,
+    "nodes": [
+        {
+            "id": 1,
+            "params": {},
+            "type": "source",
+            "x": 0,
+            "y": 0
+        },
+        {
+            "id": 2,
+            "params": {},
+            "type": "composite_encode",
+            "x": 250,
+            "y": 0
+        },
+        {
+            "id": 3,
+            "params": {
+                "burst": {
+                    "v": 0
+                }
+            },
+            "type": "composite_sync_mixer",
+            "x": 500,
+            "y": 0
+        },
+        {
+            "id": 4,
+            "params": {},
+            "type": "composite_decode",
+            "x": 750,
+            "y": 0
+        },
+        {
+            "id": 5,
+            "params": {},
+            "type": "output",
+            "x": 1000,
+            "y": 0
+        }
+    ]
+}

@@ -1,0 +1,81 @@
+{
+    "description": "Chroma pushed far past white: narrow, smeared colour glowing out of its edges.",
+    "exposed": [
+        {
+            "id": "n3_chroma",
+            "name": "Chroma",
+            "node": 3,
+            "param": "chroma"
+        }
+    ],
+    "format": "mvp-node-effect",
+    "links": [
+        [
+            1,
+            2,
+            0
+        ],
+        [
+            2,
+            3,
+            0
+        ],
+        [
+            3,
+            4,
+            0
+        ],
+        [
+            4,
+            5,
+            0
+        ]
+    ],
+    "name": "Neon Bleed",
+    "nextId": 6,
+    "nodes": [
+        {
+            "id": 1,
+            "params": {},
+            "type": "source",
+            "x": 0,
+            "y": 0
+        },
+        {
+            "id": 2,
+            "params": {
+                "chroma": {
+                    "v": 0.4
+                }
+            },
+            "type": "composite_encode",
+            "x": 250,
+            "y": 0
+        },
+        {
+            "id": 3,
+            "params": {
+                "chroma": {
+                    "v": 2.6
+                }
+            },
+            "type": "composite_sync_mixer",
+            "x": 500,
+            "y": 0
+        },
+        {
+            "id": 4,
+            "params": {},
+            "type": "composite_decode",
+            "x": 750,
+            "y": 0
+        },
+        {
+            "id": 5,
+            "params": {},
+            "type": "output",
+            "x": 1000,
+            "y": 0
+        }
+    ]
+}

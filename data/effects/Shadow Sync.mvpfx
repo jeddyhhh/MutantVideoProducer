@@ -1,0 +1,97 @@
+{
+    "description": "The sync separator's slice set too high: the dark parts of the picture come out as sync pulses too, so the shadows go black, the colour drops out and the TV slides the picture along them.",
+    "exposed": [
+        {
+            "id": "n3_slice",
+            "name": "Slice level",
+            "node": 3,
+            "param": "slice"
+        }
+    ],
+    "format": "mvp-node-effect",
+    "links": [
+        [
+            1,
+            2,
+            0
+        ],
+        [
+            2,
+            3,
+            0
+        ],
+        [
+            2,
+            4,
+            0
+        ],
+        [
+            3,
+            4,
+            1
+        ],
+        [
+            4,
+            5,
+            0
+        ],
+        [
+            5,
+            6,
+            0
+        ]
+    ],
+    "name": "Shadow Sync",
+    "nextId": 7,
+    "nodes": [
+        {
+            "id": 1,
+            "params": {},
+            "type": "source",
+            "x": 0,
+            "y": 0
+        },
+        {
+            "id": 2,
+            "params": {},
+            "type": "composite_encode",
+            "x": 250,
+            "y": 0
+        },
+        {
+            "id": 3,
+            "params": {
+                "slice": {
+                    "v": 25
+                },
+                "hysteresis": {
+                    "v": 2
+                }
+            },
+            "type": "composite_sync_separator",
+            "x": 500,
+            "y": -180
+        },
+        {
+            "id": 4,
+            "params": {},
+            "type": "composite_sync_mixer",
+            "x": 750,
+            "y": 0
+        },
+        {
+            "id": 5,
+            "params": {},
+            "type": "composite_decode",
+            "x": 1000,
+            "y": 0
+        },
+        {
+            "id": 6,
+            "params": {},
+            "type": "output",
+            "x": 1250,
+            "y": 0
+        }
+    ]
+}

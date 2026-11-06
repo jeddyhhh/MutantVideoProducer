@@ -1,0 +1,72 @@
+{
+    "description": "Wide colour on a TV with a comb filter: dots crawl along coloured edges and hang on the fine detail.",
+    "exposed": [
+        {
+            "id": "n2_saturation",
+            "name": "Saturation",
+            "node": 2,
+            "param": "saturation"
+        }
+    ],
+    "format": "mvp-node-effect",
+    "links": [
+        [
+            1,
+            2,
+            0
+        ],
+        [
+            2,
+            3,
+            0
+        ],
+        [
+            3,
+            4,
+            0
+        ]
+    ],
+    "name": "Dot Crawl",
+    "nextId": 5,
+    "nodes": [
+        {
+            "id": 1,
+            "params": {},
+            "type": "source",
+            "x": 0,
+            "y": 0
+        },
+        {
+            "id": 2,
+            "params": {
+                "chroma": {
+                    "v": 3
+                },
+                "saturation": {
+                    "v": 1.6
+                }
+            },
+            "type": "composite_encode",
+            "x": 250,
+            "y": 0
+        },
+        {
+            "id": 3,
+            "params": {
+                "separation": {
+                    "v": 1
+                }
+            },
+            "type": "composite_decode",
+            "x": 500,
+            "y": 0
+        },
+        {
+            "id": 4,
+            "params": {},
+            "type": "output",
+            "x": 750,
+            "y": 0
+        }
+    ]
+}

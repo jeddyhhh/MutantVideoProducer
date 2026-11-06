@@ -1,0 +1,124 @@
+{
+    "description": "A big capacitor on the signal: each line drags its picture on to the right and down, mixed back with the clean picture, the sync put back clean so the TV holds.",
+    "exposed": [
+        {
+            "id": "n4_lowPass",
+            "name": "Smear",
+            "node": 4,
+            "param": "lowPass"
+        },
+        {
+            "id": "n6_resistance",
+            "name": "Resistance",
+            "node": 6,
+            "param": "resistance"
+        }
+    ],
+    "format": "mvp-node-effect",
+    "links": [
+        [
+            1,
+            2,
+            0
+        ],
+        [
+            2,
+            3,
+            0
+        ],
+        [
+            2,
+            4,
+            0
+        ],
+        [
+            3,
+            4,
+            1
+        ],
+        [
+            4,
+            5,
+            0
+        ],
+        [
+            5,
+            7,
+            0
+        ],
+        [
+            2,
+            6,
+            0
+        ],
+        [
+            6,
+            4,
+            2
+        ]
+    ],
+    "name": "Long Smear",
+    "nextId": 8,
+    "nodes": [
+        {
+            "id": 1,
+            "params": {},
+            "type": "source",
+            "x": 0,
+            "y": 0
+        },
+        {
+            "id": 2,
+            "params": {},
+            "type": "composite_encode",
+            "x": 250,
+            "y": 0
+        },
+        {
+            "id": 3,
+            "params": {},
+            "type": "composite_sync_separator",
+            "x": 500,
+            "y": -180
+        },
+        {
+            "id": 4,
+            "params": {
+                "lowPass": {
+                    "v": 0.6
+                }
+            },
+            "type": "composite_sync_mixer",
+            "x": 750,
+            "y": 0
+        },
+        {
+            "id": 5,
+            "params": {},
+            "type": "composite_decode",
+            "x": 1000,
+            "y": 0
+        },
+        {
+            "id": 6,
+            "params": {
+                "resistance": {
+                    "v": 4700
+                },
+                "capacitor": {
+                    "v": 3
+                }
+            },
+            "type": "composite_low_pass",
+            "x": 500,
+            "y": 180
+        },
+        {
+            "id": 7,
+            "params": {},
+            "type": "output",
+            "x": 1250,
+            "y": 0
+        }
+    ]
+}

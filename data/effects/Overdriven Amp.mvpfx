@@ -1,0 +1,90 @@
+{
+    "description": "The video amplifier turned all the way up and the TV turned down to cope: the signal clips at the amplifier's supply, so the highlights flatten into one level and the edges ring.",
+    "exposed": [
+        {
+            "id": "n3_gain",
+            "name": "Gain",
+            "node": 3,
+            "param": "gain"
+        },
+        {
+            "id": "n4_contrast",
+            "name": "Contrast",
+            "node": 4,
+            "param": "contrast"
+        }
+    ],
+    "format": "mvp-node-effect",
+    "links": [
+        [
+            1,
+            2,
+            0
+        ],
+        [
+            2,
+            3,
+            0
+        ],
+        [
+            3,
+            4,
+            0
+        ],
+        [
+            4,
+            5,
+            0
+        ]
+    ],
+    "name": "Overdriven Amp",
+    "nextId": 6,
+    "nodes": [
+        {
+            "id": 1,
+            "params": {},
+            "type": "source",
+            "x": 0,
+            "y": 0
+        },
+        {
+            "id": 2,
+            "params": {},
+            "type": "composite_encode",
+            "x": 250,
+            "y": 0
+        },
+        {
+            "id": 3,
+            "params": {
+                "gain": {
+                    "v": 47
+                },
+                "gainChannel": {
+                    "v": 1
+                }
+            },
+            "type": "composite_enhancer",
+            "x": 500,
+            "y": 0
+        },
+        {
+            "id": 4,
+            "params": {
+                "contrast": {
+                    "v": 0.33
+                }
+            },
+            "type": "composite_decode",
+            "x": 750,
+            "y": 0
+        },
+        {
+            "id": 5,
+            "params": {},
+            "type": "output",
+            "x": 1000,
+            "y": 0
+        }
+    ]
+}

@@ -160,8 +160,10 @@ struct Beam {
     int lineY = 0;         // its line, counted from the last vertical retrace
     int y = 0;
     int lowRun = 0;        // samples below the sync slice in a row
-    float vInt = 0;        // the vertical sync integrator
-    float clamp = 0;       // the back porch's level (DC restore, and what sync is sliced against)
+    float vInt = 0;        // the vertical sync integrator: an RC on the sliced sync (how much of the time it is low)
+    float clamp = 0;       // the back porch's level (DC restore), taken on lines a sync pulse started
+    float tip = -40;       // the sync tips' level (the lowest the signal goes, creeping back up between them)
+    float smooth = 0;      // the signal through the sync separator's input filter (colour and ringing taken off)
     double porch = 0;
     int porchN = 0;
     double bSin = 0, bCos = 0; // the burst, against the TV's own subcarrier
@@ -181,7 +183,7 @@ struct TvSettings {
     int hFree = kLine;      // the line oscillator's own period (samples)
     int vFree = kLines;     // the frame oscillator's (lines)
     int capture = 0;        // a sync pulse resets the line after this many samples
-    float slice = 20;       // sync: this far below the back porch
+    float slice = 10;       // sync: at least this far below the back porch
     float contrast = 1, brightness = 0, colour = 1, tint = 0;
     bool comb = false;
 };
@@ -195,7 +197,8 @@ struct Tv : EffectState {
 };
 
 constexpr int kTrigger = 8;        // samples below the slice that make a sync pulse
-constexpr float kVThreshold = 1500; // the integrator's level that starts a vertical retrace (2 broad pulses)
+constexpr float kVThreshold = 0.6f; // the integrator's level that starts a vertical retrace (the 2nd broad pulse)
+constexpr float kVRate = 1.0f / kLine; // (its time constant: a line)
 constexpr int kVCapture = 300;      // lines before a vertical sync is taken
 constexpr int kVLine = 4;           // the line a vertical retrace is in
 
@@ -208,10 +211,13 @@ inline float wrapAngle(float a)
     return a;
 }
 
-void endLine(Beam& b, int64_t next, std::vector<TvLine>& lines)
+void endLine(Beam& b, int64_t next, bool synced, float minDepth, std::vector<TvLine>& lines)
 {
-    if (b.porchN >= 8)
-        b.clamp = float(b.porch / b.porchN);
+    // The clamp from a line a sync pulse started (one the oscillator ended has its "porch" anywhere), and not from a
+    // vertical sync line's (its porch is inside a broad pulse, down at the tips).
+    if (synced && b.porchN >= 8)
+        if (const float porch = float(b.porch / b.porchN); porch > b.tip + minDepth)
+            b.clamp = porch;
     const double amplitude = 2.0 * std::hypot(b.bSin, b.bCos) / (kBurstEnd - kBurstStart);
     if (amplitude > 5.0) {
         const float e = wrapAngle(float(std::atan2(b.bCos, b.bSin) - pi));
@@ -234,9 +240,14 @@ void scan(Beam& b, const Signal& s, const TvSettings& set, std::vector<TvLine>& 
     const float* v = s.v.data();
     for (int64_t n = 0; n < kSamples; ++n) {
         const float x = v[n];
-        const bool low = x < b.clamp - set.slice;
+        b.smooth += 0.2f * (x - b.smooth); // (an RC of about 0.3 us: sync is sliced from this)
+        const float sx = b.smooth;
+        b.tip = sx < b.tip ? sx : b.tip + 0.002f; // (back up ~2 IRE a line)
+        // Sync is sliced halfway between its tips and the back porch (a stronger or weaker signal too), and at
+        // least Sync sensitivity below the porch: sync weaker than that isn't seen.
+        const bool low = sx < b.clamp - std::max(set.slice, 0.5f * (b.clamp - b.tip));
         b.lowRun = low ? b.lowRun + 1 : 0;
-        b.vInt = std::max(0.0f, b.vInt + (low ? 1.0f : -0.25f));
+        b.vInt += ((low ? 1.0f : 0.0f) - b.vInt) * kVRate;
         const int64_t hp = n - b.lineStart;
         if (hp >= kBurstStart && hp < kBurstEnd) {
             const int k = phaseOf(s.frame, n);
@@ -247,9 +258,9 @@ void scan(Beam& b, const Signal& s, const TvSettings& set, std::vector<TvLine>& 
             ++b.porchN;
         }
         if (b.lowRun == kTrigger && hp + 1 > set.capture)
-            endLine(b, n + 1 - kTrigger, lines);
+            endLine(b, n + 1 - kTrigger, true, set.slice, lines);
         else if (hp + 1 >= set.hFree + kTrigger) // (free: a sync pulse it waited for comes kTrigger late)
-            endLine(b, n + 1, lines);
+            endLine(b, n + 1, false, set.slice, lines);
         if (b.vInt > kVThreshold && b.y > kVCapture) {
             b.y = kVLine;
             b.vInt = 0;
@@ -529,8 +540,8 @@ Signal enhance(const Signal& in, const Params& p)
     const double rfa = std::max(1.0, p.num(QStringLiteral("feedbackA"))), rfb = std::max(1.0, p.num(QStringLiteral("feedbackB")));
     const bool capPath = p.choice(QStringLiteral("feedbackPath")) == 0;
     const double rg = std::max(1.0, p.num(QStringLiteral("gain")));
-    static const double kChannel[] = {0, 100e-12, 1e-9};
-    const double cg = kChannel[std::clamp(p.choice(QStringLiteral("gainChannel")), 0, 2)];
+    static const double kChannel[] = {0, 100e-12, 330e-12, 1e-9};
+    const double cg = kChannel[std::clamp(p.choice(QStringLiteral("gainChannel")), 0, 3)];
     const double sign = p.choice(QStringLiteral("output")) == 0 ? -1.0 : 1.0; // (Normal: a second stage turns it back)
     const double divider = load / (load + 75.0) / rin;
     const double gb = kCb / dt, gcc = kCc / dt, gf = kCf / dt, gg = cg / dt;
@@ -683,7 +694,7 @@ void addNodes(std::vector<nodes::NodeDef>& list)
         "it is black and white, and a shifted burst shifts the colours.");
     d.inputs = {signalIn};
     d.params = {num("hHold", "Horizontal hold", -1, 1, 0.1), num("vHold", "Vertical hold", -1, 1, 0.2),
-                num("hLock", "Horizontal lock range", 0.01, 0.6, 0.15), num("slice", "Sync sensitivity", 2, 40, 20, 0, " IRE"),
+                num("hLock", "Horizontal lock range", 0.01, 0.6, 0.15), num("slice", "Sync sensitivity", 2, 40, 10, 0, " IRE"),
                 num("contrast", "Contrast", 0, 3, 1), num("brightness", "Brightness", -1, 1, 0), num("colour", "Colour", 0, 3, 1),
                 num("tint", "Tint", -180, 180, 0, 0, "°"), choice("separation", "Luma/chroma separation", {QStringLiteral("Notch"), QStringLiteral("Comb")})};
     d.eval = [](const Inputs& in, const Params& p, const ParamMap&, const nodes::NodeContext& c, std::unique_ptr<EffectState>& state) {
@@ -758,7 +769,7 @@ void addNodes(std::vector<nodes::NodeDef>& list)
                 ohms("feedbackA", "Feedback", 100, 1000000, 1000000),
                 choice("feedbackPath", "Feedback path", {QStringLiteral("Capacitor"), QStringLiteral("Resistor")}),
                 ohms("feedbackB", "Feedback (direct)", 100, 1000000, 1000000), ohms("gain", "Gain", 1, 1000, 220),
-                choice("gainChannel", "Gain channel", {QStringLiteral("Off"), QStringLiteral("Narrow (100 pF)"), QStringLiteral("Wide (1 nF)")}, 1),
+                choice("gainChannel", "Gain channel", {QStringLiteral("Off"), QStringLiteral("Narrow (100 pF)"), QStringLiteral("Medium (330 pF)"), QStringLiteral("Wide (1 nF)")}, 1),
                 choice("output", "Output", {QStringLiteral("Normal"), QStringLiteral("Inverted")})};
     d.eval = [](const Inputs& in, const Params& p, const ParamMap&, const nodes::NodeContext& c, std::unique_ptr<EffectState>&) {
         const auto s = input(in, 0, c);

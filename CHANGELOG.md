@@ -20,8 +20,9 @@ What changed in each version of Mutant Video Producer. The newest is first.
 - **Composite Signal nodes** (Effect Builder): the picture as an NTSC composite video signal (sync, colour burst,
   subcarrier) through emulated analogue circuits onto a TV: Composite Encode, Sync Separator, Sync Mixer, RC Low
   Pass, an Enhancer (a one-transistor amplifier solved as a circuit) and Composite Decode, a TV that locks to the
-  sync it's given, so damaged sync rolls and tears the picture as on a real one. The **Composite Circuit** example
-  wires them up.
+  sync it's given, so damaged sync rolls and tears the picture as on a real one. Seventeen examples use them
+  (Composite Circuit wires up the whole chain; Vertical Roll, Horizontal Tear, Weak Signal, Shadow Sync, Signal
+  Inversion, Third-Generation Dub, Neon Bleed, Off-Air Tint and more).
 
 ### Fixed
 
