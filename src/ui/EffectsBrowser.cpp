@@ -3,6 +3,7 @@
 
 #include "ui/Theme.h"
 
+#include <algorithm>
 #include <QMessageBox>
 #include <QMenu>
 #include <QContextMenuEvent>
@@ -117,9 +118,15 @@ void EffectsBrowser::populate()
         else
             for (const EffectDef& e : videoEffects())
                 addEffect(e.id, e.name, e.category, e.description);
-        if (!audio)
-            for (const EffectDef* e : nodes::userEffects()) // (made in Tools > Effect Builder)
+        if (!audio) { // (made in Tools > Effect Builder: the examples' categories in order, then User Created)
+            std::vector<const EffectDef*> made = nodes::userEffects();
+            std::stable_sort(made.begin(), made.end(), [](const EffectDef* a, const EffectDef* b) {
+                const bool userA = a->category == QLatin1String("User Created"), userB = b->category == QLatin1String("User Created");
+                return userA != userB ? userB : a->category < b->category;
+            });
+            for (const EffectDef* e : made)
                 addEffect(e->id, e->name, e->category, e->description);
+        }
         if (!audio)
             for (const EffectDef* e : retro::effects()) // (screen shaders: Tools > Get Screen Shaders)
                 addEffect(e->id, e->name, e->category, e->description);

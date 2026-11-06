@@ -1,15 +1,16 @@
 #pragma once
 
 // Composite video as a signal, for the Effect Builder's Composite Signal nodes: a picture is turned into the NTSC
-// signal a camera or console sends down a yellow cable (sync pulses, colour burst, the picture on the colour
+// or PAL signal a camera or console sends down a yellow cable (sync pulses, colour burst, the picture on the colour
 // subcarrier), that signal goes through emulated analogue circuits (a sync separator and mixer, RC filters, a
-// one-transistor video "enhancer" solved as a circuit), and a TV model turns it back into a picture. The TV locks to
-// whatever sync it is given, as a real one does: damaged sync rolls and tears the picture, a disturbed burst shifts
-// its colours.
+// one-transistor video "enhancer" solved as a circuit, a delay line, a clipper...), and a TV model turns it back
+// into a picture. The TV locks to whatever sync it is given, as a real one does: damaged sync rolls and tears the
+// picture, a disturbed burst shifts its colours.
 //
-// The signal: 910 samples a line (four a colour subcarrier cycle, 14.318 MHz) by 525 lines, a frame at a time, in
-// IRE (blanking 0, black 7.5, white 100, sync tips -40). Progressive (the two fields drawn as one frame), 480 lines
-// of picture.
+// The signal: four samples a colour subcarrier cycle, a frame at a time, in IRE (blanking 0, white 100, sync tips
+// -40). NTSC: 910 samples a line (14.318 MHz) by 525 lines, 480 of picture, black at 7.5. PAL: 1135 samples a line
+// (17.734 MHz) by 625 lines, 576 of picture, its V component and burst swinging from line to line. Progressive (the
+// two fields drawn as one frame).
 
 #include <QImage>
 #include <cstdint>
@@ -21,25 +22,32 @@ struct NodeDef;
 
 namespace composite {
 
-constexpr int kLine = 910;                 // samples a line
-constexpr int kLines = 525;                // lines a frame
-constexpr int kSamples = kLine * kLines;
-constexpr double kRate = 315e6 / 22.0;     // 14.318 MHz
-constexpr int kSyncEnd = 67;               // horizontal sync, 4.7 us
-constexpr int kBurstStart = 76, kBurstEnd = 112; // 9 cycles of colour burst
-constexpr int kActiveStart = 150, kActiveEnd = 902;
-constexpr int kActiveWidth = kActiveEnd - kActiveStart;
-constexpr int kFirstActive = 22, kActiveLines = 480;
+struct Standard {
+    const char* name;
+    bool pal;
+    double rate;           // samples a second (4 x the subcarrier)
+    int line, lines;       // samples a line, lines a frame
+    int syncEnd;           // horizontal sync, 4.7 us
+    int burstStart, burstEnd;
+    int activeStart, activeEnd;
+    int firstActive, activeLines;
+    int samples() const { return line * lines; }
+    int activeWidth() const { return activeEnd - activeStart; }
+};
+const Standard& ntsc();
+const Standard& pal();
 
 struct Signal {
-    std::vector<float> v; // kSamples, in IRE
+    const Standard* std = &ntsc();
+    std::vector<float> v; // std->samples(), in IRE
     int64_t frame = 0;    // which frame (the subcarrier's phase runs on from frame to frame)
 };
 
 struct EncodeOptions {
+    const Standard* std = &ntsc();
     double saturation = 1.0;
     double chromaMHz = 1.3; // the colour's bandwidth
-    bool setup = true;      // black at 7.5 IRE (NTSC-M), else at blanking (NTSC-J)
+    bool setup = true;      // NTSC: black at 7.5 IRE (NTSC-M), else at blanking (NTSC-J); PAL has none
 };
 Signal encode(const QImage& picture, int64_t frame, const EncodeOptions& options = {});
 

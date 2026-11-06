@@ -83,6 +83,7 @@ struct NodeContext {
     int node = 0;            // the node being run
     std::vector<int> inputs; // the node wired into each of its inputs (0: none)
     bool pictureWanted = true; // false: only Composite Signal nodes read its picture, and no thumbnails are drawn
+    const QImage* previous = nullptr; // the graph's output the frame before (Feedback nodes; null: none yet)
 };
 
 // Whether node `id`'s picture is looked at (thumbnails, or a node that isn't a Composite Signal one wired from it):
@@ -121,6 +122,7 @@ private:
         std::unique_ptr<EffectState> state;
     };
     std::map<int, State> m_states;
+    QImage m_previous; // the output the frame before (Feedback nodes)
 };
 
 // What keeps a graph from drawing (no Output node, a node this version doesn't have); empty when nothing.

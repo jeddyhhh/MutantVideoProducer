@@ -391,6 +391,49 @@ std::vector<NodeDef> nativeNodes()
     list.push_back(d);
 
     d = {};
+    d.id = QStringLiteral("feedback");
+    d.name = QStringLiteral("Feedback");
+    d.category = QStringLiteral("Time");
+    d.description = QStringLiteral(
+        "The effect's own output from the frame before, as a source: mix it back in (zoomed, turned, through the composite "
+        "circuits) and it feeds on itself, as a camera pointed at its own TV does. Persistence fades it each time round.");
+    d.params = {num("keep", "Persistence", 0, 1, 0.9)};
+    d.eval = [](const Inputs&, const Params& p, const ParamMap&, const NodeContext& c, std::unique_ptr<EffectState>&) {
+        if (!c.previous || c.previous->isNull())
+            return transparent(c.size);
+        QImage img = c.previous->size() == c.size ? c.previous->copy()
+                                                  : c.previous->scaled(c.size, Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
+        img = img.format() == QImage::Format_ARGB32_Premultiplied ? img : img.convertToFormat(QImage::Format_ARGB32_Premultiplied);
+        const int keep = int(std::lround(std::clamp(p.num(QStringLiteral("keep")), 0.0, 1.0) * 256));
+        perPixel(img, [keep](int, int, uint32_t px) { // (premultiplied: colour and alpha fade together)
+            uint32_t out = 0;
+            for (int s = 0; s < 32; s += 8)
+                out |= uint32_t((int((px >> s) & 0xff) * keep) >> 8) << s;
+            return out;
+        });
+        return img;
+    };
+    list.push_back(d);
+
+    d = {};
+    d.id = QStringLiteral("switch");
+    d.name = QStringLiteral("Switch");
+    d.category = QStringLiteral("Combine");
+    d.description = QStringLiteral(
+        "One of its four inputs, chosen by Input (keyframe it to cut between them). A Composite Signal wired in comes out as "
+        "that signal.");
+    d.inputs = {QStringLiteral("1"), QStringLiteral("2"), QStringLiteral("3"), QStringLiteral("4")};
+    d.params = {num("input", "Input", 1, 4, 1, 0)};
+    d.eval = [](const Inputs& in, const Params& p, const ParamMap&, const NodeContext& c, std::unique_ptr<EffectState>&) {
+        const size_t i = size_t(std::clamp(int(std::lround(p.num(QStringLiteral("input")))), 1, 4) - 1);
+        if (c.bus && i < c.inputs.size() && c.inputs[i]) // (a signal goes on as itself)
+            if (const auto it = c.bus->find(c.inputs[i]); it != c.bus->end())
+                (*c.bus)[c.node] = it->second;
+        return copyOf(in[i], c.size);
+    };
+    list.push_back(d);
+
+    d = {};
     d.id = QStringLiteral("place");
     d.name = QStringLiteral("Place");
     d.category = QStringLiteral("Distort");
@@ -668,6 +711,7 @@ QImage Evaluator::run(const Graph& g, const QImage& source0, const RenderContext
         it = g.find(it->first) ? std::next(it) : m_states.erase(it);
     SignalBus bus;
     NodeContext nc{source.size(), ctx, &bus};
+    nc.previous = m_previous.isNull() ? nullptr : &m_previous;
     std::map<int, QImage> done;
     std::set<int> visiting;
     std::function<QImage(int)> eval = [&](int id) -> QImage {
@@ -715,7 +759,9 @@ QImage Evaluator::run(const Graph& g, const QImage& source0, const RenderContext
             outputs[id] = result;
         return result;
     };
-    return eval(out->id);
+    const QImage result = eval(out->id);
+    m_previous = result; // (Feedback nodes: the next frame's)
+    return result;
 }
 
 QString problem(const Graph& g)

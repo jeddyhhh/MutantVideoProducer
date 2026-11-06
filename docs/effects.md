@@ -347,22 +347,29 @@ Every graph runs from **Source** (the picture the effect is on) to **Output**. T
   one output, with all their settings.
 - **Sources**: the backgrounds, test patterns, animated backgrounds, overlays and text, to mix in.
 - **Combine**: Blend (a blend mode at an opacity), Mix (crossfade), Math (add, subtract, multiply,
-  divide, minimum, maximum, difference, average).
+  divide, minimum, maximum, difference, average), Switch (one of four inputs, by a number you can
+  keyframe).
 - **Keys and Masks**: Mask (keep a picture where another is drawn or bright), Set Alpha, Luma Key,
   Difference Key (against a clean plate).
 - **Channels**: Channel (red, green, blue, alpha or brightness as grey), Combine Channels,
   Threshold.
 - **Distort**: Displace (push pixels around by another picture), Place (move, scale, turn).
-- **Time**: Delay (the picture from frames before: blend it with the present for echoes).
+- **Time**: Delay (the picture from frames before: blend it with the present for echoes), Feedback
+  (the effect's own output from the frame before, as a source: mix it back in and it feeds on itself,
+  like a camera pointed at its own TV).
 - **Composite Signal**: the picture as an analogue video signal, through emulated circuits, onto a
-  TV. **Composite Encode** turns it into an NTSC signal (sync pulses, colour burst, the colour on its
-  subcarrier); **Composite Decode** is the TV, which locks to the signal's sync and burst as a real
+  TV. **Composite Encode** turns it into an NTSC or PAL signal (sync pulses, colour burst, the colour
+  on its subcarrier); **Composite Decode** is the TV, which locks to the signal's sync and burst as a real
   one does, so damaged or missing sync rolls and tears the picture (Horizontal and Vertical Hold set
-  how its oscillators run free) and a shifted burst shifts the colours. In between: **Sync
+  how its oscillators run free) and a shifted burst shifts the colours. A **Sync Generator** makes a signal of its own (black burst, colour bars, a grey ramp) on a
+  clock that can drift against the picture's. In between: **Sync
   Separator** (the sync pulses taken out as clean new ones), **Sync Mixer** (luma, chroma and burst
   at their own levels, crossfaded with a low-pass input, with sync put back from the Sync input:
   sync from another signal and the TV follows that one), **RC Low Pass** (a resistor into a
-  capacitor: smearing), **Delay Line** (the signal later by lines and microseconds, drifting and
+  capacitor: smearing), **RC High Pass** (AC coupling: tilted lines, streaks after bright things,
+  wandering brightness), **Clipper** (diodes: crushed highlights, clipped sync), **Luma/Chroma Split**
+  (treat the two apart and add them back in a Sync Mixer), **Signal Switcher** (a wipe from one signal
+  to another, sync and all), **Delay Line** (the signal later by lines and microseconds, drifting and
   wobbling: delayed sync slips the picture, a delayed copy mixed back is a ghost), **RF Noise**
   (snow, a rolling hum bar, spikes) and **Enhancer** (a one-transistor amplifier solved as a circuit: Gain and
   its Gain Channel capacitor sharpen and ring, the Feedback resistors and capacitor take it back or
@@ -372,7 +379,7 @@ Every graph runs from **Source** (the picture the effect is on) to **Output**. T
 Forty-eight examples come with the program. Eleven are in the effect menus' **Node Editor** menu:
 Chroma Time Slip, Fractal Tunnel, Glitch Letters, Hologram, Hyperspace Geyser, Kaleido Feedback,
 Liquid Planet, Motion Fire, Neon Plasma Title, Plasma Possession and Split Reality. Thirty-seven made
-of the Composite Signal nodes are in **Broken VGS > Analogue Circuit Emu**: from single faults
+of the Composite Signal nodes have a menu of their own, **Analogue Circuit Emu**, under Broken VGS: from single faults
 (Vertical Roll, Horizontal Tear, Weak Signal, Shadow Sync, Neon Bleed, Off-Air Tint, Dot Crawl...) to
 big graphs that mix them with the other nodes (Genlock Drift, Multipath Ghosts, Snowstorm, Hum Bars,
 Hue Wobble, Chroma Delay, Generation Loss, Two Sets One Signal, Keyed Broadcast, Feedback Tube,

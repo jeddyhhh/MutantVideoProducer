@@ -137,8 +137,8 @@ int main(int argc, char** argv)
         const EffectDef* hologram = nodes::findUserEffect(nodes::effectId(QStringLiteral("Hologram")));
         const EffectDef* circuit = nodes::findUserEffect(nodes::effectId(QStringLiteral("Composite Circuit")));
         check(hologram && hologram->category == QLatin1String("Node Editor") && circuit
-                  && circuit->category == QLatin1String("Broken VGS/Analogue Circuit Emu"),
-              QStringLiteral("the examples are in the Node Editor menu, the analogue circuits in Broken VGS > Analogue Circuit Emu (%1; %2)")
+                  && circuit->category == QLatin1String("Analogue Circuit Emu"),
+              QStringLiteral("the examples are in the Node Editor menu, the analogue circuits in Analogue Circuit Emu (%1; %2)")
                   .arg(hologram ? hologram->category : QString(), circuit ? circuit->category : QString()));
     }
     {
@@ -200,6 +200,80 @@ int main(int argc, char** argv)
         played.run(tv, bars, at(99));
         const double settle = difference(played.run(tv, bars, at(100)), cold.run(tv, bars, at(100)));
         check(settle < 0.5, QStringLiteral("composite: the TV starts locked wherever playing starts (%1 off the one that played up to it)").arg(settle, 0, 'f', 2));
+
+        { // PAL: the same bars through a PAL signal and a PAL TV (its V switching line by line, its delay line)
+            nodes::Graph palTv = chain({QStringLiteral("composite_encode"), QStringLiteral("composite_decode")}, nullptr);
+            for (nodes::Node& n : palTv.nodes)
+                if (n.type == QLatin1String("composite_encode"))
+                    n.params[QStringLiteral("standard")].value = 1;
+            nodes::Evaluator e;
+            e.run(palTv, bars, at(10));
+            const QImage out = e.run(palTv, bars, at(11));
+            save(out, "pal");
+            const QRgb r = out.pixel(5 * 40 + 20, 120), g = out.pixel(3 * 40 + 20, 120);
+            check(difference(out, bars) < 20 && qRed(r) > 150 && qGreen(r) < 100 && qGreen(g) > 150 && qRed(g) < 100,
+                  QStringLiteral("composite: colour bars through PAL come back (%1 off; red bar %2,%3,%4)")
+                      .arg(difference(out, bars), 0, 'f', 1).arg(qRed(r)).arg(qGreen(r)).arg(qBlue(r)));
+        }
+        { // Luma/Chroma Split: the two halves added back in a Sync Mixer are the picture again; a Clipper at 50 IRE greys
+          // the white bar; the Sync Generator's colour bars come out of a TV in colour.
+            nodes::Graph g = nodes::starter();
+            const int enc = g.addNode(QStringLiteral("composite_encode"), {}), luma = g.addNode(QStringLiteral("composite_split"), {});
+            const int chroma = g.addNode(QStringLiteral("composite_split"), {}), sum = g.addNode(QStringLiteral("composite_sync_mixer"), {});
+            const int dec = g.addNode(QStringLiteral("composite_decode"), {});
+            g.find(chroma)->params[QStringLiteral("output")].value = 1;
+            g.find(sum)->params[QStringLiteral("lowPass")].value = 0.5;
+            for (const char* k : {"luma", "chroma", "burst"})
+                g.find(sum)->params[QLatin1String(k)].value = 2;
+            g.connect(g.nodes[0].id, enc, 0);
+            g.connect(enc, luma, 0);
+            g.connect(enc, chroma, 0);
+            g.connect(luma, sum, 0);
+            g.connect(chroma, sum, 2);
+            g.connect(sum, dec, 0);
+            g.connect(dec, g.nodes[1].id, 0);
+            nodes::Evaluator e;
+            e.run(g, bars, at(10));
+            const double rebuilt = difference(e.run(g, bars, at(11)), bars);
+            nodes::Graph clipped = chain({QStringLiteral("composite_encode"), QStringLiteral("composite_clipper"), QStringLiteral("composite_decode")}, nullptr);
+            for (nodes::Node& n : clipped.nodes)
+                if (n.type == QLatin1String("composite_clipper"))
+                    n.params[QStringLiteral("high")].value = 50;
+            const int white = qGray(nodes::Evaluator().run(clipped, bars, at(5)).pixel(20, 120));
+            nodes::Graph gen = nodes::starter();
+            const int sg = gen.addNode(QStringLiteral("composite_sync_generator"), {}), tvn = gen.addNode(QStringLiteral("composite_decode"), {});
+            gen.find(sg)->params[QStringLiteral("picture")].value = 1;
+            gen.connect(sg, tvn, 0);
+            gen.connect(tvn, gen.nodes[1].id, 0);
+            const QImage genOut = nodes::Evaluator().run(gen, bars, at(5));
+            const QRgb yellow = genOut.pixel(genOut.width() * 3 / 14, genOut.height() / 2);
+            check(rebuilt < 20 && white < 170 && qRed(yellow) > 120 && qGreen(yellow) > 120 && qBlue(yellow) < 80,
+                  QStringLiteral("composite: luma and chroma split and added back (%1 off), a clipper greys white (%2), the sync generator's "
+                                 "bars in colour (%3,%4,%5)")
+                      .arg(rebuilt, 0, 'f', 1).arg(white).arg(qRed(yellow)).arg(qGreen(yellow)).arg(qBlue(yellow)));
+        }
+        { // Feedback: the output the frame before comes back (mixed with the picture, the next frame isn't the same);
+          // Switch: the input it's set to.
+            nodes::Graph fb = nodes::starter();
+            const int back = fb.addNode(QStringLiteral("feedback"), {}), m = fb.addNode(QStringLiteral("mix"), {});
+            fb.connect(fb.nodes[0].id, m, 0);
+            fb.connect(back, m, 1);
+            fb.connect(m, fb.nodes[1].id, 0);
+            nodes::Evaluator e;
+            const QImage f1 = e.run(fb, bars, at(1)), f2 = e.run(fb, bars, at(2));
+            nodes::Graph sw = nodes::starter();
+            const int s = sw.addNode(QStringLiteral("switch"), {}), inv = sw.addNode(QStringLiteral("fx.invert"), {});
+            sw.connect(sw.nodes[0].id, s, 0);
+            sw.connect(sw.nodes[0].id, inv, 0);
+            sw.connect(inv, s, 1);
+            sw.connect(s, sw.nodes[1].id, 0);
+            const QImage first = nodes::Evaluator().run(sw, bars, at(1));
+            sw.find(s)->params[QStringLiteral("input")].value = 2;
+            const QImage second = nodes::Evaluator().run(sw, bars, at(1));
+            check(difference(f1, f2) > 1 && difference(first, bars) < 0.5 && difference(second, bars) > 50,
+                  QStringLiteral("Feedback brings the frame before back (%1 between frames); Switch gives the input it's set to")
+                      .arg(difference(f1, f2), 0, 'f', 1));
+        }
 
         nodes::Graph cut = nodes::starter(); // the picture's sync taken off, the Sync input given none
         const int enc = cut.addNode(QStringLiteral("composite_encode"), {}), sep = cut.addNode(QStringLiteral("composite_sync_separator"), {});

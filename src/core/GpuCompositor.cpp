@@ -2272,6 +2272,7 @@ struct GpuCompositor::Impl : protected QOpenGLExtraFunctions {
         std::map<int, StateEntry> states;         // each node's own (effect nodes, nodes drawn on the CPU)
         std::map<int, std::deque<Target>> delays; // Delay nodes: the frames they saw, newest last
         std::map<int, Target> painted;            // source nodes painted on the GPU
+        Target previous;                          // the output the frame before (Feedback nodes)
         ~NodeGraphState() override
         {
             if (owner)
@@ -2289,6 +2290,7 @@ struct GpuCompositor::Impl : protected QOpenGLExtraFunctions {
                 deleteTarget(t);
         for (auto& [id, t] : s.painted)
             deleteTarget(t);
+        deleteTarget(s.previous);
     }
 
     // The node's picture drawn by its CPU version (the inputs read back, the result sent up again).
@@ -2662,6 +2664,11 @@ struct GpuCompositor::Impl : protected QOpenGLExtraFunctions {
         const Target* result = eval(output->id);
         Layer final = acquire(size, false);
         drawLayerReplace(*final, *result);
+        if (s->previous.size() != size) { // (kept for the next frame's Feedback nodes)
+            deleteTarget(s->previous);
+            s->previous = createTarget(size);
+        }
+        drawLayerReplace(s->previous, *final);
         layer = std::move(final);
     }
 
@@ -2770,6 +2777,20 @@ struct GpuCompositor::Impl : protected QOpenGLExtraFunctions {
             t.scale(scale, scale);
             drawTexture(*o, in[0]->tex, QSizeF(size), QTransform::fromTranslate(-size.width() / 2.0, -size.height() / 2.0) * t, 1.0);
             return o;
+        }
+        if (type == QLatin1String("feedback")) { // the output the frame before, faded
+            Layer o = acquire(size);
+            if (s.previous && s.previous.size() == size)
+                drawTexture(*o, s.previous.tex, QSizeF(size), QTransform(), std::clamp(p.num(QStringLiteral("keep")), 0.0, 1.0),
+                            QRectF(0, 0, 1, 1), false);
+            return o;
+        }
+        if (type == QLatin1String("switch")) { // one of its inputs (a signal on as itself)
+            const size_t i = size_t(std::clamp(int(std::lround(p.num(QStringLiteral("input")))), 1, 4) - 1);
+            if (nc.bus && i < nc.inputs.size() && nc.inputs[i])
+                if (const auto it = nc.bus->find(nc.inputs[i]); it != nc.bus->end())
+                    (*nc.bus)[nc.node] = it->second;
+            return copyIn(i);
         }
         if (type == QLatin1String("delay")) {
             std::deque<Target>& frames = s.delays[n.id];

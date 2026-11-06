@@ -1110,9 +1110,13 @@ DeviceChainView::DeviceChainView(Project* project, std::function<TimeUs()> curso
             delete o.data();
         exampleItems->clear();
         std::map<QString, QMenu*> made;
-        for (const EffectDef* e : nodes::userEffects()) {
-            if (e->category == QLatin1String("User Created"))
-                continue;
+        // (by category: new top-level menus come in that order, after the effects' own, before User Created)
+        std::vector<const EffectDef*> examples;
+        for (const EffectDef* e : nodes::userEffects())
+            if (e->category != QLatin1String("User Created"))
+                examples.push_back(e);
+        std::stable_sort(examples.begin(), examples.end(), [](const EffectDef* a, const EffectDef* b) { return a->category < b->category; });
+        for (const EffectDef* e : examples) {
             QMenu* into = m_videoMenu;
             QString path;
             for (const QString& part : e->category.split(QLatin1Char('/'))) {

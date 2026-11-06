@@ -4,14 +4,30 @@
 #include "core/NodeGraph.h"
 #include "core/Parallel.h"
 
+#include <QPainter>
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <functional>
 #include <limits>
 #include <memory>
 #include <numbers>
 
 namespace composite {
+
+const Standard& ntsc()
+{
+    static const Standard s{"NTSC", false, 315e6 / 22.0, 910, 525, 67, 76, 112, 150, 902, 22, 480};
+    return s;
+}
+
+const Standard& pal()
+{
+    // 4 x 4.43361875 MHz; 64 us a line; sync 4.7 us, burst from 5.6 us (10 cycles), picture from 10.5 us for 52 us.
+    static const Standard s{"PAL", true, 17734475.0, 1135, 625, 83, 99, 139, 186, 1108, 23, 576};
+    return s;
+}
+
 namespace {
 
 using Inputs = std::vector<const QImage*>;
@@ -19,11 +35,24 @@ using fx::choice;
 using fx::num;
 using std::numbers::pi;
 
-// The subcarrier at a sample: four samples a cycle, so sin and cos are 0 or +-1. A frame is 2 (mod 4) samples long
-// (and so is a line): the phase runs on from frame to frame, a quarter... half a cycle on, as NTSC's does (dot crawl).
+constexpr int kVsyncFirst = 3, kVsyncEnd = 6; // the lines of broad pulses
+constexpr int kFirstBurstLine = 9;
+constexpr float kBurst = 20.0f;               // the burst's amplitude (IRE)
+
+// The subcarrier at a sample: four samples a cycle, so sin and cos are 0 or +-1. A frame is 2 (NTSC) or 3 (PAL)
+// samples past a whole number of cycles: the phase runs on from frame to frame (dot crawl).
 constexpr float kSin[4] = {0, 1, 0, -1};
 constexpr float kCos[4] = {1, 0, -1, 0};
-inline int phaseOf(int64_t frame, int64_t n) { return int((2 * frame + n) & 3); } // (two's complement: right for n < 0 too)
+inline int phaseOf(const Standard& S, int64_t frame, int64_t n) // (two's complement: right for n < 0 too)
+{
+    return int((frame * (S.samples() & 3) + n) & 3);
+}
+// PAL's V switch: +1 or -1, line by line (and on from frame to frame: a frame is an odd number of lines).
+inline int palSign(const Standard& S, int64_t frame, int64_t n)
+{
+    const int64_t line = n >= 0 ? n / S.line : -((-n + S.line - 1) / S.line);
+    return ((frame * S.lines + line) & 1) ? -1 : 1;
+}
 
 inline float clamp01(float v) { return std::clamp(v, 0.0f, 1.0f); }
 
@@ -52,6 +81,18 @@ int64_t frameOf(const nodes::NodeContext& c)
     return std::llround(double(c.render.timelineTime) * c.render.fps / 1e6);
 }
 
+Signal blank(const Standard& S, int64_t frame) { return Signal{&S, std::vector<float>(size_t(S.samples()), 0.0f), frame}; }
+
+// A signal like `in` (its standard and frame), its samples to be filled.
+Signal like(const Signal& in)
+{
+    Signal out;
+    out.std = in.std;
+    out.frame = in.frame;
+    out.v.resize(in.v.size());
+    return out;
+}
+
 ParamDef ohms(const char* id, const char* name, double min, double max, double def)
 {
     ParamDef p = num(id, name, min, max, def, 0, " Ω");
@@ -65,46 +106,50 @@ ParamDef ohms(const char* id, const char* name, double min, double max, double d
 
 Signal encode(const QImage& picture, int64_t frame, const EncodeOptions& o)
 {
-    Signal s;
-    s.frame = frame;
-    s.v.assign(size_t(kSamples), 0.0f);
+    const Standard& S = *o.std;
+    Signal s = blank(S, frame);
     const QImage pic = picture.isNull() ? QImage()
                        : picture.format() == QImage::Format_ARGB32_Premultiplied ? picture
                                                                                   : picture.convertToFormat(QImage::Format_ARGB32_Premultiplied);
-    const float black = o.setup ? 7.5f : 0.0f, range = 100.0f - black, sat = float(o.saturation);
-    const int box = std::clamp(int(std::lround(kRate / (2e6 * std::max(0.1, o.chromaMHz)))), 1, 64);
+    const float black = o.setup && !S.pal ? 7.5f : 0.0f, range = 100.0f - black, sat = float(o.saturation);
+    const int box = std::clamp(int(std::lround(S.rate / (2e6 * std::max(0.1, o.chromaMHz)))), 1, 64);
+    const int width = S.activeWidth();
     // Where each sample of a line falls in the picture (the active line spans its width).
-    std::vector<int> x0(kActiveWidth), x1(kActiveWidth);
-    std::vector<float> fxs(kActiveWidth);
+    std::vector<int> x0(static_cast<size_t>(width)), x1(static_cast<size_t>(width));
+    std::vector<float> fxs(static_cast<size_t>(width));
     const int w = pic.width(), h = pic.height();
-    for (int x = 0; x < kActiveWidth && w > 0; ++x) {
-        const float sx = std::clamp((float(x) + 0.5f) * float(w) / kActiveWidth - 0.5f, 0.0f, float(w - 1));
+    for (int x = 0; x < width && w > 0; ++x) {
+        const float sx = std::clamp((float(x) + 0.5f) * float(w) / float(width) - 0.5f, 0.0f, float(w - 1));
         x0[size_t(x)] = int(sx);
         x1[size_t(x)] = std::min(x0[size_t(x)] + 1, w - 1);
         fxs[size_t(x)] = sx - float(x0[size_t(x)]);
     }
-    parallelFor(kLines, [&](int l0, int l1) {
-        std::vector<float> Y(kActiveWidth), U(kActiveWidth), V(kActiveWidth);
+    const float burstU = S.pal ? -kBurst / float(std::numbers::sqrt2) : -kBurst, burstV = S.pal ? kBurst / float(std::numbers::sqrt2) : 0.0f;
+    parallelFor(S.lines, [&](int l0, int l1) {
+        std::vector<float> Y(static_cast<size_t>(width)), U(static_cast<size_t>(width)), V(static_cast<size_t>(width));
         std::vector<double> sums;
         for (int line = l0; line < l1; ++line) {
-            float* row = s.v.data() + size_t(line) * kLine;
-            const bool vsync = line >= 3 && line < 6; // broad pulses, a serration at each line's end
-            for (int x = 0; x < kLine; ++x)
-                row[x] = (vsync ? x < kLine - kSyncEnd : x < kSyncEnd) ? -40.0f : 0.0f;
-            if (line < 9)
+            float* row = s.v.data() + size_t(line) * S.line;
+            const bool vsync = line >= kVsyncFirst && line < kVsyncEnd; // broad pulses, a serration at each line's end
+            for (int x = 0; x < S.line; ++x)
+                row[x] = (vsync ? x < S.line - S.syncEnd : x < S.syncEnd) ? -40.0f : 0.0f;
+            if (line < kFirstBurstLine)
                 continue;
-            const int64_t base = int64_t(line) * kLine;
-            for (int x = kBurstStart; x < kBurstEnd; ++x) // on the -U axis (180 degrees)
-                row[x] = -20.0f * kSin[phaseOf(frame, base + x)];
-            const int a = line - kFirstActive;
-            if (a < 0 || a >= kActiveLines || pic.isNull())
+            const int64_t base = int64_t(line) * S.line;
+            const float sign = S.pal ? float(palSign(S, frame, base)) : 1.0f;
+            for (int x = S.burstStart; x < S.burstEnd; ++x) { // NTSC on the -U axis (180 degrees), PAL swinging 135/225
+                const int k = phaseOf(S, frame, base + x);
+                row[x] = burstU * kSin[k] + sign * burstV * kCos[k];
+            }
+            const int a = line - S.firstActive;
+            if (a < 0 || a >= S.activeLines || pic.isNull())
                 continue;
-            const float sy = std::clamp((float(a) + 0.5f) * float(h) / kActiveLines - 0.5f, 0.0f, float(h - 1));
+            const float sy = std::clamp((float(a) + 0.5f) * float(h) / float(S.activeLines) - 0.5f, 0.0f, float(h - 1));
             const int y0 = int(sy), y1 = std::min(y0 + 1, h - 1);
             const float fy = sy - float(y0);
             const auto* r0 = reinterpret_cast<const uint32_t*>(pic.constScanLine(y0));
             const auto* r1 = reinterpret_cast<const uint32_t*>(pic.constScanLine(y1));
-            for (int x = 0; x < kActiveWidth; ++x) {
+            for (int x = 0; x < width; ++x) {
                 const uint32_t p[4] = {r0[x0[size_t(x)]], r0[x1[size_t(x)]], r1[x0[size_t(x)]], r1[x1[size_t(x)]]};
                 const float fx = fxs[size_t(x)];
                 const float wt[4] = {(1 - fx) * (1 - fy), fx * (1 - fy), (1 - fx) * fy, fx * fy};
@@ -118,13 +163,13 @@ Signal encode(const QImage& picture, int64_t frame, const EncodeOptions& o)
                 const float y = 0.299f * r + 0.587f * g + 0.114f * b;
                 Y[size_t(x)] = black + range * y;
                 U[size_t(x)] = range * 0.492f * (b - y) * sat;
-                V[size_t(x)] = range * 0.877f * (r - y) * sat;
+                V[size_t(x)] = range * 0.877f * (r - y) * sat * sign;
             }
             boxFilter(U, box, sums); // (colour is narrow)
             boxFilter(V, box, sums);
-            for (int x = 0; x < kActiveWidth; ++x) {
-                const int k = phaseOf(frame, base + kActiveStart + x);
-                row[kActiveStart + x] = Y[size_t(x)] + U[size_t(x)] * kSin[k] + V[size_t(x)] * kCos[k];
+            for (int x = 0; x < width; ++x) {
+                const int k = phaseOf(S, frame, base + S.activeStart + x);
+                row[S.activeStart + x] = Y[size_t(x)] + U[size_t(x)] * kSin[k] + V[size_t(x)] * kCos[k];
             }
         }
     });
@@ -133,6 +178,7 @@ Signal encode(const QImage& picture, int64_t frame, const EncodeOptions& o)
 
 QImage view(const Signal& s, QSize size)
 {
+    const Standard& S = *s.std;
     QImage out(size, QImage::Format_ARGB32_Premultiplied);
     if (size.isEmpty())
         return out;
@@ -140,9 +186,9 @@ QImage view(const Signal& s, QSize size)
     parallelFor(h, [&](int y0, int y1) {
         for (int y = y0; y < y1; ++y) {
             auto* row = reinterpret_cast<uint32_t*>(out.scanLine(y));
-            const float* line = s.v.data() + size_t(std::min(kLines - 1, y * kLines / h)) * kLine;
+            const float* line = s.v.data() + size_t(std::min(S.lines - 1, y * S.lines / h)) * S.line;
             for (int x = 0; x < w; ++x) {
-                const int g = int(clamp01((line[std::min(kLine - 1, x * kLine / w)] + 40.0f) / 140.0f) * 255.0f + 0.5f);
+                const int g = int(clamp01((line[std::min(S.line - 1, x * S.line / w)] + 40.0f) / 140.0f) * 255.0f + 0.5f);
                 row[x] = 0xff000000u | uint32_t(g) << 16 | uint32_t(g) << 8 | uint32_t(g);
             }
         }
@@ -177,29 +223,29 @@ struct TvLine {
     int y;
     float clamp, hue, acc;
     bool colour;
+    int sign;           // PAL: the line's V switch, as the burst says (NTSC: 1)
 };
 
 struct TvSettings {
-    int hFree = kLine;      // the line oscillator's own period (samples)
-    int vFree = kLines;     // the frame oscillator's (lines)
+    int hFree = 0;          // the line oscillator's own period (samples)
+    int vFree = 0;          // the frame oscillator's (lines)
     int capture = 0;        // a sync pulse resets the line after this many samples
+    int vCapture = 0;       // lines before a vertical sync is taken
     float slice = 10;       // sync: at least this far below the back porch
     float contrast = 1, brightness = 0, colour = 1, tint = 0;
     bool comb = false;
 };
 
 struct Tv : EffectState {
-    static constexpr int kTail = 3 * kLine;
+    const Standard* std = nullptr;
     Beam now, atStart;
-    std::vector<float> tail, tailAtStart; // the previous frame's last samples
-    QImage raster, rasterAtStart;         // kActiveWidth x kActiveLines
+    std::vector<float> tail, tailAtStart; // the previous frame's last samples (three lines)
+    QImage raster, rasterAtStart;         // activeWidth x activeLines
     int64_t lastFrame = std::numeric_limits<int64_t>::min();
 };
 
-constexpr int kTrigger = 8;        // samples below the slice that make a sync pulse
+constexpr int kTrigger = 8;         // samples below the slice that make a sync pulse
 constexpr float kVThreshold = 0.6f; // the integrator's level that starts a vertical retrace (the 2nd broad pulse)
-constexpr float kVRate = 1.0f / kLine; // (its time constant: a line)
-constexpr int kVCapture = 300;      // lines before a vertical sync is taken
 constexpr int kVLine = 4;           // the line a vertical retrace is in
 
 inline float wrapAngle(float a)
@@ -211,23 +257,26 @@ inline float wrapAngle(float a)
     return a;
 }
 
-void endLine(Beam& b, int64_t next, bool synced, float minDepth, std::vector<TvLine>& lines)
+void endLine(const Standard& S, Beam& b, int64_t next, bool synced, float minDepth, std::vector<TvLine>& lines)
 {
     // The clamp from a line a sync pulse started (one the oscillator ended has its "porch" anywhere), and not from a
     // vertical sync line's (its porch is inside a broad pulse, down at the tips).
     if (synced && b.porchN >= 8)
         if (const float porch = float(b.porch / b.porchN); porch > b.tip + minDepth)
             b.clamp = porch;
-    const double amplitude = 2.0 * std::hypot(b.bSin, b.bCos) / (kBurstEnd - kBurstStart);
+    const double amplitude = 2.0 * std::hypot(b.bSin, b.bCos) / (S.burstEnd - S.burstStart);
+    // PAL: the burst swings to 135 or 225 degrees, telling the line's V switch (its cos part's sign).
+    const int sign = S.pal && b.bCos < 0 ? -1 : 1;
     if (amplitude > 5.0) {
-        const float e = wrapAngle(float(std::atan2(b.bCos, b.bSin) - pi));
+        const double expected = S.pal ? pi - sign * pi / 4 : pi;
+        const float e = wrapAngle(float(std::atan2(b.bCos, b.bSin) - expected));
         b.hue = wrapAngle(b.hue + 0.3f * wrapAngle(e - b.hue));
-        b.acc += 0.25f * (float(std::min(8.0, 20.0 / amplitude)) - b.acc);
+        b.acc += 0.25f * (float(std::min(8.0, double(kBurst) / amplitude)) - b.acc);
         b.colour = true;
     } else {
         b.colour = false;
     }
-    lines.push_back({b.lineStart, next, b.lineY, b.clamp, b.hue, b.acc, b.colour});
+    lines.push_back({b.lineStart, next, b.lineY, b.clamp, b.hue, b.acc, b.colour, sign});
     b.lineStart = next;
     b.lineY = ++b.y;
     b.porch = b.bSin = b.bCos = 0;
@@ -237,8 +286,11 @@ void endLine(Beam& b, int64_t next, bool synced, float minDepth, std::vector<TvL
 // The beam through a frame's samples: where each line starts and ends (sync, or the oscillators running free).
 void scan(Beam& b, const Signal& s, const TvSettings& set, std::vector<TvLine>& lines)
 {
+    const Standard& S = *s.std;
     const float* v = s.v.data();
-    for (int64_t n = 0; n < kSamples; ++n) {
+    const float vRate = 1.0f / float(S.line); // (the vertical integrator's time constant: a line)
+    const int64_t n1 = S.samples();
+    for (int64_t n = 0; n < n1; ++n) {
         const float x = v[n];
         b.smooth += 0.2f * (x - b.smooth); // (an RC of about 0.3 us: sync is sliced from this)
         const float sx = b.smooth;
@@ -247,21 +299,21 @@ void scan(Beam& b, const Signal& s, const TvSettings& set, std::vector<TvLine>& 
         // least Sync sensitivity below the porch: sync weaker than that isn't seen.
         const bool low = sx < b.clamp - std::max(set.slice, 0.5f * (b.clamp - b.tip));
         b.lowRun = low ? b.lowRun + 1 : 0;
-        b.vInt += ((low ? 1.0f : 0.0f) - b.vInt) * kVRate;
+        b.vInt += ((low ? 1.0f : 0.0f) - b.vInt) * vRate;
         const int64_t hp = n - b.lineStart;
-        if (hp >= kBurstStart && hp < kBurstEnd) {
-            const int k = phaseOf(s.frame, n);
+        if (hp >= S.burstStart && hp < S.burstEnd) {
+            const int k = phaseOf(S, s.frame, n);
             b.bSin += x * kSin[k];
             b.bCos += x * kCos[k];
-        } else if (hp >= kBurstEnd + 4 && hp < kActiveStart - 4) {
+        } else if (hp >= S.burstEnd + 4 && hp < S.activeStart - 4) {
             b.porch += x;
             ++b.porchN;
         }
         if (b.lowRun == kTrigger && hp + 1 > set.capture)
-            endLine(b, n + 1 - kTrigger, true, set.slice, lines);
+            endLine(S, b, n + 1 - kTrigger, true, set.slice, lines);
         else if (hp + 1 >= set.hFree + kTrigger) // (free: a sync pulse it waited for comes kTrigger late)
-            endLine(b, n + 1, false, set.slice, lines);
-        if (b.vInt > kVThreshold && b.y > kVCapture) {
+            endLine(S, b, n + 1, false, set.slice, lines);
+        if (b.vInt > kVThreshold && b.y > set.vCapture) {
             b.y = kVLine;
             b.vInt = 0;
         } else if (b.y >= set.vFree) {
@@ -273,49 +325,66 @@ void scan(Beam& b, const Signal& s, const TvSettings& set, std::vector<TvLine>& 
 // The lines the beam drew, decoded into the raster (each row from the last line drawn on it).
 void draw(Tv& tv, const Signal& s, const std::vector<TvLine>& lines, const TvSettings& set)
 {
-    std::vector<int> rowLine(kActiveLines, -1);
+    const Standard& S = *s.std;
+    const int width = S.activeWidth();
+    std::vector<int> rowLine(size_t(S.activeLines), -1);
     for (size_t i = 0; i < lines.size(); ++i)
-        if (const int row = lines[i].y - kFirstActive; row >= 0 && row < kActiveLines)
+        if (const int row = lines[i].y - S.firstActive; row >= 0 && row < S.activeLines)
             rowLine[size_t(row)] = int(i);
     const float* v = s.v.data();
+    const int64_t n1 = S.samples();
     const std::vector<float>& tail = tv.tail;
     auto at = [&](int64_t n) -> float {
         if (n >= 0)
-            return v[std::min<int64_t>(n, kSamples - 1)];
+            return v[std::min<int64_t>(n, n1 - 1)];
         const int64_t t = n + int64_t(tail.size());
         return t >= 0 ? tail[size_t(t)] : 0.0f;
     };
+    const int combLag = S.pal ? 2 * S.line : S.line; // (PAL's subcarrier comes back to its phase every second line)
+    // A line's luma and its colour, demodulated (before the colour's low pass).
+    auto demod = [&](const TvLine& l, std::vector<float>& Y, std::vector<float>& U, std::vector<float>& V) {
+        const float ch = std::cos(l.hue + set.tint), sh = std::sin(l.hue + set.tint);
+        for (int x = 0; x < width; ++x) {
+            const int64_t n = l.start + S.activeStart + x;
+            const float here = at(n);
+            const float y = set.comb ? 0.5f * (here + at(n - combLag))
+                                     : (0.5f * at(n - 2) + at(n - 1) + here + at(n + 1) + 0.5f * at(n + 2)) / 4.0f;
+            const float c = here - y;
+            const int k = phaseOf(S, s.frame, n);
+            Y[size_t(x)] = y;
+            U[size_t(x)] = 2.0f * c * (kSin[k] * ch + kCos[k] * sh);
+            V[size_t(x)] = 2.0f * c * (kCos[k] * ch - kSin[k] * sh) * float(l.sign);
+        }
+    };
     tv.raster.bits();
-    parallelFor(kActiveLines, [&](int r0, int r1) {
-        std::vector<float> Y(kActiveWidth), U(kActiveWidth), V(kActiveWidth);
+    parallelFor(S.activeLines, [&](int r0, int r1) {
+        std::vector<float> Y(static_cast<size_t>(width)), U(static_cast<size_t>(width)), V(static_cast<size_t>(width)), pY(static_cast<size_t>(width)), pU(static_cast<size_t>(width)), pV(static_cast<size_t>(width));
         std::vector<double> sums;
         for (int row = r0; row < r1; ++row) {
-            if (rowLine[size_t(row)] < 0)
+            const int li = rowLine[size_t(row)];
+            if (li < 0)
                 continue;
-            const TvLine& l = lines[size_t(rowLine[size_t(row)])];
-            const int visible = int(std::clamp<int64_t>(l.end - (l.start + kActiveStart), 0, kActiveWidth));
-            const float ch = std::cos(l.hue + set.tint), sh = std::sin(l.hue + set.tint);
-            for (int x = 0; x < kActiveWidth; ++x) {
-                const int64_t n = l.start + kActiveStart + x;
-                const float here = at(n);
-                const float y = set.comb ? 0.5f * (here + at(n - kLine))
-                                         : (0.5f * at(n - 2) + at(n - 1) + here + at(n + 1) + 0.5f * at(n + 2)) / 4.0f;
-                const float c = here - y;
-                const int k = phaseOf(s.frame, n);
-                Y[size_t(x)] = y;
-                U[size_t(x)] = 2.0f * c * (kSin[k] * ch + kCos[k] * sh);
-                V[size_t(x)] = 2.0f * c * (kCos[k] * ch - kSin[k] * sh);
+            const TvLine& l = lines[size_t(li)];
+            const int visible = int(std::clamp<int64_t>(l.end - (l.start + S.activeStart), 0, width));
+            demod(l, Y, U, V);
+            if (S.pal && li > 0 && lines[size_t(li - 1)].colour) { // PAL's delay line: the colour averaged with the line
+                demod(lines[size_t(li - 1)], pY, pU, pV);          // before's, so a phase error only fades it
+                for (int x = 0; x < width; ++x) {
+                    U[size_t(x)] = 0.5f * (U[size_t(x)] + pU[size_t(x)]);
+                    V[size_t(x)] = 0.5f * (V[size_t(x)] + pV[size_t(x)]);
+                }
             }
             boxFilter(U, 6, sums);
             boxFilter(V, 6, sums);
             auto* out = reinterpret_cast<uint32_t*>(tv.raster.scanLine(row));
             const float gain = l.colour ? l.acc * set.colour / 92.5f : 0.0f;
-            for (int x = 0; x < kActiveWidth; ++x) {
+            const float black = S.pal ? 0.0f : 7.5f, range = 100.0f - black;
+            for (int x = 0; x < width; ++x) {
                 if (x >= visible) {
                     out[x] = 0xff000000u; // (the beam had gone back already)
                     continue;
                 }
-                const float yy = (Y[size_t(x)] - l.clamp - 7.5f) / 92.5f * set.contrast + set.brightness;
+                const float yy = (Y[size_t(x)] - l.clamp - black) / range * set.contrast + set.brightness;
                 const float u = U[size_t(x)] * gain * set.contrast, w = V[size_t(x)] * gain * set.contrast;
                 const float r = yy + w / 0.877f, b = yy + u / 0.492f;
                 const float g = (yy - 0.299f * r - 0.114f * b) / 0.587f;
@@ -329,39 +398,42 @@ void draw(Tv& tv, const Signal& s, const std::vector<TvLine>& lines, const TvSet
 void runTv(Tv& tv, const Signal& s, const TvSettings& set)
 {
     std::vector<TvLine> lines;
-    lines.reserve(600);
+    lines.reserve(size_t(s.std->lines) + 80);
     scan(tv.now, s, set, lines);
     draw(tv, s, lines, set);
-    tv.now.lineStart -= kSamples; // (now counted in the next frame's samples)
-    tv.tail.assign(s.v.end() - Tv::kTail, s.v.end());
+    tv.now.lineStart -= s.std->samples(); // (now counted in the next frame's samples)
+    tv.tail.assign(s.v.end() - 3 * s.std->line, s.v.end());
 }
 
 QImage decode(const Signal& s, const Params& p, QSize size, std::unique_ptr<EffectState>& state)
 {
+    const Standard& S = *s.std;
     auto* tv = dynamic_cast<Tv*>(state.get());
     if (!tv) {
         state = std::make_unique<Tv>();
         tv = static_cast<Tv*>(state.get());
     }
     TvSettings set;
-    set.hFree = int(std::lround(kLine * (1.0 + 0.03 * p.num(QStringLiteral("hHold")))));
-    set.vFree = int(std::lround(kLines + 30 * p.num(QStringLiteral("vHold"))));
-    set.capture = int(kLine * (1.0 - std::clamp(p.num(QStringLiteral("hLock")), 0.01, 0.6)));
+    set.hFree = int(std::lround(S.line * (1.0 + 0.03 * p.num(QStringLiteral("hHold")))));
+    set.vFree = int(std::lround(S.lines + 30 * p.num(QStringLiteral("vHold"))));
+    set.capture = int(S.line * (1.0 - std::clamp(p.num(QStringLiteral("hLock")), 0.01, 0.6)));
+    set.vCapture = S.lines * 4 / 7;
     set.slice = float(p.num(QStringLiteral("slice")));
     set.contrast = float(p.num(QStringLiteral("contrast")));
     set.brightness = float(p.num(QStringLiteral("brightness")));
     set.colour = float(p.num(QStringLiteral("colour")));
     set.tint = float(p.num(QStringLiteral("tint")) * pi / 180.0);
     set.comb = p.choice(QStringLiteral("separation")) == 1;
-    if (s.frame == tv->lastFrame) { // the same frame again (a still preview): drawn as it was
+    if (tv->std == &S && s.frame == tv->lastFrame) { // the same frame again (a still preview): drawn as it was
         tv->now = tv->atStart;
         tv->tail = tv->tailAtStart;
         tv->raster = tv->rasterAtStart;
-    } else if (s.frame != tv->lastFrame + 1) { // a jump: a TV as it is at a frame's start when locked (the frame
-        tv->now = Beam{};                       // before's last line ending, the vertical sync to come), so it starts
-        tv->now.y = tv->now.lineY = kLines;     // steady wherever playing starts, whatever its holds
-        tv->tail.assign(Tv::kTail, 0.0f);
-        tv->raster = QImage(kActiveWidth, kActiveLines, QImage::Format_RGB32);
+    } else if (tv->std != &S || s.frame != tv->lastFrame + 1) { // a jump (or another standard): a TV as it is at a
+        tv->std = &S;                                            // frame's start when locked (the frame before's last
+        tv->now = Beam{};                                        // line ending, the vertical sync to come), so it
+        tv->now.y = tv->now.lineY = S.lines;                     // starts steady wherever playing starts
+        tv->tail.assign(size_t(3 * S.line), 0.0f);
+        tv->raster = QImage(S.activeWidth(), S.activeLines, QImage::Format_RGB32);
         tv->raster.fill(Qt::black);
     }
     tv->atStart = tv->now;
@@ -372,18 +444,18 @@ QImage decode(const Signal& s, const Params& p, QSize size, std::unique_ptr<Effe
     // The raster over the picture (the 4:3 screen fills it).
     QImage out(size, QImage::Format_ARGB32_Premultiplied);
     const QImage& r = tv->raster;
-    const int w = size.width(), h = size.height();
+    const int w = size.width(), h = size.height(), rw = r.width(), rh = r.height();
     parallelFor(h, [&](int y0, int y1) {
         for (int y = y0; y < y1; ++y) {
-            const float sy = std::clamp((float(y) + 0.5f) * kActiveLines / float(h) - 0.5f, 0.0f, float(kActiveLines - 1));
-            const int a = int(sy), b = std::min(a + 1, kActiveLines - 1);
+            const float sy = std::clamp((float(y) + 0.5f) * float(rh) / float(h) - 0.5f, 0.0f, float(rh - 1));
+            const int a = int(sy), b = std::min(a + 1, rh - 1);
             const float fy = sy - float(a);
             const auto* ra = reinterpret_cast<const uint32_t*>(r.constScanLine(a));
             const auto* rb = reinterpret_cast<const uint32_t*>(r.constScanLine(b));
             auto* row = reinterpret_cast<uint32_t*>(out.scanLine(y));
             for (int x = 0; x < w; ++x) {
-                const float sx = std::clamp((float(x) + 0.5f) * kActiveWidth / float(w) - 0.5f, 0.0f, float(kActiveWidth - 1));
-                const int c = int(sx), d = std::min(c + 1, kActiveWidth - 1);
+                const float sx = std::clamp((float(x) + 0.5f) * float(rw) / float(w) - 0.5f, 0.0f, float(rw - 1));
+                const int c = int(sx), d = std::min(c + 1, rw - 1);
                 const float fx = sx - float(c);
                 uint32_t px = 0xff000000u;
                 for (int sh = 0; sh < 24; sh += 8) {
@@ -400,13 +472,20 @@ QImage decode(const Signal& s, const Params& p, QSize size, std::unique_ptr<Effe
 
 // ---- Circuits ---------------------------------------------------------------------------------------------------
 
+// The luma of sample n (a notch at the subcarrier: the mean over a cycle, centred), from a frame's samples.
+inline float notchAt(const float* v, int64_t n, int64_t count)
+{
+    auto at = [&](int64_t i) { return v[std::clamp<int64_t>(i, 0, count - 1)]; };
+    if (n >= 2 && n + 2 < count)
+        return (0.5f * v[n - 2] + v[n - 1] + v[n] + v[n + 1] + 0.5f * v[n + 2]) / 4.0f;
+    return (0.5f * at(n - 2) + at(n - 1) + at(n) + at(n + 1) + 0.5f * at(n + 2)) / 4.0f;
+}
+
 // The sync separator: a comparator (with a little hysteresis) that gives clean sync pulses where the signal dips
 // below its slice level; Correction sets how much of them goes on to the mixer.
 Signal separate(const Signal& in, const Params& p)
 {
-    Signal out;
-    out.frame = in.frame;
-    out.v.resize(size_t(kSamples));
+    Signal out = like(in);
     const float slice = float(p.num(QStringLiteral("slice"))), hyst = float(p.num(QStringLiteral("hysteresis")));
     const float level = -40.0f * float(p.num(QStringLiteral("correction")));
     bool low = in.v.front() < slice;
@@ -419,38 +498,61 @@ Signal separate(const Signal& in, const Params& p)
 }
 
 // The sync mixer: the video (crossfaded with the low-pass input) split into luma and chroma, each at its own level,
-// its own sync taken off (clipped at blanking) where new sync comes in, and that sync added.
+// its own sync taken off (clipped at blanking) where new sync comes in, and that sync added. (Inputs of another
+// standard than the video's aren't used.)
 Signal mix(const Signal* video, const Signal* sync, const Signal* lowPass, const Params& p, int64_t frame)
 {
-    Signal out;
-    out.frame = video ? video->frame : sync ? sync->frame : lowPass ? lowPass->frame : frame;
-    out.v.assign(size_t(kSamples), 0.0f);
+    const Signal* first = video ? video : sync ? sync : lowPass;
+    const Standard& S = first ? *first->std : ntsc();
+    if (sync && sync->std != &S)
+        sync = nullptr;
+    if (lowPass && lowPass->std != &S)
+        lowPass = nullptr;
+    Signal out = blank(S, first ? first->frame : frame);
+    const int64_t count = S.samples();
     const float luma = float(p.num(QStringLiteral("luma"))), chroma = float(p.num(QStringLiteral("chroma")));
     const float burst = float(p.num(QStringLiteral("burst"))), k = lowPass ? float(p.num(QStringLiteral("lowPass"))) : 0.0f;
     const bool strip = sync && p.flag(QStringLiteral("strip"));
     // The video crossfaded with the low-pass input, first (each sample's neighbours are read below).
-    std::vector<float> buf(size_t(kSamples), 0.0f);
-    parallelFor(kLines, [&](int l0, int l1) {
-        for (size_t n = size_t(l0) * kLine; n < size_t(l1) * kLine; ++n) {
+    std::vector<float> buf(size_t(count), 0.0f);
+    parallelFor(S.lines, [&](int l0, int l1) {
+        for (size_t n = size_t(l0) * S.line; n < size_t(l1) * S.line; ++n) {
             const float a = video ? video->v[n] : 0.0f;
             buf[n] = lowPass ? a * (1 - k) + lowPass->v[n] * k : a;
         }
     });
-    auto in = [&](int64_t n) { return buf[size_t(std::clamp<int64_t>(n, 0, kSamples - 1))]; };
-    parallelFor(kLines, [&](int l0, int l1) {
-        for (int line = l0; line < l1; ++line) {
-            const int64_t base = int64_t(line) * kLine;
-            const bool edge = line == 0 || line == kLines - 1; // (only there do the neighbours run off the frame)
-            const float* b = buf.data() + base;
-            for (int x = 0; x < kLine; ++x) {
-                const int64_t n = base + x;
-                const float here = b[x];
-                float y = edge || x < 2 || x >= kLine - 2 ? (0.5f * in(n - 2) + in(n - 1) + here + in(n + 1) + 0.5f * in(n + 2)) / 4.0f
-                                                          : (0.5f * b[x - 2] + b[x - 1] + here + b[x + 1] + 0.5f * b[x + 2]) / 4.0f;
+    parallelFor(S.lines, [&](int l0, int l1) {
+        for (int line = l0; line < l1; ++line)
+            for (int x = 0; x < S.line; ++x) {
+                const int64_t n = int64_t(line) * S.line + x;
+                const float here = buf[size_t(n)];
+                float y = notchAt(buf.data(), n, count);
                 const float c = here - y;
                 if (strip)
                     y = std::max(y, 0.0f);
-                out.v[size_t(n)] = luma * y + (x >= kBurstStart && x < kBurstEnd ? burst : chroma) * c + (sync ? sync->v[size_t(n)] : 0.0f);
+                out.v[size_t(n)] = luma * y + (x >= S.burstStart && x < S.burstEnd ? burst : chroma) * c + (sync ? sync->v[size_t(n)] : 0.0f);
+            }
+    });
+    return out;
+}
+
+// The signal later by `delay(line)` samples on each line (a fraction too, between samples), round the frame.
+Signal delayed(const Signal& in, const std::function<double(int)>& delay)
+{
+    const Standard& S = *in.std;
+    const int64_t count = S.samples();
+    Signal out = like(in);
+    parallelFor(S.lines, [&](int l0, int l1) {
+        for (int line = l0; line < l1; ++line) {
+            // (the same delay along the line: one whole-sample offset and one fraction for all of it)
+            const double start = double(int64_t(line) * S.line) - delay(line), whole = std::floor(start);
+            const float t = float(start - whole);
+            int64_t a = (int64_t(whole) % count + count) % count;
+            float* o = out.v.data() + size_t(line) * S.line;
+            for (int x = 0; x < S.line; ++x) {
+                const int64_t b = a + 1 < count ? a + 1 : 0;
+                o[x] = in.v[size_t(a)] * (1 - t) + in.v[size_t(b)] * t;
+                a = b;
             }
         }
     });
@@ -462,56 +564,40 @@ Signal mix(const Signal* video, const Signal* sync, const Signal* lowPass, const
 // slips the picture against it (a genlock gone wrong), a delayed copy mixed back is a ghost (multipath).
 Signal delayLine(const Signal& in, const Params& p, double seconds)
 {
-    Signal out;
-    out.frame = in.frame;
-    out.v.resize(size_t(kSamples));
-    const double perUs = kRate / 1e6;
-    const double base = p.num(QStringLiteral("lines")) * kLine + p.num(QStringLiteral("delay")) * perUs
-                        + p.num(QStringLiteral("drift")) * seconds * kLine;
+    const Standard& S = *in.std;
+    const double perUs = S.rate / 1e6;
+    const double base = p.num(QStringLiteral("lines")) * S.line + p.num(QStringLiteral("delay")) * perUs
+                        + p.num(QStringLiteral("drift")) * seconds * S.line;
     const double wobble = p.num(QStringLiteral("wobble")) * perUs, rate = p.num(QStringLiteral("wobbleHz"));
-    parallelFor(kLines, [&](int l0, int l1) {
-        for (int line = l0; line < l1; ++line) {
-            const double at = seconds + double(line) * kLine / kRate; // (when the line comes)
-            const double d = base + wobble * std::sin(2 * pi * rate * at);
-            // (the same delay along the line: one whole-sample offset and one fraction for all of it)
-            const double start = double(int64_t(line) * kLine) - d, whole = std::floor(start);
-            const float t = float(start - whole);
-            int64_t a = (int64_t(whole) % kSamples + kSamples) % kSamples; // (round the frame)
-            float* o = out.v.data() + size_t(line) * kLine;
-            for (int x = 0; x < kLine; ++x) {
-                const int64_t b = a + 1 < kSamples ? a + 1 : 0;
-                o[x] = in.v[size_t(a)] * (1 - t) + in.v[size_t(b)] * t;
-                a = b;
-            }
-        }
+    return delayed(in, [&](int line) {
+        const double at = seconds + double(line) * S.line / S.rate; // (when the line comes)
+        return base + wobble * std::sin(2 * pi * rate * at);
     });
-    return out;
 }
 
 // Interference on the way: snow (noise in every sample), a mains hum bar rolling slowly up the picture, and
 // spikes (bursts that blank a stretch of a line, or knock its sync out).
 Signal rfNoise(const Signal& in, const Params& p, double seconds)
 {
-    Signal out;
-    out.frame = in.frame;
-    out.v.resize(size_t(kSamples));
+    const Standard& S = *in.std;
+    Signal out = like(in);
     const float snow = float(p.num(QStringLiteral("snow"))), hum = float(p.num(QStringLiteral("hum")));
     const double humPhase = p.num(QStringLiteral("humSpeed")) * seconds;
     const double spikes = p.num(QStringLiteral("spikes"));
     const uint32_t seed = uint32_t(p.num(QStringLiteral("seed"))) * 2654435761u + uint32_t(in.frame) * 40503u;
-    parallelFor(kLines, [&](int l0, int l1) {
+    parallelFor(S.lines, [&](int l0, int l1) {
         for (int line = l0; line < l1; ++line) {
-            const float bar = hum * float(std::sin(2 * pi * (double(line) / kLines + humPhase)));
-            int spikeFrom = kLine, spikeTo = kLine;
+            const float bar = hum * float(std::sin(2 * pi * (double(line) / S.lines + humPhase)));
+            int spikeFrom = S.line, spikeTo = S.line;
             float spikeLevel = 0;
             if (spikes > 0 && fx::hash01(uint32_t(line), 1, seed) < spikes * 0.15) {
-                spikeFrom = int(fx::hash01(uint32_t(line), 2, seed) * kLine);
+                spikeFrom = int(fx::hash01(uint32_t(line), 2, seed) * float(S.line));
                 spikeTo = spikeFrom + 10 + int(fx::hash01(uint32_t(line), 3, seed) * 180);
                 spikeLevel = fx::hash01(uint32_t(line), 4, seed) < 0.5f ? -60.0f : 110.0f;
             }
-            const float* src = in.v.data() + size_t(line) * kLine;
-            float* dst = out.v.data() + size_t(line) * kLine;
-            for (int x = 0; x < kLine; ++x) {
+            const float* src = in.v.data() + size_t(line) * S.line;
+            float* dst = out.v.data() + size_t(line) * S.line;
+            for (int x = 0; x < S.line; ++x) {
                 float v = src[x] + bar;
                 if (snow > 0)
                     v += snow * 2.0f * (fx::hash01(uint32_t(x), uint32_t(line), seed) - 0.5f);
@@ -524,29 +610,28 @@ Signal rfNoise(const Signal& in, const Params& p, double seconds)
     return out;
 }
 
-// A resistor into a capacitor to ground: the signal smeared along the line (and, with a big one, down the picture).
-Signal lowPass(const Signal& in, const Params& p)
+// The signal through an RC low pass with time constant tau (seconds); high: what's left (the RC the other way
+// round: a capacitor in series, a resistor to ground).
+Signal rc(const Signal& in, double tau, bool high)
 {
-    static const double kCaps[] = {47e-12, 220e-12, 1e-9, 4.7e-9, 22e-9};
-    const double tau = p.num(QStringLiteral("resistance")) * kCaps[std::clamp(p.choice(QStringLiteral("capacitor")), 0, 4)];
-    const float a = float(1.0 / (1.0 + tau * kRate)); // (backward Euler)
-    Signal out;
-    out.frame = in.frame;
-    out.v.resize(size_t(kSamples));
+    const Standard& S = *in.std;
+    const int64_t count = S.samples();
+    const float a = float(1.0 / (1.0 + tau * S.rate)); // (backward Euler)
+    Signal out = like(in);
     // In pieces on several threads (one, for a long time constant), each run in from a little before it; the first
     // from the frame's end, as it would come after the frame before.
-    const int64_t preroll = std::min<int64_t>(kSamples, int64_t(8 * tau * kRate) + kLine);
-    const int pieces = preroll * 8 < kSamples ? 16 : 1;
-    const int64_t piece = (kSamples + pieces - 1) / pieces;
+    const int64_t preroll = std::min<int64_t>(count, int64_t(8 * tau * S.rate) + S.line);
+    const int pieces = preroll * 8 < count ? 16 : 1;
+    const int64_t piece = (count + pieces - 1) / pieces;
     parallelFor(pieces, [&](int p0, int p1) {
         for (int pc = p0; pc < p1; ++pc) {
-            const int64_t from = int64_t(pc) * piece, to = std::min<int64_t>(kSamples, from + piece);
-            float y = in.v[size_t(((from - preroll) % kSamples + kSamples) % kSamples)];
+            const int64_t from = int64_t(pc) * piece, to = std::min<int64_t>(count, from + piece);
+            float y = in.v[size_t(((from - preroll) % count + count) % count)];
             for (int64_t i = from - preroll; i < to; ++i) {
-                const int64_t n = (i % kSamples + kSamples) % kSamples;
+                const int64_t n = (i % count + count) % count;
                 y += a * (in.v[size_t(n)] - y);
                 if (i >= from)
-                    out.v[size_t(n)] = y;
+                    out.v[size_t(n)] = high ? in.v[size_t(n)] - y : y;
             }
         }
     }, 1);
@@ -609,10 +694,12 @@ struct Lu {
 // in the switched feedback path.
 Signal enhance(const Signal& in, const Params& p)
 {
+    const Standard& S = *in.std;
+    const int64_t count = S.samples();
     enum { B, E, C, F }; // (the input, an ideal source behind Input Z, is a current into the base)
     constexpr double kGm = 0.04, kRc = 270, kCb = 22e-12, kCc = 5e-12, kCf = 100e-12, kRfix = 1000;
     constexpr double kHigh = 300, kLow = -260; // where the collector clips (IRE about its resting point)
-    const double dt = 1.0 / kRate;
+    const double dt = 1.0 / S.rate;
     const double load = p.num(QStringLiteral("load")), rin = std::max(1.0, p.num(QStringLiteral("inputZ")));
     const double rfa = std::max(1.0, p.num(QStringLiteral("feedbackA"))), rfb = std::max(1.0, p.num(QStringLiteral("feedbackB")));
     const bool capPath = p.choice(QStringLiteral("feedbackPath")) == 0;
@@ -673,21 +760,19 @@ Signal enhance(const Signal& in, const Params& p)
             x[r] = M[size_t(r * 4)] * b[0] + M[size_t(r * 4 + 1)] * b[1] + M[size_t(r * 4 + 2)] * b[2] + M[size_t(r * 4 + 3)] * b[3];
     };
 
-    Signal out;
-    out.frame = in.frame;
-    out.v.resize(size_t(kSamples));
+    Signal out = like(in);
     // In pieces on several threads, each run in from a little before it (its capacitors charged as they would be).
     const double tau = std::max({capPath ? kCf * (rfa + kRc + rin) : 0.0, cg * rg, kCb * rin, kCc * kRc});
     // (Capped at 8 lines: the long time constants come with big feedback resistors, which take back little.)
-    const int64_t preroll = std::clamp<int64_t>(int64_t(6 * tau * kRate), kLine, 8 * kLine);
+    const int64_t preroll = std::clamp<int64_t>(int64_t(6 * tau * S.rate), S.line, 8 * S.line);
     constexpr int kPieces = 16;
-    const int64_t piece = (kSamples + kPieces - 1) / kPieces;
+    const int64_t piece = (count + kPieces - 1) / kPieces;
     parallelFor(kPieces, [&](int p0, int p1) {
         for (int pc = p0; pc < p1; ++pc) {
-            const int64_t from = int64_t(pc) * piece, to = std::min<int64_t>(kSamples, from + piece);
+            const int64_t from = int64_t(pc) * piece, to = std::min<int64_t>(count, from + piece);
             double vb = 0, ve = 0, vc = 0, vf = 0;
             for (int64_t i = from - preroll; i < to; ++i) {
-                const int64_t n = (i % kSamples + kSamples) % kSamples;
+                const int64_t n = (i % count + count) % count;
                 double b[4] = {double(in.v[size_t(n)]) * divider + gb * vb, gg * ve, gcc * vc, 0}, x[4];
                 if (capPath) {
                     const double d = vf - vb;
@@ -712,13 +797,104 @@ Signal enhance(const Signal& in, const Params& p)
     return out;
 }
 
+// A clipper (diodes to two levels): the signal held between Low and High, with a soft knee Softness wide.
+Signal clip(const Signal& in, const Params& p)
+{
+    Signal out = like(in);
+    const float hi = float(p.num(QStringLiteral("high"))), lo = std::min(hi, float(p.num(QStringLiteral("low"))));
+    const float soft = std::min(float(p.num(QStringLiteral("softness"))), 0.5f * (hi - lo));
+    parallelFor(in.std->lines, [&](int l0, int l1) {
+        for (size_t n = size_t(l0) * in.std->line; n < size_t(l1) * in.std->line; ++n) {
+            float x = in.v[n];
+            if (soft <= 0.001f) {
+                x = std::clamp(x, lo, hi);
+            } else if (x > hi - soft) { // (an exponential knee: smooth at its start, flat at the level)
+                x = hi - soft * std::exp(-(x - (hi - soft)) / soft);
+            } else if (x < lo + soft) {
+                x = lo + soft * std::exp((x - (lo + soft)) / soft);
+            }
+            out.v[n] = x;
+        }
+    });
+    return out;
+}
+
+// Luma or chroma alone: a notch at the subcarrier (or a comb, one line back for NTSC, two for PAL) takes the colour
+// off for the luma (sync and all); what it took is the chroma (burst and all).
+Signal split(const Signal& in, const Params& p)
+{
+    const Standard& S = *in.std;
+    const int64_t count = S.samples();
+    const bool chroma = p.choice(QStringLiteral("output")) == 1, comb = p.choice(QStringLiteral("method")) == 1;
+    const int lag = S.pal ? 2 * S.line : S.line;
+    Signal out = like(in);
+    parallelFor(S.lines, [&](int l0, int l1) {
+        for (int64_t n = int64_t(l0) * S.line; n < int64_t(l1) * S.line; ++n) {
+            const float here = in.v[size_t(n)];
+            const float y = comb ? 0.5f * (here + in.v[size_t(((n - lag) % count + count) % count)]) : notchAt(in.v.data(), n, count);
+            out.v[size_t(n)] = chroma ? here - y : y;
+        }
+    });
+    return out;
+}
+
+// A switcher cutting from A to B at a line (top/bottom) or a point along each line (left/right): a wipe made in the
+// signal, sync and all (B's sync after the cut: if it isn't A's, the TV jumps).
+Signal switcher(const Signal* a, const Signal* b, const Params& p, int64_t frame)
+{
+    if (b && a && b->std != a->std)
+        b = nullptr;
+    const Signal* first = a ? a : b;
+    const Standard& S = first ? *first->std : ntsc();
+    Signal out = blank(S, first ? first->frame : frame);
+    const bool across = p.choice(QStringLiteral("direction")) == 1, swap = p.flag(QStringLiteral("swap"));
+    const double at = std::clamp(p.num(QStringLiteral("position")), 0.0, 1.0);
+    const int cutLine = int(std::lround(at * S.lines)), cutX = S.activeStart + int(std::lround(at * S.activeWidth()));
+    parallelFor(S.lines, [&](int l0, int l1) {
+        for (int line = l0; line < l1; ++line)
+            for (int x = 0; x < S.line; ++x) {
+                const bool second = (across ? x >= cutX : line >= cutLine) != swap;
+                const Signal* from = second ? b : a;
+                const size_t n = size_t(line) * S.line + x;
+                out.v[n] = from ? from->v[n] : 0.0f;
+            }
+    });
+    return out;
+}
+
+// A sync generator's signal: black (with its burst), colour bars or a grey ramp, on its own clock: Line drift and
+// Frame drift slip it against the standard's (a second camera that isn't genlocked).
+Signal generator(const Params& p, int64_t frame, double seconds)
+{
+    const Standard& S = p.choice(QStringLiteral("standard")) == 1 ? pal() : ntsc();
+    QImage picture(64, 48, QImage::Format_ARGB32_Premultiplied);
+    picture.fill(Qt::black);
+    const int kind = p.choice(QStringLiteral("picture"));
+    if (kind == 1) {
+        QPainter painter(&picture);
+        const QColor bars[] = {QColor(191, 191, 191), QColor(191, 191, 0), QColor(0, 191, 191), QColor(0, 191, 0),
+                               QColor(191, 0, 191), QColor(191, 0, 0), QColor(0, 0, 191)};
+        for (int i = 0; i < 7; ++i)
+            painter.fillRect(QRect(i * 64 / 7, 0, 64 / 7 + 1, 48), bars[i]);
+    } else if (kind == 2) {
+        for (int y = 0; y < 48; ++y)
+            for (int x = 0; x < 64; ++x)
+                picture.setPixel(x, y, qRgb(x * 4, x * 4, x * 4));
+    }
+    EncodeOptions o;
+    o.std = &S;
+    const Signal own = encode(picture, frame, o);
+    const double slip = p.num(QStringLiteral("lineDrift")) * seconds * S.rate / 1e6 + p.num(QStringLiteral("frameDrift")) * seconds * S.line;
+    return slip == 0 ? own : delayed(own, [&](int) { return slip; });
+}
+
 // ---- Nodes ------------------------------------------------------------------------------------------------------
 
 // The signal wired into input i: from the node that made it, or a picture turned into one.
 std::shared_ptr<const Signal> input(const Inputs& in, size_t i, const nodes::NodeContext& c)
 {
     if (c.bus && i < c.inputs.size() && c.inputs[i])
-        if (const auto it = c.bus->find(c.inputs[i]); it != c.bus->end())
+        if (const auto it = c.bus->find(c.inputs[i]); it != c.bus->end() && it->second)
             return it->second;
     if (i < in.size() && in[i])
         return std::make_shared<Signal>(encode(*in[i], frameOf(c)));
@@ -733,12 +909,23 @@ QImage publish(Signal&& s, const nodes::NodeContext& c)
     return c.pictureWanted ? view(*shared, c.size) : QImage(); // (only signal nodes after it: no picture needed)
 }
 
+// A node taking one signal through f (without one: a blank signal).
+std::function<QImage(const Inputs&, const Params&, const ParamMap&, const nodes::NodeContext&, std::unique_ptr<EffectState>&)>
+through(std::function<Signal(const Signal&, const Params&, const nodes::NodeContext&)> f)
+{
+    return [f](const Inputs& in, const Params& p, const ParamMap&, const nodes::NodeContext& c, std::unique_ptr<EffectState>&) {
+        const auto s = input(in, 0, c);
+        return s ? publish(f(*s, p, c), c) : publish(blank(ntsc(), frameOf(c)), c);
+    };
+}
+
 } // namespace
 
 void addNodes(std::vector<nodes::NodeDef>& list)
 {
     const QString category = QStringLiteral("Composite Signal");
     const QString signalIn = QStringLiteral("Signal");
+    const QStringList standards{QStringLiteral("NTSC"), QStringLiteral("PAL")};
     nodes::NodeDef d;
 
     d = {};
@@ -746,14 +933,15 @@ void addNodes(std::vector<nodes::NodeDef>& list)
     d.name = QStringLiteral("Composite Encode");
     d.category = category;
     d.description = QStringLiteral(
-        "Turns the picture into an NTSC composite video signal, as a camera or console sends it: sync pulses, colour burst, "
-        "the colour on its subcarrier. Wire it through the circuit nodes and into Composite Decode (a TV) to see it again. "
-        "(The circuit nodes encode a picture wired straight in themselves.)");
+        "Turns the picture into an NTSC or PAL composite video signal, as a camera or console sends it: sync pulses, colour "
+        "burst, the colour on its subcarrier. Wire it through the circuit nodes and into Composite Decode (a TV) to see it "
+        "again. (The circuit nodes encode a picture wired straight in themselves, as NTSC.)");
     d.inputs = {QStringLiteral("Image")};
-    d.params = {num("saturation", "Saturation", 0, 2, 1), num("chroma", "Colour bandwidth", 0.3, 3, 1.3, 1, " MHz"),
-                fx::flag("setup", "7.5 IRE black (NTSC-M)", true)};
+    d.params = {choice("standard", "Standard", standards), num("saturation", "Saturation", 0, 2, 1),
+                num("chroma", "Colour bandwidth", 0.3, 3, 1.3, 1, " MHz"), fx::flag("setup", "7.5 IRE black (NTSC-M)", true)};
     d.eval = [](const Inputs& in, const Params& p, const ParamMap&, const nodes::NodeContext& c, std::unique_ptr<EffectState>&) {
         EncodeOptions o;
+        o.std = p.choice(QStringLiteral("standard")) == 1 ? &pal() : &ntsc();
         o.saturation = p.num(QStringLiteral("saturation"));
         o.chromaMHz = p.num(QStringLiteral("chroma"));
         o.setup = p.flag(QStringLiteral("setup"));
@@ -766,9 +954,10 @@ void addNodes(std::vector<nodes::NodeDef>& list)
     d.name = QStringLiteral("Composite Decode");
     d.category = category;
     d.description = QStringLiteral(
-        "A TV: locks to the signal's sync and colour burst and shows its picture. When the sync is damaged or missing the "
-        "picture rolls and tears (its oscillators running free, as Horizontal and Vertical Hold set them); without a burst "
-        "it is black and white, and a shifted burst shifts the colours.");
+        "A TV (NTSC or PAL, as the signal is): locks to the signal's sync and colour burst and shows its picture. When the "
+        "sync is damaged or missing the picture rolls and tears (its oscillators running free, as Horizontal and Vertical "
+        "Hold set them); without a burst it is black and white, and a shifted burst shifts the colours (on PAL, only fades "
+        "them: its delay line averages each line's colour with the one before's).");
     d.inputs = {signalIn};
     d.params = {num("hHold", "Horizontal hold", -1, 1, 0.1), num("vHold", "Vertical hold", -1, 1, 0.2),
                 num("hLock", "Horizontal lock range", 0.01, 0.6, 0.15), num("slice", "Sync sensitivity", 2, 40, 10, 0, " IRE"),
@@ -786,6 +975,22 @@ void addNodes(std::vector<nodes::NodeDef>& list)
     list.push_back(d);
 
     d = {};
+    d.id = QStringLiteral("composite_sync_generator");
+    d.name = QStringLiteral("Sync Generator");
+    d.category = category;
+    d.description = QStringLiteral(
+        "A signal of its own: black (with sync and burst, \"black burst\"), colour bars or a grey ramp, on its own clock. "
+        "Line drift and Frame drift slip it against the picture's: take its sync into a Sync Mixer and the TV follows a "
+        "clock that isn't the picture's, as with a second camera that isn't genlocked.");
+    d.params = {choice("standard", "Standard", standards),
+                choice("picture", "Picture", {QStringLiteral("Black"), QStringLiteral("Colour bars"), QStringLiteral("Grey ramp")}),
+                num("lineDrift", "Line drift", -20, 20, 0, 3, " µs/s"), num("frameDrift", "Frame drift", -60, 60, 0, 2, " lines/s")};
+    d.eval = [](const Inputs&, const Params& p, const ParamMap&, const nodes::NodeContext& c, std::unique_ptr<EffectState>&) {
+        return publish(generator(p, frameOf(c), double(c.render.timelineTime) / 1e6), c);
+    };
+    list.push_back(d);
+
+    d = {};
     d.id = QStringLiteral("composite_sync_separator");
     d.name = QStringLiteral("Sync Separator");
     d.category = category;
@@ -795,10 +1000,7 @@ void addNodes(std::vector<nodes::NodeDef>& list)
     d.inputs = {QStringLiteral("Sync In")};
     d.params = {num("slice", "Slice level", -40, 40, -20, 0, " IRE"), num("hysteresis", "Hysteresis", 0, 30, 4, 0, " IRE"),
                 num("correction", "Correction", 0, 2, 1)};
-    d.eval = [](const Inputs& in, const Params& p, const ParamMap&, const nodes::NodeContext& c, std::unique_ptr<EffectState>&) {
-        const auto s = input(in, 0, c);
-        return s ? publish(separate(*s, p), c) : publish(Signal{std::vector<float>(size_t(kSamples), 0.0f), frameOf(c)}, c);
-    };
+    d.eval = through([](const Signal& s, const Params& p, const nodes::NodeContext&) { return separate(s, p); });
     list.push_back(d);
 
     d = {};
@@ -818,6 +1020,36 @@ void addNodes(std::vector<nodes::NodeDef>& list)
     list.push_back(d);
 
     d = {};
+    d.id = QStringLiteral("composite_switcher");
+    d.name = QStringLiteral("Signal Switcher");
+    d.category = category;
+    d.description = QStringLiteral(
+        "Cuts from signal A to signal B at a line (top and bottom) or at a point along every line (left and right): a wipe "
+        "made in the signal, sync and all. Keyframe Position to move it; where B's sync isn't A's the TV jumps at the cut.");
+    d.inputs = {QStringLiteral("A"), QStringLiteral("B")};
+    d.params = {choice("direction", "Cut", {QStringLiteral("Top / bottom (at a line)"), QStringLiteral("Left / right (along each line)")}),
+                num("position", "Position", 0, 1, 0.5, 3), fx::flag("swap", "B first", false)};
+    d.eval = [](const Inputs& in, const Params& p, const ParamMap&, const nodes::NodeContext& c, std::unique_ptr<EffectState>&) {
+        const auto a = input(in, 0, c), b = input(in, 1, c);
+        return publish(switcher(a.get(), b.get(), p, frameOf(c)), c);
+    };
+    list.push_back(d);
+
+    d = {};
+    d.id = QStringLiteral("composite_split");
+    d.name = QStringLiteral("Luma/Chroma Split");
+    d.category = category;
+    d.description = QStringLiteral(
+        "The signal's luma alone (its sync with it) or its chroma alone (its burst with it), taken apart with a notch at "
+        "the subcarrier or a comb filter. Treat them apart (delay the colour, smear the luma) and add them back in a Sync "
+        "Mixer (Low Pass at 0.5, levels at 2).");
+    d.inputs = {signalIn};
+    d.params = {choice("output", "Output", {QStringLiteral("Luma"), QStringLiteral("Chroma")}),
+                choice("method", "Separation", {QStringLiteral("Notch"), QStringLiteral("Comb")})};
+    d.eval = through([](const Signal& s, const Params& p, const nodes::NodeContext&) { return split(s, p); });
+    list.push_back(d);
+
+    d = {};
     d.id = QStringLiteral("composite_low_pass");
     d.name = QStringLiteral("RC Low Pass");
     d.category = category;
@@ -827,10 +1059,40 @@ void addNodes(std::vector<nodes::NodeDef>& list)
     d.inputs = {signalIn};
     d.params = {ohms("resistance", "Resistance", 10, 100000, 470),
                 choice("capacitor", "Capacitor", {QStringLiteral("47 pF"), QStringLiteral("220 pF"), QStringLiteral("1 nF"), QStringLiteral("4.7 nF"), QStringLiteral("22 nF")}, 1)};
-    d.eval = [](const Inputs& in, const Params& p, const ParamMap&, const nodes::NodeContext& c, std::unique_ptr<EffectState>&) {
-        const auto s = input(in, 0, c);
-        return s ? publish(lowPass(*s, p), c) : publish(Signal{std::vector<float>(size_t(kSamples), 0.0f), frameOf(c)}, c);
-    };
+    d.eval = through([](const Signal& s, const Params& p, const nodes::NodeContext&) {
+        static const double kCaps[] = {47e-12, 220e-12, 1e-9, 4.7e-9, 22e-9};
+        return rc(s, p.num(QStringLiteral("resistance")) * kCaps[std::clamp(p.choice(QStringLiteral("capacitor")), 0, 4)], false);
+    });
+    list.push_back(d);
+
+    d = {};
+    d.id = QStringLiteral("composite_high_pass");
+    d.name = QStringLiteral("RC High Pass");
+    d.category = category;
+    d.description = QStringLiteral(
+        "A capacitor in series, a resistor to ground (AC coupling, as between two pieces of kit): the signal's steady level "
+        "taken off. A small one tilts every line and leaves streaks after bright things; the TV's clamp puts each line's "
+        "black back, but brightness wanders and the sync can slip under it.");
+    d.inputs = {signalIn};
+    d.params = {ohms("resistance", "Resistance", 10, 1000000, 1000),
+                choice("capacitor", "Capacitor", {QStringLiteral("1 nF"), QStringLiteral("10 nF"), QStringLiteral("100 nF"), QStringLiteral("1 µF"), QStringLiteral("10 µF"), QStringLiteral("100 µF")}, 3)};
+    d.eval = through([](const Signal& s, const Params& p, const nodes::NodeContext&) {
+        static const double kCaps[] = {1e-9, 10e-9, 100e-9, 1e-6, 10e-6, 100e-6};
+        return rc(s, p.num(QStringLiteral("resistance")) * kCaps[std::clamp(p.choice(QStringLiteral("capacitor")), 0, 5)], true);
+    });
+    list.push_back(d);
+
+    d = {};
+    d.id = QStringLiteral("composite_clipper");
+    d.name = QStringLiteral("Clipper");
+    d.category = category;
+    d.description = QStringLiteral(
+        "Diodes holding the signal between two levels: High crushes the highlights flat (and the colour on them), Low "
+        "clips the sync tips (too high and the TV loses them). Softness rounds the knee.");
+    d.inputs = {signalIn};
+    d.params = {num("high", "High", -40, 140, 100, 1, " IRE"), num("low", "Low", -60, 100, -40, 1, " IRE"),
+                num("softness", "Softness", 0, 30, 0, 1, " IRE")};
+    d.eval = through([](const Signal& s, const Params& p, const nodes::NodeContext&) { return clip(s, p); });
     list.push_back(d);
 
     d = {};
@@ -841,14 +1103,12 @@ void addNodes(std::vector<nodes::NodeDef>& list)
         "The signal later, by lines and microseconds (a fraction of a sample turns its colour), drifting and wobbling. "
         "Delay the sync a Sync Mixer puts back and the picture slips against it; mix a delayed copy back in for ghosts.");
     d.inputs = {signalIn};
-    d.params = {num("delay", "Delay", 0, 63.5, 2, 3, " µs"), num("lines", "Lines", 0, 262, 0, 0),
+    d.params = {num("delay", "Delay", 0, 63.5, 2, 3, " µs"), num("lines", "Lines", 0, 312, 0, 0),
                 num("drift", "Drift", -60, 60, 0, 2, " lines/s"), num("wobble", "Wobble", 0, 2, 0, 3, " µs"),
                 num("wobbleHz", "Wobble rate", 0, 30, 1, 2, " Hz")};
-    d.eval = [](const Inputs& in, const Params& p, const ParamMap&, const nodes::NodeContext& c, std::unique_ptr<EffectState>&) {
-        const auto s = input(in, 0, c);
-        return s ? publish(delayLine(*s, p, double(c.render.timelineTime) / 1e6), c)
-                 : publish(Signal{std::vector<float>(size_t(kSamples), 0.0f), frameOf(c)}, c);
-    };
+    d.eval = through([](const Signal& s, const Params& p, const nodes::NodeContext& c) {
+        return delayLine(s, p, double(c.render.timelineTime) / 1e6);
+    });
     list.push_back(d);
 
     d = {};
@@ -862,11 +1122,9 @@ void addNodes(std::vector<nodes::NodeDef>& list)
     d.params = {num("snow", "Snow", 0, 80, 12, 1, " IRE"), num("hum", "Hum", 0, 40, 0, 1, " IRE"),
                 num("humSpeed", "Hum speed", -2, 2, 0.06, 2, " bars/s"), num("spikes", "Spikes", 0, 1, 0, 2),
                 num("seed", "Seed", 0, 1000, 1, 0)};
-    d.eval = [](const Inputs& in, const Params& p, const ParamMap&, const nodes::NodeContext& c, std::unique_ptr<EffectState>&) {
-        const auto s = input(in, 0, c);
-        return s ? publish(rfNoise(*s, p, double(c.render.timelineTime) / 1e6), c)
-                 : publish(Signal{std::vector<float>(size_t(kSamples), 0.0f), frameOf(c)}, c);
-    };
+    d.eval = through([](const Signal& s, const Params& p, const nodes::NodeContext& c) {
+        return rfNoise(s, p, double(c.render.timelineTime) / 1e6);
+    });
     list.push_back(d);
 
     d = {};
@@ -884,10 +1142,7 @@ void addNodes(std::vector<nodes::NodeDef>& list)
                 ohms("feedbackB", "Feedback (direct)", 100, 1000000, 1000000), ohms("gain", "Gain", 1, 1000, 220),
                 choice("gainChannel", "Gain channel", {QStringLiteral("Off"), QStringLiteral("Narrow (100 pF)"), QStringLiteral("Medium (330 pF)"), QStringLiteral("Wide (1 nF)")}, 1),
                 choice("output", "Output", {QStringLiteral("Normal"), QStringLiteral("Inverted")})};
-    d.eval = [](const Inputs& in, const Params& p, const ParamMap&, const nodes::NodeContext& c, std::unique_ptr<EffectState>&) {
-        const auto s = input(in, 0, c);
-        return s ? publish(enhance(*s, p), c) : publish(Signal{std::vector<float>(size_t(kSamples), 0.0f), frameOf(c)}, c);
-    };
+    d.eval = through([](const Signal& s, const Params& p, const nodes::NodeContext&) { return enhance(s, p); });
     list.push_back(d);
 }
 

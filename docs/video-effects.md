@@ -113,9 +113,10 @@ and *Corrupted Tape*.
 ## Broken VGS
 
 Broken Video Game Systems: a folder for each of 34 consoles and computers, with 128 glitches
-modelled on how that machine's picture really breaks, and **Analogue Circuit Emu**, 37 effects made
-in the Effect Builder that send the picture down an emulated composite video cable, through analogue
-circuits, onto an old TV (see [Effect Builder](effects.md#effect-builder)). For example:
+modelled on how that machine's picture really breaks. Below it, **Analogue Circuit Emu** has 37
+effects made in the Effect Builder that send the picture down an emulated composite video cable,
+through analogue circuits, onto an old TV (see [Effect Builder](effects.md#effect-builder)). For
+example:
 
 - **NES**: dirty cartridge, blinking lockout, scroll-split errors, sprite overflow flicker.
 - **Game Boy**: vertical line death, Glitch City.
