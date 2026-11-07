@@ -29,8 +29,9 @@ public:
     // Effects run through their CPU code so far (download/upload round trips).
     int cpuFallbacks() const;
     // The Effect Builder's preview: `graph` on `source` (each node's state kept from one call to the next), with each
-    // node's picture, at most `thumb` big, in `thumbs`.
-    QImage renderGraph(const nodes::Graph& graph, const QImage& source, const RenderContext& ctx, std::map<int, QImage>* thumbs, QSize thumb);
+    // node's picture, at most `thumb` big, in `thumbs`; in `onGpu`, whether each node ran on the GPU (false: its CPU code).
+    QImage renderGraph(const nodes::Graph& graph, const QImage& source, const RenderContext& ctx, std::map<int, QImage>* thumbs, QSize thumb,
+                       std::map<int, bool>* onGpu = nullptr);
 
     struct Impl;
 

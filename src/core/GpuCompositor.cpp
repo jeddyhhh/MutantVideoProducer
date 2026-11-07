@@ -2344,7 +2344,8 @@ struct GpuCompositor::Impl : protected QOpenGLExtraFunctions {
 
     std::unique_ptr<EffectState> builderState; // renderGraph's (the Effect Builder's preview)
 
-    QImage renderGraph(const nodes::Graph& graph, const QImage& source, const RenderContext& ctx, std::map<int, QImage>* thumbs, QSize thumb)
+    QImage renderGraph(const nodes::Graph& graph, const QImage& source, const RenderContext& ctx, std::map<int, QImage>* thumbs, QSize thumb,
+                       std::map<int, bool>* onGpu)
     {
         if (source.isNull() || !context->makeCurrent(surface))
             return source;
@@ -2359,7 +2360,7 @@ struct GpuCompositor::Impl : protected QOpenGLExtraFunctions {
         s->graph = graph;
         Layer layer = acquire(source.size(), false);
         upload(*layer, source);
-        evalGraph(*s, layer, ctx, thumbs, thumb);
+        evalGraph(*s, layer, ctx, thumbs, thumb, onGpu);
         QImage img = download(*layer);
         layer.reset();
         evict();
@@ -2626,7 +2627,8 @@ struct GpuCompositor::Impl : protected QOpenGLExtraFunctions {
     }
 
     // The graph in `s` on `layer` (its result replaces it); each node's picture, at most `thumb` big, into `thumbs`.
-    void evalGraph(NodeGraphState& state, Layer& layer, const RenderContext& ctx, std::map<int, QImage>* thumbs, QSize thumb)
+    void evalGraph(NodeGraphState& state, Layer& layer, const RenderContext& ctx, std::map<int, QImage>* thumbs, QSize thumb,
+                   std::map<int, bool>* onGpu = nullptr)
     {
         NodeGraphState* s = &state;
         const nodes::Graph& g = s->graph;
@@ -2678,8 +2680,13 @@ struct GpuCompositor::Impl : protected QOpenGLExtraFunctions {
                     st.state.reset();
                     st.type = type;
                 }
+                const int fallbacks = cpuFallbacks; // (its inputs ran already: only its own count)
                 out = gpuNode(*def, *n, in, pr, here, *s, st.state);
+                if (onGpu)
+                    (*onGpu)[id] = cpuFallbacks == fallbacks;
             }
+            if (onGpu)
+                onGpu->emplace(id, true); // (the source, the output: drawn on the GPU)
             visiting.erase(id);
             if (thumbs && out) { // (drawn small on the GPU, so only that is read back)
                 const QSize ts = out->size().scaled(thumb, Qt::KeepAspectRatio).expandedTo(QSize(1, 1));
@@ -4962,9 +4969,9 @@ bool GpuCompositor::renderYuv(const ProjectSnapshot& snap, TimeUs t, AVFrame* fr
 }
 
 QImage GpuCompositor::renderGraph(const nodes::Graph& graph, const QImage& source, const RenderContext& ctx, std::map<int, QImage>* thumbs,
-                                  QSize thumb)
+                                  QSize thumb, std::map<int, bool>* onGpu)
 {
-    return d->renderGraph(graph, source, ctx, thumbs, thumb);
+    return d->renderGraph(graph, source, ctx, thumbs, thumb, onGpu);
 }
 
 int GpuCompositor::cpuFallbacks() const

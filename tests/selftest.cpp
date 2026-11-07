@@ -5889,6 +5889,35 @@ int cmdLive(const QString& outDir)
               QStringLiteral("scenes (Live FX, pad, layers with No Effects, overlays) and a spectrum overlay come back from the project file "
                              "(layer 1 under the keys one layer had)"));
     }
+    // ---- The Live pad sequencer's loop: which pad is on when, and saved with the project ----
+    {
+        LiveSequence s; // 4 bars of 4/4: 96 ticks a beat
+        s.blocks = {{3, 0, 192}, {5, 96, 96}, {7, 1536 - 96, 96}};
+        LiveSequence waltz = s;
+        waltz.beatsPerBar = 3;
+        waltz.beatUnit = 8;
+        waltz.snap = -16;
+        const bool ticks = s.beatTicks() == 96 && s.loopTicks() == 1536 && s.snapTicks() == 24 && waltz.beatTicks() == 48 && waltz.barTicks() == 144
+                           && waltz.snapTicks() == 16;
+        const bool pads = s.padAt(0) == 3 && s.padAt(100) == 5 && s.padAt(191) == 5 && s.padAt(192) == -1 && s.padAt(1500) == 7
+                          && s.padAt(1536 + 10) == 3 && s.padAt(-10) == 7; // (the later start wins; the loop wraps)
+        s.on = true;
+        LiveSequence bad = liveSequenceFromJson(QJsonObject{{QStringLiteral("bars"), 900}, {QStringLiteral("beatUnit"), 7},
+                                                            {QStringLiteral("snap"), 3}, {QStringLiteral("blocks"), QJsonArray{QJsonArray{20, 0, 96}, QJsonArray{1, 0, 0}}}});
+        Timeline tl;
+        tl.liveSequence = s;
+        Project p;
+        p.applyEdit(tl, QStringLiteral("Sequence"));
+        const QString file = QDir::temp().filePath(QStringLiteral("mvp-sequence-test.mvp"));
+        Project back;
+        QString err;
+        const bool saved = p.save(file, &err) && back.load(file, &err);
+        QFile::remove(file);
+        check(ticks && pads && liveSequenceFromJson(liveSequenceToJson(s)) == s && saved && back.timeline().liveSequence == s && bad.bars == 64
+                  && bad.beatUnit == 4 && bad.snap == 16 && bad.blocks.empty(),
+              QStringLiteral("the pad sequencer's loop: ticks for 4/4 and 3/8, the pad on at each tick (looping), saved with the project, "
+                             "and nonsense in a file read as limits"));
+    }
     // ---- Portrait / square output: a landscape picture framed into it ----
     {
         // 16:9, a red band down the middle between blue sides.

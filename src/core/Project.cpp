@@ -1288,6 +1288,8 @@ QByteArray Project::toJson(const QString& baseDir, const QString& backupOf, bool
         root[QStringLiteral("liveScenes")] = liveScenesToJson(m_timeline.liveScenes);
     if (!m_timeline.liveSetlist.empty())
         root[QStringLiteral("liveSetlist")] = liveSetlistToJson(m_timeline.liveSetlist);
+    if (!(m_timeline.liveSequence == LiveSequence{}))
+        root[QStringLiteral("liveSequence")] = liveSequenceToJson(m_timeline.liveSequence);
     root[QStringLiteral("nextId")] = m_timeline.nextId;
     if(m_portablePaths && !baseDir.isEmpty()) {
         collection::rewriteFiles(root,[&](const QString& path,collection::Role role) {
@@ -1528,6 +1530,7 @@ bool Project::loadFile(const QString& path, QString* error, QStringList* missing
     timeline.liveOverlays = liveOverlaysFromJson(root[QStringLiteral("liveOverlays")].toArray());
     timeline.liveScenes = liveScenesFromJson(root[QStringLiteral("liveScenes")].toArray());
     timeline.liveSetlist = liveSetlistFromJson(root[QStringLiteral("liveSetlist")].toArray());
+    timeline.liveSequence = liveSequenceFromJson(root[QStringLiteral("liveSequence")].toObject());
     timeline.nextId = root[QStringLiteral("nextId")].toInt(1);
     repairTimeline(timeline);
     timeline.sortClips();

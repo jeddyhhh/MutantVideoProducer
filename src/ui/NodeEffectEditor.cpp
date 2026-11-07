@@ -19,6 +19,7 @@
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QFontComboBox>
+#include <QFontMetricsF>
 #include <QFormLayout>
 #include <QGraphicsPathItem>
 #include <QGraphicsScene>
@@ -82,6 +83,17 @@ public:
         m_thumb = img.isNull() ? QImage() : img.scaled(int(kThumbW), int(kThumbH), Qt::KeepAspectRatio, Qt::FastTransformation);
         update();
     }
+    // Where it ran in the last preview: 1 the GPU, 0 the CPU, -1 not known (shown as a badge on the header).
+    void setRunsOn(int where)
+    {
+        if (where == m_runsOn)
+            return;
+        m_runsOn = where;
+        setToolTip(where == 1   ? QObject::tr("Runs on the GPU (the graphics card)")
+                   : where == 0 ? QObject::tr("Runs on the CPU (its picture goes to and from the graphics card when the rest run there)")
+                                : QString());
+        update();
+    }
     std::function<void(int, QPointF)> moved;
 
     void paint(QPainter* p, const QStyleOptionGraphicsItem*, QWidget*) override
@@ -105,8 +117,24 @@ public:
         QFont f = p->font();
         f.setBold(true);
         p->setFont(f);
-        p->drawText(QRectF(8, 0, kWidth - 16, kHeader), Qt::AlignVCenter | Qt::AlignLeft,
-                    p->fontMetrics().elidedText(m_def ? m_def->name : m_type, Qt::ElideRight, int(kWidth - 16)));
+        double titleW = kWidth - 16;
+        if (m_runsOn >= 0) { // the badge, top right: GPU green, CPU blue
+            QFont bf = f;
+            bf.setPointSizeF(std::max(6.0, f.pointSizeF() - 2));
+            const QString label = m_runsOn ? QStringLiteral("GPU") : QStringLiteral("CPU");
+            const double bw = QFontMetricsF(bf).horizontalAdvance(label) + 8, bh = kHeader - 10;
+            const QRectF badge(kWidth - 6 - bw, (kHeader - bh) / 2, bw, bh);
+            p->setPen(QPen(QColor(255, 255, 255, 140), 1));
+            p->setBrush(m_runsOn ? QColor(0x2e9e4f) : QColor(0x2f6fd6));
+            p->drawRoundedRect(badge, 3, 3);
+            p->setFont(bf);
+            p->setPen(Qt::white);
+            p->drawText(badge, Qt::AlignCenter, label);
+            p->setFont(f);
+            titleW = badge.left() - 4 - 8;
+        }
+        p->drawText(QRectF(8, 0, titleW, kHeader), Qt::AlignVCenter | Qt::AlignLeft,
+                    p->fontMetrics().elidedText(m_def ? m_def->name : m_type, Qt::ElideRight, int(titleW)));
         f.setBold(false);
         p->setFont(f);
         p->setPen(c.text);
@@ -144,6 +172,7 @@ private:
     const nodes::NodeDef* m_def;
     QString m_type;
     QImage m_thumb;
+    int m_runsOn = -1;
 };
 
 // A wire from an output to an input.
@@ -741,9 +770,13 @@ void NodeEffectEditor::step()
     if (m_gpu && nodes::problem(m_graph).isEmpty()) {
         m_eval.outputs.clear();
         m_eval.error.clear();
-        m_result = m_gpu->renderGraph(m_graph, frame, ctx, &m_eval.outputs, QSize(int(nodeui::kThumbW), int(nodeui::kThumbH)));
+        m_runsOn.clear();
+        m_result = m_gpu->renderGraph(m_graph, frame, ctx, &m_eval.outputs, QSize(int(nodeui::kThumbW), int(nodeui::kThumbH)), &m_runsOn);
     } else {
         m_result = m_eval.run(m_graph, frame, ctx, true);
+        m_runsOn.clear();
+        for (const nodes::Node& n : m_graph.nodes)
+            m_runsOn[n.id] = false; // (no graphics card, or the graph can't run as it is: all on the CPU)
     }
     const qint64 ms = took.elapsed();
     auto show = [](QLabel* label, const QImage& img) {
@@ -755,6 +788,8 @@ void NodeEffectEditor::step()
     for (auto& [id, item] : m_items) {
         const auto it = m_eval.outputs.find(id);
         item->setThumb(it == m_eval.outputs.end() ? QImage() : it->second);
+        const auto on = m_runsOn.find(id);
+        item->setRunsOn(on == m_runsOn.end() ? -1 : on->second ? 1 : 0);
     }
     if (!m_scrub->isSliderDown() && m_duration > 0)
         m_scrub->setValue(int(1000.0 * double(m_time) / double(m_duration)));

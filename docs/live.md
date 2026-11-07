@@ -158,6 +158,27 @@ the 16 pads, laid out like the grid. Hold them for momentary pads.
 or **On the next bar (the 1)**. A waiting pad has a dashed outline; press it again to cancel.
 Momentary pads and auto switch always switch at once.
 
+### Sequencer
+
+Under the pads is a looping **piano roll**: one row for each of the 16 pads (their names down the
+left; click one to press that pad), the bars numbered along the top. Click on a pad's row to put a
+block there, or click and drag to make it as long as you like. Drag a block to move it (to another
+row too), drag its right edge to change its length, and right-click (or right-drag over several) to
+remove them. **Ctrl+wheel** zooms; **Clear** removes every block (Ctrl+Z brings them back).
+
+- **Bars**: how long the loop is (1 to 64).
+- **Time signature**: beats in a bar and the note a beat is (4/4, 3/4, 7/8, 6/8...). Each beat of
+  the beat clock is one of those beats.
+- **Snap**: where blocks start and end: a bar (1/1), 1/2 down to 1/32, 1/8 or 1/16 triplets, or a
+  beat. A new block is as long as the last one you made.
+
+Tick **Sequence** and the loop plays, over and over, while the Live tab runs: it starts on the next
+1 of the beat clock (see Tempo and auto switch: the tempo, tapped, from beats heard or from MIDI
+clock) and follows it, so a block switches its pad on for its length, in time. Where blocks overlap,
+the one that starts last wins; where there is none, the loop switches off the pad it switched on (a
+pad you pressed yourself stays). Auto switch waits while the loop plays. The loop is saved with the
+project.
+
 ### Pad sets
 
 Whole grids saved by name and shared by all projects (the **≡** menu: Save, Save As, New Empty Set,

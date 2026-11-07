@@ -102,6 +102,7 @@ private:
     bool m_playing = true;
     int m_projectWidth = 1920;
     QImage m_result;
+    std::map<int, bool> m_runsOn; // each node: ran on the GPU (true) or the CPU, in the last preview
 
     QLineEdit* m_name = nullptr;
     QLineEdit* m_description = nullptr;

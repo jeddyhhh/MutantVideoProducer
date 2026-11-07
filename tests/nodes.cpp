@@ -705,6 +705,23 @@ int main(int argc, char** argv)
                           .arg(difference(cpuOut, gpuOut), 0, 'f', 2)
                           .arg(thumbs.size())
                           .arg(thumbOff, 0, 'f', 1));
+                // ... and says where each node ran (the badges on the nodes): the Enhancer on the CPU, the rest on the GPU.
+                nodes::Graph circuit;
+                nodes::load(QDir(nodes::examplesFolder()).filePath(QStringLiteral("Analogue Circuit Emu/Composite Circuit.mvpfx")), &circuit, nullptr);
+                std::map<int, bool> onGpu;
+                if (gc)
+                    gc->renderGraph(circuit, pic, rc, nullptr, QSize(), &onGpu);
+                bool where = !circuit.nodes.empty() && onGpu.size() == circuit.nodes.size();
+                QStringList cpu;
+                for (const nodes::Node& n : circuit.nodes) {
+                    const auto it = onGpu.find(n.id);
+                    where = where && it != onGpu.end() && it->second == (n.type != QLatin1String("composite_enhancer"));
+                    if (it != onGpu.end() && !it->second)
+                        cpu << n.type;
+                }
+                check(gc && where, QStringLiteral("the Effect Builder says where each node runs: on the CPU %1, the other %2 on the GPU")
+                                       .arg(cpu.join(QStringLiteral(", ")))
+                                       .arg(int(circuit.nodes.size()) - int(cpu.size())));
             }
             check(slowOrOff.isEmpty(), QStringLiteral("the example effects draw on the GPU as on the CPU, at 30 frames a second (not: %1)")
                                            .arg(slowOrOff.isEmpty() ? QStringLiteral("none") : slowOrOff.join(QStringLiteral(", "))));

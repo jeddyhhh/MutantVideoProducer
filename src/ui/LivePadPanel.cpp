@@ -8,6 +8,7 @@
 #include "core/LivePadSets.h"
 #include "core/RandomChain.h"
 #include "ui/EffectsBrowser.h"
+#include "ui/LiveSequencer.h"
 
 #include <QCheckBox>
 #include <QApplication>
@@ -276,7 +277,24 @@ LivePadPanel::LivePadPanel(Project* project, QWidget* parent) : QWidget(parent),
     form->addWidget(m_launch, 6, 1, 1, 2);
     form->setColumnStretch(1, 1);
     layout->addLayout(form);
+    m_sequencer = new LiveSequencer(project, this);
+    layout->addWidget(m_sequencer);
     layout->addStretch(1);
+    connect(this, &LivePadPanel::beatTicked, m_sequencer, &LiveSequencer::beat);
+    connect(m_sequencer, &LiveSequencer::padPressed, this, &LivePadPanel::pressPad);
+    connect(m_sequencer, &LiveSequencer::switchPad, this, [this](int pad) {
+        // The loop switches its pads at once (it is in time already), and switches off only what it switched on.
+        const int was = m_sequenced;
+        m_sequenced = pad;
+        m_stepping = true; // (the device chain doesn't follow it, as with auto switch)
+        if (pad < 0) {
+            if (m_active >= 0 && m_active == was)
+                emit padPressed(m_active); // (pressing the live pad switches it off)
+        } else if (pad != m_active) {
+            emit padPressed(pad);
+        }
+        m_stepping = false;
+    });
 
     QSettings settings;
     const int t = m_transition->findData(settings.value(QStringLiteral("live/padTransition"), QStringLiteral("dissolve")).toString());
@@ -361,6 +379,7 @@ LivePadPanel::LivePadPanel(Project* project, QWidget* parent) : QWidget(parent),
 void LivePadPanel::setActivePad(int pad)
 {
     m_active = pad;
+    m_sequencer->setActivePad(pad);
     refresh();
 }
 
@@ -689,6 +708,8 @@ void LivePadPanel::setRunning(bool running)
 {
     m_running = running;
     m_beatIndex = 15; // the first beat is a 1
+    m_sequenced = -1;
+    m_sequencer->setRunning(running);
     m_pendingPad = -1;
     updateAutoTimer();
 }
@@ -868,7 +889,7 @@ void LivePadPanel::beat()
         refresh();
         return; // (instead of an auto switch on this beat)
     }
-    if (m_running && m_auto->currentIndex() != AutoOff && m_beatIndex % std::max(1, m_every->currentData().toInt()) == 0)
+    if (m_running && !m_sequencer->playing() && m_auto->currentIndex() != AutoOff && m_beatIndex % std::max(1, m_every->currentData().toInt()) == 0)
         step();
 }
 

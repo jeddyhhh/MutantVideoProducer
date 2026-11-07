@@ -128,6 +128,7 @@ add_library(mvp_core STATIC
     src/core/ColorMatch.h        src/core/ColorMatch.cpp
     src/core/NodeGraph.h         src/core/NodeGraph.cpp
     src/core/CompositeSignal.h   src/core/CompositeSignal.cpp
+    src/core/LiveSequence.h      src/core/LiveSequence.cpp
     src/core/BeatMarkers.h       src/core/BeatMarkers.cpp
     src/core/EffectMask.h        src/core/EffectMask.cpp
     src/core/Stabilizer.h        src/core/Stabilizer.cpp
@@ -274,6 +275,7 @@ add_executable(mvp WIN32
     src/ui/LiveView.h            src/ui/LiveView.cpp
     src/ui/LiveClipsBrowser.h    src/ui/LiveClipsBrowser.cpp
     src/ui/LivePadPanel.h        src/ui/LivePadPanel.cpp
+    src/ui/LiveSequencer.h       src/ui/LiveSequencer.cpp
     src/ui/MediaBin.h            src/ui/MediaBin.cpp
     src/ui/RelinkDialog.h        src/ui/RelinkDialog.cpp
     src/ui/MixerWindow.h         src/ui/MixerWindow.cpp

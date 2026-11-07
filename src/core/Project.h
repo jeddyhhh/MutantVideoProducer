@@ -1,5 +1,6 @@
 #pragma once
 
+#include "core/LiveSequence.h"
 #include "core/Effects.h"
 #include "core/Generators.h"
 #include "core/MediaInfo.h"
@@ -281,6 +282,7 @@ struct Timeline {
     std::vector<LiveOverlay> liveOverlays; // Live tab: drawn over the output
     LiveScenes liveScenes; // Live tab: saved looks
     std::vector<LiveSong> liveSetlist; // Live tab: the songs of a set, in order
+    LiveSequence liveSequence; // Live tab: the pad sequencer (LiveSequence.h)
     int nextId = 1;
 
     int allocId() { return nextId++; }

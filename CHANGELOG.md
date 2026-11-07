@@ -17,6 +17,10 @@ What changed in each version of Mutant Video Producer. The newest is first.
 - **De-reverb** (audio effect) takes a room's echo out of a voice, and the **Speech Enhance** preset chain does all
   the voice clean-up at once.
 - AI control: paste_attributes, replace_media, separate_stems; render takes smart_render.
+- **Pad sequencer** (Live tab, under the pads): a looping piano roll with a row for each pad. Click or drag to put
+  blocks on it; set the bars, time signature and snap (down to 1/32 and triplets). It plays in time with the beat
+  clock (tempo, taps, beats heard or MIDI clock), switching each block's pad on for its length; saved with the project.
+- The Effect Builder shows on each node whether it runs on the **GPU** (green) or the **CPU** (blue).
 - The effect menus have an **Analogue Circuit Emu** menu (under Broken VGS) and a **Node Editor** menu with the
   Effect Builder's examples; **User Created** has only the effects you make. **Broken Video Game Systems** is now
   **Broken VGS**.

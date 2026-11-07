@@ -103,6 +103,7 @@ public:
     QComboBox* durationBox() const { return m_duration; }
     QComboBox* everyBox() const { return m_every; }
     QDoubleSpinBox* bpmBox() const { return m_bpm; }
+    class LiveSequencer* sequencer() const { return m_sequencer; }
     QCheckBox* randomBox() const { return m_random; }
     QToolButton* lockBpmButton() const { return m_lockBpm; }
     QToolButton* findTempoButton() const { return m_findTempo; }
@@ -168,6 +169,8 @@ private:
     QToolButton* m_lockBpm;
     QToolButton* m_findTempo;
     QComboBox* m_launch;
+    class LiveSequencer* m_sequencer;
+    int m_sequenced = -1; // the pad the sequencer last switched on
     int m_pendingPad = -1; // pressed, waiting for the next beat / bar
     QToolButton* m_half;
     QToolButton* m_double;

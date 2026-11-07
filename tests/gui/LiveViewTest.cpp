@@ -14,6 +14,7 @@
 #include "ui/BeatTuner.h"
 #include "ui/LiveOverlaysDialog.h"
 #include "ui/LivePadPanel.h"
+#include "ui/LiveSequencer.h"
 #include "ui/MidiHub.h"
 #include "ui/PreviewWidget.h"
 #include "ui/SetlistDialog.h"
@@ -243,6 +244,52 @@ int LiveView::runSelfTest(QStringList& log)
         m_pads->setAutoMode(LivePadPanel::AutoOff);
         check(switches >= 7 && m_pads->bpm() == 150,
               QStringLiteral("auto switch on audio beats: %1 switches for 8 beats, %2 BPM shown").arg(switches).arg(m_pads->bpm()));
+        // The pad sequencer: a click on its grid puts a block on that pad's row (Undo takes it off).
+        {
+            auto* roll = m_pads->findChild<QWidget*>(QStringLiteral("liveSequencerRoll"));
+            const int before = int(m_project->timeline().liveSequence.blocks.size());
+            if (roll) {
+                const QPointF at(4, 16 + std::max(8, (roll->height() - 16) / 16) * 2.5); // (the third row: pad 3)
+                QMouseEvent press(QEvent::MouseButtonPress, at, roll->mapToGlobal(at), Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+                QMouseEvent release(QEvent::MouseButtonRelease, at, roll->mapToGlobal(at), Qt::LeftButton, Qt::NoButton, Qt::NoModifier);
+                QApplication::sendEvent(roll, &press);
+                QApplication::sendEvent(roll, &release);
+            }
+            const auto& blocks = m_project->timeline().liveSequence.blocks;
+            const bool added = int(blocks.size()) == before + 1 && blocks.back().pad == 2 && blocks.back().start == 0;
+            m_project->undoStack()->undo();
+            check(roll && added && int(m_project->timeline().liveSequence.blocks.size()) == before,
+                  QStringLiteral("a click on the sequencer's grid adds a block on that pad's row, and Undo removes it"));
+        }
+        // ... and plays in time with the beat clock: a bar of 4/4 at 240 BPM, pad 1 for two beats then pad 2, looped
+        // (the auto switch, on every beat, waits while it plays).
+        {
+            Timeline tl = m_project->timeline();
+            LiveSequence seq;
+            seq.on = true;
+            seq.bars = 1;
+            seq.snap = 4;
+            seq.blocks = {{0, 0, 2 * seq.beatTicks()}, {1, 2 * seq.beatTicks(), 2 * seq.beatTicks()}};
+            tl.liveSequence = seq;
+            m_project->applyEdit(tl, QStringLiteral("Sequence"));
+            std::vector<int> pressed;
+            QObject seqCtx;
+            connect(m_pads, &LivePadPanel::padPressed, &seqCtx, [&](int p) { pressed.push_back(p); });
+            m_pads->bpmBox()->setValue(240);
+            m_pads->setAutoMode(LivePadPanel::AutoTempo);
+            bool played = false;
+            wait(3200, [&] { played = played || m_pads->sequencer()->playing(); return false; });
+            m_pads->setAutoMode(LivePadPanel::AutoOff);
+            m_project->undoStack()->undo();
+            bool alternates = pressed.size() >= 3;
+            for (size_t i = 0; i < pressed.size(); ++i)
+                alternates = alternates && (pressed[i] == 0 || pressed[i] == 1) && (i == 0 || pressed[i] != pressed[i - 1]);
+            QStringList got;
+            for (int p : pressed)
+                got << QString::number(p + 1);
+            check(played && alternates && !m_project->timeline().liveSequence.on,
+                  QStringLiteral("the sequencer switches pads 1 and 2 in turn on the beat (pressed %1)").arg(got.join(QLatin1Char(' '))));
+        }
         if (m_activePad >= 0)
             triggerPad(m_activePad);
         // Create Random Effects Chain (pad menu) and Fill Empty Pads (set menu).

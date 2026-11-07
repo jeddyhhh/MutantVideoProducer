@@ -334,7 +334,10 @@ Make your own video effects: **Tools > Effect Builder (Node Graph)...**. The win
   what is live in the big Live picture, before its effects; with nothing live, the colour bars.
 - **Middle**: the graph. Drag a node from the list onto it (or double-click it in the list, or
   right-click the graph > Add Node). Drag from a node's **Out** (right) to another's input (left) to
-  wire them; drag a wire off an input to unplug it. Each node shows its own picture as it plays.
+  wire them; drag a wire off an input to unplug it. Each node shows its own picture as it plays,
+  and a badge at the top right of its name says where it runs: a green **GPU** (on the graphics card)
+  or a blue **CPU** (its own code on the processor, its picture sent to and from the card). Without a
+  graphics card, or while the graph has a problem, every node says CPU.
   Wheel to zoom, the middle button (or Space + drag) to pan, Delete to remove, Ctrl+Z / Ctrl+Y to
   undo and redo. Right-click a node to duplicate it or reset its settings.
 - **Right**: the **live result**, and the settings of the node you clicked. Tick **Show on
