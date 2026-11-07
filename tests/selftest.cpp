@@ -2508,7 +2508,12 @@ int cmdAudioFx(const QString& mediaDir, const QString& outDir)
         mixRange(s, 0, 4.0);
         const double factor = 4000.0 / std::max(0.01, double(timer.nsecsElapsed()) / 1e6);
         // (about 50x alone; it fell to 17x with the other tests running beside it)
-        check(factor > 5, QStringLiteral("EQ + compressor + noise reduction + reverb + limiter run at %1x real time").arg(factor, 0, 'f', 0));
+#ifdef NDEBUG
+        const double fastest = 5;
+#else
+        const double fastest = 1; // (the checked Debug build: index checks, not speed; it keeps up, no more)
+#endif
+        check(factor > fastest, QStringLiteral("EQ + compressor + noise reduction + reverb + limiter run at %1x real time").arg(factor, 0, 'f', 0));
     }
     return failures;
 }
