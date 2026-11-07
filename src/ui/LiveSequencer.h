@@ -7,6 +7,8 @@
 #include <QTimer>
 #include <QWidget>
 #include <functional>
+#include <set>
+#include <vector>
 
 class Project;
 class QComboBox;
@@ -33,6 +35,7 @@ public:
     void beat(double bpm, int barBeat);
     void setRunning(bool running);   // plays only while the Live tab runs
     void setActivePad(int pad);      // what's live now (shown on its row's name)
+    void setHeldPads(const std::vector<int>& pads); // the momentary pads held now (recorded as hold blocks)
     bool playing() const { return m_playing; }
     // In a window of its own (its rows as tall as the window lets them be); closing that window puts it back.
     void setPoppedOut(bool popped);
@@ -49,6 +52,8 @@ public:
 signals:
     // The pad the loop has on now (-1: none): LivePadPanel switches it (and off only what it switched on).
     void switchPad(int pad);
+    // A momentary pad's block starts (down) or ends: held on top of the active pad for its length.
+    void holdPad(int pad, bool down);
     // A pad's name clicked: press it, as on the pad.
     void padPressed(int pad);
 
@@ -58,7 +63,12 @@ protected:
 private:
     void refresh();
     void fitGrid();
-    void endTake();
+    void startTake(int pad, bool hold);
+    void endTake(int pad, bool hold); // (-1, false: the switched-on one)
+    void endTakes();                  // every take
+    void commitTakes();               // the takes since none were going, as one undo step
+    void releaseHolds();              // the loop's holds let go (it stopped)
+    bool isHold(int pad) const;
     void edit(const std::function<void(LiveSequence&)>& change, const QString& description);
     void tick();
 
@@ -87,8 +97,17 @@ private:
     qint64 m_lastBeatMs = 0;
     double m_bpm = 120;
     int m_lastPad = -1;       // the pad the loop last asked for
-    bool m_switching = false; // (the loop's own switch: not recorded)
-    int m_take = -1;          // the block being recorded (its index), -1: none
-    int m_lastAt = 0;         // the playhead at the last tick (to see the loop come round)
+    bool m_switching = false; // (the loop's own switch or hold: not recorded)
+    // Recording: the blocks growing now, a pad switched on (one) and pads held (any); found by pad and start.
+    struct Take {
+        int pad;
+        int start;
+        bool hold;
+    };
+    std::vector<Take> m_takes;
+    std::set<int> m_loopHeld;  // momentary pads the loop holds now
+    std::vector<int> m_held;   // all held now (the loop's and the player's)
+    int m_lastAt = 0;          // the playhead at the last tick (to see the loop come round)
     Timeline m_takeBefore;    // the project before it (one undo step a take)
+    std::weak_ptr<const int> m_takeSession; // (Project::session(): the take's project)
 };

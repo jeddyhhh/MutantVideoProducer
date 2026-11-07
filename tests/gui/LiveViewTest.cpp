@@ -22,6 +22,7 @@
 #include "ui/StreamDialog.h"
 #include "core/FFmpeg.h"
 #include <QProcess>
+#include <cstdio>
 #include "core/VideoShare.h"
 #include <QCheckBox>
 #include <QComboBox>
@@ -65,6 +66,8 @@ int LiveView::runSelfTest(QStringList& log)
     int failures = 0;
     auto check = [&](bool ok, const QString& what) {
         log << QStringLiteral("%1  %2").arg(ok ? QStringLiteral("PASS") : QStringLiteral("FAIL"), what);
+        fprintf(stderr, "%s\n", qPrintable(log.back())); // (as it goes: a crash still shows how far it got)
+        fflush(stderr);
         if (!ok)
             ++failures;
     };
@@ -371,6 +374,44 @@ int LiveView::runSelfTest(QStringList& log)
                   QStringLiteral("the sequencer's bars are picked from a list; Ctrl+D duplicates the selected blocks after themselves and "
                                  "Ctrl+C, Ctrl+V paste a copy"));
         }
+        // Edges: a block ending within a snap of the loop's end gets longer to the end only; a selection with a block past
+        // the end (the loop shortened since) moves only back, not past it.
+        {
+            auto* roll = m_pads->findChild<QWidget*>(QStringLiteral("liveSequencerRoll"));
+            Timeline tl = m_project->timeline();
+            LiveSequence seq;
+            seq.bars = 1;
+            seq.snap = 16; // (24 ticks)
+            seq.blocks = {{0, 372, 6}, {1, 0, 96}, {2, 400, 96}};
+            tl.liveSequence = seq;
+            m_project->applyEdit(tl, QStringLiteral("Sequence"));
+            const int undoAt = m_project->undoStack()->index();
+            bool resized = false, held = false;
+            if (roll) {
+                const double px = double(roll->width() - 1) / seq.loopTicks();
+                const double rh = (roll->height() - 16) / 16;
+                auto mouse = [&](QEvent::Type type, QPointF at, Qt::KeyboardModifiers mods = Qt::NoModifier) {
+                    QMouseEvent ev(type, at, roll->mapToGlobal(at), type == QEvent::MouseMove ? Qt::NoButton : Qt::LeftButton,
+                                   type == QEvent::MouseButtonRelease ? Qt::NoButton : Qt::LeftButton, mods);
+                    QApplication::sendEvent(roll, &ev);
+                };
+                mouse(QEvent::MouseButtonPress, QPointF(377 * px, 16 + rh * 0.5)); // (its right edge)
+                mouse(QEvent::MouseMove, QPointF(roll->width() - 1, 16 + rh * 0.5));
+                mouse(QEvent::MouseButtonRelease, QPointF(roll->width() - 1, 16 + rh * 0.5));
+                resized = m_project->timeline().liveSequence.blocks[0].length == 12;
+                QKeyEvent all(QEvent::KeyPress, Qt::Key_A, Qt::ControlModifier);
+                QApplication::sendEvent(roll, &all);
+                mouse(QEvent::MouseButtonPress, QPointF(40 * px, 16 + rh * 1.5));
+                mouse(QEvent::MouseMove, QPointF(200 * px, 16 + rh * 1.5));
+                mouse(QEvent::MouseButtonRelease, QPointF(200 * px, 16 + rh * 1.5));
+                const auto& b = m_project->timeline().liveSequence.blocks;
+                held = b.size() == 3 && b[1].start == 0 && b[2].start == 400;
+            }
+            while (m_project->undoStack()->index() > undoAt - 1)
+                m_project->undoStack()->undo();
+            check(resized && held, QStringLiteral("a sequencer block near the loop's end lengthens to it; a selection with a block past the end "
+                                                  "stays (not dragged further out)"));
+        }
         // Saved sequences: save one, change it, load it back (its blocks and settings; playing or not stays as it is).
         {
             Timeline tl = m_project->timeline();
@@ -433,6 +474,72 @@ int LiveView::runSelfTest(QStringList& log)
                       .arg(length / 96.0)
                       .arg(blocks.size())
                       .arg(step));
+        }
+        // Momentary pads in the loop: held on top of the active pad for their blocks, let go when it stops; and held while
+        // recording, they go in as hold blocks.
+        {
+            Timeline tl = m_project->timeline();
+            tl.livePads[12].momentary = true;
+            LiveSequence seq;
+            seq.bars = 1;
+            seq.snap = 4;
+            seq.on = true;
+            seq.blocks = {{0, 0, 384}, {12, 96, 192}};
+            tl.liveSequence = seq;
+            m_project->applyEdit(tl, QStringLiteral("Sequence"));
+            const int undoAt = m_project->undoStack()->index();
+            if (m_activePad >= 0)
+                triggerPad(m_activePad);
+            m_pads->bpmBox()->setValue(240);
+            m_pads->setAutoMode(LivePadPanel::AutoTempo);
+            bool heldOnTop = false;
+            const bool started = wait(2500, [&] { return m_pads->sequencer()->playing(); });
+            wait(1300, [&] {
+                heldOnTop = heldOnTop || (m_activePad == 0 && std::find(m_held.begin(), m_held.end(), 12) != m_held.end());
+                return false;
+            });
+            // Record a hold: the loop empty, pad 13 held for about two beats.
+            tl = m_project->timeline();
+            tl.liveSequence.blocks.clear();
+            m_project->applyEdit(tl, QStringLiteral("Empty"));
+            wait(300, [] { return false; });
+            const bool letGo = m_held.empty();
+            m_pads->sequencer()->setRecording(true);
+            holdPad(12, true);
+            wait(500, [] { return false; });
+            holdPad(12, false);
+            wait(100, [] { return false; });
+            m_pads->sequencer()->setRecording(false);
+            int holdLength = 0;
+            for (const LiveSequenceBlock& b : m_project->timeline().liveSequence.blocks)
+                holdLength += b.pad == 12 ? b.length : 0;
+            tl = m_project->timeline();
+            tl.liveSequence.on = false;
+            m_project->applyEdit(tl, QStringLiteral("Off"));
+            m_pads->setAutoMode(LivePadPanel::AutoOff);
+            wait(100, [] { return false; });
+            const bool released = m_held.empty();
+            // The pads' names down the sequencer's left: a momentary one is held while pressed there, as on its pad.
+            bool keyHeld = false, keyLetGo = false;
+            if (auto* keys = m_pads->findChild<QWidget*>(QStringLiteral("liveSequencerKeys"))) {
+                const QPointF at(10, 16 + (keys->height() - 16) / 16.0 * 12.5);
+                QMouseEvent press(QEvent::MouseButtonPress, at, keys->mapToGlobal(at), Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+                QMouseEvent release(QEvent::MouseButtonRelease, at, keys->mapToGlobal(at), Qt::LeftButton, Qt::NoButton, Qt::NoModifier);
+                const int activeBefore = m_activePad;
+                QApplication::sendEvent(keys, &press);
+                keyHeld = std::find(m_held.begin(), m_held.end(), 12) != m_held.end() && m_activePad == activeBefore;
+                QApplication::sendEvent(keys, &release);
+                keyLetGo = m_held.empty();
+            }
+            while (m_project->undoStack()->index() > undoAt - 1)
+                m_project->undoStack()->undo();
+            if (m_activePad >= 0)
+                triggerPad(m_activePad);
+            check(keyHeld && keyLetGo, QStringLiteral("a momentary pad's name in the sequencer holds it while pressed (not switched on)"));
+            check(started && heldOnTop && letGo && released && holdLength >= 96 && holdLength <= 4 * 96,
+                  QStringLiteral("a momentary pad's block is held on top of the loop's pad and let go after it (%1 %2 %3), and held while "
+                                 "recording it goes in as a hold (%4 beats)")
+                      .arg(heldOnTop).arg(letGo).arg(released).arg(holdLength / 96.0));
         }
         if (m_activePad >= 0)
             triggerPad(m_activePad);

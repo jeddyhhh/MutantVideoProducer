@@ -179,7 +179,8 @@ themselves (press it again for another). What's pasted or duplicated is selected
 
 **●** (Record) writes what you play into the loop: while it plays, every pad you press (a click,
 its key or MIDI) goes in at the playhead, to the snap, and lasts for as long as it stays on, over
-the blocks that were there. Press the pad again (or another) to end it. Each take is one Ctrl+Z.
+the blocks that were there. Press the pad again (or another) to end it. Momentary pads you hold go in
+as holds, for as long as you hold them. What you play until nothing of yours is on is one Ctrl+Z.
 Record turns the loop on: jam the first pass, then let it play back.
 
 **≡** (beside Snap) saves sequences by name: **Save**, **Save As...**, a saved one to load (its
@@ -199,8 +200,9 @@ Turn on **Loop** and it plays, over and over, while the Live tab runs: it starts
 1 of the beat clock (see Tempo and auto switch: the tempo, tapped, from beats heard or from MIDI
 clock) and follows it, so a block switches its pad on for its length, in time. Where blocks overlap,
 the one that starts last wins; where there is none, the loop switches off the pad it switched on (a
-pad you pressed yourself stays). Auto switch waits while the loop plays. The loop is saved with the
-project.
+pad you pressed yourself stays). A block on a **momentary** pad holds it on top of the pad that's on,
+for the block's length, as holding its key would; stopping the loop lets go of it. Auto switch waits
+while the loop plays. The loop is saved with the project.
 
 ### Pad sets
 

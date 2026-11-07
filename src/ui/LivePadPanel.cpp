@@ -282,6 +282,7 @@ LivePadPanel::LivePadPanel(Project* project, QWidget* parent) : QWidget(parent),
     layout->addStretch(1);
     connect(this, &LivePadPanel::beatTicked, m_sequencer, &LiveSequencer::beat);
     connect(m_sequencer, &LiveSequencer::padPressed, this, &LivePadPanel::pressPad);
+    connect(m_sequencer, &LiveSequencer::holdPad, this, &LivePadPanel::padHeld); // (a momentary pad's block: held for it)
     connect(m_sequencer, &LiveSequencer::switchPad, this, [this](int pad) {
         // The loop switches its pads at once (it is in time already), and switches off only what it switched on.
         const int was = m_sequenced;
@@ -392,6 +393,7 @@ void LivePadPanel::setEditing(int target)
 void LivePadPanel::setHeldPads(const std::vector<int>& pads)
 {
     m_heldPads = pads;
+    m_sequencer->setHeldPads(pads);
     refresh();
 }
 

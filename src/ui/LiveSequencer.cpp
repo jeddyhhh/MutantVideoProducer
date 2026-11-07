@@ -24,6 +24,7 @@
 #include <cmath>
 #include <functional>
 #include <set>
+#include <utility>
 
 namespace livesequencer {
 namespace {
@@ -99,21 +100,25 @@ protected:
                 p.fillRect(QRect(0, kRuler + r * rh, loopX, rh), QColor(0, 0, 0, 60));
         }
         // Lines: the snap, the beats, the bars (with their numbers).
+        // (each on its own: a snap needn't divide a beat or a bar, as 1/8 triplets don't in 3/16)
         const int snap = s.snapTicks(), beat = s.beatTicks(), bar = s.barTicks();
-        for (int t = 0; t <= s.loopTicks(); t += snap) {
-            const int x = int(std::round(t * px));
-            const bool isBar = t % bar == 0, isBeat = t % beat == 0;
-            if (!isBar && !isBeat && snap * px < 4)
-                continue; // (too close to see)
+        auto lines = [&](int step, int alpha, double width, bool ruler) {
+            if (step * px < 4)
+                return; // (too close to see)
             QColor line = c.ink;
-            line.setAlpha(isBar ? 110 : isBeat ? 50 : 22);
-            p.setPen(QPen(line, isBar ? 1.5 : 1.0));
-            p.drawLine(x, isBar ? 0 : kRuler, x, kRuler + kRows * rh);
-            if (isBar && t < s.loopTicks()) {
-                p.setPen(c.dim);
-                p.drawText(QRect(x + 3, 0, 40, kRuler), Qt::AlignVCenter | Qt::AlignLeft, QString::number(t / bar + 1));
+            line.setAlpha(alpha);
+            p.setPen(QPen(line, width));
+            for (int t = 0; t <= s.loopTicks(); t += step) {
+                const int x = int(std::round(t * px));
+                p.drawLine(x, ruler ? 0 : kRuler, x, kRuler + kRows * rh);
             }
-        }
+        };
+        lines(snap, 22, 1.0, false);
+        lines(beat, 50, 1.0, false);
+        lines(bar, 110, 1.5, true);
+        p.setPen(c.dim);
+        for (int t = 0; t < s.loopTicks(); t += bar)
+            p.drawText(QRect(int(std::round(t * px)) + 3, 0, 40, kRuler), Qt::AlignVCenter | Qt::AlignLeft, QString::number(t / bar + 1));
         p.setPen(c.line);
         p.drawLine(0, kRuler, loopX, kRuler);
         // The blocks.
@@ -149,6 +154,7 @@ protected:
 
     void mousePressEvent(QMouseEvent* e) override
     {
+        m_session = m_project->session();
         m_work = m_project->timeline().liveSequence;
         m_before = m_project->timeline();
         const double px = pxPerTick();
@@ -201,6 +207,8 @@ protected:
 
     void mouseMoveEvent(QMouseEvent* e) override
     {
+        if (m_dragging && m_session.lock() != m_project->session())
+            m_dragging = false; // (another project since the press)
         const double px = pxPerTick();
         if (!m_dragging) { // the cursor says what a press would do
             const int hit = blockAt(e->position());
@@ -228,17 +236,21 @@ protected:
             return;
         LiveSequenceBlock& b = m_work.blocks[size_t(m_index)];
         if (m_mode == Resize) {
-            const int end = std::clamp((tick + snap / 2) / snap * snap, b.start + snap, loop); // (to the nearest snap)
+            const int shortest = std::min(b.start + snap, std::max(loop, b.start + 1)); // (to the nearest snap, at least one)
+            const int end = std::clamp((tick + snap / 2) / snap * snap, shortest, std::max(shortest, loop));
             b.length = std::max(1, end - b.start);
         } else { // the selection, by as much as the block held moves (snapped), all kept in the loop and on the rows
             const LiveSequenceBlock& held = m_orig[size_t(m_index)];
             int dt = (tick - m_grab + snap / 2) / snap * snap - held.start;
             int dr = std::clamp(int((e->position().y() - kRuler) / rowHeight()), 0, kRows - 1) - held.pad;
+            int earliest = INT_MIN, latest = INT_MAX;
             for (int i : m_selected) {
                 const LiveSequenceBlock& o = m_orig[size_t(i)];
-                dt = std::clamp(dt, -o.start, loop - o.end());
+                earliest = std::max(earliest, -o.start);
+                latest = std::min(latest, loop - o.end());
                 dr = std::clamp(dr, -o.pad, kRows - 1 - o.pad);
             }
+            dt = std::clamp(dt, earliest, std::max(earliest, latest)); // (one past the end: only back towards the start)
             for (int i : m_selected) {
                 m_work.blocks[size_t(i)].start = m_orig[size_t(i)].start + dt;
                 m_work.blocks[size_t(i)].pad = m_orig[size_t(i)].pad + dr;
@@ -252,6 +264,12 @@ protected:
         if (!m_dragging)
             return;
         m_dragging = false;
+        if (m_session.lock() != m_project->session()) { // (another project since the press: nothing of this is its)
+            m_index = -1;
+            m_created = false;
+            update();
+            return;
+        }
         if (m_mode == Select) {
             if (m_band.isNull() || (std::abs(m_band.width()) < 3 && std::abs(m_band.height()) < 3)) { // a click
                 if (m_index >= 0 && !m_selected.erase(m_index))
@@ -456,12 +474,14 @@ private:
     QRectF m_band;
     LiveSequence m_work;
     Timeline m_before;
+    std::weak_ptr<const int> m_session; // the project's when the press began
 };
 
 // The pads' names down the left, in line with the rows; click one to press that pad.
 class Keys : public QWidget {
 public:
-    Keys(Project* project, Roll* roll, std::function<void(int)> pressed) : m_project(project), m_roll(roll), m_pressed(std::move(pressed))
+    // pressed(pad, down): a press and its release (a momentary pad is held between them, as on its pad).
+    Keys(Project* project, Roll* roll, std::function<void(int, bool)> pressed) : m_project(project), m_roll(roll), m_pressed(std::move(pressed))
     {
         setFixedWidth(64);
         setObjectName(QStringLiteral("liveSequencerKeys"));
@@ -496,14 +516,22 @@ protected:
     void mousePressEvent(QMouseEvent* e) override
     {
         const int r = int((e->position().y() - kRuler) / m_roll->rowHeight());
-        if (e->position().y() >= kRuler && r >= 0 && r < kRows && m_pressed)
-            m_pressed(r);
+        if (e->button() == Qt::LeftButton && e->position().y() >= kRuler && r >= 0 && r < kRows && m_pressed) {
+            m_down = r;
+            m_pressed(r, true);
+        }
+    }
+    void mouseReleaseEvent(QMouseEvent*) override
+    {
+        if (m_down >= 0 && m_pressed)
+            m_pressed(std::exchange(m_down, -1), false);
     }
 
 private:
     Project* m_project;
     Roll* m_roll;
-    std::function<void(int)> m_pressed;
+    std::function<void(int, bool)> m_pressed;
+    int m_down = -1; // the row pressed, until it's let go
     int m_active = -1;
 };
 } // namespace livesequencer
@@ -653,7 +681,12 @@ LiveSequencer::LiveSequencer(Project* project, QWidget* parent) : QWidget(parent
     m_scroll->setWidget(m_roll);
     m_scroll->setFixedHeight(kGridHeight + m_scroll->horizontalScrollBar()->sizeHint().height());
     m_scroll->viewport()->installEventFilter(this); // (its size: the zoom and, popped out, the rows)
-    m_keys = new Keys(project, m_roll, [this](int pad) { emit padPressed(pad); });
+    m_keys = new Keys(project, m_roll, [this](int pad, bool down) {
+        if (isHold(pad))
+            emit holdPad(pad, down); // (held while the mouse is down, as on its pad)
+        else if (down)
+            emit padPressed(pad);
+    });
     m_keys->setFixedHeight(kGridHeight);
     body->addWidget(m_keys, 0, Qt::AlignTop);
     body->addWidget(m_scroll, 1);
@@ -752,7 +785,8 @@ void LiveSequencer::refresh()
     m_snap->setCurrentIndex(std::max(0, m_snap->findData(s.snap)));
     m_clear->setEnabled(!s.blocks.empty());
     if (!s.on && m_playing) {
-        endTake();
+        endTakes();
+        releaseHolds();
         m_playing = false;
         m_roll->setPlayhead(-1);
     }
@@ -767,7 +801,8 @@ void LiveSequencer::refresh()
 
 void LiveSequencer::setRunning(bool running)
 {
-    endTake();
+    endTakes();
+    releaseHolds();
     m_running = running;
     m_playing = false; // (from the next 1)
     m_roll->setPlayhead(-1);
@@ -777,7 +812,7 @@ void LiveSequencer::setRunning(bool running)
 void LiveSequencer::setRecording(bool on)
 {
     if (!on)
-        endTake();
+        endTakes();
     const QSignalBlocker block(m_record);
     m_record->setChecked(on);
     theme::style(m_record, on ? QStringLiteral("background: @bad; color: white;") : QStringLiteral("color: @bad;"));
@@ -798,7 +833,7 @@ bool LiveSequencer::loadSequence(const QString& name)
     const auto loaded = sequences::load(name);
     if (!loaded)
         return false;
-    endTake();
+    endTakes();
     edit([&](LiveSequence& s) {
         const bool on = s.on; // (playing or not stays as it is)
         s = *loaded;
@@ -813,14 +848,68 @@ bool LiveSequencer::recording() const
     return m_record->isChecked();
 }
 
-// The take so far: one undo step.
-void LiveSequencer::endTake()
+bool LiveSequencer::isHold(int pad) const
 {
-    if (m_take < 0)
+    return pad >= 0 && pad < kLivePads && m_project->timeline().livePads[size_t(pad)].momentary;
+}
+
+// A block that grows from the playhead (to the nearest snap) for as long as the pad stays on.
+void LiveSequencer::startTake(int pad, bool hold)
+{
+    const int at = playhead();
+    if (at < 0)
         return;
-    m_take = -1;
-    if (!(m_project->timeline().liveSequence == m_takeBefore.liveSequence))
-        m_project->commitEdit(m_takeBefore, tr("Record Into Loop"));
+    Timeline tl = m_project->timeline();
+    LiveSequence& s = tl.liveSequence;
+    const int snap = s.snapTicks(), loop = s.loopTicks();
+    const int start = std::min((at + snap / 2) / snap * snap, loop - 1);
+    if (m_takes.empty()) {
+        m_takeBefore = tl;
+        m_takeSession = m_project->session();
+        m_lastAt = at;
+    }
+    s.blocks.push_back({pad, start, std::max(1, std::min(snap, loop - start))});
+    m_takes.push_back({pad, start, hold});
+    m_project->setTimelineLive(tl);
+}
+
+void LiveSequencer::endTake(int pad, bool hold)
+{
+    const auto it = std::find_if(m_takes.begin(), m_takes.end(), [&](const Take& t) { return t.hold == hold && (!hold || t.pad == pad); });
+    if (it == m_takes.end())
+        return;
+    m_takes.erase(it);
+    if (m_takes.empty())
+        commitTakes();
+}
+
+void LiveSequencer::endTakes()
+{
+    if (m_takes.empty())
+        return;
+    m_takes.clear();
+    commitTakes();
+}
+
+// The takes since none were going: one undo step (of the sequence only: other edits meanwhile keep their own).
+void LiveSequencer::commitTakes()
+{
+    if (m_takeSession.lock() != m_project->session())
+        return; // (another project opened since they began: not one of its edits)
+    Timeline before = m_project->timeline();
+    before.liveSequence = m_takeBefore.liveSequence;
+    m_takeBefore.liveSequence = m_project->timeline().liveSequence;
+    if (!(before == m_project->timeline()))
+        m_project->commitEdit(before, tr("Record Into Loop"));
+}
+
+void LiveSequencer::releaseHolds()
+{
+    const std::set<int> held = std::exchange(m_loopHeld, {});
+    m_switching = true;
+    for (int pad : held)
+        emit holdPad(pad, false);
+    m_switching = false;
 }
 
 void LiveSequencer::setActivePad(int pad)
@@ -828,20 +917,23 @@ void LiveSequencer::setActivePad(int pad)
     m_keys->setActive(pad);
     if (m_switching || !recording() || !m_playing)
         return; // (the loop's own switches, or not recording)
-    endTake();
-    const int at = playhead();
-    if (pad < 0 || at < 0)
-        return; // (switched off: the take ends there)
-    Timeline tl = m_project->timeline();
-    LiveSequence& s = tl.liveSequence;
-    const int snap = s.snapTicks(), loop = s.loopTicks();
-    const int start = std::min((at + snap / 2) / snap * snap, loop - 1) % loop; // (to the nearest snap)
-    m_takeBefore = tl;
-    s.blocks.push_back({pad, start, std::max(1, std::min(snap, loop - start))});
-    m_take = int(s.blocks.size()) - 1;
-    m_lastPad = pad;
-    m_lastAt = at;
-    m_project->setTimelineLive(tl);
+    endTake(-1, false);
+    if (pad >= 0 && !isHold(pad))
+        startTake(pad, false);
+    m_lastPad = pad; // (switched off: the loop doesn't put it back on for the rest of its block)
+}
+
+void LiveSequencer::setHeldPads(const std::vector<int>& pads)
+{
+    const std::vector<int> was = std::exchange(m_held, pads);
+    if (m_switching || !recording() || !m_playing)
+        return; // (the loop's own holds, or not recording)
+    for (int pad : pads)
+        if (std::find(was.begin(), was.end(), pad) == was.end() && !m_loopHeld.count(pad))
+            startTake(pad, true);
+    for (int pad : was)
+        if (std::find(pads.begin(), pads.end(), pad) == pads.end())
+            endTake(pad, true);
 }
 
 void LiveSequencer::beat(double bpm, int barBeat)
@@ -884,46 +976,75 @@ void LiveSequencer::tick()
     m_roll->setPlayhead(at);
     if (at < 0)
         return;
-    if (m_take < 0)
-        m_lastAt = at;
-    if (m_take >= 0 && m_take < int(m_project->timeline().liveSequence.blocks.size())) {
-        // A pad held on while recording: its block grows with the playhead, over the blocks that start under it.
+    if (!m_takes.empty() && m_takeSession.lock() != m_project->session())
+        m_takes.clear(); // (another project opened: the takes are gone with the old one)
+    const bool wrapped = at < m_lastAt - std::max(1, m_project->timeline().liveSequence.loopTicks()) / 2;
+    m_lastAt = at;
+    if (!m_takes.empty()) {
+        // Recording: each pad on grows its block with the playhead, over the blocks of its kind that start under it
+        // (a pad switched on: the other switched pads'; a held one: its own). Round the loop, it goes on from the 1.
         Timeline tl = m_project->timeline();
         LiveSequence& s = tl.liveSequence;
         const int snap = s.snapTicks(), loop = s.loopTicks();
-        LiveSequenceBlock take = s.blocks[size_t(m_take)];
-        const bool wrapped = at < m_lastAt - loop / 2; // (round the loop: this take ends, another starts at its 1)
-        m_lastAt = at;
-        const int end = wrapped ? loop : std::clamp((at + snap - 1) / snap * snap, take.start + snap, loop);
-        take.length = std::max(1, std::min(end, loop) - take.start);
+        auto isTake = [&](const LiveSequenceBlock& b) {
+            return std::any_of(m_takes.begin(), m_takes.end(), [&](const Take& t) { return t.pad == b.pad && t.start == b.start; });
+        };
+        for (const Take& t : m_takes)
+            for (LiveSequenceBlock& b : s.blocks)
+                if (b.pad == t.pad && b.start == t.start) {
+                    const int shortest = std::min(t.start + snap, loop);
+                    const int end = wrapped ? loop : std::clamp((at + snap - 1) / snap * snap, shortest, std::max(shortest, loop));
+                    b.length = std::max(1, end - t.start);
+                }
         std::vector<LiveSequenceBlock> kept;
-        for (int i = 0; i < int(s.blocks.size()); ++i) {
-            const LiveSequenceBlock& b = s.blocks[size_t(i)];
-            if (i == m_take || (b.start >= take.start && b.start < take.end()))
-                continue;
-            kept.push_back(b);
+        for (const LiveSequenceBlock& b : s.blocks) {
+            const bool under = !isTake(b) && std::any_of(m_takes.begin(), m_takes.end(), [&](const Take& t) {
+                const auto it = std::find_if(s.blocks.begin(), s.blocks.end(), [&](const LiveSequenceBlock& x) { return x.pad == t.pad && x.start == t.start; });
+                const int takeEnd = it == s.blocks.end() ? t.start : it->end();
+                return b.start >= t.start && b.start < takeEnd && (t.hold ? b.pad == t.pad : !isHold(b.pad));
+            });
+            if (!under)
+                kept.push_back(b);
         }
-        kept.push_back(take);
-        if (kept != s.blocks) {
-            s.blocks = std::move(kept);
-            m_take = int(s.blocks.size()) - 1;
+        s.blocks = std::move(kept);
+        if (wrapped)
+            for (Take& t : m_takes) {
+                t.start = 0;
+                s.blocks.push_back({t.pad, 0, std::max(1, std::min(snap, loop))});
+            }
+        if (!(s == m_project->timeline().liveSequence))
             m_project->setTimelineLive(tl);
-        }
-        if (wrapped) {
-            endTake();
-            m_takeBefore = m_project->timeline();
-            Timeline next = m_takeBefore;
-            next.liveSequence.blocks.push_back({take.pad, 0, std::max(1, std::min(snap, loop))});
-            m_take = int(next.liveSequence.blocks.size()) - 1;
-            m_project->setTimelineLive(next);
-        }
-        return; // (the pad pressed stays on: the loop doesn't switch over it)
     }
-    const int pad = m_project->timeline().liveSequence.padAt(at);
-    if (pad != m_lastPad) {
+    // What the loop has on now: the block on a switched pad that started last (the lower pad on a tie), and every
+    // momentary pad's block, held on top of it.
+    const LiveSequence& s = m_project->timeline().liveSequence;
+    int pad = -1, padStart = -1;
+    std::set<int> holds;
+    for (const LiveSequenceBlock& b : s.blocks) {
+        if (b.length <= 0 || at < b.start || at >= b.end())
+            continue;
+        if (isHold(b.pad))
+            holds.insert(b.pad);
+        else if (b.start > padStart || (b.start == padStart && b.pad < pad)) {
+            pad = b.pad;
+            padStart = b.start;
+        }
+    }
+    const bool switchTaking = std::any_of(m_takes.begin(), m_takes.end(), [](const Take& t) { return !t.hold; });
+    m_switching = true;
+    if (!switchTaking && pad != m_lastPad) { // (the pad being recorded stays on: the loop doesn't switch over it)
         m_lastPad = pad;
-        m_switching = true;
         emit switchPad(pad);
-        m_switching = false;
     }
+    for (int h : holds)
+        if (!m_loopHeld.count(h) && std::find(m_held.begin(), m_held.end(), h) == m_held.end()) { // (not one held by hand)
+            m_loopHeld.insert(h);
+            emit holdPad(h, true);
+        }
+    for (int h : std::set<int>(m_loopHeld))
+        if (!holds.count(h)) {
+            m_loopHeld.erase(h);
+            emit holdPad(h, false);
+        }
+    m_switching = false;
 }

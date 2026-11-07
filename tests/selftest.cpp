@@ -5904,7 +5904,7 @@ int cmdLive(const QString& outDir)
                           && s.padAt(1536 + 10) == 3 && s.padAt(-10) == 7; // (the later start wins; the loop wraps)
         s.on = true;
         LiveSequence bad = liveSequenceFromJson(QJsonObject{{QStringLiteral("bars"), 900}, {QStringLiteral("beatUnit"), 7},
-                                                            {QStringLiteral("snap"), 3}, {QStringLiteral("blocks"), QJsonArray{QJsonArray{20, 0, 96}, QJsonArray{1, 0, 0}}}});
+                                                            {QStringLiteral("snap"), 3}, {QStringLiteral("blocks"), QJsonArray{QJsonArray{20, 0, 96}, QJsonArray{1, 0, 0}, QJsonArray{2, 2147483000, 1000}}}});
         Timeline tl;
         tl.liveSequence = s;
         Project p;

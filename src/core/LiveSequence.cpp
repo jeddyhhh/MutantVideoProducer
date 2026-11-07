@@ -59,7 +59,8 @@ LiveSequence liveSequenceFromJson(const QJsonObject& o)
     for (const QJsonValue v : o[QStringLiteral("blocks")].toArray()) {
         const QJsonArray a = v.toArray();
         LiveSequenceBlock b{a.at(0).toInt(), a.at(1).toInt(), a.at(2).toInt()};
-        if (b.pad >= 0 && b.pad < 16 && b.start >= 0 && b.length > 0)
+        constexpr int kMost = 1 << 20; // (the longest loop is 196608 ticks: past this a file is nonsense, and start + length overflows)
+        if (b.pad >= 0 && b.pad < 16 && b.start >= 0 && b.start < kMost && b.length > 0 && b.length <= kMost)
             s.blocks.push_back(b);
     }
     return s;

@@ -19,7 +19,8 @@ What changed in each version of Mutant Video Producer. The newest is first.
 - AI control: paste_attributes, replace_media, separate_stems; render takes smart_render.
 - **Pad sequencer** (Live tab, under the pads): a looping piano roll with a row for each pad. Click or drag to put
   blocks on it; set the bars, time signature and snap (down to 1/32 and triplets). It plays in time with the beat
-  clock (tempo, taps, beats heard or MIDI clock), switching each block's pad on for its length; saved with the project.
+  clock (tempo, taps, beats heard or MIDI clock), switching each block's pad on for its length (a momentary pad's
+  block holds it on top); saved with the project.
   Ctrl+drag selects blocks to move together (onto other pads too), copy, cut, paste, duplicate (Ctrl+D) or delete;
   **⧉** pops it out into its own window, and **●** records the pads you press into the loop as it plays.
   Sequences save and load by name (the **≡** menu beside Snap).
