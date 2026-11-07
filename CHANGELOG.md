@@ -22,6 +22,9 @@ What changed in each version of Mutant Video Producer. The newest is first.
   clock (tempo, taps, beats heard or MIDI clock), switching each block's pad on for its length; saved with the project.
   Ctrl+drag selects blocks to move together (onto other pads too), copy, cut, paste, duplicate (Ctrl+D) or delete;
   **⧉** pops it out into its own window, and **●** records the pads you press into the loop as it plays.
+  Sequences save and load by name (the **≡** menu beside Snap).
+- Random effects chains (Create Random Effects Chain, Fill Empty Pads) now and then start with a node effect: a
+  Node Editor example from Medium up, an Analogue Circuit Emu one too from High.
 - The Effect Builder shows on each node whether it runs on the **GPU** (green) or the **CPU** (blue).
 - The effect menus have an **Analogue Circuit Emu** menu (under Broken VGS) and a **Node Editor** menu with the
   Effect Builder's examples; **User Created** has only the effects you make. **Broken Video Game Systems** is now

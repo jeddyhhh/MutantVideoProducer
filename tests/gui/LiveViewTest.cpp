@@ -4,6 +4,7 @@
 #include "core/BeatTracker.h"
 #include "core/AudioDecoder.h"
 #include "core/LivePadSets.h"
+#include "core/RandomChain.h"
 #include "core/LiveRecorder.h"
 #include "core/Project.h"
 #include "ui/DeviceChainView.h"
@@ -370,6 +371,33 @@ int LiveView::runSelfTest(QStringList& log)
                   QStringLiteral("the sequencer's bars are picked from a list; Ctrl+D duplicates the selected blocks after themselves and "
                                  "Ctrl+C, Ctrl+V paste a copy"));
         }
+        // Saved sequences: save one, change it, load it back (its blocks and settings; playing or not stays as it is).
+        {
+            Timeline tl = m_project->timeline();
+            LiveSequence seq;
+            seq.bars = 3;
+            seq.beatsPerBar = 7;
+            seq.beatUnit = 8;
+            seq.blocks = {{4, 0, 48}, {9, 48, 96}};
+            tl.liveSequence = seq;
+            m_project->applyEdit(tl, QStringLiteral("Sequence"));
+            const int undoAt = m_project->undoStack()->index();
+            sequences::remove(QStringLiteral("Test Seq"));
+            const bool saved = m_pads->sequencer()->saveSequence(QStringLiteral("Test Seq")) && sequences::names().contains(QStringLiteral("Test Seq"));
+            tl = m_project->timeline();
+            tl.liveSequence = LiveSequence{};
+            tl.liveSequence.on = true;
+            m_project->applyEdit(tl, QStringLiteral("Other"));
+            const bool loaded = m_pads->sequencer()->loadSequence(QStringLiteral("Test Seq"));
+            LiveSequence back = m_project->timeline().liveSequence;
+            const bool stillOn = back.on;
+            back.on = false;
+            const bool removed = sequences::remove(QStringLiteral("Test Seq")) && !sequences::names().contains(QStringLiteral("Test Seq"));
+            while (m_project->undoStack()->index() > undoAt - 1)
+                m_project->undoStack()->undo();
+            check(saved && loaded && back == seq && stillOn && removed,
+                  QStringLiteral("a sequence saves by name and loads back (7/8, 3 bars, its blocks), and deletes"));
+        }
         // Record: the loop plays (240 BPM), pad 3 is pressed and held about a bar, then switched off: it's in the loop.
         {
             Timeline tl = m_project->timeline();
@@ -447,6 +475,21 @@ int LiveView::runSelfTest(QStringList& log)
             lowPads += m_project->timeline().livePads[size_t(i)].effects.size() == 2;
         check(filled == kLivePads - 3 && lowPads == filled && m_project->timeline().livePads[2].name == wild.name,
               QStringLiteral("Fill Empty Pads with Random Chains > Low fills only the empty pads (%1 filled)").arg(filled));
+        {
+            // From Medium up, random chains now and then start with a node effect (an example), keeping their size.
+            int withNodes = 0, sized = 0, id = 1;
+            QString example;
+            for (uint32_t seed = 1; seed <= 16; ++seed) {
+                const RandomChain c = makeRandomChain(RandomTier::High, 7000 + seed, [&] { return id++; });
+                sized += c.effects.size() >= 4 && c.effects.size() <= 5;
+                if (!c.effects.empty() && c.effects.front().type.startsWith(QLatin1String("user."))) {
+                    ++withNodes;
+                    example = c.name + QStringLiteral(": ") + c.effects.front().type;
+                }
+            }
+            check(withNodes >= 2 && withNodes <= 14 && sized == 16,
+                  QStringLiteral("random chains use node effects too: %1 of 16 High ones (e.g. %2), all 4 or 5 effects").arg(withNodes).arg(example));
+        }
         padsets::remove(QStringLiteral("Test Set A"));
         while (m_project->undoStack()->index() > undoIndex)
             m_project->undoStack()->undo();

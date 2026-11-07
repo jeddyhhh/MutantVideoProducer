@@ -145,6 +145,9 @@ A 4x4 grid of pads. Each holds its own effect chain, applied on top of the Live 
 
   Each chain is tried on a moving test picture first; chains that are too subtle or too wild, flat,
   or blown out are thrown away. At most one of the slowest effects goes in, so they all play live.
+  From Medium up, a chain now and then starts with a node effect made in the Effect Builder: one of
+  the **Node Editor** examples, and from High the **Analogue Circuit Emu** ones too. That effect
+  counts as the chain's one heavy effect.
   The **≡** menu's **Fill Empty Pads with Random Chains** fills every empty pad. **Ctrl+Z** undoes it.
 
 ### Pad keys
@@ -178,6 +181,10 @@ themselves (press it again for another). What's pasted or duplicated is selected
 its key or MIDI) goes in at the playhead, to the snap, and lasts for as long as it stays on, over
 the blocks that were there. Press the pad again (or another) to end it. Each take is one Ctrl+Z.
 Record turns the loop on: jam the first pass, then let it play back.
+
+**≡** (beside Snap) saves sequences by name: **Save**, **Save As...**, a saved one to load (its
+blocks, bars, time signature and snap; whether the loop is playing stays as it is; Ctrl+Z undoes
+it), and **Delete**. They are shared by all projects, in a **Sequences** folder in the pad sets'.
 
 **⧉** (Pop Out) puts the sequencer in a window of its own, as big as you like, its rows growing with
 it; **Put Back** (or closing the window) returns it under the pads.

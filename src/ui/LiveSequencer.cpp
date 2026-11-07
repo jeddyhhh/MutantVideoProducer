@@ -6,7 +6,10 @@
 #include <QComboBox>
 #include <QCursor>
 #include <QHBoxLayout>
+#include <QInputDialog>
 #include <QKeyEvent>
+#include <QMenu>
+#include <QMessageBox>
 #include <QLabel>
 #include <QMouseEvent>
 #include <QPainter>
@@ -587,6 +590,53 @@ LiveSequencer::LiveSequencer(Project* project, QWidget* parent) : QWidget(parent
     bar2->addSpacing(6);
     bar2->addWidget(new QLabel(tr("Snap")));
     bar2->addWidget(m_snap, 1);
+    m_library = new QToolButton;
+    m_library->setText(QStringLiteral("\u2261"));
+    m_library->setObjectName(QStringLiteral("liveSequenceLibrary"));
+    m_library->setToolTip(tr("Saved sequences: save this one, load one (its blocks, bars, time and snap), delete"));
+    m_library->setPopupMode(QToolButton::InstantPopup);
+    auto* menu = new QMenu(m_library);
+    m_library->setMenu(menu);
+    connect(menu, &QMenu::aboutToShow, this, [this, menu] {
+        menu->clear();
+        const QStringList saved = sequences::names();
+        auto saveAs = [this](const QString& suggested) {
+            bool ok = false;
+            const QString name = QInputDialog::getText(this, tr("Save Sequence"), tr("Name:"), QLineEdit::Normal, suggested, &ok).trimmed();
+            if (!ok || name.isEmpty())
+                return;
+            if (name != m_name && sequences::names().contains(name)
+                && QMessageBox::question(this, tr("Save Sequence"), tr("Replace the saved sequence \"%1\"?").arg(name)) != QMessageBox::Yes)
+                return;
+            QString error;
+            if (!saveSequence(name, &error))
+                QMessageBox::warning(this, tr("Save Sequence"), tr("Couldn't save it: %1").arg(error));
+        };
+        if (!m_name.isEmpty())
+            menu->addAction(tr("Save \"%1\"").arg(m_name), this, [this] { saveSequence(m_name); });
+        menu->addAction(tr("Save As..."), this, [saveAs, this] { saveAs(m_name); });
+        menu->addSeparator();
+        if (saved.isEmpty())
+            menu->addAction(tr("(none saved yet)"))->setEnabled(false);
+        for (const QString& name : saved) {
+            QAction* a = menu->addAction(name, this, [this, name] { loadSequence(name); });
+            a->setCheckable(true);
+            a->setChecked(name == m_name);
+        }
+        if (!saved.isEmpty()) {
+            menu->addSeparator();
+            QMenu* del = menu->addMenu(tr("Delete"));
+            for (const QString& name : saved)
+                del->addAction(name, this, [this, name] {
+                    if (QMessageBox::question(this, tr("Delete Sequence"), tr("Delete the saved sequence \"%1\"?").arg(name)) != QMessageBox::Yes)
+                        return;
+                    sequences::remove(name);
+                    if (name == m_name)
+                        m_name.clear();
+                });
+        }
+    });
+    bar2->addWidget(m_library);
     layout->addLayout(bar2);
 
     auto* body = new QHBoxLayout;
@@ -733,6 +783,29 @@ void LiveSequencer::setRecording(bool on)
     theme::style(m_record, on ? QStringLiteral("background: @bad; color: white;") : QStringLiteral("color: @bad;"));
     if (on && !m_project->timeline().liveSequence.on) // (recording plays the loop)
         edit([](LiveSequence& s) { s.on = true; }, tr("Sequence On"));
+}
+
+bool LiveSequencer::saveSequence(const QString& name, QString* error)
+{
+    if (!sequences::save(name, m_project->timeline().liveSequence, error))
+        return false;
+    m_name = name.trimmed();
+    return true;
+}
+
+bool LiveSequencer::loadSequence(const QString& name)
+{
+    const auto loaded = sequences::load(name);
+    if (!loaded)
+        return false;
+    endTake();
+    edit([&](LiveSequence& s) {
+        const bool on = s.on; // (playing or not stays as it is)
+        s = *loaded;
+        s.on = on;
+    }, tr("Load Sequence \"%1\"").arg(name));
+    m_name = name;
+    return true;
 }
 
 bool LiveSequencer::recording() const

@@ -1,6 +1,13 @@
 #include "core/LiveSequence.h"
 
+#include "core/LivePadSets.h"
+
+#include <QDir>
+#include <QFile>
+#include <QFileInfo>
 #include <QJsonArray>
+#include <QJsonDocument>
+#include <QSaveFile>
 #include <algorithm>
 
 int LiveSequence::snapTicks() const
@@ -57,3 +64,94 @@ LiveSequence liveSequenceFromJson(const QJsonObject& o)
     }
     return s;
 }
+
+namespace sequences {
+namespace {
+QString fileFor(const QString& name)
+{
+    QString base;
+    for (const QChar ch : name.trimmed())
+        base += ch.isLetterOrNumber() || ch == QLatin1Char(' ') || ch == QLatin1Char('-') || ch == QLatin1Char('_') ? ch : QLatin1Char('_');
+    return QDir(directory()).filePath((base.isEmpty() ? QStringLiteral("sequence") : base) + QStringLiteral(".json"));
+}
+
+// {name, sequence} from a file, if it is one.
+std::optional<std::pair<QString, LiveSequence>> read(const QString& path)
+{
+    QFile f(path);
+    if (!f.open(QIODevice::ReadOnly))
+        return std::nullopt;
+    const QJsonObject o = QJsonDocument::fromJson(f.readAll()).object();
+    if (!o[QStringLiteral("sequence")].isObject())
+        return std::nullopt;
+    QString name = o[QStringLiteral("name")].toString();
+    if (name.isEmpty())
+        name = QFileInfo(path).completeBaseName();
+    return std::make_pair(name, liveSequenceFromJson(o[QStringLiteral("sequence")].toObject()));
+}
+
+// The file holding `name` (by its file name, or one renamed by hand: the name inside); empty: none.
+QString find(const QString& name)
+{
+    if (const auto s = read(fileFor(name)); s && s->first == name)
+        return fileFor(name);
+    const QDir dir(directory());
+    for (const QString& file : dir.entryList({QStringLiteral("*.json")}, QDir::Files))
+        if (const auto s = read(dir.filePath(file)); s && s->first == name)
+            return dir.filePath(file);
+    return {};
+}
+} // namespace
+
+QString directory()
+{
+    const QString dir = QDir(padsets::directory()).filePath(QStringLiteral("Sequences"));
+    QDir().mkpath(dir);
+    return dir;
+}
+
+QStringList names()
+{
+    QStringList out;
+    const QDir dir(directory());
+    for (const QString& file : dir.entryList({QStringLiteral("*.json")}, QDir::Files))
+        if (const auto s = read(dir.filePath(file)))
+            out << s->first;
+    std::sort(out.begin(), out.end(), [](const QString& a, const QString& b) { return a.compare(b, Qt::CaseInsensitive) < 0; });
+    out.removeDuplicates();
+    return out;
+}
+
+std::optional<LiveSequence> load(const QString& name)
+{
+    const QString path = find(name);
+    if (path.isEmpty())
+        return std::nullopt;
+    return read(path)->second;
+}
+
+bool save(const QString& name, const LiveSequence& s, QString* error)
+{
+    if (name.trimmed().isEmpty()) {
+        if (error)
+            *error = QStringLiteral("the sequence needs a name");
+        return false;
+    }
+    LiveSequence saved = s;
+    saved.on = false; // (whether it plays is the project's)
+    const QJsonObject o{{QStringLiteral("name"), name.trimmed()}, {QStringLiteral("sequence"), liveSequenceToJson(saved)}};
+    QSaveFile f(fileFor(name));
+    if (!f.open(QIODevice::WriteOnly) || f.write(QJsonDocument(o).toJson()) < 0 || !f.commit()) {
+        if (error)
+            *error = f.errorString();
+        return false;
+    }
+    return true;
+}
+
+bool remove(const QString& name)
+{
+    const QString path = find(name);
+    return !path.isEmpty() && QFile::remove(path);
+}
+} // namespace sequences

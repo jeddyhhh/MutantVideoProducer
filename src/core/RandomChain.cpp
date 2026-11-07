@@ -1,6 +1,7 @@
 #include "core/RandomChain.h"
 
 #include "core/Compositor.h"
+#include "core/NodeGraph.h"
 
 #include <QPainter>
 #include <algorithm>
@@ -252,6 +253,25 @@ RandomChain build(RandomTier tier, std::mt19937& rng, const std::function<int()>
     }
     RandomChain out;
     bool haveHeavy = false;
+    // Now and then (Medium up) one of the node effects that come with the program, first in the chain: the Node
+    // Editor examples, and from High the Analogue Circuit Emu ones too. It is the chain's one heavy effect (so it
+    // plays live), in place of a glitch.
+    static constexpr double kNodeChance[4] = {0.0, 0.3, 0.45, 0.6};
+    if (uni(rng) < kNodeChance[t]) {
+        std::vector<const EffectDef*> pool;
+        for (const EffectDef* d : nodes::userEffects())
+            if (d->category == QLatin1String("Node Editor") || (t >= 2 && d->category == QLatin1String("Analogue Circuit Emu")))
+                pool.push_back(d);
+        if (!pool.empty()) {
+            out.effects.push_back(makeEffect(*pool[size_t(range(0, int(pool.size()) - 1))], allocId()));
+            haveHeavy = true;
+            for (int n = 0, i = 2; n < 5; ++n, i = (i + 1) % 5) // (one effect fewer: a glitch if it can, so the chain stays its size)
+                if (want[i] > counts[i].first) {
+                    --want[i];
+                    break;
+                }
+        }
+    }
     for (int ri = 0; ri < 5; ++ri) {
         std::vector<const Candidate*> pool;
         for (const Candidate& c : candidates())

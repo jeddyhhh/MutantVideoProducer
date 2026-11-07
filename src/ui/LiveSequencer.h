@@ -40,6 +40,9 @@ public:
     // long as it stays on, over what was there.
     void setRecording(bool on);
     bool recording() const;
+    // The saved sequences (core/LiveSequence.h): this one saved by name; one loaded in its place (Undo brings it back).
+    bool saveSequence(const QString& name, QString* error = nullptr);
+    bool loadSequence(const QString& name);
     bool poppedOut() const { return m_window != nullptr; }
     int playhead() const;            // ticks into the loop (-1: not playing)
 
@@ -68,6 +71,8 @@ private:
     QComboBox* m_snap;
     QToolButton* m_clear;
     QToolButton* m_popOut;
+    QToolButton* m_library;
+    QString m_name;           // the saved sequence last loaded or saved
     QWidget* m_content;       // the toolbar and the roll: here, or in m_window
     QWidget* m_placeholder;   // what's here while it's in its window
     QWidget* m_window = nullptr;

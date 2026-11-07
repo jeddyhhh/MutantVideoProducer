@@ -1,5 +1,8 @@
 #pragma once
 
+#include <QStringList>
+#include <optional>
+
 // The Live tab's pad sequencer: a looping piano roll whose rows are the 16 pads. A block on a row switches that pad
 // on for its length, in time with the beat clock (the tempo typed, tapped, heard or from MIDI). Times are ticks,
 // 384 a whole note (96 a quarter), so changing the snap or the time signature never moves the blocks.
@@ -36,3 +39,12 @@ struct LiveSequence {
 
 QJsonObject liveSequenceToJson(const LiveSequence& s);
 LiveSequence liveSequenceFromJson(const QJsonObject& o);
+
+// Saved sequences, by name, shared by all projects (a "Sequences" folder in the pad sets' one).
+namespace sequences {
+QString directory();
+QStringList names(); // sorted, case-insensitively
+std::optional<LiveSequence> load(const QString& name);
+bool save(const QString& name, const LiveSequence& s, QString* error = nullptr);
+bool remove(const QString& name);
+} // namespace sequences
