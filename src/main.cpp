@@ -11,6 +11,8 @@
 #include "ui/LiveView.h"
 #include "ui/MainWindow.h"
 #include "ui/MonkeyTest.h"
+#include "ui/NodeEffectEditor.h"
+#include <QGraphicsView>
 #include "ui/McpServer.h"
 #include "ui/TimelineWidget.h"
 #include "ui/Theme.h"
@@ -85,6 +87,9 @@ int main(int argc, char** argv)
     const QStringList liveVideo = takeAll(QStringLiteral("--live-video"));
     const QStringList liveActions = takeAll(QStringLiteral("--live-action"));
     const QStringList triggers = takeAll(QStringLiteral("--trigger"));
+    // --effect-file <.mvpfx>: with --trigger effectBuilder, the Effect Builder opens that effect (--grab NodeEffectEditor)
+    const QStringList effectFile = takeAll(QStringLiteral("--effect-file"));
+    const QStringList graphZoom = takeAll(QStringLiteral("--graph-zoom")); // (and its graph at this zoom, centred)
     const QStringList grabs = takeAll(QStringLiteral("--grab"));
     const QStringList delays = takeAll(QStringLiteral("--delay"));
     const QStringList themeId = takeAll(QStringLiteral("--theme")); // a theme by id, e.g. for screenshots of it
@@ -411,6 +416,25 @@ int main(int argc, char** argv)
                 button->click();
             else if (byText)
                 byText->trigger();
+        });
+    if (!effectFile.isEmpty())
+        QTimer::singleShot(1200, &window, [&window, path = effectFile.front(), offScreen = !screenshot.isEmpty()] {
+            if (auto* editor = window.findChild<NodeEffectEditor*>()) {
+                editor->hide();
+                editor->setAttribute(Qt::WA_DontShowOnScreen, offScreen);
+                editor->resize(1600, 1000);
+                editor->show();
+                editor->openFile(path);
+            }
+        });
+    if (!graphZoom.isEmpty())
+        QTimer::singleShot(2000, &window, [&window, zoom = graphZoom.front().toDouble()] {
+            if (auto* editor = window.findChild<NodeEffectEditor*>())
+                if (auto* view = editor->findChild<QGraphicsView*>()) {
+                    view->resetTransform();
+                    view->scale(zoom, zoom);
+                    view->centerOn(view->scene()->itemsBoundingRect().center());
+                }
         });
     if (!screenshot.isEmpty() && !liveVideo.isEmpty()) {
         if (auto* modes = window.findChild<QTabWidget*>(QStringLiteral("modeTabs")))

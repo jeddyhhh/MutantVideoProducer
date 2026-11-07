@@ -34,6 +34,7 @@
 #include "core/Multicam.h"
 #include "core/PanCrop.h"
 #include "core/Compositor.h"
+#include "core/NodeGraph.h"
 #include "core/ColorMatch.h"
 #include "core/PreviewCache.h"
 #include "core/Spectrogram.h"
@@ -6773,6 +6774,56 @@ int cmdSfx(const QString& dir)
 // `narration`, a recording of speech), each project built with the same model
 // the editor edits, saved with paths relative to its folder, loaded back and
 // rendered. Re-run after a change to the project format.
+// The README's effects sheet: each "<effect id or node:Name>|<picture>|<label>" drawn (a few frames in, for the effects
+// that move) as a tile, `cols` across.
+int cmdFxShowcase(const QStringList& args)
+{
+    nodes::loadUserEffects();
+    const QString out = args[0];
+    const int cols = std::max(1, args[1].toInt()), tw = 640, th = 360, gap = 8;
+    std::vector<QImage> tiles;
+    for (int i = 2; i < args.size(); ++i) {
+        const QStringList spec = args[i].split(QLatin1Char('|'));
+        const QString id = spec[0].startsWith(QLatin1String("node:")) ? nodes::effectId(spec[0].mid(5)) : spec[0];
+        const EffectDef* def = findEffect(id);
+        if (!def)
+            def = nodes::findUserEffect(id);
+        const QImage in = QImage(spec.value(1)).convertToFormat(QImage::Format_ARGB32_Premultiplied).scaled(1280, 720, Qt::IgnoreAspectRatio,
+                                                                                                           Qt::SmoothTransformation);
+        if (!def || in.isNull()) {
+            print(QStringLiteral("fxshowcase: no effect %1 or picture %2").arg(spec[0], spec.value(1)));
+            return 1;
+        }
+        const EffectChain chain{makeEffect(*def, 1)};
+        Compositor comp(false);
+        QImage result;
+        for (int f = 0; f < 15; ++f)
+            result = comp.renderLive(in, chain, TimeUs(f) * 33333, 30.0);
+        QImage tile = result.scaled(tw, th, Qt::IgnoreAspectRatio, Qt::SmoothTransformation).convertToFormat(QImage::Format_RGB32);
+        QPainter p(&tile);
+        QFont f = p.font();
+        f.setPixelSize(17);
+        f.setBold(true);
+        p.setFont(f);
+        const QString label = spec.value(2, def->name);
+        const QRect bar(0, th - 30, p.fontMetrics().horizontalAdvance(label) + 20, 30);
+        p.fillRect(bar, QColor(12, 10, 20, 200));
+        p.setPen(Qt::white);
+        p.drawText(bar, Qt::AlignCenter, label);
+        p.end();
+        tiles.push_back(tile);
+        print(QStringLiteral("%1: %2").arg(label, def->name));
+    }
+    const int rows = int((tiles.size() + size_t(cols) - 1) / size_t(cols));
+    QImage sheet(cols * tw + (cols - 1) * gap, rows * th + (rows - 1) * gap, QImage::Format_RGB32);
+    sheet.fill(QColor(18, 18, 24));
+    QPainter p(&sheet);
+    for (size_t k = 0; k < tiles.size(); ++k)
+        p.drawImage(int(k % size_t(cols)) * (tw + gap), int(k / size_t(cols)) * (th + gap), tiles[k]);
+    p.end();
+    return sheet.save(out) ? 0 : 1;
+}
+
 int cmdExamples(const QString& outDir, const QString& narrationWav)
 {
     int failures = 0;
@@ -7281,6 +7332,11 @@ int cmdExamples(const QString& outDir, const QString& narrationWav)
         tl.liveScenes[1] = LiveScene{QStringLiteral("Drop"), tl.liveEffects, 3, {}, {title, bars}, true};
         tl.liveSetlist = {LiveSong{QStringLiteral("Warm-up"), {}, 120, true, 0, QStringLiteral("Slow pads, let it breathe")},
                           LiveSong{QStringLiteral("Peak"), {}, 128, true, 1, QStringLiteral("Momentary pads on the drops")}};
+        // A loop for the pad sequencer (Loop off: press it to play): four bars through the pads, the holds on the 4.
+        tl.liveSequence.bars = 4;
+        tl.liveSequence.blocks = {{0, 0, 192},    {1, 192, 96},   {2, 288, 96},   {3, 384, 288},  {12, 672, 96},
+                                  {4, 768, 96},   {5, 864, 96},   {6, 960, 192},  {13, 1152, 48}, {13, 1248, 48},
+                                  {8, 1344, 96},  {9, 1440, 48},  {10, 1488, 48}};
         save(p, tl, QStringLiteral("live-set"));
     }
 
@@ -8085,6 +8141,8 @@ int main(int argc, char** argv)
         return cmdHarden(args[1], args[2], args[3], args.size() == 5 ? args[4].toInt() : 300);
     if (args.size() == 2 && args[0] == QLatin1String("sfx"))
         return cmdSfx(args[1]);
+    if (args.size() >= 3 && args[0] == QLatin1String("fxshowcase"))
+        return cmdFxShowcase(args.mid(1));
     if (args.size() == 3 && args[0] == QLatin1String("examples"))
         return cmdExamples(args[1], args[2]);
     print(QStringLiteral("usage: mvp_selftest probe <files...> | export <media> <outdir> | effects <media> <outdir> | generators <outdir> | speed <media> <outdir> | gpu <testmedia-dir> <outdir> | audiofx <testmedia-dir> <outdir> | envelopes <testmedia-dir> <outdir> | ramps <testmedia-dir> <outdir> | racks <testmedia-dir> <outdir> | editing <testmedia-dir> <outdir> | beats | random [<media> <outdir>] | presets <testmedia-dir> <outdir> | formats"));

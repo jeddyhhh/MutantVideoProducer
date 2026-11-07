@@ -811,6 +811,8 @@ void NodeEffectEditor::setGraph(const nodes::Graph& g)
     m_lastKey.clear();
     m_name->setText(m_graph.name);
     m_description->setText(m_graph.description);
+    m_name->setCursorPosition(0); // (the start of a long one, not its end)
+    m_description->setCursorPosition(0);
     rebuildScene();
     showParams(0);
     QTimer::singleShot(0, this, [this] { frameGraph(); });
@@ -911,6 +913,8 @@ void NodeEffectEditor::undo()
     m_lastKey.clear();
     m_name->setText(m_graph.name);
     m_description->setText(m_graph.description);
+    m_name->setCursorPosition(0); // (the start of a long one, not its end)
+    m_description->setCursorPosition(0);
     rebuildScene();
     showParams(m_graph.find(m_paramsNode) ? m_paramsNode : 0);
 }
@@ -925,6 +929,8 @@ void NodeEffectEditor::redo()
     m_lastKey.clear();
     m_name->setText(m_graph.name);
     m_description->setText(m_graph.description);
+    m_name->setCursorPosition(0); // (the start of a long one, not its end)
+    m_description->setCursorPosition(0);
     rebuildScene();
     showParams(m_graph.find(m_paramsNode) ? m_paramsNode : 0);
 }

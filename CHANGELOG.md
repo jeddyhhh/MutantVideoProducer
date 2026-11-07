@@ -23,6 +23,7 @@ What changed in each version of Mutant Video Producer. The newest is first.
   Ctrl+drag selects blocks to move together (onto other pads too), copy, cut, paste, duplicate (Ctrl+D) or delete;
   **⧉** pops it out into its own window, and **●** records the pads you press into the loop as it plays.
   Sequences save and load by name (the **≡** menu beside Snap).
+- The **Live Set** example has a four-bar sequence ready to play (press Loop).
 - Random effects chains (Create Random Effects Chain, Fill Empty Pads) now and then start with a node effect: a
   Node Editor example from Medium up, an Analogue Circuit Emu one too from High.
 - The Effect Builder shows on each node whether it runs on the **GPU** (green) or the **CPU** (blue).
@@ -42,6 +43,7 @@ What changed in each version of Mutant Video Producer. The newest is first.
 
 ### Fixed
 
+- The Effect Builder showed the end of a long effect name and description, not their start.
 - **Alternate Take**: switching a narration line to a shorter take kept fades longer than the event, and a take whose
   file has its sound in another stream played silence.
 - **Smart render** copied the video of an event that was switched off (the render shows it as not there), and copied
