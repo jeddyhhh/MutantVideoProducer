@@ -66,7 +66,9 @@ On the GPU too: the animated backgrounds and overlays (Plasma and Aurora as
 shaders of their own, the rest painted by the GPU), the motion between frames
 for Optical Flow slow motion and Reduce Noise (a block-matching pyramid in
 shaders: no frames read back), effects made in the Effect Builder and its
-preview, and the Live tab's whole frame (the layer with its effects, the Live FX,
+preview (the Composite Signal nodes too: the signal stays on the card as a float
+texture; only the TV's sync tracking, a pass over the samples in order, and the
+Enhancer's circuit run on the CPU), and the Live tab's whole frame (the layer with its effects, the Live FX,
 a pad switch's transition and the pads) with one upload and one read back.
 
 ## Packaging

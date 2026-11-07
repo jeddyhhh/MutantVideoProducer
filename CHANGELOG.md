@@ -22,7 +22,8 @@ What changed in each version of Mutant Video Producer. The newest is first.
   **Broken VGS**.
 - Effect Builder nodes: **Feedback** (the effect's output the frame before, as a source) and **Switch** (one of four
   inputs, keyframable); Composite Signal: **PAL** (Encode and the TV), **Sync Generator**, **RC High Pass**,
-  **Clipper**, **Luma/Chroma Split** and **Signal Switcher**.
+  **Clipper**, **Luma/Chroma Split** and **Signal Switcher**. On the GPU the Composite Signal nodes run as shaders
+  (about three times as fast: four Analogue Circuit Emu effects stacked on the Live tab in 26 ms a frame, not 83).
 - **Composite Signal nodes** (Effect Builder): the picture as an NTSC composite video signal (sync, colour burst,
   subcarrier) through emulated analogue circuits onto a TV: Composite Encode, Sync Separator, Sync Mixer, RC Low
   Pass, Delay Line, RF Noise, an Enhancer (a one-transistor amplifier solved as a circuit) and Composite Decode, a

@@ -403,7 +403,8 @@ With **Options > GPU Acceleration** on, every video effect runs on the graphics 
 *FFmpeg Filter*, which FFmpeg runs. The GPU and CPU give the same result, so turning it off only
 changes the speed. Effects made in the Effect Builder run there node by node too (a text source
 is drawn on the CPU and sent up), which keeps even the heaviest examples well within a frame on
-the Live tab.
+the Live tab. The Composite Signal nodes run there as shaders, about three times as fast as on the
+CPU; the TV's sync tracking and the Enhancer's circuit stay on the CPU.
 
 ## Try it
 

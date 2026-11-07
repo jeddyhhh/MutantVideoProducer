@@ -5,6 +5,8 @@
 
 #include "core/EffectHelpers.h"
 #include "core/GpuGlitchShaders.h"
+#include "core/GpuSignalShaders.h"
+#include "core/CompositeSignal.h"
 #include "core/ConsoleEngine.h"
 #include "core/GpuConsoleShaders.h"
 
@@ -40,6 +42,8 @@
 #include <deque>
 #include <functional>
 #include <map>
+#include <numbers>
+#include <optional>
 #include <set>
 #include <memory>
 #include <vector>
@@ -1029,7 +1033,7 @@ struct GpuCompositor::Impl : protected QOpenGLExtraFunctions {
     QSize uploadSize;
     std::unique_ptr<QOpenGLShaderProgram> progTex, progSolid, progYuv, progLut, progMatrix, progBlur, progSharpen,
         progBright, progScreen, progVignette, progKey, progNoise, progPixelate, progTransition, progTransitionFx, progRackBlend, progWarp,
-        progChroma, progRadialPass, progCrt, progPsy, progFx, progDiffuse, progConsole, progVgMesh, progLut3D, progEncodeYuv, progMaxAlpha, progFlowMix, progMatte, progDenoise, progNode, progFlow, progGen;
+        progChroma, progRadialPass, progCrt, progPsy, progFx, progDiffuse, progConsole, progVgMesh, progLut3D, progEncodeYuv, progMaxAlpha, progFlowMix, progMatte, progDenoise, progNode, progFlow, progGen, progSignal;
     // .cube LUTs as 3D textures, by the loaded table (kept while it is in the file cache).
     std::map<const CubeLut*, std::pair<std::shared_ptr<const CubeLut>, GLuint>> lut3dTextures;
     GLuint meshVao = 0, meshVbo = 0;
@@ -1097,6 +1101,7 @@ struct GpuCompositor::Impl : protected QOpenGLExtraFunctions {
         progNode.reset();
         progFlow.reset();
         progGen.reset();
+        progSignal.reset();
         progWarp.reset();
         progChroma.reset();
         progRadialPass.reset();
@@ -1154,7 +1159,8 @@ struct GpuCompositor::Impl : protected QOpenGLExtraFunctions {
                         {&progRackBlend, kFragRackBlend}, {&progWarp, kFragWarp}, {&progChroma, kFragChroma},
                         {&progRadialPass, kFragRadialPass}, {&progCrt, kFragCrt}, {&progPsy, kFragPsy},
                         {&progFx, gpufx::kFragFx}, {&progLut3D, kFragLut3D}, {&progMaxAlpha, kFragMaxAlpha}, {&progFlowMix, kFragFlowMix},
-                        {&progMatte, kFragMatte}, {&progDenoise, kFragDenoise}, {&progNode, kFragNode}, {&progFlow, kFragFlow}, {&progGen, kFragGen}};
+                        {&progMatte, kFragMatte}, {&progDenoise, kFragDenoise}, {&progNode, kFragNode}, {&progFlow, kFragFlow}, {&progGen, kFragGen},
+                        {&progSignal, gpusig::kFragSignal}};
         for (auto& p : programs) {
             auto prog = std::make_unique<QOpenGLShaderProgram>();
             if (!prog->addShaderFromSourceCode(QOpenGLShader::Vertex, kVertex)
@@ -1226,8 +1232,8 @@ struct GpuCompositor::Impl : protected QOpenGLExtraFunctions {
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GLint(filter == GL_NEAREST ? GL_NEAREST : GL_LINEAR));
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-        const bool flt = internal == GL_RGBA32F || internal == GL_RG32F;
-        const GLenum format = internal == GL_RG32F ? GL_RG : flt ? GL_RGBA
+        const bool flt = internal == GL_RGBA32F || internal == GL_RG32F || internal == GL_R32F;
+        const GLenum format = internal == GL_R32F ? GL_RED : internal == GL_RG32F ? GL_RG : flt ? GL_RGBA
                                   : (internal == GL_R8 || internal == GL_R16 ? GL_RED : (internal == GL_RG8 || internal == GL_RG16 ? GL_RG : GL_BGRA));
         const GLenum type = flt ? GL_FLOAT : (internal == GL_R16 || internal == GL_RG16 ? GL_UNSIGNED_SHORT : GL_UNSIGNED_BYTE);
         glTexImage2D(GL_TEXTURE_2D, 0, GLint(internal), w, h, 0, format, type, nullptr);
@@ -1242,7 +1248,7 @@ struct GpuCompositor::Impl : protected QOpenGLExtraFunctions {
         t.w = std::max(1, s.width());
         t.h = std::max(1, s.height());
         t.fmt = fmt;
-        t.tex = makeTexture(t.w, t.h, fmt, fmt == GL_RGBA32F || fmt == GL_RG32F ? GL_NEAREST : GL_LINEAR);
+        t.tex = makeTexture(t.w, t.h, fmt, fmt == GL_RGBA32F || fmt == GL_RG32F || fmt == GL_R32F ? GL_NEAREST : GL_LINEAR);
         glGenFramebuffers(1, &t.fbo);
         glBindFramebuffer(GL_FRAMEBUFFER, t.fbo);
         glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, t.tex, 0);
@@ -2265,6 +2271,27 @@ struct GpuCompositor::Impl : protected QOpenGLExtraFunctions {
 
     // ---- User effects: Effect Builder graphs (core/NodeGraph.h), node by node on the GPU ----
 
+    // A composite signal on the GPU: one float a sample, a row a line (CompositeSignal.h's), its standard and frame.
+    struct GpuSignal {
+        std::shared_ptr<Layer> tex;
+        const composite::Standard* std = nullptr;
+        int64_t frame = 0;
+    };
+
+    // The TV on the GPU: the beam (on the CPU: composite::tvScan's) and the picture it draws on.
+    struct GpuTv : EffectState {
+        Impl* owner = nullptr;
+        std::unique_ptr<EffectState> beam;
+        Target raster, rasterAtStart;
+        ~GpuTv() override
+        {
+            if (owner && QOpenGLContext::currentContext() == owner->context.get()) {
+                owner->deleteTarget(raster);
+                owner->deleteTarget(rasterAtStart);
+            }
+        }
+    };
+
     struct NodeGraphState : EffectState {
         Impl* owner = nullptr;
         QString text;
@@ -2273,6 +2300,7 @@ struct GpuCompositor::Impl : protected QOpenGLExtraFunctions {
         std::map<int, std::deque<Target>> delays; // Delay nodes: the frames they saw, newest last
         std::map<int, Target> painted;            // source nodes painted on the GPU
         Target previous;                          // the output the frame before (Feedback nodes)
+        std::map<int, GpuSignal> sigs;            // this frame's Composite Signal nodes' signals, on the GPU
         ~NodeGraphState() override
         {
             if (owner)
@@ -2613,6 +2641,7 @@ struct GpuCompositor::Impl : protected QOpenGLExtraFunctions {
         const QSize size = layer->size();
         nodes::SignalBus bus;
         const nodes::NodeContext nc{size, ctx, &bus};
+        s->sigs.clear();
         std::map<int, Layer> done;
         std::set<int> visiting;
         std::function<const Target*(int)> eval = [&](int id) -> const Target* {
@@ -2670,6 +2699,321 @@ struct GpuCompositor::Impl : protected QOpenGLExtraFunctions {
         }
         drawLayerReplace(s->previous, *final);
         layer = std::move(final);
+        s->sigs.clear(); // (their targets back to the pool)
+    }
+
+
+    // ---- Composite Signal nodes (GpuSignalShaders.h; CompositeSignal.h has the CPU versions) ------------------------
+
+    void sigUniforms(QOpenGLShaderProgram& g, const composite::Standard& S, int64_t frame)
+    {
+        setI(g, "uStd", S.line, S.lines, S.samples(), S.pal ? 1 : 0);
+        setI(g, "uTiming", S.syncEnd, S.burstStart, S.burstEnd, S.activeStart);
+        setI(g, "uTiming2", S.activeEnd, S.firstActive, S.activeLines, S.samples() & 3);
+        setI(g, "uFrame", int(((frame % 4) + 4) % 4), int((((frame % 2) * (S.lines % 2)) + 2) % 2));
+    }
+
+    // One pass of the signal program into a new target of `size` (a signal: the standard's, one float a sample).
+    Layer sigPass(int mode, const composite::Standard& S, int64_t frame, std::initializer_list<std::pair<const char*, GLuint>> textures,
+                  const std::function<void(QOpenGLShaderProgram&)>& uniforms, QSize size = {}, GLenum fmt = GL_R32F)
+    {
+        Layer o = acquire(size.isValid() ? size : QSize(S.line, S.lines), false, fmt);
+        QOpenGLShaderProgram& g = *progSignal;
+        g.bind();
+        static const char* kSamplers[] = {"uA", "uB", "uC", "uPic", "uTable", "uTail", "uPrev"};
+        for (int i = 0; i < 7; ++i) {
+            GLuint tex = emptyTex;
+            for (const auto& [name, t] : textures)
+                if (qstrcmp(name, kSamplers[i]) == 0 && t)
+                    tex = t;
+            bindTexture(i, tex);
+            g.setUniformValue(kSamplers[i], i);
+        }
+        g.setUniformValue("uMode", mode);
+        sigUniforms(g, S, frame);
+        setI(g, "uI0", 0);
+        setI(g, "uI1", 0);
+        g.setUniformValue("uP0", QVector4D());
+        g.setUniformValue("uP1", QVector4D());
+        if (uniforms)
+            uniforms(g);
+        fullscreen(g, *o);
+        glActiveTexture(GL_TEXTURE0); // (as the rest leave it: QPainter's GL engine expects unit 0, or a generator's sky goes)
+        return o;
+    }
+
+    // A float texture of w x h filled from `data` (one, two or four floats a texel, as fmt says).
+    Layer floatTexture(int w, int h, GLenum fmt, const float* data)
+    {
+        Layer t = acquire(QSize(w, h), false, fmt);
+        glBindTexture(GL_TEXTURE_2D, t->tex);
+        glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
+        glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, w, h, fmt == GL_R32F ? GL_RED : fmt == GL_RG32F ? GL_RG : GL_RGBA, GL_FLOAT, data);
+        return t;
+    }
+
+    GpuSignal toGpu(const composite::Signal& sig)
+    {
+        return {std::make_shared<Layer>(floatTexture(sig.std->line, sig.std->lines, GL_R32F, sig.v.data())), sig.std, sig.frame};
+    }
+
+    composite::Signal toCpu(const GpuSignal& g)
+    {
+        composite::Signal sig;
+        sig.std = g.std;
+        sig.frame = g.frame;
+        sig.v.resize(size_t(g.std->samples()));
+        glBindFramebuffer(GL_READ_FRAMEBUFFER, (*g.tex)->fbo);
+        glPixelStorei(GL_PACK_ALIGNMENT, 4);
+        glReadPixels(0, 0, g.std->line, g.std->lines, GL_RED, GL_FLOAT, sig.v.data());
+        return sig;
+    }
+
+    GpuSignal encodeOnGpu(const Target* picture, const composite::EncodeOptions& o, int64_t frame)
+    {
+        const composite::Standard& S = *o.std;
+        const float black = o.setup && !S.pal ? 7.5f : 0.0f, range = 100.0f - black;
+        const float burstU = S.pal ? -20.0f / float(std::numbers::sqrt2) : -20.0f, burstV = S.pal ? 20.0f / float(std::numbers::sqrt2) : 0.0f;
+        Layer l = sigPass(gpusig::Encode, S, frame, {{"uPic", picture ? picture->tex : 0}}, [&](QOpenGLShaderProgram& g) {
+            setI(g, "uI0", picture ? 1 : 0, composite::chromaBox(S, o.chromaMHz));
+            g.setUniformValue("uP0", QVector4D(black, range, float(o.saturation), 0));
+            g.setUniformValue("uP1", QVector4D(burstU, burstV, 0, 0));
+        });
+        return {std::make_shared<Layer>(std::move(l)), &S, frame};
+    }
+
+    // The signal wired into input i: a signal node's, or the picture there encoded (NTSC, as the CPU does).
+    std::optional<GpuSignal> sigInput(const std::vector<const Target*>& in, size_t i, const nodes::NodeContext& nc, NodeGraphState& s)
+    {
+        if (i < nc.inputs.size() && nc.inputs[i])
+            if (const auto it = s.sigs.find(nc.inputs[i]); it != s.sigs.end())
+                return it->second;
+        if (i < in.size() && in[i])
+            return encodeOnGpu(in[i], {}, composite::frameIndex(nc.render.timelineTime, nc.render.fps));
+        return std::nullopt;
+    }
+
+    // What a signal node gives as its picture: a view of the signal, when anything looks at it.
+    Layer sigPublish(GpuSignal sig, const nodes::NodeContext& nc, NodeGraphState& s)
+    {
+        s.sigs[nc.node] = sig;
+        if (!nc.pictureWanted)
+            return acquire(nc.size);
+        return sigPass(gpusig::View, *sig.std, sig.frame, {{"uA", (*sig.tex)->tex}}, [&](QOpenGLShaderProgram& g) {
+            setI(g, "uI0", nc.size.width(), nc.size.height());
+        }, nc.size, GL_RGBA8);
+    }
+
+    GpuSignal wrap(Layer&& l, const GpuSignal& like) { return {std::make_shared<Layer>(std::move(l)), like.std, like.frame}; }
+
+    Layer signalNode(const nodes::NodeDef& def, const nodes::Node& n, const std::vector<const Target*>& in, const Params& p,
+                     const nodes::NodeContext& nc, NodeGraphState& s, std::unique_ptr<EffectState>& state)
+    {
+        using namespace gpusig;
+        const QString& type = n.type;
+        const int64_t frame = composite::frameIndex(nc.render.timelineTime, nc.render.fps);
+        const double seconds = double(nc.render.timelineTime) / 1e6;
+        auto blankOf = [&](const composite::Standard& S) {
+            Layer l = acquire(QSize(S.line, S.lines), true, GL_R32F);
+            return GpuSignal{std::make_shared<Layer>(std::move(l)), &S, frame};
+        };
+        if (type == QLatin1String("composite_encode")) {
+            composite::EncodeOptions o;
+            o.std = p.choice(QStringLiteral("standard")) == 1 ? &composite::pal() : &composite::ntsc();
+            o.saturation = p.num(QStringLiteral("saturation"));
+            o.chromaMHz = p.num(QStringLiteral("chroma"));
+            o.setup = p.flag(QStringLiteral("setup"));
+            return sigPublish(encodeOnGpu(in.empty() ? nullptr : in[0], o, frame), nc, s);
+        }
+        if (type == QLatin1String("composite_sync_generator")) {
+            const composite::Standard& S = composite::generatorStandard(p);
+            Layer picture = acquire(QSize(64, 48), false);
+            upload(*picture, composite::generatorPicture(p));
+            composite::EncodeOptions o;
+            o.std = &S;
+            GpuSignal own = encodeOnGpu(picture.get(), o, frame);
+            const double slip = composite::generatorSlip(p, S, seconds);
+            if (slip != 0) {
+                std::vector<float> table(size_t(2 * S.lines));
+                for (int line = 0; line < S.lines; ++line) {
+                    const double start = double(int64_t(line) * S.line) - slip, whole = std::floor(start);
+                    table[size_t(2 * line)] = float((int64_t(whole) % S.samples() + S.samples()) % S.samples());
+                    table[size_t(2 * line + 1)] = float(start - whole);
+                }
+                Layer t = floatTexture(S.lines, 1, GL_RG32F, table.data());
+                own = wrap(sigPass(Delay, S, frame, {{"uA", (*own.tex)->tex}, {"uTable", t->tex}}, {}), own);
+            }
+            return sigPublish(own, nc, s);
+        }
+        if (type == QLatin1String("composite_decode")) {
+            const auto sig = sigInput(in, 0, nc, s);
+            if (!sig) {
+                Layer black = acquire(nc.size, false);
+                clear(*black, 0, 0, 0, 1);
+                return black;
+            }
+            return tvOnGpu(*sig, p, nc, state);
+        }
+        if (type == QLatin1String("composite_sync_mixer") || type == QLatin1String("composite_switcher")) {
+            const bool mixer = type == QLatin1String("composite_sync_mixer");
+            std::optional<GpuSignal> a = sigInput(in, 0, nc, s), b = sigInput(in, 1, nc, s), c = mixer ? sigInput(in, 2, nc, s) : std::nullopt;
+            const GpuSignal* first = a ? &*a : b ? &*b : c ? &*c : nullptr;
+            const composite::Standard& S = first ? *first->std : composite::ntsc();
+            if (b && b->std != &S)
+                b.reset();
+            if (c && c->std != &S)
+                c.reset();
+            const GpuSignal like = first ? *first : blankOf(S);
+            auto tex = [](const std::optional<GpuSignal>& g) { return g ? (*g->tex)->tex : 0u; };
+            if (mixer) {
+                const bool strip = b && p.flag(QStringLiteral("strip"));
+                return sigPublish(wrap(sigPass(Mix, S, like.frame, {{"uA", tex(a)}, {"uB", tex(b)}, {"uC", tex(c)}}, [&](QOpenGLShaderProgram& g) {
+                    setI(g, "uI0", a ? 1 : 0, b ? 1 : 0, c ? 1 : 0, strip ? 1 : 0);
+                    g.setUniformValue("uP0", QVector4D(float(p.num(QStringLiteral("luma"))), float(p.num(QStringLiteral("chroma"))),
+                                                       float(p.num(QStringLiteral("burst"))), c ? float(p.num(QStringLiteral("lowPass"))) : 0.0f));
+                }), like), nc, s);
+            }
+            const double at = std::clamp(p.num(QStringLiteral("position")), 0.0, 1.0);
+            return sigPublish(wrap(sigPass(Switch, S, like.frame, {{"uA", tex(a)}, {"uB", tex(b)}}, [&](QOpenGLShaderProgram& g) {
+                setI(g, "uI0", p.choice(QStringLiteral("direction")) == 1 ? 1 : 0, p.flag(QStringLiteral("swap")) ? 1 : 0, int(std::lround(at * S.lines)),
+                     S.activeStart + int(std::lround(at * S.activeWidth())));
+                setI(g, "uI1", a ? 1 : 0, b ? 1 : 0);
+            }), like), nc, s);
+        }
+        static const std::set<QString> kOneIn = {QStringLiteral("composite_sync_separator"), QStringLiteral("composite_delay_line"),
+                                                 QStringLiteral("composite_rf_noise"),      QStringLiteral("composite_low_pass"),
+                                                 QStringLiteral("composite_high_pass"),     QStringLiteral("composite_clipper"),
+                                                 QStringLiteral("composite_split")};
+        if (kOneIn.count(type)) {
+            const auto sig0 = sigInput(in, 0, nc, s);
+            const GpuSignal sig = sig0 ? *sig0 : blankOf(composite::ntsc());
+            const composite::Standard& S = *sig.std;
+            const GLuint src = (*sig.tex)->tex;
+            if (type == QLatin1String("composite_sync_separator")) { // (its hysteresis: the last clear mark, by doubling)
+                const QVector4D u(float(p.num(QStringLiteral("slice"))), float(p.num(QStringLiteral("hysteresis"))),
+                                  -40.0f * float(p.num(QStringLiteral("correction"))), 0);
+                Layer marks = sigPass(SepMark, S, sig.frame, {{"uA", src}}, [&](QOpenGLShaderProgram& g) { g.setUniformValue("uP0", u); });
+                for (int d = 1; d < S.samples(); d *= 2)
+                    marks = sigPass(SepScan, S, sig.frame, {{"uA", marks->tex}}, [&](QOpenGLShaderProgram& g) { setI(g, "uI0", d); });
+                return sigPublish(wrap(sigPass(SepOut, S, sig.frame, {{"uA", marks->tex}}, [&](QOpenGLShaderProgram& g) { g.setUniformValue("uP0", u); }),
+                                       sig), nc, s);
+            }
+            if (type == QLatin1String("composite_delay_line")) {
+                std::vector<float> table;
+                composite::delayTable(S, p, seconds, table);
+                Layer t = floatTexture(S.lines, 1, GL_RG32F, table.data());
+                return sigPublish(wrap(sigPass(Delay, S, sig.frame, {{"uA", src}, {"uTable", t->tex}}, {}), sig), nc, s);
+            }
+            if (type == QLatin1String("composite_rf_noise")) {
+                const double phase = p.num(QStringLiteral("humSpeed")) * seconds;
+                const uint32_t seed = composite::noiseSeed(p, sig.frame);
+                return sigPublish(wrap(sigPass(Noise, S, sig.frame, {{"uA", src}}, [&](QOpenGLShaderProgram& g) {
+                    g.setUniformValue("uP0", QVector4D(float(p.num(QStringLiteral("snow"))), float(p.num(QStringLiteral("hum"))),
+                                                       float(phase - std::floor(phase)), float(p.num(QStringLiteral("spikes")))));
+                    glUniform1ui(g.uniformLocation("uSeed"), seed);
+                }), sig), nc, s);
+            }
+            if (type == QLatin1String("composite_low_pass") || type == QLatin1String("composite_high_pass")) {
+                // The RC's sum (sum of b^k a x[n-k]) by doubling: each pass adds the sum so far from 2^j samples back,
+                // round the frame, until what's that far back no longer counts.
+                const bool high = type == QLatin1String("composite_high_pass");
+                const double a = 1.0 / (1.0 + composite::rcTau(p, high) * S.rate), b = 1.0 - a;
+                Layer y = sigPass(RcInit, S, sig.frame, {{"uA", src}}, [&](QOpenGLShaderProgram& g) { g.setUniformValue("uP0", QVector4D(float(a), 0, 0, 0)); });
+                for (int64_t d = 1; d < S.samples(); d *= 2) {
+                    const double bd = std::pow(b, double(d));
+                    if (bd < 1e-7)
+                        break;
+                    y = sigPass(RcStep, S, sig.frame, {{"uA", y->tex}}, [&](QOpenGLShaderProgram& g) {
+                        g.setUniformValue("uP0", QVector4D(float(bd), 0, 0, 0));
+                        setI(g, "uI0", int(d));
+                    });
+                }
+                if (high)
+                    y = sigPass(RcHigh, S, sig.frame, {{"uA", src}, {"uB", y->tex}}, {});
+                return sigPublish(wrap(std::move(y), sig), nc, s);
+            }
+            if (type == QLatin1String("composite_clipper")) {
+                const float hi = float(p.num(QStringLiteral("high"))), lo = std::min(hi, float(p.num(QStringLiteral("low"))));
+                const float soft = std::min(float(p.num(QStringLiteral("softness"))), 0.5f * (hi - lo));
+                return sigPublish(wrap(sigPass(Clipper, S, sig.frame, {{"uA", src}}, [&](QOpenGLShaderProgram& g) {
+                    g.setUniformValue("uP0", QVector4D(hi, lo, soft, 0));
+                }), sig), nc, s);
+            }
+            return sigPublish(wrap(sigPass(Split, S, sig.frame, {{"uA", src}}, [&](QOpenGLShaderProgram& g) {
+                setI(g, "uI0", p.choice(QStringLiteral("output")) == 1 ? 1 : 0, p.choice(QStringLiteral("method")) == 1 ? 1 : 0,
+                     S.pal ? 2 * S.line : S.line);
+            }), sig), nc, s);
+        }
+        // The rest (the Enhancer: its circuit clips, sample after sample) on the CPU: its signals read back, its own
+        // sent up again.
+        for (size_t i = 0; i < nc.inputs.size(); ++i)
+            if (nc.bus && nc.inputs[i] && !nc.bus->count(nc.inputs[i]))
+                if (const auto it = s.sigs.find(nc.inputs[i]); it != s.sigs.end())
+                    (*nc.bus)[nc.inputs[i]] = std::make_shared<composite::Signal>(toCpu(it->second));
+        Layer picture = cpuNode(def, n, in, p, nc, state);
+        if (nc.bus)
+            if (const auto it = nc.bus->find(nc.node); it != nc.bus->end() && it->second)
+                s.sigs[nc.node] = toGpu(*it->second);
+        return picture;
+    }
+
+    // The TV: the signal read back for the beam (composite::tvScan, on the CPU), the picture drawn here from the
+    // lines it found, onto the raster kept from frame to frame, then over the node's picture.
+    Layer tvOnGpu(const GpuSignal& sig, const Params& p, const nodes::NodeContext& nc, std::unique_ptr<EffectState>& state)
+    {
+        const composite::Standard& S = *sig.std;
+        auto* tv = dynamic_cast<GpuTv*>(state.get());
+        if (!tv) {
+            auto fresh = std::make_unique<GpuTv>();
+            fresh->owner = this;
+            tv = fresh.get();
+            state = std::move(fresh);
+        }
+        const composite::TvFrame f = composite::tvScan(toCpu(sig), p, tv->beam);
+        const QSize rasterSize(S.activeWidth(), S.activeLines);
+        if (tv->raster.size() != rasterSize) {
+            deleteTarget(tv->raster);
+            deleteTarget(tv->rasterAtStart);
+            tv->raster = createTarget(rasterSize);
+            tv->rasterAtStart = createTarget(rasterSize);
+            clear(tv->raster, 0, 0, 0, 1);
+        }
+        if (f.start == composite::TvFrame::Start::Repeat)
+            drawLayerReplace(tv->raster, tv->rasterAtStart);
+        else if (f.start == composite::TvFrame::Start::Fresh)
+            clear(tv->raster, 0, 0, 0, 1);
+        drawLayerReplace(tv->rasterAtStart, tv->raster);
+        // Each row's line (the last drawn on it), and the line before it (PAL's delay line).
+        std::vector<int> rowLine(size_t(S.activeLines), -1);
+        for (size_t i = 0; i < f.lines.size(); ++i)
+            if (const int row = f.lines[i].y - S.firstActive; row >= 0 && row < S.activeLines)
+                rowLine[size_t(row)] = int(i);
+        std::vector<float> rows(size_t(S.activeLines) * 12, 0.0f);
+        for (int row = 0; row < S.activeLines; ++row) {
+            const int li = rowLine[size_t(row)];
+            if (li < 0)
+                continue;
+            const composite::TvLine& l = f.lines[size_t(li)];
+            float* r = rows.data() + size_t(row) * 12;
+            r[0] = float(l.start), r[1] = float(l.end), r[2] = l.clamp, r[3] = 1;
+            r[4] = l.hue, r[5] = l.colour ? l.acc * f.colour / 92.5f : 0.0f, r[6] = float(l.sign);
+            if (li > 0 && f.lines[size_t(li - 1)].colour) {
+                const composite::TvLine& b = f.lines[size_t(li - 1)];
+                r[7] = 1, r[8] = float(b.start), r[9] = b.hue, r[10] = float(b.sign);
+            }
+        }
+        Layer table = floatTexture(3, S.activeLines, GL_RGBA32F, rows.data());
+        Layer tail = floatTexture(int(f.tail.size()), 1, GL_R32F, f.tail.data());
+        Layer drawn = sigPass(gpusig::TvDraw, S, sig.frame,
+                              {{"uA", (*sig.tex)->tex}, {"uTail", tail->tex}, {"uTable", table->tex}, {"uPrev", tv->rasterAtStart.tex}},
+                              [&](QOpenGLShaderProgram& g) {
+                                  g.setUniformValue("uP0", QVector4D(f.tint, f.contrast, f.brightness, f.colour));
+                                  setI(g, "uI0", f.comb ? 1 : 0, S.pal ? 2 * S.line : S.line, int(f.tail.size()));
+                              }, rasterSize, GL_RGBA8);
+        drawLayerReplace(tv->raster, *drawn);
+        Layer out = acquire(nc.size, false);
+        drawTexture(*out, tv->raster.tex, QSizeF(nc.size), QTransform(), 1.0, QRectF(0, 0, 1, 1), false);
+        return out;
     }
 
     Layer gpuNode(const nodes::NodeDef& def, const nodes::Node& n, const std::vector<const Target*>& in, const Params& p,
@@ -2778,6 +3122,8 @@ struct GpuCompositor::Impl : protected QOpenGLExtraFunctions {
             drawTexture(*o, in[0]->tex, QSizeF(size), QTransform::fromTranslate(-size.width() / 2.0, -size.height() / 2.0) * t, 1.0);
             return o;
         }
+        if (type.startsWith(QLatin1String("composite_")))
+            return signalNode(def, n, in, p, nc, s, state);
         if (type == QLatin1String("feedback")) { // the output the frame before, faded
             Layer o = acquire(size);
             if (s.previous && s.previous.size() == size)
@@ -2790,6 +3136,9 @@ struct GpuCompositor::Impl : protected QOpenGLExtraFunctions {
             if (nc.bus && i < nc.inputs.size() && nc.inputs[i])
                 if (const auto it = nc.bus->find(nc.inputs[i]); it != nc.bus->end())
                     (*nc.bus)[nc.node] = it->second;
+            if (i < nc.inputs.size() && nc.inputs[i])
+                if (const auto it = s.sigs.find(nc.inputs[i]); it != s.sigs.end())
+                    s.sigs[nc.node] = it->second;
             return copyIn(i);
         }
         if (type == QLatin1String("delay")) {
