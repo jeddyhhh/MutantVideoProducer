@@ -929,7 +929,8 @@ int LiveView::runSelfTest(QStringList& log)
         const QString video = QDir(QStringLiteral("testmedia")).absoluteFilePath(QStringLiteral("h264_aac.mp4"));
         if (QFileInfo::exists(video)) {
             QString layerDesc, layerErr;
-            connect(m_engine, &LiveEngine::layerStatus, &featCtx, [&](int, const QString& d, const QString& e) {
+            QObject layerCtx; // (this block's variables: gone after it)
+            connect(m_engine, &LiveEngine::layerStatus, &layerCtx, [&](int, const QString& d, const QString& e) {
                 layerDesc = d;
                 layerErr = e;
             });
@@ -1023,7 +1024,8 @@ int LiveView::runSelfTest(QStringList& log)
             file.name = QStringLiteral("test video");
             file.id = video;
             QList<QImage> thumbs;
-            connect(m_engine, &LiveEngine::inputFrames, &featCtx, [&](const QList<QImage>& t) { thumbs = t; });
+            QObject thumbsCtx; // (this block's variables: gone after it; the frames keep coming)
+            connect(m_engine, &LiveEngine::inputFrames, &thumbsCtx, [&](const QList<QImage>& t) { thumbs = t; });
             m_engine->setInputs({file});
             wait(4000, [&] { return thumbs.size() == 2 && !thumbs[1].isNull(); });
             settle(5);
