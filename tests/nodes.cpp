@@ -607,6 +607,11 @@ int main(int argc, char** argv)
                                      .arg(worst, 0, 'f', 2)
                                      .arg(off.isEmpty() ? QStringLiteral("none") : off.join(QStringLiteral(", "))));
             QStringList slowOrOff;
+#ifdef NDEBUG
+            const double frameLimit = 33.0; // (30 frames a second)
+#else
+            const double frameLimit = 330.0; // (the checked Debug build: index checks, not speed)
+#endif
             for (const QFileInfo& fi : examplesIn(nodes::examplesFolder())) {
                 nodes::Graph g;
                 if (!nodes::load(fi.absoluteFilePath(), &g, nullptr))
@@ -615,7 +620,7 @@ int main(int argc, char** argv)
                 const double d = renderBoth(g, 5, &ms);
                 QTextStream(stdout) << "      " << g.name << ": " << QString::number(ms, 'f', 1) << " ms a frame on the GPU, "
                                     << QString::number(d, 'f', 2) << " off" << Qt::endl;
-                if (d > 6.0 || ms > 33.0)
+                if (d > 6.0 || ms > frameLimit)
                     slowOrOff << QStringLiteral("%1 (%2 off, %3 ms)").arg(g.name).arg(d, 0, 'f', 1).arg(ms, 0, 'f', 1);
             }
             {
