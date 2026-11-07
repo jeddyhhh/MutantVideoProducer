@@ -166,13 +166,20 @@ block there, or click and drag to make it as long as you like. Drag a block to m
 row too), drag its right edge to change its length, and right-click (or right-drag over several) to
 remove them. **Ctrl+wheel** zooms; **Clear** removes every block (Ctrl+Z brings them back).
 
+**Ctrl+drag** a box to select blocks (**Ctrl+click** one to add it or take it out, **Ctrl+A** for
+all, **Esc** for none). Drag any selected block to move them all together, along the bars and up
+and down onto other pads; **Delete** removes them.
+
+**⧉** (Pop Out) puts the sequencer in a window of its own, as big as you like, its rows growing with
+it; **Put Back** (or closing the window) returns it under the pads.
+
 - **Bars**: how long the loop is (1 to 64).
 - **Time signature**: beats in a bar and the note a beat is (4/4, 3/4, 7/8, 6/8...). Each beat of
   the beat clock is one of those beats.
 - **Snap**: where blocks start and end: a bar (1/1), 1/2 down to 1/32, 1/8 or 1/16 triplets, or a
   beat. A new block is as long as the last one you made.
 
-Tick **Sequence** and the loop plays, over and over, while the Live tab runs: it starts on the next
+Turn on **Loop** and it plays, over and over, while the Live tab runs: it starts on the next
 1 of the beat clock (see Tempo and auto switch: the tempo, tapped, from beats heard or from MIDI
 clock) and follows it, so a block switches its pad on for its length, in time. Where blocks overlap,
 the one that starts last wins; where there is none, the loop switches off the pad it switched on (a

@@ -33,6 +33,9 @@ public:
     void setRunning(bool running);   // plays only while the Live tab runs
     void setActivePad(int pad);      // what's live now (shown on its row's name)
     bool playing() const { return m_playing; }
+    // In a window of its own (its rows as tall as the window lets them be); closing that window puts it back.
+    void setPoppedOut(bool popped);
+    bool poppedOut() const { return m_window != nullptr; }
     int playhead() const;            // ticks into the loop (-1: not playing)
 
 signals:
@@ -41,8 +44,12 @@ signals:
     // A pad's name clicked: press it, as on the pad.
     void padPressed(int pad);
 
+protected:
+    bool eventFilter(QObject* watched, QEvent* event) override;
+
 private:
     void refresh();
+    void fitGrid();
     void edit(const std::function<void(LiveSequence&)>& change, const QString& description);
     void tick();
 
@@ -53,6 +60,10 @@ private:
     QComboBox* m_bottom;
     QComboBox* m_snap;
     QToolButton* m_clear;
+    QToolButton* m_popOut;
+    QWidget* m_content;       // the toolbar and the roll: here, or in m_window
+    QWidget* m_placeholder;   // what's here while it's in its window
+    QWidget* m_window = nullptr;
     QScrollArea* m_scroll;
     livesequencer::Roll* m_roll;
     livesequencer::Keys* m_keys;

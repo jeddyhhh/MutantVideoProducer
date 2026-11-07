@@ -260,6 +260,52 @@ int LiveView::runSelfTest(QStringList& log)
             m_project->undoStack()->undo();
             check(roll && added && int(m_project->timeline().liveSequence.blocks.size()) == before,
                   QStringLiteral("a click on the sequencer's grid adds a block on that pad's row, and Undo removes it"));
+            // Ctrl+drag a box round two blocks, then drag one of them three rows down: both move onto other pads.
+            Timeline tl = m_project->timeline();
+            LiveSequence seq = tl.liveSequence;
+            seq.bars = 1;
+            seq.snap = 4;
+            seq.blocks = {{0, 0, 96}, {1, 96, 96}, {5, 288, 96}};
+            tl.liveSequence = seq;
+            m_project->applyEdit(tl, QStringLiteral("Sequence"));
+            bool moved = false, selected = false;
+            if (roll) {
+                const double px = double(roll->width() - 1) / seq.loopTicks();
+                const double rh = (roll->height() - 16) / 16;
+                auto mouse = [&](QEvent::Type type, QPointF at, Qt::MouseButtons buttons, Qt::KeyboardModifiers mods) {
+                    QMouseEvent ev(type, at, roll->mapToGlobal(at), type == QEvent::MouseMove ? Qt::NoButton : Qt::LeftButton, buttons, mods);
+                    QApplication::sendEvent(roll, &ev);
+                };
+                mouse(QEvent::MouseButtonPress, QPointF(2, 16 + 2), Qt::LeftButton, Qt::ControlModifier);
+                mouse(QEvent::MouseMove, QPointF(200 * px, 16 + rh * 1.5), Qt::LeftButton, Qt::ControlModifier);
+                mouse(QEvent::MouseButtonRelease, QPointF(200 * px, 16 + rh * 1.5), Qt::NoButton, Qt::ControlModifier);
+                selected = m_project->timeline().liveSequence.blocks == seq.blocks; // (selecting changes nothing)
+                const QPointF grab(48 * px, 16 + rh * 0.5);
+                mouse(QEvent::MouseButtonPress, grab, Qt::LeftButton, Qt::NoModifier);
+                mouse(QEvent::MouseMove, grab + QPointF(0, rh * 3), Qt::LeftButton, Qt::NoModifier);
+                mouse(QEvent::MouseButtonRelease, grab + QPointF(0, rh * 3), Qt::NoButton, Qt::NoModifier);
+                const auto& b = m_project->timeline().liveSequence.blocks;
+                moved = b.size() == 3 && b[0].pad == 3 && b[1].pad == 4 && b[2].pad == 5 && b[0].start == 0 && b[1].start == 96;
+            }
+            m_project->undoStack()->undo();
+            const bool undone = m_project->timeline().liveSequence.blocks == seq.blocks;
+            m_project->undoStack()->undo();
+            check(selected && moved && undone, QStringLiteral("Ctrl+drag selects sequencer blocks and dragging one moves them all onto other pads "
+                                                              "(Undo puts them back)"));
+            // Pop Out: in a window of its own, its rows taller; closing the window puts it back.
+            auto* pop = m_pads->findChild<QToolButton*>(QStringLiteral("liveSequencePopOut"));
+            bool popped = false, back = false;
+            if (pop && roll) {
+                pop->click();
+                auto* window = m_pads->sequencer()->findChild<QWidget*>(QStringLiteral("liveSequencerWindow"));
+                wait(400, [] { return false; });
+                popped = window && window->isVisible() && roll->window() == window && roll->height() > 16 + 16 * 20;
+                if (window)
+                    window->close();
+                wait(200, [] { return false; });
+                back = !m_pads->sequencer()->poppedOut() && roll->window() == m_pads->window() && roll->height() == 16 + 16 * 14 && !pop->isChecked();
+            }
+            check(popped && back, QStringLiteral("the sequencer pops out into its own window (rows as tall as it lets them be) and goes back when that closes"));
         }
         // ... and plays in time with the beat clock: a bar of 4/4 at 240 BPM, pad 1 for two beats then pad 2, looped
         // (the auto switch, on every beat, waits while it plays).
