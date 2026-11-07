@@ -4,6 +4,7 @@
 #include "ui/Theme.h"
 
 #include <QComboBox>
+#include <QCursor>
 #include <QHBoxLayout>
 #include <QKeyEvent>
 #include <QLabel>
@@ -16,6 +17,7 @@
 #include <QVBoxLayout>
 #include <QWheelEvent>
 #include <algorithm>
+#include <climits>
 #include <cmath>
 #include <functional>
 #include <set>
@@ -282,9 +284,10 @@ protected:
 
     bool event(QEvent* e) override
     {
-        if (e->type() == QEvent::ShortcutOverride) { // (ahead of the menus' Delete, Select All...)
+        if (e->type() == QEvent::ShortcutOverride) { // (ahead of the menus' Delete, Select All, Copy...)
             auto* k = static_cast<QKeyEvent*>(e);
-            if (k->key() == Qt::Key_Delete || k->key() == Qt::Key_Backspace || k->key() == Qt::Key_Escape || k->matches(QKeySequence::SelectAll)) {
+            if (k->key() == Qt::Key_Delete || k->key() == Qt::Key_Backspace || k->key() == Qt::Key_Escape || k->matches(QKeySequence::SelectAll)
+                || k->matches(QKeySequence::Copy) || k->matches(QKeySequence::Cut) || k->matches(QKeySequence::Paste) || isDuplicate(k)) {
                 e->accept();
                 return true;
             }
@@ -293,22 +296,38 @@ protected:
     }
     void keyPressEvent(QKeyEvent* e) override
     {
-        if (e->matches(QKeySequence::SelectAll)) {
+        if (m_dragging) {
+            QWidget::keyPressEvent(e);
+            return;
+        }
+        if (e->matches(QKeySequence::Copy) || e->matches(QKeySequence::Cut)) {
+            copySelection();
+            if (e->matches(QKeySequence::Cut))
+                removeSelection(tr("Cut Sequence Blocks"));
+        } else if (e->matches(QKeySequence::Paste)) {
+            // At the snap under the pointer if it's over the grid; else after the selection (or at the 1).
+            const QPoint at = mapFromGlobal(QCursor::pos());
+            const int snap = seq().snapTicks();
+            int where = rect().contains(at) && at.y() >= kRuler ? int(at.x() / pxPerTick()) / snap * snap : selectionSpan().second;
+            insertBlocks(clipboard(), where, tr("Paste Sequence Blocks"));
+        } else if (isDuplicate(e)) { // a copy of the selection straight after it (again and again: a row of them)
+            const auto [first, end] = selectionSpan();
+            const int snap = seq().snapTicks();
+            std::vector<LiveSequenceBlock> copies;
+            for (int i : m_selected) {
+                LiveSequenceBlock b = seq().blocks[size_t(i)];
+                b.start -= first;
+                copies.push_back(b);
+            }
+            insertBlocks(copies, first + (end - first + snap - 1) / snap * snap, tr("Duplicate Sequence Blocks"));
+        } else if (e->matches(QKeySequence::SelectAll)) {
             m_selected.clear();
             for (int i = 0; i < int(seq().blocks.size()); ++i)
                 m_selected.insert(i);
         } else if (e->key() == Qt::Key_Escape) {
             m_selected.clear();
-        } else if ((e->key() == Qt::Key_Delete || e->key() == Qt::Key_Backspace) && !m_selected.empty() && !m_dragging) {
-            Timeline tl = m_project->timeline();
-            std::vector<LiveSequenceBlock> kept;
-            for (int i = 0; i < int(tl.liveSequence.blocks.size()); ++i)
-                if (!m_selected.count(i))
-                    kept.push_back(tl.liveSequence.blocks[size_t(i)]);
-            tl.liveSequence.blocks = std::move(kept);
-            m_selected.clear();
-            m_known = tl.liveSequence.blocks;
-            m_project->applyEdit(tl, tr("Remove Sequence Blocks"));
+        } else if (e->key() == Qt::Key_Delete || e->key() == Qt::Key_Backspace) {
+            removeSelection(tr("Remove Sequence Blocks"));
         } else {
             QWidget::keyPressEvent(e);
             return;
@@ -328,6 +347,71 @@ protected:
 
 private:
     enum Mode { Move, Resize, Erase, Select };
+    // Copied blocks, their starts from the first's (shared by every sequencer: the same in its own window).
+    static std::vector<LiveSequenceBlock>& clipboard()
+    {
+        static std::vector<LiveSequenceBlock> blocks;
+        return blocks;
+    }
+    static bool isDuplicate(const QKeyEvent* k) { return k->key() == Qt::Key_D && (k->modifiers() & ~Qt::KeypadModifier) == Qt::ControlModifier; }
+    // Where the selection starts and ends (ticks); none: {0, 0}.
+    std::pair<int, int> selectionSpan() const
+    {
+        if (m_selected.empty())
+            return {0, 0};
+        int first = INT_MAX, end = 0;
+        for (int i : m_selected) {
+            first = std::min(first, seq().blocks[size_t(i)].start);
+            end = std::max(end, seq().blocks[size_t(i)].end());
+        }
+        return {first, end};
+    }
+    void copySelection()
+    {
+        if (m_selected.empty())
+            return;
+        const int first = selectionSpan().first;
+        clipboard().clear();
+        for (int i : m_selected) {
+            LiveSequenceBlock b = seq().blocks[size_t(i)];
+            b.start -= first;
+            clipboard().push_back(b);
+        }
+    }
+    void removeSelection(const QString& description)
+    {
+        if (m_selected.empty())
+            return;
+        Timeline tl = m_project->timeline();
+        std::vector<LiveSequenceBlock> kept;
+        for (int i = 0; i < int(tl.liveSequence.blocks.size()); ++i)
+            if (!m_selected.count(i))
+                kept.push_back(tl.liveSequence.blocks[size_t(i)]);
+        tl.liveSequence.blocks = std::move(kept);
+        m_selected.clear();
+        m_known = tl.liveSequence.blocks;
+        m_project->applyEdit(tl, description);
+    }
+    // `blocks` (starts from `at`) added, as long as they fit in the loop; they become the selection.
+    void insertBlocks(const std::vector<LiveSequenceBlock>& blocks, int at, const QString& description)
+    {
+        Timeline tl = m_project->timeline();
+        LiveSequence& s = tl.liveSequence;
+        m_selected.clear();
+        for (LiveSequenceBlock b : blocks) {
+            b.start += at;
+            b.length = std::min(b.length, s.loopTicks() - b.start);
+            if (b.start < 0 || b.length <= 0)
+                continue;
+            s.blocks.push_back(b);
+            m_selected.insert(int(s.blocks.size()) - 1);
+        }
+        if (m_selected.empty())
+            return;
+        m_known = s.blocks;
+        m_project->applyEdit(tl, description);
+        update();
+    }
     int rowAt(double y) const
     {
         const int r = int((y - kRuler) / rowHeight());
@@ -451,17 +535,22 @@ LiveSequencer::LiveSequencer(Project* project, QWidget* parent) : QWidget(parent
     m_on->setObjectName(QStringLiteral("liveSequenceOn"));
     m_on->setToolTip(tr("Play the loop in time with the beat clock while the Live tab runs (from its next 1),\n"
                         "switching each block's pad on for its length"));
-    m_bars = new QSpinBox;
-    m_bars->setRange(1, 64);
-    m_bars->setToolTip(tr("Bars: how long the loop is (wheel or type)"));
-    m_bars->setPrefix(tr("Bars "));
+    m_record = new QToolButton;
+    m_record->setText(QStringLiteral("\u25CF"));
+    m_record->setCheckable(true);
+    m_record->setObjectName(QStringLiteral("liveSequenceRecord"));
+    m_record->setToolTip(tr("Record: while the loop plays, the pads you press (click, keys or MIDI) are written into it at the playhead,\n"
+                            "to the snap, each for as long as it stays on, over what was there. Jam it in, then let it play"));
+    connect(m_record, &QToolButton::toggled, this, &LiveSequencer::setRecording);
+    theme::style(m_record, QStringLiteral("color: @bad;"));
+    m_bars = new QComboBox;
+    m_bars->setObjectName(QStringLiteral("liveSequenceBars"));
+    for (int n : {1, 2, 3, 4, 5, 6, 7, 8, 12, 16, 24, 32, 48, 64})
+        m_bars->addItem(n == 1 ? tr("1 bar") : tr("%1 bars").arg(n), n);
+    m_bars->setToolTip(tr("How long the loop is"));
     m_top = new QSpinBox;
     m_top->setRange(1, 16);
-    m_top->setToolTip(tr("Time signature: beats in a bar (wheel or type)"));
-    for (QSpinBox* box : {m_bars, m_top}) {
-        box->setButtonSymbols(QAbstractSpinBox::NoButtons);
-        box->setAlignment(Qt::AlignCenter);
-    }
+    m_top->setToolTip(tr("Time signature: beats in a bar"));
     m_bottom = new QComboBox;
     for (int u : {2, 4, 8, 16})
         m_bottom->addItem(QStringLiteral("/%1").arg(u), u);
@@ -485,13 +574,20 @@ LiveSequencer::LiveSequencer(Project* project, QWidget* parent) : QWidget(parent
     m_popOut->setToolTip(tr("Pop Out: the sequencer in a window of its own, as big as you like (close it to put it back)"));
     connect(m_popOut, &QToolButton::toggled, this, &LiveSequencer::setPoppedOut);
     bar->addWidget(m_on);
-    bar->addWidget(m_bars);
-    bar->addWidget(m_top);
-    bar->addWidget(m_bottom);
-    bar->addWidget(m_snap, 1);
+    bar->addWidget(m_record);
+    bar->addWidget(m_bars, 1);
     bar->addWidget(m_clear);
     bar->addWidget(m_popOut);
     layout->addLayout(bar);
+    auto* bar2 = new QHBoxLayout;
+    bar2->setSpacing(4);
+    bar2->addWidget(new QLabel(tr("Time")));
+    bar2->addWidget(m_top);
+    bar2->addWidget(m_bottom);
+    bar2->addSpacing(6);
+    bar2->addWidget(new QLabel(tr("Snap")));
+    bar2->addWidget(m_snap, 1);
+    layout->addLayout(bar2);
 
     auto* body = new QHBoxLayout;
     body->setSpacing(0);
@@ -502,7 +598,8 @@ LiveSequencer::LiveSequencer(Project* project, QWidget* parent) : QWidget(parent
     m_roll = new Roll(project, m_scroll);
     m_roll->setToolTip(tr("Click (and drag) to put a block on a pad's row; drag a block to move it, its right edge to change its length;\n"
                           "right-click (or right-drag) to remove. Ctrl+drag selects blocks (Ctrl+click one in or out, Ctrl+A all):\n"
-                          "drag one to move them all, up and down onto other pads too; Delete removes them. Ctrl+wheel zooms"));
+                          "drag one to move them all, up and down onto other pads too; Delete removes them.\n"
+                          "Ctrl+C / Ctrl+X copy and cut them, Ctrl+V pastes at the pointer, Ctrl+D duplicates them after themselves. Ctrl+wheel zooms"));
     m_scroll->setWidget(m_roll);
     m_scroll->setFixedHeight(kGridHeight + m_scroll->horizontalScrollBar()->sizeHint().height());
     m_scroll->viewport()->installEventFilter(this); // (its size: the zoom and, popped out, the rows)
@@ -516,7 +613,7 @@ LiveSequencer::LiveSequencer(Project* project, QWidget* parent) : QWidget(parent
         connect(w, signal, this, [this, what, change] { edit(change, what); });
     };
     connect(m_on, &QToolButton::toggled, this, [this](bool on) { edit([on](LiveSequence& s) { s.on = on; }, on ? tr("Sequence On") : tr("Sequence Off")); });
-    edits(m_bars, qOverload<int>(&QSpinBox::valueChanged), tr("Sequence Length"), [this](LiveSequence& s) { s.bars = m_bars->value(); });
+    edits(m_bars, qOverload<int>(&QComboBox::currentIndexChanged), tr("Sequence Length"), [this](LiveSequence& s) { s.bars = m_bars->currentData().toInt(); });
     edits(m_top, qOverload<int>(&QSpinBox::valueChanged), tr("Time Signature"), [this](LiveSequence& s) { s.beatsPerBar = m_top->value(); });
     edits(m_bottom, qOverload<int>(&QComboBox::currentIndexChanged), tr("Time Signature"),
           [this](LiveSequence& s) { s.beatUnit = m_bottom->currentData().toInt(); });
@@ -593,12 +690,19 @@ void LiveSequencer::refresh()
     const LiveSequence& s = m_project->timeline().liveSequence;
     const QSignalBlocker b1(m_on), b2(m_bars), b3(m_top), b4(m_bottom), b5(m_snap);
     m_on->setChecked(s.on);
-    m_bars->setValue(s.bars);
+    if (m_bars->findData(s.bars) < 0) { // (a length not in the list, from a file: put in its place)
+        int at = 0;
+        while (at < m_bars->count() && m_bars->itemData(at).toInt() < s.bars)
+            ++at;
+        m_bars->insertItem(at, tr("%1 bars").arg(s.bars), s.bars);
+    }
+    m_bars->setCurrentIndex(m_bars->findData(s.bars));
     m_top->setValue(s.beatsPerBar);
     m_bottom->setCurrentIndex(std::max(0, m_bottom->findData(s.beatUnit)));
     m_snap->setCurrentIndex(std::max(0, m_snap->findData(s.snap)));
     m_clear->setEnabled(!s.blocks.empty());
     if (!s.on && m_playing) {
+        endTake();
         m_playing = false;
         m_roll->setPlayhead(-1);
     }
@@ -613,15 +717,58 @@ void LiveSequencer::refresh()
 
 void LiveSequencer::setRunning(bool running)
 {
+    endTake();
     m_running = running;
     m_playing = false; // (from the next 1)
     m_roll->setPlayhead(-1);
     refresh();
 }
 
+void LiveSequencer::setRecording(bool on)
+{
+    if (!on)
+        endTake();
+    const QSignalBlocker block(m_record);
+    m_record->setChecked(on);
+    theme::style(m_record, on ? QStringLiteral("background: @bad; color: white;") : QStringLiteral("color: @bad;"));
+    if (on && !m_project->timeline().liveSequence.on) // (recording plays the loop)
+        edit([](LiveSequence& s) { s.on = true; }, tr("Sequence On"));
+}
+
+bool LiveSequencer::recording() const
+{
+    return m_record->isChecked();
+}
+
+// The take so far: one undo step.
+void LiveSequencer::endTake()
+{
+    if (m_take < 0)
+        return;
+    m_take = -1;
+    if (!(m_project->timeline().liveSequence == m_takeBefore.liveSequence))
+        m_project->commitEdit(m_takeBefore, tr("Record Into Loop"));
+}
+
 void LiveSequencer::setActivePad(int pad)
 {
     m_keys->setActive(pad);
+    if (m_switching || !recording() || !m_playing)
+        return; // (the loop's own switches, or not recording)
+    endTake();
+    const int at = playhead();
+    if (pad < 0 || at < 0)
+        return; // (switched off: the take ends there)
+    Timeline tl = m_project->timeline();
+    LiveSequence& s = tl.liveSequence;
+    const int snap = s.snapTicks(), loop = s.loopTicks();
+    const int start = std::min((at + snap / 2) / snap * snap, loop - 1) % loop; // (to the nearest snap)
+    m_takeBefore = tl;
+    s.blocks.push_back({pad, start, std::max(1, std::min(snap, loop - start))});
+    m_take = int(s.blocks.size()) - 1;
+    m_lastPad = pad;
+    m_lastAt = at;
+    m_project->setTimelineLive(tl);
 }
 
 void LiveSequencer::beat(double bpm, int barBeat)
@@ -664,9 +811,46 @@ void LiveSequencer::tick()
     m_roll->setPlayhead(at);
     if (at < 0)
         return;
+    if (m_take < 0)
+        m_lastAt = at;
+    if (m_take >= 0 && m_take < int(m_project->timeline().liveSequence.blocks.size())) {
+        // A pad held on while recording: its block grows with the playhead, over the blocks that start under it.
+        Timeline tl = m_project->timeline();
+        LiveSequence& s = tl.liveSequence;
+        const int snap = s.snapTicks(), loop = s.loopTicks();
+        LiveSequenceBlock take = s.blocks[size_t(m_take)];
+        const bool wrapped = at < m_lastAt - loop / 2; // (round the loop: this take ends, another starts at its 1)
+        m_lastAt = at;
+        const int end = wrapped ? loop : std::clamp((at + snap - 1) / snap * snap, take.start + snap, loop);
+        take.length = std::max(1, std::min(end, loop) - take.start);
+        std::vector<LiveSequenceBlock> kept;
+        for (int i = 0; i < int(s.blocks.size()); ++i) {
+            const LiveSequenceBlock& b = s.blocks[size_t(i)];
+            if (i == m_take || (b.start >= take.start && b.start < take.end()))
+                continue;
+            kept.push_back(b);
+        }
+        kept.push_back(take);
+        if (kept != s.blocks) {
+            s.blocks = std::move(kept);
+            m_take = int(s.blocks.size()) - 1;
+            m_project->setTimelineLive(tl);
+        }
+        if (wrapped) {
+            endTake();
+            m_takeBefore = m_project->timeline();
+            Timeline next = m_takeBefore;
+            next.liveSequence.blocks.push_back({take.pad, 0, std::max(1, std::min(snap, loop))});
+            m_take = int(next.liveSequence.blocks.size()) - 1;
+            m_project->setTimelineLive(next);
+        }
+        return; // (the pad pressed stays on: the loop doesn't switch over it)
+    }
     const int pad = m_project->timeline().liveSequence.padAt(at);
     if (pad != m_lastPad) {
         m_lastPad = pad;
+        m_switching = true;
         emit switchPad(pad);
+        m_switching = false;
     }
 }

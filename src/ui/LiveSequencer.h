@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/LiveSequence.h"
+#include "core/Project.h"
 
 #include <QElapsedTimer>
 #include <QTimer>
@@ -35,6 +36,10 @@ public:
     bool playing() const { return m_playing; }
     // In a window of its own (its rows as tall as the window lets them be); closing that window puts it back.
     void setPoppedOut(bool popped);
+    // Record: while the loop plays, the pads pressed are written into it at the playhead (to the snap), each for as
+    // long as it stays on, over what was there.
+    void setRecording(bool on);
+    bool recording() const;
     bool poppedOut() const { return m_window != nullptr; }
     int playhead() const;            // ticks into the loop (-1: not playing)
 
@@ -50,12 +55,14 @@ protected:
 private:
     void refresh();
     void fitGrid();
+    void endTake();
     void edit(const std::function<void(LiveSequence&)>& change, const QString& description);
     void tick();
 
     Project* m_project;
     QToolButton* m_on;
-    QSpinBox* m_bars;
+    QComboBox* m_bars;
+    QToolButton* m_record;
     QSpinBox* m_top;
     QComboBox* m_bottom;
     QComboBox* m_snap;
@@ -75,4 +82,8 @@ private:
     qint64 m_lastBeatMs = 0;
     double m_bpm = 120;
     int m_lastPad = -1;       // the pad the loop last asked for
+    bool m_switching = false; // (the loop's own switch: not recorded)
+    int m_take = -1;          // the block being recorded (its index), -1: none
+    int m_lastAt = 0;         // the playhead at the last tick (to see the loop come round)
+    Timeline m_takeBefore;    // the project before it (one undo step a take)
 };

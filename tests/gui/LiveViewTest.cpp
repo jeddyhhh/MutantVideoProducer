@@ -336,6 +336,76 @@ int LiveView::runSelfTest(QStringList& log)
             check(played && alternates && !m_project->timeline().liveSequence.on,
                   QStringLiteral("the sequencer switches pads 1 and 2 in turn on the beat (pressed %1)").arg(got.join(QLatin1Char(' '))));
         }
+        // The sequencer's bars (a drop-down), and copy, duplicate and paste of the selected blocks.
+        {
+            auto* roll = m_pads->findChild<QWidget*>(QStringLiteral("liveSequencerRoll"));
+            auto* bars = m_pads->findChild<QComboBox*>(QStringLiteral("liveSequenceBars"));
+            Timeline tl = m_project->timeline();
+            LiveSequence seq;
+            seq.bars = 2;
+            seq.snap = 4;
+            seq.blocks = {{0, 0, 96}, {1, 96, 96}};
+            tl.liveSequence = seq;
+            m_project->applyEdit(tl, QStringLiteral("Sequence"));
+            const int undoAt = m_project->undoStack()->index();
+            bool barsOk = false, copied = false;
+            if (bars && roll) {
+                bars->setCurrentIndex(bars->findData(8));
+                barsOk = m_project->timeline().liveSequence.bars == 8 && bars->currentText().contains(QLatin1String("8"));
+                auto key = [&](int k, Qt::KeyboardModifiers mods) {
+                    QKeyEvent press(QEvent::KeyPress, k, mods);
+                    QApplication::sendEvent(roll, &press);
+                };
+                key(Qt::Key_A, Qt::ControlModifier); // all
+                key(Qt::Key_D, Qt::ControlModifier); // two more, straight after: 192 and 288
+                key(Qt::Key_C, Qt::ControlModifier); // (the copies, now the selection)
+                key(Qt::Key_V, Qt::ControlModifier); // and two more again (after them, or at the pointer)
+                const auto& b = m_project->timeline().liveSequence.blocks;
+                copied = b.size() == 6 && b[2] == LiveSequenceBlock{0, 192, 96} && b[3] == LiveSequenceBlock{1, 288, 96} && b[4].pad == 0
+                         && b[5].pad == 1 && b[5].start - b[4].start == 96 && b[4].length == 96;
+            }
+            while (m_project->undoStack()->index() > undoAt - 1)
+                m_project->undoStack()->undo();
+            check(barsOk && copied && m_project->timeline().liveSequence != seq,
+                  QStringLiteral("the sequencer's bars are picked from a list; Ctrl+D duplicates the selected blocks after themselves and "
+                                 "Ctrl+C, Ctrl+V paste a copy"));
+        }
+        // Record: the loop plays (240 BPM), pad 3 is pressed and held about a bar, then switched off: it's in the loop.
+        {
+            Timeline tl = m_project->timeline();
+            LiveSequence seq;
+            seq.bars = 2;
+            seq.snap = 4;
+            tl.liveSequence = seq;
+            m_project->applyEdit(tl, QStringLiteral("Sequence"));
+            const int undoAt = m_project->undoStack()->index();
+            if (m_activePad >= 0)
+                triggerPad(m_activePad);
+            m_pads->bpmBox()->setValue(240);
+            m_pads->sequencer()->setRecording(true); // (turns the loop on)
+            m_pads->setAutoMode(LivePadPanel::AutoTempo);
+            const bool started = wait(2500, [&] { return m_pads->sequencer()->playing(); });
+            wait(130, [] { return false; });
+            triggerPad(2);
+            wait(1000, [] { return false; });
+            triggerPad(2); // (off)
+            wait(100, [] { return false; });
+            m_pads->sequencer()->setRecording(false);
+            m_pads->setAutoMode(LivePadPanel::AutoOff);
+            const auto blocks = m_project->timeline().liveSequence.blocks;
+            const bool on = m_project->timeline().liveSequence.on;
+            const QString step = m_project->undoStack()->text(m_project->undoStack()->index() - 1);
+            int length = 0;
+            for (const LiveSequenceBlock& b : blocks)
+                length += b.pad == 2 ? b.length : 0;
+            while (m_project->undoStack()->index() > undoAt - 1)
+                m_project->undoStack()->undo();
+            check(started && on && !blocks.empty() && length >= 3 * 96 && length <= 6 * 96 && step.contains(QLatin1String("Record")),
+                  QStringLiteral("recording into the loop: pad 3 held a second at 240 BPM is a block of %1 beats (%2 block(s), undo step \"%3\")")
+                      .arg(length / 96.0)
+                      .arg(blocks.size())
+                      .arg(step));
+        }
         if (m_activePad >= 0)
             triggerPad(m_activePad);
         // Create Random Effects Chain (pad menu) and Fill Empty Pads (set menu).

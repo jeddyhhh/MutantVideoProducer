@@ -170,10 +170,19 @@ remove them. **Ctrl+wheel** zooms; **Clear** removes every block (Ctrl+Z brings 
 all, **Esc** for none). Drag any selected block to move them all together, along the bars and up
 and down onto other pads; **Delete** removes them.
 
+**Ctrl+C** and **Ctrl+X** copy and cut the selected blocks; **Ctrl+V** pastes them at the snap under
+the pointer (or straight after the selection), and **Ctrl+D** duplicates them straight after
+themselves (press it again for another). What's pasted or duplicated is selected, ready to drag.
+
+**●** (Record) writes what you play into the loop: while it plays, every pad you press (a click,
+its key or MIDI) goes in at the playhead, to the snap, and lasts for as long as it stays on, over
+the blocks that were there. Press the pad again (or another) to end it. Each take is one Ctrl+Z.
+Record turns the loop on: jam the first pass, then let it play back.
+
 **⧉** (Pop Out) puts the sequencer in a window of its own, as big as you like, its rows growing with
 it; **Put Back** (or closing the window) returns it under the pads.
 
-- **Bars**: how long the loop is (1 to 64).
+- **Bars**: how long the loop is (picked from the list: 1 to 64).
 - **Time signature**: beats in a bar and the note a beat is (4/4, 3/4, 7/8, 6/8...). Each beat of
   the beat clock is one of those beats.
 - **Snap**: where blocks start and end: a bar (1/1), 1/2 down to 1/32, 1/8 or 1/16 triplets, or a
