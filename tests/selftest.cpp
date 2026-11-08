@@ -47,6 +47,7 @@
 #include "core/LiveAudio.h"
 #include "core/LiveCapture.h"
 #include "core/LiveModulation.h"
+#include "core/LivePadSets.h"
 #include "core/MidiInput.h"
 #include "core/BeatMarkers.h"
 #include "core/MotionTracker.h"
@@ -5923,6 +5924,37 @@ int cmdLive(const QString& outDir)
                   && bad.beatUnit == 4 && bad.snap == 16 && bad.blocks.empty(),
               QStringLiteral("the pad sequencer's loop: ticks for 4/4 and 3/8, the pad on at each tick (looping), saved with the project, "
                              "and nonsense in a file read as limits"));
+    }
+    // ---- Saved sequences and pad sets whose names share a file name ("a/b" and "a_b"; "Beat" and "beat" on Windows) ----
+    {
+        const QByteArray was = qgetenv("MVP_PADSETS_DIR");
+        QDir dir(QDir::temp().filePath(QStringLiteral("mvp-names-test")));
+        dir.removeRecursively();
+        qputenv("MVP_PADSETS_DIR", dir.absolutePath().toUtf8());
+        LiveSequence one, two;
+        one.bars = 2;
+        two.bars = 8;
+        bool ok = sequences::save(QStringLiteral("Beat 1/2"), one) && sequences::save(QStringLiteral("Beat 1_2"), two)
+                  && sequences::save(QStringLiteral("beat"), one) && sequences::save(QStringLiteral("Beat"), two)
+                  && sequences::save(QStringLiteral("Beat"), one); // (again: over its own file)
+        QStringList names = sequences::names();
+        names.sort(); // (case-sensitively: "Beat" and "beat" are a tie in its order)
+        ok = ok && names == QStringList({QStringLiteral("Beat"), QStringLiteral("Beat 1/2"), QStringLiteral("Beat 1_2"), QStringLiteral("beat")})
+             && sequences::load(QStringLiteral("Beat 1/2"))->bars == 2 && sequences::load(QStringLiteral("Beat 1_2"))->bars == 8
+             && sequences::load(QStringLiteral("Beat"))->bars == 2 && sequences::remove(QStringLiteral("Beat 1_2"))
+             && sequences::load(QStringLiteral("Beat 1/2")).has_value();
+        LivePadSet a{QStringLiteral("Set/A"), {}}, b{QStringLiteral("Set_A"), {}};
+        a.pads[0].name = QStringLiteral("a");
+        b.pads[0].name = QStringLiteral("b");
+        ok = ok && padsets::save(a) && padsets::save(b) && padsets::load(a.name)->pads[0].name == QStringLiteral("a")
+             && padsets::load(b.name)->pads[0].name == QStringLiteral("b")
+             && padsets::remove(b.name) && padsets::load(a.name).has_value() && !padsets::load(b.name);
+        dir.removeRecursively();
+        if (was.isNull())
+            qunsetenv("MVP_PADSETS_DIR");
+        else
+            qputenv("MVP_PADSETS_DIR", was);
+        check(ok, QStringLiteral("saved sequences and pad sets whose names make the same file name are kept apart (saved, loaded, deleted)"));
     }
     // ---- Portrait / square output: a landscape picture framed into it ----
     {

@@ -102,6 +102,18 @@ QString find(const QString& name)
             return dir.filePath(file);
     return {};
 }
+
+// Where `name` is saved: its file already, else its own file (numbered when that holds another name: "a/b" and
+// "a_b", or "Beat" and "beat" on Windows, share a file name).
+QString target(const QString& name)
+{
+    if (const QString path = find(name); !path.isEmpty())
+        return path;
+    QString path = fileFor(name);
+    for (int n = 2; QFile::exists(path); ++n)
+        path = fileFor(name + QStringLiteral(" %1").arg(n));
+    return path;
+}
 } // namespace
 
 QString directory()
@@ -141,7 +153,7 @@ bool save(const QString& name, const LiveSequence& s, QString* error)
     LiveSequence saved = s;
     saved.on = false; // (whether it plays is the project's)
     const QJsonObject o{{QStringLiteral("name"), name.trimmed()}, {QStringLiteral("sequence"), liveSequenceToJson(saved)}};
-    QSaveFile f(fileFor(name));
+    QSaveFile f(target(name.trimmed()));
     if (!f.open(QIODevice::WriteOnly) || f.write(QJsonDocument(o).toJson()) < 0 || !f.commit()) {
         if (error)
             *error = f.errorString();

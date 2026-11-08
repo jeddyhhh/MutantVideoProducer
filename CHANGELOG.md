@@ -44,6 +44,8 @@ What changed in each version of Mutant Video Producer. The newest is first.
 
 ### Fixed
 
+- Saving a pad set or sequence whose name makes the same file name as another's ("Beat 1/2" and "Beat 1_2", or
+  "Beat" and "beat" on Windows) replaced that one without asking; deleting one could delete the other.
 - The Effect Builder showed the end of a long effect name and description, not their start.
 - **Alternate Take**: switching a narration line to a shorter take kept fades longer than the event, and a take whose
   file has its sound in another stream played silence.

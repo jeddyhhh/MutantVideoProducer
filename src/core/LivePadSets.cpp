@@ -41,6 +41,30 @@ std::optional<LivePadSet> read(const QString& path)
     return set;
 }
 
+// The file holding `name` (by its file name, or one renamed by hand: the name inside); empty: none.
+QString find(const QString& name)
+{
+    if (const auto set = read(fileFor(name)); set && set->name == name)
+        return fileFor(name);
+    const QDir dir(directory());
+    for (const QString& file : dir.entryList({QStringLiteral("*.json")}, QDir::Files))
+        if (const auto set = read(dir.filePath(file)); set && set->name == name)
+            return dir.filePath(file);
+    return {};
+}
+
+// Where `name` is saved: its file already, else its own file (numbered when that holds another name: "a/b" and
+// "a_b", or "Set" and "set" on Windows, share a file name).
+QString target(const QString& name)
+{
+    if (const QString path = find(name); !path.isEmpty())
+        return path;
+    QString path = fileFor(name);
+    for (int n = 2; QFile::exists(path); ++n)
+        path = fileFor(name + QStringLiteral(" %1").arg(n));
+    return path;
+}
+
 } // namespace
 
 QString directory()
@@ -67,13 +91,8 @@ QStringList names()
 
 std::optional<LivePadSet> load(const QString& name)
 {
-    if (auto set = read(fileFor(name)); set && set->name == name)
-        return set;
-    const QDir dir(directory()); // a file renamed by hand: find it by the name inside
-    for (const QString& file : dir.entryList({QStringLiteral("*.json")}, QDir::Files))
-        if (auto set = read(dir.filePath(file)); set && set->name == name)
-            return set;
-    return std::nullopt;
+    const QString path = find(name);
+    return path.isEmpty() ? std::nullopt : read(path);
 }
 
 bool save(const LivePadSet& set, QString* error)
@@ -86,7 +105,7 @@ bool save(const LivePadSet& set, QString* error)
     QJsonObject o;
     o[QStringLiteral("name")] = set.name.trimmed();
     o[QStringLiteral("pads")] = livePadsToJson(set.pads);
-    QSaveFile f(fileFor(set.name));
+    QSaveFile f(target(set.name.trimmed()));
     if (!f.open(QIODevice::WriteOnly) || f.write(QJsonDocument(o).toJson()) < 0 || !f.commit()) {
         if (error)
             *error = f.errorString();
@@ -97,13 +116,8 @@ bool save(const LivePadSet& set, QString* error)
 
 bool remove(const QString& name)
 {
-    if (QFile::exists(fileFor(name)))
-        return QFile::remove(fileFor(name));
-    const QDir dir(directory());
-    for (const QString& file : dir.entryList({QStringLiteral("*.json")}, QDir::Files))
-        if (auto set = read(dir.filePath(file)); set && set->name == name)
-            return QFile::remove(dir.filePath(file));
-    return false;
+    const QString path = find(name); // (not just its file name's: that may hold another)
+    return !path.isEmpty() && QFile::remove(path);
 }
 
 } // namespace padsets
