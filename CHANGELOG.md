@@ -44,6 +44,8 @@ What changed in each version of Mutant Video Producer. The newest is first.
 
 ### Fixed
 
+- Racks in racks are read at most 16 deep (deeper ones come in empty), so a project, preset or pad set with
+  hundreds can't run the program out of stack drawing or mixing them.
 - Saving an Effect Builder effect or an effect preset wrote over the old file as it went: a full disk or a failed
   write left it cut short (and said it saved). It is now written whole, then put in place.
 - A node effect file (or a project carrying one) with a chain of thousands of nodes could crash the program; a graph

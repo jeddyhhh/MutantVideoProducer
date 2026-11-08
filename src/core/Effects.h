@@ -150,6 +150,9 @@ struct RackChain {
 };
 
 inline constexpr const char* kRackType = "rack";
+// Racks in racks this deep at most: deeper ones in a file are read empty (reading, drawing and mixing them go down
+// a rack at a time, so a file with hundreds would run out of stack).
+inline constexpr int kMaxRackDepth = 16;
 inline bool EffectInstance::isRack() const { return type == QLatin1String(kRackType); }
 
 // ---- Racks -------------------------------------------------------------------

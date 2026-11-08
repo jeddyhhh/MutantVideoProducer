@@ -582,7 +582,17 @@ QJsonObject effectToJson(const EffectInstance& e)
     return o;
 }
 
+namespace {
+EffectInstance effectFromJson(const QJsonObject& o, int depth);
+}
+
 EffectInstance effectFromJson(const QJsonObject& o)
+{
+    return effectFromJson(o, 0);
+}
+
+namespace {
+EffectInstance effectFromJson(const QJsonObject& o, int depth)
 {
     EffectInstance e;
     e.id = o[QStringLiteral("id")].toInt();
@@ -590,7 +600,7 @@ EffectInstance effectFromJson(const QJsonObject& o)
     e.enabled = o[QStringLiteral("enabled")].toBool(true);
     e.params = paramsFromJson(o[QStringLiteral("params")].toObject());
     for (const auto& v : o[QStringLiteral("chains")].toArray()) {
-        if (!e.isRack()) // only racks have (and save) chains
+        if (!e.isRack() || depth >= kMaxRackDepth) // (only racks have chains)
             break;
         const QJsonObject co = v.toObject();
         RackChain c;
@@ -599,12 +609,13 @@ EffectInstance effectFromJson(const QJsonObject& o)
         c.solo = co[QStringLiteral("solo")].toBool(false);
         c.params = paramsFromJson(co[QStringLiteral("params")].toObject());
         for (const auto& ev : co[QStringLiteral("effects")].toArray())
-            c.effects.push_back(effectFromJson(ev.toObject()));
+            c.effects.push_back(effectFromJson(ev.toObject(), depth + 1));
         e.chains.push_back(std::move(c));
     }
     nodes::registerFromInstance(e); // (an effect made in the Effect Builder on another computer: from the graph it carries)
     return e;
 }
+} // namespace
 
 QJsonObject transitionToJson(const TransitionSpec& t)
 {

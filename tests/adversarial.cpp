@@ -169,6 +169,44 @@ void run(const QString& name, const QDir& out, uint32_t seed, int rounds)
                 require(!renderer.render(*project.snapshot(), 0, {32, 18}).isNull(), "nested render failed");
             }
         }
+    } else if (name == "racks") {
+        // Racks inside racks, as deep as a file can hold them (JSON's nesting limit is 1024): saved, read back and
+        // drawn without running out of stack. (A rack can go in a rack in the program; presets and pad sets share them.)
+#ifdef NDEBUG
+        const std::initializer_list<int> depths{8, 16, 64, 250};
+#else
+        const std::initializer_list<int> depths{8, 16, 64}; // (Qt's own JSON reader, built for debugging, runs out of stack nearer its 1024)
+#endif
+        for (int depth : depths) {
+            Timeline deep = defaultTimeline();
+            const int clip = ops::insertGenerated(deep, *findGeneratorPreset("solid_blue"), 0, -1, {});
+            EffectInstance inner;
+            inner.id = deep.allocId();
+            inner.type = "invert";
+            for (int d = 0; d < depth; ++d) {
+                EffectInstance rack;
+                rack.id = deep.allocId();
+                rack.type = kRackType;
+                RackChain chain;
+                chain.name = "A";
+                chain.effects.push_back(std::move(inner));
+                rack.chains.push_back(std::move(chain));
+                inner = std::move(rack);
+            }
+            deep.findClip(clip)->effects.push_back(std::move(inner));
+            Project deepProject;
+            deepProject.applyEdit(deep, "racks");
+            QString error;
+            require(deepProject.save(path, &error), "racks " + QString::number(depth) + " deep not saved: " + error);
+            Project back;
+            require(back.load(path, &error), "racks " + QString::number(depth) + " deep refused: " + error);
+            int levels = 0; // (read down to kMaxRackDepth: the deeper ones empty)
+            for (const EffectInstance* e = &back.timeline().findClip(clip)->effects[0]; e->isRack() && !e->chains.empty(); e = &e->chains[0].effects[0])
+                ++levels;
+            require(levels == std::min(depth, kMaxRackDepth), "racks " + QString::number(depth) + " deep read as " + QString::number(levels));
+            Compositor renderer;
+            require(!renderer.render(*back.snapshot(), 0, {32, 18}).isNull(), "racks " + QString::number(depth) + " deep not drawn");
+        }
     } else if (name == "references") {
         Timeline source = defaultTimeline();
         source.tracks[1].id = INT_MAX - 1;
@@ -285,7 +323,7 @@ int main(int argc, char** argv)
     const int rounds = std::clamp(args.value(3, "512").toInt(), 1, 5000);
     int failures = 0;
     QJsonArray report;
-    for (auto name : {"versions", "media-identity", "keyframes", "nesting", "references", "snapshot-storm", "motion-graphs"}) {
+    for (auto name : {"versions", "media-identity", "keyframes", "nesting", "racks", "references", "snapshot-storm", "motion-graphs"}) {
         QProcess child;
         child.setProcessChannelMode(QProcess::MergedChannels);
         child.start(args[0], {"--case", name, out, QString::number(seed), QString::number(rounds)});
