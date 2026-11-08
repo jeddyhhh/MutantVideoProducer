@@ -41,6 +41,8 @@ bool writeEventWav(const ProjectSnapshot& snap, const Clip& clip, const QString&
     const int64_t first = clip.sourceIn * rate / kUsPerSecond, frames = clip.length * rate / kUsPerSecond;
     if (frames <= 0)
         return fail(QStringLiteral("The event is empty."));
+    if (frames * 8 > 0xFFFFFFFFll - 36) // (a WAV file's sizes are 32-bit: about 3 hours 20 minutes of this)
+        return fail(QStringLiteral("The event is too long to separate at once: split it into parts of under three hours."));
     QSaveFile f(path);
     if (!f.open(QIODevice::WriteOnly))
         return fail(QStringLiteral("Can't write %1").arg(path));
