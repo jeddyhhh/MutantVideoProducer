@@ -44,6 +44,19 @@ What changed in each version of Mutant Video Producer. The newest is first.
 
 ### Fixed
 
+- A device dragged from one effect chain view into another (the Live tab's into the editor's, a Sequence Editor's, or
+  a second copy of the program's) moved or copied whatever device sat at the same place in the chain it was dropped
+  on; such drops are now refused.
+- Media dragged from Project Media in a second copy of the program onto this one's timeline put down whichever of
+  this project's media had the same number; such drops are now ignored.
+- A screen-shader zip with an entry naming a whole path (C:/... or /...) could write that file outside the shaders
+  folder; such entries are now skipped.
+- The Render Queue remembered each finished render under the project open when it finished, so a queued project
+  file (Add Project File...), or one queued before opening another, showed in the wrong project's Deliver History.
+- Auto Captions or Edit by Transcript started through AI control put the words into whatever project was open when
+  listening finished; now they go nowhere if another project was opened meanwhile.
+- AI control could change the timeline while a dialog was open (Stabilize, a graphics composition, a render's
+  progress), from under the event it holds: edits now wait until it is closed (reading is still allowed).
 - Racks in racks are read at most 16 deep (deeper ones come in empty), so a project, preset or pad set with
   hundreds can't run the program out of stack drawing or mixing them.
 - Saving an Effect Builder effect or an effect preset wrote over the old file as it went: a full disk or a failed

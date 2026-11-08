@@ -446,6 +446,11 @@ QStringList MediaBin::mimeTypes() const
     return {QString::fromLatin1(kMimeType), QStringLiteral("text/uri-list")};
 }
 
+static QString dragSource(const Project& project)
+{
+    return QStringLiteral("%1/%2").arg(QCoreApplication::applicationPid()).arg(quintptr(project.session().get()));
+}
+
 QMimeData* MediaBin::mimeData(const QList<QListWidgetItem*>& items) const
 {
     if (std::any_of(items.begin(), items.end(), [](auto* it) { return it->data(Qt::UserRole).toInt() == 0; })) {
@@ -456,12 +461,31 @@ QMimeData* MediaBin::mimeData(const QList<QListWidgetItem*>& items) const
         }
         mime->setUrls(urls); return mime;
     }
-    QStringList ids;
+    std::vector<int> ids;
     for (auto* item : items)
-        ids << QString::number(item->data(Qt::UserRole).toInt());
+        ids.push_back(item->data(Qt::UserRole).toInt());
     auto* mime = new QMimeData;
-    mime->setData(QString::fromLatin1(kMimeType), ids.join(QLatin1Char(',')).toUtf8());
+    mime->setData(QString::fromLatin1(kMimeType), dragData(*m_project, ids));
     return mime;
+}
+
+QByteArray MediaBin::dragData(const Project& project, const std::vector<int>& ids)
+{
+    QStringList list;
+    for (const int id : ids)
+        list << QString::number(id);
+    return (dragSource(project) + QLatin1Char('|') + list.join(QLatin1Char(','))).toUtf8();
+}
+
+std::vector<int> MediaBin::draggedIds(const QMimeData* mime, const Project& project)
+{
+    std::vector<int> ids;
+    const QString data = QString::fromUtf8(mime->data(QString::fromLatin1(kMimeType)));
+    if (data.section(QLatin1Char('|'), 0, 0) != dragSource(project))
+        return ids;
+    for (const QString& s : data.section(QLatin1Char('|'), 1).split(QLatin1Char(','), Qt::SkipEmptyParts))
+        ids.push_back(s.toInt());
+    return ids;
 }
 
 void MediaBin::dragEnterEvent(QDragEnterEvent* e)

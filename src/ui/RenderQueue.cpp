@@ -22,6 +22,7 @@ struct RenderQueue::Job {
     QString name;
     std::shared_ptr<const ProjectSnapshot> snapshot;
     ExportSettings settings;
+    QString projectFile;
     enum class State { Waiting, Rendering, Done, Failed, Cancelled } state = State::Waiting;
     QString error;
     bool ok = false;
@@ -97,7 +98,8 @@ RenderQueue::~RenderQueue()
         m_worker.join();
 }
 
-bool RenderQueue::add(const QString& name, std::shared_ptr<const ProjectSnapshot> snapshot, const ExportSettings& settings, QString* error)
+bool RenderQueue::add(const QString& name, std::shared_ptr<const ProjectSnapshot> snapshot, const ExportSettings& settings, const QString& projectFile,
+                      QString* error)
 {
     const QString path = QFileInfo(settings.path).absoluteFilePath();
     for (const auto& j : m_jobs)
@@ -111,6 +113,7 @@ bool RenderQueue::add(const QString& name, std::shared_ptr<const ProjectSnapshot
     job->name = name;
     job->snapshot = std::move(snapshot);
     job->settings = settings;
+    job->projectFile = projectFile;
     job->item = new QTreeWidgetItem(m_list);
     refresh(*job);
     m_jobs.push_back(std::move(job));
@@ -184,7 +187,7 @@ void RenderQueue::poll()
     m_current = nullptr;
     refresh(job);
     if (job.ok)
-        emit rendered(job.settings.path);
+        emit rendered(job.settings.path, job.projectFile);
     startNext();
 }
 

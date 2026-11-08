@@ -525,7 +525,7 @@ protected:
             return;
         m_pressed = false;
         auto* mime = new QMimeData;
-        mime->setData(QString::fromLatin1(DeviceChainView::kDeviceMime), QStringLiteral("%1|%2").arg(pathToString(m_path)).arg(m_index).toUtf8());
+        mime->setData(QString::fromLatin1(DeviceChainView::kDeviceMime), m_view->deviceMimeData(m_path, m_index));
         auto* drag = new QDrag(this);
         drag->setMimeData(mime);
         drag->setPixmap(parentWidget()->grab().scaledToHeight(60, Qt::SmoothTransformation));
@@ -1828,7 +1828,7 @@ QString DeviceChainView::trackCorners(const ChainPath& path, int index, bool qui
     };
     // The shot under the pinned event at the cursor (the top video event on the tracks below it), each corner followed
     // on its source frames in a small box, mapped back onto the canvas as keyframes on the corners.
-    const Timeline& tl = m_project->timeline();
+    const Timeline tl = m_project->timeline(); // (a copy: the events pointed into stay put while the tracker runs)
     int pinTrack = -1;
     const Clip* pin = m_target.kind == FxTarget::Kind::Clip ? tl.findClip(m_target.id, &pinTrack) : nullptr;
     const EffectDef* def = findEffect(QStringLiteral("corner_pin"));
@@ -1882,9 +1882,11 @@ QString DeviceChainView::trackCorners(const ChainPath& path, int index, bool qui
     std::atomic<bool> stop{false}, finished{false};
     std::vector<tracker::Point> points[4];
     QString error;
+    const QString mediaPath = media->path; // (copies for the worker: the timeline can change while it runs)
+    const int stream = shot->streamIndex;
     std::thread worker([&] {
         for (int k = 0; k < 4 && !stop; ++k)
-            points[k] = tracker::track(media->path, shot->streamIndex, srcFrom, srcTo, boxes[k], [&](double p) {
+            points[k] = tracker::track(mediaPath, stream, srcFrom, srcTo, boxes[k], [&](double p) {
                 done = (k + p) / 4;
                 return !stop.load();
             }, &error);
@@ -1958,7 +1960,7 @@ QString DeviceChainView::trackMask(const ChainPath& path, int index, bool quiet)
     // From the cursor to the end of the event, on its source frames: the mask's
     // box mapped from the canvas into the source, followed, and its centre mapped
     // back for keyframes on mask.x / mask.y.
-    const Timeline& tl = m_project->timeline();
+    const Timeline tl = m_project->timeline(); // (a copy: the events pointed into stay put while the tracker runs)
     const Clip* clip = m_target.kind == FxTarget::Kind::Clip ? tl.findClip(m_target.id) : nullptr;
     const auto media = clip && !clip->isGenerated() ? m_project->mediaItem(clip->mediaId) : nullptr;
     const VideoStreamInfo* vs = media ? media->info.videoStream(clip->streamIndex) : nullptr;
@@ -1998,8 +2000,10 @@ QString DeviceChainView::trackMask(const ChainPath& path, int index, bool quiet)
     std::atomic<bool> stop{false}, finished{false};
     std::vector<tracker::Point> points;
     QString error;
+    const QString mediaPath = media->path; // (copies for the worker: the timeline can change while it runs)
+    const int stream = clip->streamIndex;
     std::thread worker([&] {
-        points = tracker::track(media->path, clip->streamIndex, srcFrom, srcTo, box, [&](double p) {
+        points = tracker::track(mediaPath, stream, srcFrom, srcTo, box, [&](double p) {
             done = p;
             return !stop.load();
         }, &error);
@@ -2258,12 +2262,38 @@ void DeviceChainView::jumpKey(const ParamRef& ref, const QString& id, int direct
 
 // ---- Structure ------------------------------------------------------------------------------
 
+QByteArray DeviceChainView::deviceMimeData(const ChainPath& path, int index) const
+{
+    return QStringLiteral("%1/%2/%3/%4/%5|%6|%7")
+        .arg(QCoreApplication::applicationPid())
+        .arg(quintptr(this))
+        .arg(quintptr(m_project->session().get()))
+        .arg(int(m_target.kind))
+        .arg(m_target.id)
+        .arg(pathToString(path))
+        .arg(index)
+        .toUtf8();
+}
+
+bool DeviceChainView::readDeviceMime(const QMimeData* mime, ChainPath* path, int* index) const
+{
+    const QStringList parts = QString::fromUtf8(mime->data(QString::fromLatin1(kDeviceMime))).split(QLatin1Char('|'));
+    if (parts.size() != 3 || parts[0] != QString::fromUtf8(deviceMimeData({}, 0)).section(QLatin1Char('|'), 0, 0))
+        return false;
+    *path = pathFromString(parts[1]);
+    *index = parts[2].toInt();
+    return true;
+}
+
 bool DeviceChainView::canDrop(const QMimeData* mime) const
 {
     if (!targetExists())
         return false;
-    if (mime->hasFormat(QString::fromLatin1(DeviceChainView::kDeviceMime)))
-        return true;
+    if (mime->hasFormat(QString::fromLatin1(DeviceChainView::kDeviceMime))) {
+        ChainPath path;
+        int index = 0;
+        return readDeviceMime(mime, &path, &index);
+    }
     if (mime->hasFormat(QString::fromLatin1(EffectsBrowser::kEffectMime)))
         return acceptsEffect(QString::fromUtf8(mime->data(QString::fromLatin1(EffectsBrowser::kEffectMime))));
     if (mime->hasFormat(QString::fromLatin1(EffectsBrowser::kPresetMime)))
@@ -2359,11 +2389,10 @@ bool DeviceChainView::dropMime(const QMimeData* mime, const ChainPath& path, int
         return false;
     bool ok = false;
     if (mime->hasFormat(QString::fromLatin1(DeviceChainView::kDeviceMime))) {
-        const QStringList parts = QString::fromUtf8(mime->data(QString::fromLatin1(kDeviceMime))).split(QLatin1Char('|'));
-        if (parts.size() != 2)
+        ChainPath from;
+        int fromIndex = 0;
+        if (!readDeviceMime(mime, &from, &fromIndex))
             return false;
-        const ChainPath from = pathFromString(parts[0]);
-        const int fromIndex = parts[1].toInt();
         editRoot([&](EffectChain& r, Timeline& tl) {
             ok = moveEffect(r, from, fromIndex, path, index, copy, [&] { return tl.allocId(); });
         }, copy ? tr("Copy Effect") : tr("Move Effect"));
@@ -2411,9 +2440,10 @@ bool DeviceChainView::dropAsNewChain(const QMimeData* mime, const ChainPath& rac
         rk.chains.push_back(makeRackChain(isAudio(), tr("Chain %1").arg(newChain + 1)));
         const ChainPath dest = rackPath.child(rackIndex, newChain);
         if (mime->hasFormat(QString::fromLatin1(DeviceChainView::kDeviceMime))) {
-            const QStringList parts = QString::fromUtf8(mime->data(QString::fromLatin1(kDeviceMime))).split(QLatin1Char('|'));
-            if (parts.size() == 2)
-                ok = moveEffect(r, pathFromString(parts[0]), parts[1].toInt(), dest, 0, copy, [&] { return tl.allocId(); });
+            ChainPath from;
+            int fromIndex = 0;
+            if (readDeviceMime(mime, &from, &fromIndex))
+                ok = moveEffect(r, from, fromIndex, dest, 0, copy, [&] { return tl.allocId(); });
         } else if (mime->hasFormat(QString::fromLatin1(EffectsBrowser::kPresetMime))) {
             const auto preset = PresetLibrary::instance().find(QString::fromUtf8(mime->data(QString::fromLatin1(EffectsBrowser::kPresetMime))));
             if (EffectChain* d = resolveChain(r, dest); d && preset) {
@@ -2646,9 +2676,9 @@ int DeviceChainView::runSelfTest(QStringList& log)
         m->setData(QString::fromLatin1(EffectsBrowser::kEffectMime), QByteArray(type));
         return m;
     };
-    auto deviceMime = [](const ChainPath& p, int index) {
+    auto deviceMime = [this](const ChainPath& p, int index) {
         auto* m = new QMimeData;
-        m->setData(QString::fromLatin1(kDeviceMime), QStringLiteral("%1|%2").arg(pathToString(p)).arg(index).toUtf8());
+        m->setData(QString::fromLatin1(kDeviceMime), deviceMimeData(p, index));
         return m;
     };
     // A point in `s` just in front of device i (past the last one for a big i).
@@ -2687,6 +2717,18 @@ int DeviceChainView::runSelfTest(QStringList& log)
     m.reset(deviceMime({}, 0));
     send(strips().front(), gapBefore(strips().front(), 9), m.get(), Qt::NoModifier);
     check(chainText() == QStringLiteral("invert gaussian_blur sepia"), QStringLiteral("drag a device behind the others: %1").arg(chainText()));
+    {
+        // A device dragged from another chain view (another window, the Live tab, a second copy of the program)
+        // names a place in its own chain: refused here, not taken as this chain's device at that place.
+        auto foreign = std::make_unique<QMimeData>();
+        foreign->setData(QString::fromLatin1(kDeviceMime), QByteArray("1/2/3/4||0"));
+        auto legacy = std::make_unique<QMimeData>();
+        legacy->setData(QString::fromLatin1(kDeviceMime), QByteArray("|0"));
+        send(strips().front(), gapBefore(strips().front(), 9), foreign.get(), Qt::NoModifier);
+        send(strips().front(), gapBefore(strips().front(), 9), legacy.get(), Qt::NoModifier);
+        check(chainText() == QStringLiteral("invert gaussian_blur sepia") && !canDrop(foreign.get()),
+              QStringLiteral("a device dragged from another chain view is refused: %1").arg(chainText()));
+    }
     m.reset(deviceMime({}, 0));
     send(strips().front(), gapBefore(strips().front(), 9), m.get(), Qt::ControlModifier);
     std::set<int> ids;

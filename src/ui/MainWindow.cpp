@@ -452,7 +452,7 @@ void MainWindow::renderAs()
     settings.setValue(Profiles::instance().settingsKey(QStringLiteral("dirs/render")), QFileInfo(s.path).absolutePath());
     if (dlg.queued()) {
         QString error;
-        if (!renderQueue()->add(base, m_project->snapshot(), s, &error))
+        if (!renderQueue()->add(base, m_project->snapshot(), s, m_project->filePath(), &error))
             QMessageBox::information(this, tr("Render Queue"), error);
         renderQueue()->show();
         renderQueue()->raise();
@@ -490,8 +490,8 @@ RenderQueue* MainWindow::renderQueue()
     if (!m_renderQueue) {
         m_renderQueue = new RenderQueue(this);
         connect(m_renderQueue, &RenderQueue::addProjectRequested, this, &MainWindow::queueProjectFile);
-        connect(m_renderQueue, &RenderQueue::rendered, this, [this](const QString& path) {
-            DeliverView::remember(m_project->filePath(), path);
+        connect(m_renderQueue, &RenderQueue::rendered, this, [](const QString& path, const QString& projectFile) {
+            DeliverView::remember(projectFile, path);
             Profiles::instance().remember({QJsonObject{{"path", path}, {"folder", "Exports"}, {"origin", "render"}}});
         });
     }
@@ -530,7 +530,7 @@ void MainWindow::queueProjectFile()
     dlg.setCaptions(timelineCaptions(other.timeline()));
     if (dlg.exec() != QDialog::Accepted)
         return; // (Render and Add to Render Queue both queue it here)
-    if (!renderQueue()->add(base, other.snapshot(), dlg.settings(), &error))
+    if (!renderQueue()->add(base, other.snapshot(), dlg.settings(), file, &error))
         QMessageBox::information(renderQueue(), tr("Render Queue"), error);
 }
 

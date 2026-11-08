@@ -57,6 +57,7 @@
 #include "ui/PreviewWidget.h"
 #include "ui/TimelineWidget.h"
 
+#include <QApplication>
 #include <QDirIterator>
 #include <QRegularExpression>
 #include <QTimer>
@@ -815,6 +816,20 @@ QJsonObject McpServer::handle(const QJsonObject& msg)
         response[QStringLiteral("result")] = QJsonObject{{QStringLiteral("tools"), toolList()}};
     } else if (method == QLatin1String("tools/call")) {
         const QString name = params[QStringLiteral("name")].toString();
+        // While a dialog of the program's is open (Stabilize, a graphics composition, a render's progress...), it holds
+        // its event and commits on OK: an edit from here meanwhile could pull the event from under it. Looking is fine.
+        static const QSet<QString> readOnly = [] {
+            QSet<QString> out;
+            for (const QJsonValue t : toolList())
+                if (t[QStringLiteral("annotations")][QStringLiteral("readOnlyHint")].toBool())
+                    out.insert(t[QStringLiteral("name")].toString());
+            return out;
+        }();
+        if (QWidget* modal = QApplication::activeModalWidget(); modal && !readOnly.contains(name)) {
+            response[QStringLiteral("result")] = errorResult(
+                QStringLiteral("a window is open in Mutant Video Producer (\"%1\"): it needs closing first, then try again").arg(modal->windowTitle()));
+            return response;
+        }
         emit activity(name);
         response[QStringLiteral("result")] = callTool(name, params[QStringLiteral("arguments")].toObject());
     } else {
@@ -4950,6 +4965,7 @@ QJsonObject McpServer::ToolCall::tool_render_queue()
         return errorResult(QStringLiteral("give a path"));
     std::shared_ptr<const ProjectSnapshot> snap = project->snapshot();
     QString label = project->filePath().isEmpty() ? QStringLiteral("Untitled") : QFileInfo(project->filePath()).completeBaseName();
+    QString projectFile = project->filePath();
     if (has("project_file")) {
         Project other;
         QString error;
@@ -4957,6 +4973,7 @@ QJsonObject McpServer::ToolCall::tool_render_queue()
             return errorResult(error);
         snap = other.snapshot();
         label = QFileInfo(str("project_file")).completeBaseName();
+        projectFile = QFileInfo(str("project_file")).absoluteFilePath();
     }
     const ExportPreset* chosen = matchPreset(has("preset") ? str("preset") : QStringLiteral("MP4 H.264"), str("path"));
     if (!chosen)
@@ -4972,7 +4989,7 @@ QJsonObject McpServer::ToolCall::tool_render_queue()
     if (s.rangeEnd <= s.rangeStart)
         return errorResult(QStringLiteral("nothing to render there"));
     QString error;
-    if (!queue->add(label, snap, s, &error))
+    if (!queue->add(label, snap, s, projectFile, &error))
         return errorResult(error);
     return jsonResult(queue->status());
 }

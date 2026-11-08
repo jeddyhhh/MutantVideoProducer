@@ -25,8 +25,10 @@ public:
     explicit RenderQueue(QWidget* parent = nullptr);
     ~RenderQueue() override; // cancels a running render and waits for it
 
-    // False (with `error`) when another waiting job already writes `settings.path`.
-    bool add(const QString& name, std::shared_ptr<const ProjectSnapshot> snapshot, const ExportSettings& settings, QString* error = nullptr);
+    // False (with `error`) when another waiting job already writes `settings.path`. `projectFile`: the project it is
+    // of (where its render is remembered, whatever is open when it is done).
+    bool add(const QString& name, std::shared_ptr<const ProjectSnapshot> snapshot, const ExportSettings& settings, const QString& projectFile,
+             QString* error = nullptr);
     bool busy() const { return m_current != nullptr; }
     int waiting() const;
     void start();
@@ -35,7 +37,7 @@ public:
 
 signals:
     void addProjectRequested(); // "Add Project File..."
-    void rendered(const QString& path);
+    void rendered(const QString& path, const QString& projectFile);
 
 private:
     struct Job;

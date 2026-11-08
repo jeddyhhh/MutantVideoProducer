@@ -85,6 +85,10 @@ private:
 
     bool isAudio() const;
     bool targetExists() const;
+    // A device dragged: its place, tagged with this view and its chain (a drag from another view, another chain or
+    // another copy of the program names a place in a different chain: it's refused).
+    QByteArray deviceMimeData(const ChainPath& path, int index) const;
+    bool readDeviceMime(const QMimeData* mime, ChainPath* path, int* index) const;
     EffectChain* root(Timeline& tl) const;
     const EffectChain* root(const Timeline& tl) const;
     const EffectInstance* effectAt(const ChainPath& path, int index) const;

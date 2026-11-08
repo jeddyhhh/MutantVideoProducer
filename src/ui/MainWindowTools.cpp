@@ -711,11 +711,11 @@ void MainWindow::stabilizeClip(int clipId)
     form->addRow(buttons);
     connect(buttons, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
     connect(buttons, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
+    const QString path = media->path; // (copies: `clip` points into the timeline, which can change while the dialog is open)
+    const int stream = clip->streamIndex;
     if (dlg.exec() != QDialog::Accepted)
         return;
     const double amount = strength->currentData().toDouble();
-    const QString path = media->path;
-    const int stream = clip->streamIndex;
     if (amount > 0 && !stabilize::isAnalyzed(path, stream)) {
         QProgressDialog progress(tr("Analysing the motion of %1...").arg(media->displayName()), tr("Cancel"), 0, 1000, this);
         progress.setWindowModality(Qt::WindowModal);

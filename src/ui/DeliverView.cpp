@@ -740,7 +740,7 @@ DeliverView::DeliverView(Project* project, Hooks hooks, QWidget* parent) : QWidg
         s.rangeEnd = limitFor(*p) > 0 ? std::min(snap->timeline.duration(), limitFor(*p)) : snap->timeline.duration();
         s.captions = timelineCaptions(snap->timeline);
         QString why;
-        if (s.rangeEnd > 0 && queue->add(baseName(), snap, s, &why)) {
+        if (s.rangeEnd > 0 && queue->add(baseName(), snap, s, m_project->filePath(), &why)) {
             m_pending[QDir::cleanPath(s.path)] = {p->name, double(s.rangeEnd) / kUsPerSecond};
             queue->start();
             m_poll->start();
@@ -1286,7 +1286,7 @@ int DeliverView::renderOutputs(QString* error)
         s.rangeEnd = limitFor(*p) > 0 ? std::min(duration, limitFor(*p)) : duration;
         s.captions = captions;
         QString why;
-        if (queue->add(baseName(), snap, s, &why)) {
+        if (queue->add(baseName(), snap, s, m_project->filePath(), &why)) {
             ++added;
             m_pending[QDir::cleanPath(s.path)] = {p->name, double(s.rangeEnd - s.rangeStart) / kUsPerSecond};
             row->state->setText(tr("Waiting"));
@@ -1300,10 +1300,10 @@ int DeliverView::renderOutputs(QString* error)
     }
     if (!m_queueConnected) {
         m_queueConnected = true;
-        connect(queue, &RenderQueue::rendered, this, [this](const QString& path) {
+        connect(queue, &RenderQueue::rendered, this, [this](const QString& path, const QString& projectFile) {
             const QString clean = QDir::cleanPath(path);
             if (const auto it = m_pending.find(clean); it != m_pending.end()) {
-                remember(m_project->filePath(), path, it->second.first, it->second.second);
+                remember(projectFile, path, it->second.first, it->second.second);
                 fillHistory();
             }
         });

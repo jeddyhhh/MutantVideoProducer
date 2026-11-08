@@ -216,7 +216,9 @@ bool installZip(const QString& zipPath, QString* error, const std::function<bool
             return false;
         }
         const QString rel = f.filePath.mid(root.size());
-        if (rel.isEmpty() || rel.contains(QLatin1String("..")))
+        // Only into the folder: not "../x", nor "C:/x" or "/x" (which QDir::filePath takes as they are), nor "a:b".
+        if (rel.isEmpty() || rel.contains(QLatin1String("..")) || rel.contains(QLatin1Char(':')) || QDir::isAbsolutePath(rel)
+            || rel.startsWith(QLatin1Char('/')) || rel.startsWith(QLatin1Char('\\')))
             continue;
         const QString dst = QDir(fresh).filePath(rel);
         if (f.isDir) {

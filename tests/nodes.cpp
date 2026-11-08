@@ -506,6 +506,9 @@ int main(int argc, char** argv)
                     zw.addDirectory(QStringLiteral("glsl-shaders-master")); // (GitHub's zips list their folder first)
                     zw.addFile(QStringLiteral("glsl-shaders-master/test/flip.glslp"), preset.toUtf8());
                     zw.addFile(QStringLiteral("glsl-shaders-master/test/shaders/flip.glsl"), shader.toUtf8());
+                    // (and entries that would land outside the folder: a whole path in it, and one with ..)
+                    zw.addFile(QStringLiteral("glsl-shaders-master/") + zipDir.filePath(QStringLiteral("escaped.txt")), "x");
+                    zw.addFile(QStringLiteral("glsl-shaders-master/../../../escaped-up.txt"), "x");
                     zw.close();
                 }
                 const QByteArray keep = qgetenv("MVP_SCREEN_SHADERS_DIR");
@@ -530,6 +533,8 @@ int main(int argc, char** argv)
                     QPainter(&opaque).drawImage(0, 0, pic);
                     back = difference(out, opaque);
                 }
+                const bool stayedIn = !QFile::exists(zipDir.filePath(QStringLiteral("escaped.txt"))) && !QFile::exists(zipDir.filePath(QStringLiteral("escaped-up.txt")));
+                check(stayedIn, QStringLiteral("screen shaders: a zip's entries with a whole path (or ..) are not written outside its folder"));
                 check(unpacked && mine.size() == 1 && flip && flip->category == QLatin1String("Retro Shaders/test") && pre && pre->passes.size() == 2
                           && pre->passes[0].alias == QLatin1String("FIRST") && pre->parameters.size() == 1 && pre->parameters[0].def == 1.0
                           && back < 12 && !retro::passSource(QStringLiteral("#version 120") + QLatin1Char('\n') + QStringLiteral("void main(){}"), true)

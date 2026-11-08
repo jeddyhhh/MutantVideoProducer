@@ -154,11 +154,9 @@ void TimelineWidget::dropEvent(QDropEvent* e)
     } else if (md->hasFormat(QString::fromLatin1(EffectsBrowser::kTransitionMime))) {
         dropTransition(p, QString::fromUtf8(md->data(QString::fromLatin1(EffectsBrowser::kTransitionMime))));
     } else if (md->hasFormat(QString::fromLatin1(MediaBin::kMimeType))) {
-        std::vector<int> ids;
-        for (const QByteArray& s : md->data(QString::fromLatin1(MediaBin::kMimeType)).split(','))
-            if (!s.isEmpty())
-                ids.push_back(s.toInt());
-        insertMedia(ids, mediaDropTime(p.x(), track, e->modifiers()), track, true);
+        const std::vector<int> ids = MediaBin::draggedIds(md, *m_project);
+        if (!ids.empty())
+            insertMedia(ids, mediaDropTime(p.x(), track, e->modifiers()), track, true);
     } else if (md->hasUrls()) {
         QStringList paths;
         for (const QUrl& url : md->urls())

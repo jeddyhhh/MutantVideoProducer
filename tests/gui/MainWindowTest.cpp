@@ -765,19 +765,26 @@ int MainWindow::runEditorTest(QStringList& log)
         for (const QString& f : {first, second, third})
             QFile::remove(f);
         s.path = first;
-        const bool added = queue->add("one", m_project->snapshot(), s);
-        const bool refused = !queue->add("again", m_project->snapshot(), s);
+        const bool added = queue->add("one", m_project->snapshot(), s, m_project->filePath());
+        const bool refused = !queue->add("again", m_project->snapshot(), s, m_project->filePath());
         s.path = second;
-        queue->add("two", m_project->snapshot(), s);
-        queue->start();
-        for (int i = 0; i < 600 && (queue->busy() || queue->waiting()); ++i)
-            wait(50);
+        const QString otherProject = work.filePath("another.mvp"); // (a project file added to the queue, not the open one)
+        queue->add("two", m_project->snapshot(), s, otherProject);
+        std::map<QString, QString> renderedOf; // file -> the project it was told it is of
+        {
+            QObject queueCtx; // (block-local: the connection goes with it)
+            connect(queue, &RenderQueue::rendered, &queueCtx, [&](const QString& path, const QString& project) { renderedOf[path] = project; });
+            queue->start();
+            for (int i = 0; i < 600 && (queue->busy() || queue->waiting()); ++i)
+                wait(50);
+        }
         auto rendered = [](const QString& f) { return probeMedia(f).ok(); };
-        check(added && refused && !queue->busy() && !queue->waiting() && rendered(first) && rendered(second),
-              "render queue renders its jobs one after another and refuses a second job to the same file");
+        check(added && refused && !queue->busy() && !queue->waiting() && rendered(first) && rendered(second)
+                  && renderedOf[first] == m_project->filePath() && renderedOf[second] == otherProject,
+              "render queue renders its jobs one after another (each told as its own project's) and refuses a second job to the same file");
         s.path = third;
         s.rangeEnd = 30 * kUsPerSecond;
-        queue->add("three", m_project->snapshot(), s);
+        queue->add("three", m_project->snapshot(), s, m_project->filePath());
         queue->start();
         wait(300);
         queue->stop();

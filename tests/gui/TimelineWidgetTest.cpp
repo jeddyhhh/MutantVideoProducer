@@ -68,7 +68,7 @@ int TimelineWidget::runDropTest(QStringList& log)
         if (fromFile)
             mime.setUrls({QUrl::fromLocalFile(m_project->mediaItem(mediaId)->path)});
         else
-            mime.setData(QString::fromLatin1(MediaBin::kMimeType), QByteArray::number(mediaId));
+            mime.setData(QString::fromLatin1(MediaBin::kMimeType), MediaBin::dragData(*m_project, {mediaId}));
         const QPoint pos(int(timeToX(at)), y);
         QDragEnterEvent enter(pos, Qt::CopyAction, &mime, Qt::LeftButton, mods);
         QApplication::sendEvent(viewport(), &enter);
@@ -116,6 +116,17 @@ int TimelineWidget::runDropTest(QStringList& log)
     check(m_project->timeline() == empty, QStringLiteral("undo removes the dropped events and their new tracks together"));
     m_project->undoStack()->redo();
     check(m_project->timeline() == firstPlaced, QStringLiteral("redo restores the dropped events and their new tracks together"));
+    {
+        // Media dragged from another copy of the program (or from before another project was opened) names media
+        // of a different project: nothing is put down.
+        const Timeline previous = m_project->timeline();
+        QMimeData mime;
+        mime.setData(QString::fromLatin1(MediaBin::kMimeType), QByteArray("1/2|") + QByteArray::number(mediaId));
+        const QPoint pos(int(timeToX(m_project->timeline().duration() + kUsPerSecond)), y);
+        QDropEvent ev(QPointF(pos), Qt::CopyAction, &mime, Qt::LeftButton, Qt::NoModifier);
+        QApplication::sendEvent(viewport(), &ev);
+        check(m_project->timeline() == previous, QStringLiteral("media dragged from another project's bin is not put down"));
+    }
     const TimeUs end1 = m_project->timeline().duration();
     const TimeUs second = drop(end1 + 2 * kUsPerSecond, Qt::NoModifier);
     check(second == end1, QStringLiteral("dropped 2 s after the last clip joins its end (%1 s): %2 s").arg(secs(end1), secs(second)));

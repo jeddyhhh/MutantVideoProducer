@@ -212,6 +212,7 @@ bool MainWindow::transcribeTimeline(const QString& modelFile, const TranscribeOp
 {
     // Listened to on a worker thread while the window goes on; `progress` shows it and can cancel.
     const std::vector<float> audio = timelineSpeechAudio(*m_project->snapshot(), from, to);
+    const std::weak_ptr<const int> session = m_project->session(); // (another project opened meanwhile: not into that one)
     std::atomic<int> permille{0};
     std::atomic<bool> cancel{false};
     captions.clear();
@@ -234,6 +235,10 @@ bool MainWindow::transcribeTimeline(const QString& modelFile, const TranscribeOp
     loop.exec();
     worker->wait();
     delete worker;
+    if (ok && session.lock() != m_project->session()) {
+        *error = tr("Another project was opened while it listened.");
+        return false;
+    }
     if (!ok || captions.empty()) {
         if (ok)
             *error = tr("No speech was heard.");

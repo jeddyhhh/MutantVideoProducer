@@ -4,6 +4,9 @@
 #include <QListWidget>
 #include <functional>
 #include <map>
+#include <vector>
+
+class QMimeData;
 
 class Project;
 class MediaCache;
@@ -15,6 +18,10 @@ class MediaBin : public QListWidget {
     Q_OBJECT
 public:
     static constexpr const char* kMimeType = "application/x-mvp-media";
+    // The media ids a drag from the bin carries, if it came from this project as it is now (a drag from another copy
+    // of the program, or from before another project was opened, names media of a different project: none).
+    static std::vector<int> draggedIds(const QMimeData* mime, const Project& project);
+    static QByteArray dragData(const Project& project, const std::vector<int>& ids); // (what such a drag carries)
 
     MediaBin(Project* project, MediaCache* cache, QWidget* parent = nullptr);
 
