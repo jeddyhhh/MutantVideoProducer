@@ -44,6 +44,10 @@ What changed in each version of Mutant Video Producer. The newest is first.
 
 ### Fixed
 
+- Saving an Effect Builder effect or an effect preset wrote over the old file as it went: a full disk or a failed
+  write left it cut short (and said it saved). It is now written whole, then put in place.
+- A node effect file (or a project carrying one) with a chain of thousands of nodes could crash the program; a graph
+  now has at most 256 nodes.
 - Saving a pad set or sequence whose name makes the same file name as another's ("Beat 1/2" and "Beat 1_2", or
   "Beat" and "beat" on Windows) replaced that one without asking; deleting one could delete the other.
 - The Effect Builder showed the end of a long effect name and description, not their start.

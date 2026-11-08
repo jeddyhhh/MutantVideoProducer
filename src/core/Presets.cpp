@@ -4,6 +4,7 @@
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
+#include <QSaveFile>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QStandardPaths>
@@ -554,13 +555,13 @@ QString PresetLibrary::save(const QString& name, bool audio, const QString& effe
     p.effectType = effectType;
     p.chain = chain;
     reassignEffectIds(p.chain, [n = 1]() mutable { return n++; }); // stable placeholder ids in the file
-    QFile f(QDir(m_dir).filePath(fileId + QStringLiteral(".json")));
-    if (!f.open(QIODevice::WriteOnly | QIODevice::Truncate) || f.write(QJsonDocument(presetToJson(p)).toJson()) < 0) {
+    QSaveFile f(QDir(m_dir).filePath(fileId + QStringLiteral(".json"))); // (the old file stays until the new one is all written)
+    const QByteArray bytes = QJsonDocument(presetToJson(p)).toJson();
+    if (!f.open(QIODevice::WriteOnly) || f.write(bytes) != bytes.size() || !f.commit()) {
         if (error)
             *error = QStringLiteral("Could not write %1").arg(f.fileName());
         return {};
     }
-    f.close();
     reload();
     emit changed();
     return QStringLiteral("u:") + fileId;

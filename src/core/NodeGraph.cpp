@@ -11,6 +11,7 @@
 #include <QDirIterator>
 #include <QFile>
 #include <QFileInfo>
+#include <QSaveFile>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QPainter>
@@ -559,7 +560,7 @@ const Link* Graph::input(int to, int port) const
 int Graph::addNode(const QString& type, QPointF pos)
 {
     const NodeDef* def = findNode(type);
-    if (!def)
+    if (!def || int(nodes.size()) >= kMaxNodes || nextId >= kMaxNodeId)
         return 0;
     Node n;
     n.id = nextId++;
@@ -643,12 +644,13 @@ Graph fromJson(const QJsonObject& o)
         node.type = n[QStringLiteral("type")].toString();
         node.pos = QPointF(n[QStringLiteral("x")].toDouble(), n[QStringLiteral("y")].toDouble());
         node.params = paramsFromJson(n[QStringLiteral("params")].toObject());
-        if (node.id > 0 && !g.find(node.id))
+        if (node.id > 0 && node.id < kMaxNodeId && !g.find(node.id) && int(g.nodes.size()) < kMaxNodes)
             g.nodes.push_back(std::move(node));
     }
+    int linkCount = 0;
     for (const QJsonValue v : o[QStringLiteral("links")].toArray()) {
         const QJsonArray l = v.toArray();
-        if (l.size() == 3)
+        if (l.size() == 3 && ++linkCount <= 8 * kMaxNodes) // (each one checked for a loop: not millions)
             g.connect(l[0].toInt(), l[1].toInt(), l[2].toInt()); // (refuses loops and wires to nowhere)
     }
     for (const QJsonValue v : o[QStringLiteral("exposed")].toArray()) {
@@ -660,7 +662,7 @@ Graph fromJson(const QJsonObject& o)
     int top = 0;
     for (const Node& n : g.nodes)
         top = std::max(top, n.id);
-    g.nextId = std::max(o[QStringLiteral("nextId")].toInt(1), top + 1);
+    g.nextId = std::clamp(o[QStringLiteral("nextId")].toInt(1), top + 1, kMaxNodeId);
     return g;
 }
 
@@ -804,13 +806,13 @@ QString examplesFolder()
 bool save(const Graph& g, const QString& path, QString* error)
 {
     QDir().mkpath(QFileInfo(path).absolutePath());
-    QFile f(path);
-    if (!f.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+    QSaveFile f(path); // (the old file stays until the new one is all written)
+    const QByteArray bytes = QJsonDocument(toJson(g)).toJson(QJsonDocument::Indented);
+    if (!f.open(QIODevice::WriteOnly) || f.write(bytes) != bytes.size() || !f.commit()) {
         if (error)
             *error = f.errorString();
         return false;
     }
-    f.write(QJsonDocument(toJson(g)).toJson(QJsonDocument::Indented));
     return true;
 }
 

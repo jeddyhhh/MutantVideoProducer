@@ -3171,11 +3171,11 @@ QJsonObject McpServer::ToolCall::tool_captions()
     }
     if (action == QLatin1String("export")) {
         const std::vector<Caption> caps = timelineCaptions(project->timeline());
-        QFile f(path);
+        QSaveFile f(path);
         if (caps.empty())
             return errorResult(QStringLiteral("there are no text events to export"));
-        if (!f.open(QIODevice::WriteOnly)
-            || f.write((path.endsWith(QLatin1String(".vtt"), Qt::CaseInsensitive) ? writeVtt(caps) : writeSrt(caps)).toUtf8()) < 0)
+        const QByteArray bytes = (path.endsWith(QLatin1String(".vtt"), Qt::CaseInsensitive) ? writeVtt(caps) : writeSrt(caps)).toUtf8();
+        if (!f.open(QIODevice::WriteOnly) || f.write(bytes) != bytes.size() || !f.commit())
             return errorResult(QStringLiteral("could not write %1").arg(path));
         return jsonResult({{QStringLiteral("captions"), int(caps.size())}, {QStringLiteral("path"), path}});
     }
@@ -3797,8 +3797,10 @@ QString graphFromJson(const QJsonObject& o, nodes::Graph* g)
         node.id = n.value(QStringLiteral("id")).toInt();
         node.type = n.value(QStringLiteral("type")).toString();
         const nodes::NodeDef* def = nodes::findNode(node.type);
-        if (node.id <= 0 || g->find(node.id))
-            return QStringLiteral("each node needs its own id (a whole number from 1): %1").arg(node.id);
+        if (node.id <= 0 || node.id >= nodes::kMaxNodeId || g->find(node.id))
+            return QStringLiteral("each node needs its own id (a whole number from 1 to %1): %2").arg(nodes::kMaxNodeId - 1).arg(node.id);
+        if (int(g->nodes.size()) >= nodes::kMaxNodes)
+            return QStringLiteral("a graph can have at most %1 nodes").arg(nodes::kMaxNodes);
         if (!def)
             return QStringLiteral("there is no node type \"%1\" (node_effect action nodes lists them)").arg(node.type);
         node.params = defaultParams(def->params);

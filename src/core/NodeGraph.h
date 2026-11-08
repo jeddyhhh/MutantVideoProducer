@@ -29,6 +29,12 @@ namespace nodes {
 // between them this way (the picture each gives back is only a view of it).
 using SignalBus = std::map<int, std::shared_ptr<const composite::Signal>>;
 
+// A graph's most nodes, and the highest id one has: far past any real effect (the examples have up to 21). The
+// renderers go through a graph by recursion, a node deep at a time, so a file with a chain of thousands would run
+// them out of stack (and the memory of a picture per node).
+inline constexpr int kMaxNodes = 256;
+inline constexpr int kMaxNodeId = 1 << 20;
+
 struct Node {
     int id = 0;
     QString type;            // NodeDef::id

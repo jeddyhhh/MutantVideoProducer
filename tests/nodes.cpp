@@ -22,7 +22,9 @@
 #include <QFileInfo>
 #include <QGuiApplication>
 #include <QElapsedTimer>
+#include <QJsonArray>
 #include <QJsonDocument>
+#include <QJsonObject>
 #include <QOffscreenSurface>
 #include <QPainter>
 #include <QTemporaryDir>
@@ -73,6 +75,22 @@ double difference(const QImage& a0, const QImage& b0)
     return sum / (double(a.width()) * a.height() * 4);
 }
 } // namespace
+
+// A hostile effect file: a chain of thousands of Invert nodes from the Source, the Output on the deepest one that
+// fits in a graph (kMaxNodes), and a node and nextId at an int's end.
+static nodes::Graph hugeChain()
+{
+    QJsonArray ns{QJsonObject{{QStringLiteral("id"), 1}, {QStringLiteral("type"), QStringLiteral("source")}},
+                  QJsonObject{{QStringLiteral("id"), 2}, {QStringLiteral("type"), QStringLiteral("output")}}};
+    QJsonArray ls;
+    for (int id = 3, prev = 1; id < 3003; prev = id++) {
+        ns.append(QJsonObject{{QStringLiteral("id"), id}, {QStringLiteral("type"), QStringLiteral("fx.invert")}});
+        ls.append(QJsonArray{prev, id, 0});
+    }
+    ls.prepend(QJsonArray{nodes::kMaxNodes, 2, 0}); // (first: links past a graph's most are not read)
+    ns.prepend(QJsonObject{{QStringLiteral("id"), 2147483647}, {QStringLiteral("type"), QStringLiteral("fx.invert")}});
+    return nodes::fromJson(QJsonObject{{QStringLiteral("nodes"), ns}, {QStringLiteral("links"), ls}, {QStringLiteral("nextId"), 2147483647}});
+}
 
 int main(int argc, char** argv)
 {
@@ -132,6 +150,15 @@ int main(int argc, char** argv)
                 bad << fi.fileName();
         }
         check(count >= 10 && bad.isEmpty(), QStringLiteral("the %1 example effects read and run %2").arg(count).arg(bad.join(QStringLiteral(", "))));
+        // A file with a chain of thousands of nodes reads as a graph's most, and that chain runs (the evaluator goes
+        // through it by recursion: not out of stack).
+        nodes::Graph huge = hugeChain();
+        nodes::Evaluator hugeEval;
+        const QImage hugeOut = hugeEval.run(huge, picture, ctx);
+        const int before = int(huge.nodes.size());
+        const int more = huge.addNode(QStringLiteral("fx.invert"), {});
+        check(before == nodes::kMaxNodes && more == 0 && huge.nextId <= nodes::kMaxNodeId && hugeOut.size() == size && hugeEval.error.isEmpty(),
+              QStringLiteral("a file with a chain of 3000 nodes reads as %1 (the most), runs, and takes no more").arg(before));
         // Where they're listed: the examples folder's own under Node Editor, a folder of them where its path says.
         nodes::loadUserEffects();
         const EffectDef* hologram = nodes::findUserEffect(nodes::effectId(QStringLiteral("Hologram")));
@@ -727,6 +754,9 @@ int main(int argc, char** argv)
                 check(gc && where, QStringLiteral("the Effect Builder says where each node runs: on the CPU %1, the other %2 on the GPU")
                                        .arg(cpu.join(QStringLiteral(", ")))
                                        .arg(int(circuit.nodes.size()) - int(cpu.size())));
+                // ... and a chain as long as a graph can have runs there too.
+                const QImage hugeGpu = gc ? gc->renderGraph(hugeChain(), pic, rc, nullptr, QSize()) : QImage();
+                check(gc && hugeGpu.size() == pic.size(), QStringLiteral("a chain of %1 nodes on the GPU").arg(nodes::kMaxNodes));
             }
             check(slowOrOff.isEmpty(), QStringLiteral("the example effects draw on the GPU as on the CPU, at 30 frames a second (not: %1)")
                                            .arg(slowOrOff.isEmpty() ? QStringLiteral("none") : slowOrOff.join(QStringLiteral(", "))));
