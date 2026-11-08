@@ -180,6 +180,101 @@ Interviews, a vlog, a talk, a documentary or a music video start from files, not
 
 Then finish as in step 6 above: chapters, captions, loudness, Deliver.
 
+## Effects, keyframes and masks
+
+1. **Find the effect and its settings.** `list_effects` with `kind` (video, audio, transition, generator) and a
+   `search` returns the type ids and every setting's id, range and choices. Use those ids exactly; don't guess them.
+2. **Add it.** `add_effect` with `target` (`event`, `track`, `output`, `audio_master`, `live`, `pad` or `layer`),
+   `id` (the event id, track index, pad 1-16 or layer 1-4), `effect` and `params` (only the settings that differ from
+   the defaults). It returns the `effect_id`. A setting's value is a number, `true` / `false`, a choice's name, a
+   `#rrggbb` colour or text.
+3. **Keyframe it.** Any number takes `{"keyframes": [[seconds, value, curve], ...]}` instead of a value. On an event's
+   effect the seconds count from the event's start. Curves: `linear`, `hold`, `smooth`, `ease_in`, `ease_out`,
+   `ease_in_out`, `bounce`, `elastic`, or `bezier` with `[x1, y1, x2, y2]`.
+4. **Mask it.** Video effects take `mask.shape` (`Off`, `Rectangle`, `Ellipse`, `Freehand`), `mask.x` and `mask.y`
+   (its centre, 0..1 across the picture), `mask.w` and `mask.h` (its size, 0..1), `mask.feather` (0-30, a percentage
+   of the picture's height) and `mask.invert` (the effect everywhere but the mask). A freehand mask has `mask.points` (3-16)
+   and `mask.p<i>x` / `mask.p<i>y` for each point.
+5. **Make the mask follow.** `track_motion` (`event_id`, `effect_id`, `from`) keyframes the mask's position on every
+   frame to the end of the event. The event needs a steady forward speed (no reverse or speed ramp).
+6. **Change or remove it.** `set_effect` (`effect_id`, `params`, `enabled`) and `remove_effect` (`effect_id`).
+   `get_project` lists every effect with its id and settings.
+7. **Reuse a look.** `presets` `action: list` (with `search`, `audio`), then `action: apply` onto a chain (`target`,
+   `id`) or onto one effect (`effect_id`); `action: save` keeps an effect or a whole chain under a `name`.
+
+Blurring a face that moves, then fading a vignette in over the first two seconds of the same event:
+
+```json
+{"tool": "add_effect", "arguments": {"target": "event", "id": 17, "effect": "gaussian_blur",
+  "params": {"horizontal": 30, "vertical": 30, "mask.shape": "Ellipse",
+             "mask.x": 0.5, "mask.y": 0.3, "mask.w": 0.16, "mask.h": 0.24, "mask.feather": 6}}}
+
+{"tool": "track_motion", "arguments": {"event_id": 17, "effect_id": 233, "from": 4.0}}
+
+{"tool": "add_effect", "arguments": {"target": "event", "id": 17, "effect": "vignette",
+  "params": {"amount": {"keyframes": [[0, 0, "ease_in_out"], [2, 0.6]]}}}}
+```
+
+`233` stands for the `effect_id` the first call returned; `from` is timeline seconds. Check with `get_frame`
+before and after: a mask in the wrong place blurs the wrong thing for the whole shot.
+
+## Cleaning up sound
+
+Listen first, then fix, then measure:
+
+1. **Look at the problem.** Right-click > Spectrogram is the user's view; for you, `get_project` shows the audio
+   events and `audio_finishing` `action: analyze` reports levels, peaks and silences for the whole mix.
+2. **Repair one event.** `add_effect` with `target: event` on the audio event:
+   - `a_denoise` (Noise Reduction: `amount` 1-60 dB, `floor`) for steady hiss, fans or air conditioning;
+   - `a_dehum` (`mains`: `50 Hz` or `60 Hz`, `harmonics` 1-8) for mains hum;
+   - `a_declick` (`threshold`: lower finds more) for clicks and crackle;
+   - `a_dereverb` for a voice in an echoey room;
+   - `a_gate` to silence the noise between phrases, `a_eq` and `a_compressor` to shape and even out a voice.
+   Small steps: too much noise reduction makes a voice sound underwater.
+3. **Split a mix.** `separate_stems` `action: start` (`event_id`, `stems` 2 for voice and background, 4 for vocals,
+   drums, bass and other, `best` for the slower model). Poll `action: status`; each stem lands on its own track under
+   the event, which is muted. Then turn the music down under speech, or take the voice out of a song.
+4. **Even the levels.** `normalize_audio` (`event_ids`) brings each event's loudest peak to -0.1 dBFS, so clips
+   recorded at different levels start alike. `edit_event` `gain` then sets the balance.
+5. **Finish the mix.** Effects on `target: audio_master` (`a_compressor`, then `a_limiter`), then `audio_finishing`
+   `action: apply_gain` (`lufs` -16, `true_peak` -1.5) and `action: analyze` to confirm.
+
+## A clip from YouTube
+
+Only for videos the user may use: their own, Creative Commons, or with permission. Ask if it isn't clear.
+
+1. `youtube_clip` (`url`, `from`, `to`, `quality` 1080 / 720 / 480 / 360, or 0 for the sound only, `place`, `at`)
+   downloads just the part asked for, imports it and places it. It takes as long as the download. If YouTube asks to
+   verify, `browser` (`firefox`, `chrome`, `edge` or `brave`) uses that browser's session.
+2. Trim it (`edit_event`, `split`, `delete_events`), cut at its own shot changes (`scene_changes`) or take out pauses
+   (`cut_time` `action: silences`).
+3. `captions` `action: auto` for subtitles; `add_text` for a title or a credit to the source.
+4. For the upload: `youtube_publish` `action: chapters` (from story chapters or markers, with warnings where YouTube
+   wouldn't show them), `action: track_listing` (`track`: an audio track's events as a numbered list) and
+   `action: thumbnail` (`time`, `title`, `path`: a 1280x720 picture). Put them into `deliver` `pack`.
+
+## Preparing a Live set
+
+The Live tab plays effects over a camera, screen or video in real time. You can set everything up; performing and
+going live are the user's.
+
+1. `live_status` reads it all: the sources to choose from, the pads, scenes, setlist, tempo and what is recording.
+2. **Sources.** `set_live_source` (`video`, `audio`: part of a name from `live_status`). For more cameras,
+   `live_switcher` `inputs` sets inputs 2-5 by name.
+3. **Pads.** `set_pad` (`pad` 1-16, `name`, `effects`: `[{"type": id, "params": {...}}, ...]`, `momentary` for pads
+   that are on only while held: strobes, freezes, glitch bursts). Locked pads are left alone. The chain types are the
+   same ids as `list_effects`; `add_effect` with `target: pad` adds one effect to a pad's chain, and `target: live` to
+   the Live FX on top of everything.
+4. **Tempo.** `set_tempo` (`bpm`, `lock`) for a known tempo; leave `lock: false` to let the beat detection settle on
+   the music.
+5. **Scenes.** Get a look right (Live FX, a pad, the layer, overlays), then `save_scene` (`scene` 1-8, `name`).
+6. **Try it.** `live_action` `action: start`, then `pad` / `scene` with a `number`, or `cue_pad` / `cue_scene` and
+   `take` to preview before it goes on air; `get_live_frame` shows the output. `action: stop` when done.
+7. **Record.** `live_action` `action: record` / `stop_recording` (and `save_replay`); `live_status` `last_recording`
+   is the file, which can go straight onto the timeline with `import_media`.
+
+There is no tool for going live on a streaming site, and the stream key is never shown: leave that to the user.
+
 ## Several versions of one edit
 
 - Save each version as its own project (`save_project` with a new `path`), such as the 16:9 upload and a vertical cut.
