@@ -129,7 +129,8 @@ A 4x4 grid of pads. Each holds its own effect chain, applied on top of the Live 
   Color, wipes, Push, Iris, Cross Zoom...) and length.
 - **Filling a pad**: drop effects or presets on it, or pick it under **Edit** (or right-click >
   **Edit Chain**) to build its chain in the device chain below.
-- Right-click a pad to rename it, copy the Live FX into it, or clear it.
+- Right-click a pad to rename it, **Copy Live FX Here** (the pad gets a copy of the Live FX chain,
+  which is left as it is), or **Clear Pad**.
 - **Follow** (next to Edit, on by default): the device chain shows the pad you switch on, ready to
   tweak, and the Live FX again when it goes off.
 - **Momentary** pads (right-click > **Momentary**) are on only while held down (mouse, key or MIDI),

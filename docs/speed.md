@@ -31,11 +31,14 @@ A speed ramp changes the speed over the length of an event.
 2. Double-click the line to add points.
 3. Drag points **up** to go faster (up to 1000%) or **down** to go slower. **0%** freezes the
    frame; below 0% plays backwards.
-4. Right-click a point for **Linear**, **Smooth** or **Hold** curves.
+4. Right-click a point > **Curve to Next Point** for its curve (**Linear**, **Smooth**, **Hold**,
+   the eases, **Bounce** or **Elastic**), or **Delete Point**. Right-click the line > **Reset to
+   100%** clears the points, and **Remove Speed Ramp** takes the ramp off.
 
 ![The same clip with the ramp *Slow Motion in the Middle*: watch the timecode in the picture](animations/speed-ramp.gif)
 
-Ready-made ramps are under right-click > **Speed Ramp**. They keep the event's footage, so its
+Ready-made ramps are under right-click > **Speed Ramp** (or right-click the velocity line >
+**Speed Ramp Presets**). They keep the event's footage, so its
 length changes:
 
 - **Speed Up (100% to 300%)**

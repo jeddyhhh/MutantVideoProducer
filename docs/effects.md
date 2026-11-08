@@ -161,8 +161,9 @@ Each drag or command is one step of undo.
 - Drag a preset onto an event, a track or the device chain, or double-click it. The device chain's
   **Add** menu has the Preset Chains too.
 - A device's **≡** button loads presets into it, and **Save as Preset...** keeps its settings as your own preset.
-- **Save Chain**, or right-click with several devices selected, saves a chain preset. It is in the
-  browsers and the Add menu straight away.
+  On a rack it is **Save Rack as Preset...**: the rack with all its chains becomes a chain preset.
+- **Save Chain**, or select several devices (Ctrl+click) and right-click one > **Save Selected Devices
+  as Chain Preset...**, saves a chain preset. It is in the browsers and the Add menu straight away.
 - Your presets (video and audio) are JSON files in the app data folder. Right-click one in the
   browser to delete it.
 

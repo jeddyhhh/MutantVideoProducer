@@ -73,6 +73,13 @@ for each step and the checks that catch mistakes. It is how the *Snowbank* episo
 | transport | Plays, stops and moves the cursor; sets the time selection and Loop Playback. |
 | render, render_status | Renders in the background with any Render As template; opens the detailed Render Status window and exposes statistics in `render_status.details`. `in_place` renders from-to onto a Rendered track on top (Tools > Render Selection to New Track); `stems` writes each audio track to a WAV in the folder `path` (File > Export Stems). |
 | undo, redo, save_project, set_project_settings | Undo, save, frame size and rate. |
+| open_project | File > Open: opens a `.mvp` file and lists any files it can't find. It refuses while there are unsaved changes, unless `discard` is true. |
+| delete_track | Removes a track and its events, or (`empty: true`) every track with no events. |
+| cut_time | Takes time out of the whole edit on every unlocked track, closing the gaps (markers follow): `silences` (Tools > Remove Silences), `ranges` (seconds), `transcribe` (Edit by Transcript's words with their times; changes nothing) and `words` (cuts words by index from a `transcribe` result). `insert` puts `length` seconds of empty time in at `at` (Insert > Insert Time at the Cursor). |
+| scene_changes | Tools > Split Selected Events at Scene Changes: finds the cuts between shots inside video events (`sensitivity` 0..1) and, unless `split` is false, splits them there with their grouped sound. Returns the times. |
+| auto_reframe | Tools > Auto Reframe for Vertical: gives video events a Fill Pan/Crop that follows the subject (a person, else the movement). `portrait` switches a landscape project to 1080x1920 first. |
+| render_queue | File > Render Queue: `add` queues the open project as it is now (or `project_file`, without opening it) with a template, range and output `path`; `start`; `stop` (cancels the running render); `status` lists the jobs. |
+| youtube_publish | For an upload: `chapters` (`00:00 Name` lines from story chapters or markers, with warnings where YouTube wouldn't show them), `track_listing` (an audio track's events as `01. Name - 04:19`) or `thumbnail` (a 1280x720 picture of a frame, with an optional title, written to `path`). |
 | collect_project | Creates a portable project/media folder, opens copying progress, and returns the project, report, missing files and dependency warnings. |
 
 **The Deliver tab**
@@ -123,4 +130,4 @@ supported stages and fallbacks.
 
 `directors_dice` accepts `event_ids`, `seed`, `style` (`measured`, `restless`, `riot`) and `intensity` (0–1). It changes selected footage/image motion and visual accents without changing sound or clip timing. Each call is one undo step.
 
-While a sequence or Dice preview window owns the timeline, MCP mutation calls return an explanation; finish or cancel that window before editing remotely.
+While any window is open in Mutant Video Producer (a dialog, a sequence or Dice preview, a render's progress), tools that change the project return an explanation naming the window; close it, then try again. Tools that only read keep working.

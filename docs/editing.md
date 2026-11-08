@@ -69,6 +69,9 @@ its colour (Neon Green, Amber, LED Red and others, or a custom one).
   speed-ramped events are left whole.
 - **Alt+[** and **Alt+]** trim the selected events' start or end to the cursor.
 - **Del** deletes. **Ctrl+Del** ripple-deletes: what follows moves back to fill the gap.
+- **Insert > Insert Time at the Cursor...** makes empty time at the cursor (you type how many
+  seconds) on every unlocked track at once. Events running across the cursor are split there, and
+  everything after it moves later, markers, regions and story chapters included. Ctrl+Z puts it back.
 - **Loop past the end**: drag an event's end beyond the end of its file, and the file plays again
   from its start, picture and sound. A notch marks where each pass begins.
 
@@ -121,6 +124,11 @@ or placed over another **cuts** it instead: it shortens it, splits it around its
 - **Edit > Mute / Unmute Event** mutes the selected events.
 - **Event Properties** (**Ctrl+Shift+E**) sets speed, reverse, frame blending and pitch (see
   [Speed and Time](speed.md)).
+- Right-click an event > **Media Properties...** shows its file: format, length, picture size,
+  frame rate, codecs and sound.
+- Right-click a generated event (a title, a background, a graphics overlay) > **Edit Generated
+  Media...** puts its settings up to change them, as selecting it does (see
+  [Titles and Generators](titles-and-generators.md)).
 - Right-click an audio event > **Normalize** sets its peak to -0.1 dBFS (it adds a Gain effect).
 
 ## Auto ripple
@@ -250,8 +258,10 @@ Envelopes change a track's volume, pan or video level over time.
 - Select a track and press **V** for volume (on a video track: the composite level) or **P** for pan.
   Or right-click the track header.
 - Double-click the line to add a point. Drag points (they snap), or drag a segment up or down.
-- Right-click a point for **Linear**, **Smooth** or **Hold** curves, or to delete it.
-- Right-click the line to reset or hide it.
+- Right-click a point > **Curve to Next Point** for the shape of the line from it to the next
+  point: **Linear**, **Hold** (a step), **Smooth**, **Ease In**, **Ease Out**, **Ease In/Out**,
+  **Bounce** or **Elastic**. **Delete Point** removes it.
+- Right-click the line > **Reset Envelope** removes all its points; **Hide Envelope** hides it.
 - Envelopes follow timeline time. They multiply the track's own Level / Vol; pan is added to the Pan slider.
 - **Shift+V** puts a speed ramp on the selected events (see [Speed and Time](speed.md#speed-ramps)).
 

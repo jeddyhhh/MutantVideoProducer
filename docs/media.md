@@ -41,7 +41,8 @@ The **Project Media** tab lists the project's files, with thumbnails.
   for a folder inside a folder.
 - **Ratings**: right-click > **Rating**, or select files and press **0** to **5**.
 - **Mark In / Out**: right-click a file > **Mark In / Out...** to scrub through it. Press **I** and
-  **O** to set the part you want. Placing the file then uses only that part.
+  **O** to set the part you want. Placing the file then uses only that part. **Clear In / Out**
+  (right-click) uses the whole file again.
 - **Relink Media**: right-click > **Relink Media** (see [Missing media](#missing-media)).
 - **Create Proxy / Delete Proxy**: see [Proxies](#proxies).
 - Folders, ratings and marks are saved with the project.
@@ -191,7 +192,7 @@ to save the current project first. Starting Mutant Video Producer itself again o
 
 ## Recent projects
 
-- **File > Open Recent** lists the last 10 projects.
+- **File > Open Recent** lists the last 10 projects. **Clear List** at its foot empties it.
 - The last project reopens when Mutant Video Producer starts (**Options > Reopen Last Project on Start**). If
   Mutant Video Producer closed while opening it, it isn't reopened again automatically.
 
@@ -202,6 +203,7 @@ tab, newest first, with thumbnails and lengths (screenshots say *Still*; on the 
 stills, five seconds long to start with).
 
 - Drag a clip onto the timeline, or double-click it to add it at the cursor.
-- Right-click to add it to Project Media, show it in its folder, rename it, or move it to the
-  recycle bin.
+- Right-click to add it to Project Media or to the timeline at the cursor, show it in its folder,
+  rename it, or **Move to Recycle Bin** (events already using it on the timeline lose their media).
+- Right-click > **Open Recordings Folder** opens `Videos\Mutant Video Producer Live`.
 - A clip already in Project Media is reused, not imported twice.

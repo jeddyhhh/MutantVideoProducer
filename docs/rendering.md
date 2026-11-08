@@ -74,6 +74,7 @@ working. Each job is the project as it was when it was added, so later edits don
 - In **Render As**, **Add to Render Queue** queues the render instead of starting it, for example
   a 16:9 upload and a Shorts version of the same edit.
 - **Add Project File...** queues another project without opening it (its own settings and length).
+  Its finished render is listed in that project's Deliver history, not the open one's.
 - **Start** works through the waiting jobs; **Stop** cancels the running one (its half-written file
   is removed) and leaves the rest waiting. **Remove** takes a waiting job out; **Clear Finished**
   tidies the list.
