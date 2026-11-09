@@ -8,7 +8,8 @@ happen, the overall progress (weighted by how long each test took last time) and
     python scripts/test_gui.py --run --no-build --monkey 10 11 --projects transitions first-edit [--steps 1500]
 
 With --run it starts at once, closes an earlier runner window, echoes all output to stdout and ends it with a
-"RESULT: ..." line (the window stays open to look at).
+"RESULT: ..." line (the window stays open to look at; --close closes it 5 s later, so a script that started
+it sees it end).
 """
 import argparse
 import ctypes
@@ -127,6 +128,7 @@ class App:
         self.build = tk.BooleanVar(value=not opts.no_build)
         self.targets = opts.targets
         self.monkey = (opts.monkey, opts.projects, opts.steps) if opts.monkey else None
+        self.close_when_done = opts.close
         self.exclude = opts.exclude
         ttk.Checkbutton(bar, text="Build first", variable=self.build).pack(side="left")
         self.noisy = tk.BooleanVar(value=opts.noisy)
@@ -438,6 +440,8 @@ class App:
         self.root.title(f"MVP tests: {'FAILED' if failed or code else 'passed'}")
         self.root.bell()
         echo(f"RESULT: {verdict} (exit {code}, {fmt(time.time() - self.started)})")
+        if self.close_when_done:  # (so a script that started it sees it end)
+            self.root.after(5000, self.close)
 
     def select(self, _):
         chosen = self.tree.selection()
@@ -586,6 +590,7 @@ if __name__ == "__main__":
     parser.add_argument("--steps", type=int, default=1500, help="monkey steps per run")
     parser.add_argument("--pause", action="store_true", help="pause the open runner window's tests")
     parser.add_argument("--resume", action="store_true", help="resume them")
+    parser.add_argument("--close", action="store_true", help="close the window 5 s after the RESULT: line")
     opts = parser.parse_args()
     if opts.pause or opts.resume:
         PAUSEFILE.write_text("pause" if opts.pause else "resume")
