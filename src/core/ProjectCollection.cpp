@@ -165,6 +165,13 @@ Result collect(QJsonObject document,const QString& sourceDirectory,const QString
         for(auto value:document["media"].toArray())if(used.contains(value.toObject()["id"].toInt()))media.append(value);
         document["media"]=media;
     }
+    // The paths the project names as they are (a collection collected again names Media/0001-... itself): a copy's
+    // new name never equals one of them, or a later file of that name would be taken for that copy (two media, one file).
+    QSet<QString> originals;
+    {
+        QJsonObject probe=document;
+        rewriteFiles(probe,[&](const QString& path,Role){originals.insert(QDir::cleanPath(path).toCaseFolded());return path;});
+    }
     struct File {QString source,relative; qint64 size; QDateTime modified; bool missing;};
     std::vector<File> files;QHash<QString,QString> assigned;QSet<QString> rewrittenPaths;QStringList plugins,fonts,skipped;
     qint64 total=0;
@@ -184,7 +191,11 @@ Result collect(QJsonObject document,const QString& sourceDirectory,const QString
         if(assigned.contains(identity))return assigned[identity];
         const bool missing=!source.isFile();
         QString folder=missing?"Missing":role==Role::Media?"Media":role==Role::VoiceModel?"VoiceModels":"Assets";
-        const QString relative=folder+'/'+QString("%1-%2").arg(files.size()+1,4,10,QChar('0')).arg(safeName(source.fileName()));
+        QString relative;
+        for(qsizetype n=qsizetype(files.size())+1;;++n) {
+            relative=folder+'/'+QString("%1-%2").arg(n,4,10,QChar('0')).arg(safeName(source.fileName()));
+            if(!originals.contains(relative.toCaseFolded())&&!rewrittenPaths.contains(relative))break;
+        }
         assigned[identity]=relative;rewrittenPaths.insert(relative);files.push_back({absolute,relative,missing?0:source.size(),source.lastModified(),missing});
         if(missing)result.missing<<absolute;
         else if(source.size()>std::numeric_limits<qint64>::max()-total)result.error="Collection size overflow.";

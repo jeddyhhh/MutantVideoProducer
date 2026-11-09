@@ -2935,6 +2935,10 @@ QJsonObject McpServer::ToolCall::tool_render()
 {
     if (server.m_render && !server.m_render->done)
         return errorResult(QStringLiteral("a render is already running (render_status)"));
+    // The finished worker may still hold its copy of the render for a moment: wait for it, or the render would be
+    // destroyed on that thread (joining itself) when it's replaced below.
+    if (server.m_render && server.m_render->thread.joinable())
+        server.m_render->thread.join();
     if (a.value(QStringLiteral("in_place")).toBool() || a.value(QStringLiteral("stems")).toBool()) {
         // Render Selection to New Track (from-to onto a Rendered track on top, when done), or File > Export Stems
         // (each sounding audio track to a WAV in the folder `path`), in the background as any render.
@@ -2986,13 +2990,16 @@ QJsonObject McpServer::ToolCall::tool_render()
         if (inPlace) { // (placed when it is done)
             auto* completion = new QTimer(w);
             MainWindow* win = w;
-            QObject::connect(completion, &QTimer::timeout, win, [r, completion, win, where, from, to] {
+            const std::weak_ptr<const int> session = project->session(); // (another project opened meanwhile: not placed in it)
+            QObject::connect(completion, &QTimer::timeout, win, [r, completion, win, where, from, to, session] {
                 if (!r->done)
                     return;
                 completion->stop();
                 completion->deleteLater();
-                if (r->ok)
+                if (r->ok && session.lock() == win->m_project->session())
                     win->placeRendered(where, from, to);
+                else if (r->ok)
+                    r->error = QStringLiteral("rendered, but not placed: another project was opened meanwhile (the file is %1)").arg(where);
             });
             completion->start(200);
         }

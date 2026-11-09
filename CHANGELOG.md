@@ -44,6 +44,11 @@ What changed in each version of Mutant Video Producer. The newest is first.
 
 ### Fixed
 
+- Collect Project: collecting a collected project again could give two of its files the same copy (one showing the
+  other's picture) when a file from elsewhere had the same name as one of its numbered copies.
+- AI control: starting a render the moment the last one finished could close the program; a Render Selection to New
+  Track started through AI control no longer lands in another project opened while it rendered.
+- A damaged beat-grid tempo setting could close the program as it started; it now falls back to 120 BPM.
 - A device dragged from one effect chain view into another (the Live tab's into the editor's, a Sequence Editor's, or
   a second copy of the program's) moved or copied whatever device sat at the same place in the chain it was dropped
   on; such drops are now refused.

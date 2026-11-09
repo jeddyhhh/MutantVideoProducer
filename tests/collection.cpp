@@ -276,5 +276,35 @@ int main(int argc, char** argv)
           "saved collection remains portable on subsequent moves");
     check(collection::collect(again.collectionDocument(), temp.path() + "/moved-again", temp.path() + "/recollected", "Again.mvp").ok,
           "already portable collection can be collected again");
+    {
+        // A collection collected again, with a file from elsewhere called b.png met first: its copy would be named
+        // Media/0001-b.png, which the project already names for a different file (that must not be taken for the copy).
+        const QString re = temp.path() + "/re";
+        QDir().mkpath(re + "/Media");
+        QDir().mkpath(re + "/elsewhere");
+        check(image(re + "/Media/0001-b.png", Qt::red) && image(re + "/elsewhere/b.png", Qt::blue), "renumbered collection fixtures");
+        Project numbered;
+        numbered.clear(settings);
+        const int blue = numbered.addMedia(probeMedia(re + "/elsewhere/b.png")), red = numbered.addMedia(probeMedia(re + "/Media/0001-b.png"));
+        auto ntl = numbered.timeline();
+        ops::insertMedia(ntl, *numbered.mediaItem(blue), 0, -1, settings.fps, true);
+        ops::insertMedia(ntl, *numbered.mediaItem(red), 10 * kUsPerSecond, -1, settings.fps, true);
+        numbered.applyEdit(ntl, "test");
+        QJsonObject doc = numbered.collectionDocument();
+        QJsonArray media = doc["media"].toArray();
+        for (int i = 0; i < media.size(); ++i) {
+            QJsonObject m = media[i].toObject();
+            m["path"] = QDir(re).relativeFilePath(m["path"].toString());
+            media[i] = m;
+        }
+        doc["media"] = media;
+        const auto result = collection::collect(doc, re, temp.path() + "/re-collected", "Re.mvp");
+        Project out;
+        const bool opened = result.ok && out.load(result.projectPath, &error) && out.mediaItem(blue) && out.mediaItem(red);
+        check(opened && out.mediaItem(blue)->path != out.mediaItem(red)->path
+                  && QImage(out.mediaItem(blue)->path).pixelColor(0, 0) == QColor(Qt::blue)
+                  && QImage(out.mediaItem(red)->path).pixelColor(0, 0) == QColor(Qt::red),
+              "a collection collected again keeps each file its own copy, whatever order it meets them in");
+    }
     return failures;
 }

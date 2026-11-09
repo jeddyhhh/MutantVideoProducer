@@ -1278,7 +1278,7 @@ void TimelineWidget::setGrid(Grid grid)
 
 void TimelineWidget::setGridTempo(double bpm, TimeUs firstBeat)
 {
-    m_gridBpm = std::clamp(bpm, 20.0, 400.0);
+    m_gridBpm = std::isfinite(bpm) ? std::clamp(bpm, 20.0, 400.0) : 120.0; // (a damaged setting: not a beat of 0)
     const TimeUs beat = TimeUs(60.0 * kUsPerSecond / m_gridBpm);
     m_gridOffset = ((firstBeat % beat) + beat) % beat; // the earliest beat at or after 0
     viewport()->update();
