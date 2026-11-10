@@ -166,6 +166,22 @@ int main(int argc, char** argv)
                   && early.findClip(strayB)->start == 30 * kUsPerSecond && timelineProblem(early).isEmpty(),
               "swapping two emptied chapters moves neither stray clip: " + error);
     }
+    {
+        // A chapter's clip split (S on the timeline): both pieces are the chapter's.
+        Timeline tl;
+        const auto fps = p.settings().fps;
+        const int a = story::addChapter(tl, "A", "", 2 * kUsPerSecond, 3 * kUsPerSecond, nullptr, 0, fps, &error);
+        const int b = story::addChapter(tl, "B", "", 2 * kUsPerSecond, 3 * kUsPerSecond, nullptr, 0, fps, &error);
+        const auto pieces = ops::splitClips(tl, {}, 2 * kUsPerSecond);
+        error.clear();
+        Timeline swapped = tl;
+        const bool swap = story::moveChapter(swapped, a, 1, &error);
+        check(a && b && pieces.size() == 1 && swap && swapped.findClip(pieces[0]) && swapped.findClip(pieces[0])->start == 7 * kUsPerSecond
+                  && timelineProblem(swapped).isEmpty(),
+              "a split chapter clip's pieces both move with the chapter: " + error);
+        check(story::removeChapter(tl, a, &error) && !tl.findClip(pieces[0]) && tl.duration() == 5 * kUsPerSecond,
+              "and both go when the chapter is deleted: " + error);
+    }
     Timeline adopted = original;
     int adoptedId = story::adoptChapter(adopted, "Existing edit", "Script", 2 * kUsPerSecond, 3 * kUsPerSecond, kUsPerSecond, &error);
     check(adoptedId && adopted.chapters[0].toObject()["clips"].toArray().size() == 2,

@@ -62,26 +62,10 @@ std::vector<Range> wordCuts(const std::vector<Caption>& words, const std::vector
 }
 
 namespace {
-// Splits every unlocked track at `at`; each piece joins the story chapter of the event it was cut from.
+// Splits every unlocked track at `at` (each piece joins the story chapter of the event it was cut from: ops::splitClips).
 void splitAt(Timeline& tl, TimeUs at)
 {
-    for (int piece : ops::splitClips(tl, {}, at)) {
-        int ti = -1;
-        const Clip* right = tl.findClip(piece, &ti);
-        const auto left = std::find_if(tl.tracks[size_t(ti)].clips.begin(), tl.tracks[size_t(ti)].clips.end(),
-                                       [&](const Clip& c) { return c.id != piece && c.end() == right->start; });
-        if (left == tl.tracks[size_t(ti)].clips.end())
-            continue;
-        for (int i = 0; i < tl.chapters.size(); ++i) {
-            QJsonObject chapter = tl.chapters[i].toObject();
-            QJsonArray clips = chapter.value(QStringLiteral("clips")).toArray();
-            if (clips.contains(left->id)) {
-                clips.append(piece);
-                chapter[QStringLiteral("clips")] = clips;
-                tl.chapters[i] = chapter;
-            }
-        }
-    }
+    ops::splitClips(tl, {}, at);
 }
 
 // Every time in the edit (markers, regions, story chapters) through `moved`.

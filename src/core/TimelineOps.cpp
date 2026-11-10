@@ -2,6 +2,8 @@
 
 #include "core/Multicam.h"
 
+#include <QJsonArray>
+#include <QJsonObject>
 #include <QRegularExpression>
 #include <algorithm>
 #include <cmath>
@@ -391,6 +393,7 @@ std::vector<int> splitClips(Timeline& tl, const std::set<int>& ids, TimeUs t)
 {
     std::vector<int> created;
     std::map<int, int> newGroups;
+    std::map<int, int> pieceOf; // the event each new piece was cut from
     for (auto& track : tl.tracks) {
         const size_t n = track.clips.size();
         for (size_t i = 0; i < n; ++i) {
@@ -401,6 +404,7 @@ std::vector<int> splitClips(Timeline& tl, const std::set<int>& ids, TimeUs t)
                 continue;
             Clip right = c;
             right.id = tl.allocId();
+            pieceOf[right.id] = c.id;
             right.start = t;
             if (c.hasRamp()) {
                 // Media used up to the cut, along the ramp.
@@ -441,6 +445,22 @@ std::vector<int> splitClips(Timeline& tl, const std::set<int>& ids, TimeUs t)
             trimRampPoints(right);
             created.push_back(right.id);
             track.clips.push_back(right); // may reallocate: `c` is not used after this
+        }
+    }
+    // Each piece joins the story chapter of the event it was cut from (or the chapter couldn't be swapped or deleted
+    // until the piece was assigned by hand).
+    for (int i = 0; i < tl.chapters.size() && !pieceOf.empty(); ++i) {
+        QJsonObject chapter = tl.chapters[i].toObject();
+        QJsonArray clips = chapter.value(QStringLiteral("clips")).toArray();
+        bool added = false;
+        for (const auto& [piece, from] : pieceOf)
+            if (clips.contains(from)) {
+                clips.append(piece);
+                added = true;
+            }
+        if (added) {
+            chapter[QStringLiteral("clips")] = clips;
+            tl.chapters[i] = chapter;
         }
     }
     tl.sortClips();
