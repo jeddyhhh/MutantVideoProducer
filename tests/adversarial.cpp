@@ -242,6 +242,26 @@ void run(const QString& name, const QDir& out, uint32_t seed, int rounds)
         require(project.save(path, nullptr), "save repaired ducking");
         Project reloaded;
         require(reloaded.load(path, nullptr) && reloaded.timeline() == project.timeline(), "disabled ducking changed on save/reload");
+        // Story chapters with times no file should have: read within what can be added up, so the next chapter
+        // (laid after the last one's end) still lands at a time on the timeline.
+        Timeline storied = defaultTimeline();
+        storied.chapters.append(QJsonObject{{"id", 7}, {"name", "Huge"}, {"start", "9223372036854775807"},
+                                            {"narration", "9223372036854775807"}, {"listening", "-5"}, {"clips", QJsonArray{}}});
+        storied.chapters.append(QJsonObject{{"id", 8}, {"name", "Words"}, {"start", "soon"}, {"narration", "1e400"}, {"listening", "4000000"}});
+        bad = nestedTimelineToJson(storied);
+        bad["format"] = "mutant-video-producer-project";
+        bad["version"] = 1;
+        write(path, QJsonDocument(bad).toJson());
+        Project story;
+        require(story.load(path, nullptr), "odd story chapter times refused");
+        TimeUs total = 0;
+        for (const auto value : story.timeline().chapters)
+            for (const auto& key : {"start", "narration", "listening"}) {
+                const TimeUs t = value.toObject()[key].toString().toLongLong();
+                require(t >= 0 && t <= 1000 * 3600 * kUsPerSecond, QString("chapter %1 read as %2").arg(key).arg(t));
+                total += t;
+            }
+        require(total > 0 && story.timeline().chapters[1].toObject()["listening"].toString() == "4000000", "sound chapter times changed");
     } else if (name == "snapshot-storm") {
         Compositor reused;
         AudioMixer mixer(48000);

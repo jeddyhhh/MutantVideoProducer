@@ -132,6 +132,40 @@ int main(int argc, char** argv)
           "swap adjacent chapters");
     check(story::removeChapter(storyTl, first, &error) && storyTl.duration() == 5 * kUsPerSecond, "delete chapter ripples its full range");
     check(timelineProblem(storyTl).isEmpty(), "chapter edit invariants");
+    {
+        // An assigned clip dragged out of its chapter is no longer the chapter's to move or delete.
+        Timeline tl;
+        const auto fps = p.settings().fps;
+        const int c0 = story::addChapter(tl, "Zero", "", 2 * kUsPerSecond, 3 * kUsPerSecond, nullptr, 0, fps, &error);
+        const int a = story::addChapter(tl, "A", "", 2 * kUsPerSecond, 3 * kUsPerSecond, nullptr, 0, fps, &error);
+        const int b = story::addChapter(tl, "B", "", 2 * kUsPerSecond, 3 * kUsPerSecond, nullptr, 0, fps, &error);
+        auto clipOf = [&](int chapter) {
+            for (const auto value : tl.chapters)
+                if (value.toObject()["id"].toInt() == chapter)
+                    return value.toObject()["clips"].toArray()[0].toInt();
+            return 0;
+        };
+        const int strayB = clipOf(b), strayA = clipOf(a);
+        check(c0 && a && b && strayA && strayB, "three chapters with a placeholder each");
+        tl.findClip(strayB)->start = 30 * kUsPerSecond; // dragged well past the story
+        tl.findClip(strayB)->length = kUsPerSecond;
+        tl.sortClips();
+        Timeline moved = tl;
+        check(story::moveChapter(moved, a, 1, &error) && moved.findClip(strayB) && moved.findClip(strayB)->start == 30 * kUsPerSecond
+                  && timelineProblem(moved).isEmpty(),
+              "swapping chapters leaves a clip dragged out of one where it was put: " + error);
+        Timeline removed = tl;
+        check(story::removeChapter(removed, b, &error) && removed.findClip(strayB)
+                  && removed.findClip(strayB)->start == 25 * kUsPerSecond,
+              "deleting a chapter keeps a clip dragged out of it (it moves back with what follows): " + error);
+        Timeline early = tl;
+        early.findClip(strayB)->start = 30 * kUsPerSecond;
+        early.findClip(strayA)->start = 40 * kUsPerSecond; // (A's too: then B's range is A's to swap with, both empty)
+        early.sortClips();
+        check(story::moveChapter(early, a, 1, &error) && early.findClip(strayA)->start == 40 * kUsPerSecond
+                  && early.findClip(strayB)->start == 30 * kUsPerSecond && timelineProblem(early).isEmpty(),
+              "swapping two emptied chapters moves neither stray clip: " + error);
+    }
     Timeline adopted = original;
     int adoptedId = story::adoptChapter(adopted, "Existing edit", "Script", 2 * kUsPerSecond, 3 * kUsPerSecond, kUsPerSecond, &error);
     check(adoptedId && adopted.chapters[0].toObject()["clips"].toArray().size() == 2,

@@ -14,6 +14,18 @@ std::set<int> ids(const QJsonObject& o)
         r.insert(v.toInt());
     return r;
 }
+// The chapter's clips that are still in it: one dragged out of its range stays assigned (dragged back, it is the
+// chapter's again) but is not moved, stretched or deleted with it. (20 ms: older projects' times drifted a little.)
+std::set<int> ids(const Timeline& tl, const QJsonObject& o)
+{
+    constexpr TimeUs kNear = 20000;
+    const TimeUs at = time(o, "start"), end = at + time(o, "narration") + time(o, "listening");
+    std::set<int> r;
+    for (int id : ids(o))
+        if (const Clip* c = tl.findClip(id); c && c->start >= at - kNear && c->start < end + kNear)
+            r.insert(id);
+    return r;
+}
 QJsonArray array(const std::set<int>& values)
 {
     QJsonArray a;
@@ -159,7 +171,7 @@ bool updateChapter(Timeline& tl, int id, const QString& name, const QString& scr
                 next = std::min(next, s);
         }
     const TimeUs shift = next <= oldEnd + fps.frameDuration() / 2 ? end - next : delta;
-    const auto own = ids(chapter);
+    const auto own = ids(tl, chapter);
     std::set<int> stretch;
     for (auto value : chapter["stretch"].toArray())
         stretch.insert(value.toInt());
@@ -253,7 +265,7 @@ bool moveChapter(Timeline& tl, int id, int direction, QString* error)
     const auto start = time(a, "start"), la = time(a, "narration") + time(a, "listening"), lb = time(b, "narration") + time(b, "listening");
     if (time(b, "start") != start + la)
         return fail(error, "Only adjacent chapter ranges can be swapped.");
-    auto ai = ids(a), bi = ids(b);
+    auto ai = ids(tl, a), bi = ids(tl, b);
     for (const auto& t : tl.tracks)
         for (const auto& c : t.clips)
             if (c.start < start + la + lb && c.end() > start && !ai.count(c.id) && !bi.count(c.id))
@@ -286,7 +298,7 @@ bool removeChapter(Timeline& tl, int id, QString* error)
         return fail(error, "Chapter not found.");
     const auto c = tl.chapters[i].toObject();
     const auto at = time(c, "start"), length = time(c, "narration") + time(c, "listening");
-    const auto owned = ids(c);
+    const auto owned = ids(tl, c);
     for (const auto& t : tl.tracks)
         for (const auto& clip : t.clips)
             if (clip.start < at + length && clip.end() > at && !owned.count(clip.id))

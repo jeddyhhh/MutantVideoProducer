@@ -44,6 +44,10 @@ What changed in each version of Mutant Video Producer. The newest is first.
 
 ### Fixed
 
+- Story: a clip dragged out of its chapter was still moved when the chapter was swapped with its neighbour (it could
+  end up before the start of the timeline) and deleted with the chapter. It now stays where it was put.
+- A hand-edited project's story chapter times are read within a sane range (they could overflow when chapters were
+  laid end to end), and a sequence's own markers are checked as the project's are.
 - Collect Project: collecting a collected project again could give two of its files the same copy (one showing the
   other's picture) when a file from elsewhere had the same name as one of its numbered copies.
 - AI control: starting a render the moment the last one finished could close the program; a Render Selection to New

@@ -847,6 +847,9 @@ void repairTimeline(Timeline& tl)
         chainIds(t.effects, true);
     }
     for (Marker& m : tl.markers) {
+        m.time = std::max<TimeUs>(0, m.time); // (a sequence's own markers are read as they are)
+        m.length = std::max<TimeUs>(0, m.length);
+        m.color = std::clamp(m.color, 0, kMarkerColors - 1);
         note(m.id);
         ids.push_back(&m.id);
     }
@@ -897,9 +900,16 @@ void repairTimeline(Timeline& tl)
         tl.multicam["angles"] = angles;
         tl.multicam["track"] = reference(tl.multicam["track"].toInt(), allTracks);
     }
+    while (tl.chapters.size() > 4096) // (a story of more than this is a damaged file)
+        tl.chapters.removeLast();
     for (int i = 0; i < tl.chapters.size(); ++i) {
         auto chapter = tl.chapters[i].toObject();
         if (int id = reference(chapter["id"].toInt(), markers)) chapter["id"] = id;
+        // Its times: within what can be added up (a hand-edited file's could overflow where chapters are laid end to end).
+        constexpr TimeUs kMost = 1000 * 3600 * kUsPerSecond;
+        for (const auto& key : {"start", "narration", "listening"})
+            if (chapter.contains(key))
+                chapter[key] = QString::number(std::clamp<TimeUs>(chapter[key].toString().toLongLong(), 0, kMost));
         for (const auto& key : {"clips", "stretch"}) {
             QJsonArray repaired; std::set<int> added;
             for (auto value : chapter[key].toArray())

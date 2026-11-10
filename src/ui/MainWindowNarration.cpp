@@ -301,7 +301,7 @@ void MainWindow::narrationStudio(const std::vector<Caption>& supplied, const QJs
             cap.id = tl.allocId();
             cap.start = origin + word["start"].toString().toLongLong();
             cap.length = word["end"].toString().toLongLong() - word["start"].toString().toLongLong();
-            if (cap.length <= 0)
+            if (cap.length <= 0 || cap.start < 0) // (a damaged take's word times)
                 continue;
             cap.generator = preset ? makeGenerator(*preset) : GeneratorSpec{};
             if (!preset)
