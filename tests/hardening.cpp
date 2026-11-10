@@ -1016,6 +1016,50 @@ void editFuzz(const QString& mediaDir, int iterations)
         ++steps;
         if (i % 10 == 0 && !exercise(*project.snapshot(), comp, mixer))
             problem = QStringLiteral("step %1 (op %2): a picture came back empty or the sound had NaN").arg(i).arg(op);
+        if (i % 50 == 0 && problem.isEmpty()) { // saved and opened again: the same edit
+            const QString file = QDir::temp().filePath(QStringLiteral("mvp-edit-fuzz-%1.mvp").arg(QCoreApplication::applicationPid()));
+            Project back;
+            QString why;
+            if (!project.save(file, &why) || !back.load(file, &why))
+                problem = QStringLiteral("step %1 (op %2): saving and opening again failed: %3").arg(i).arg(op).arg(why);
+            else if (Timeline kept = project.timeline(); [&] {
+                         // (opening drops what refers to events no longer there: chapters' clips, a deleted angle)
+                         for (int k = 0; k < kept.chapters.size(); ++k) {
+                             QJsonObject c = kept.chapters[k].toObject();
+                             for (const char* key : {"clips", "stretch"})
+                                 if (c.contains(QLatin1String(key))) {
+                                     QJsonArray left;
+                                     std::set<int> seen;
+                                     for (const QJsonValue v : c[QLatin1String(key)].toArray())
+                                         if (kept.findClip(v.toInt()) && seen.insert(v.toInt()).second)
+                                             left.append(v);
+                                     c[QLatin1String(key)] = left;
+                                 }
+                             kept.chapters[k] = c;
+                         }
+                         if (!kept.multicam.isEmpty()) {
+                             QJsonArray angles;
+                             for (const QJsonValue v : kept.multicam[QStringLiteral("angles")].toArray())
+                                 angles.append(kept.findClip(v.toInt()) ? v.toInt() : 0);
+                             kept.multicam[QStringLiteral("angles")] = angles;
+                             if (kept.trackIndex(kept.multicam[QStringLiteral("track")].toInt()) < 0)
+                                 kept.multicam[QStringLiteral("track")] = 0;
+                         }
+                         return !(back.timeline() == kept);
+                     }()) {
+                const QJsonObject a = nestedTimelineToJson(kept), b = nestedTimelineToJson(back.timeline());
+                QStringList differ;
+                for (auto it = a.begin(); it != a.end(); ++it)
+                    if (b.value(it.key()) != it.value())
+                        differ << it.key();
+                problem = QStringLiteral("step %1 (op %2): opened again, the edit differs (%3)").arg(i).arg(op).arg(differ.join(QStringLiteral(", ")));
+                if (qEnvironmentVariableIsSet("MVP_EDIT_DIFF"))
+                    for (const QString& key : differ)
+                        print(key + QStringLiteral("\n  was: ") + QString::fromUtf8(QJsonDocument(QJsonObject{{key, a.value(key)}}).toJson(QJsonDocument::Compact))
+                              + QStringLiteral("\n  now: ") + QString::fromUtf8(QJsonDocument(QJsonObject{{key, b.value(key)}}).toJson(QJsonDocument::Compact)));
+            }
+            QFile::remove(file);
+        }
     }
     check(problem.isEmpty(),
           QStringLiteral("random editing: %1 edits (insert, split, delete, ripple, group, tracks, titles, speed, trims, ramps, reverse, "

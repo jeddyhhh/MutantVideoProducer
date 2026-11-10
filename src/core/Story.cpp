@@ -55,6 +55,19 @@ void shiftTrack(Track& track, TimeUs delta)
         for (auto& k : e->points)
             k.time += delta;
 }
+// A chapter's footage sound: down 22 dB under the narration window, back up over its last tenth of a second. (Keys at
+// one time each: a chapter with a short window or none got two or three at 0, and opened again it kept another one.)
+void duckUnderNarration(ParamValue& p, TimeUs narration)
+{
+    p.value = narration > 0 ? -22 : 0;
+    p.keys.clear();
+    if (narration <= 0)
+        return;
+    p.keys.push_back({0, -22, Keyframe::Interp::Linear});
+    if (narration > 100000)
+        p.keys.push_back({narration - 100000, -22, Keyframe::Interp::Linear});
+    p.keys.push_back({narration, 0, Keyframe::Interp::Linear});
+}
 void shiftChapter(QJsonObject& chapter, TimeUs delta) { chapter["start"] = QString::number(time(chapter, "start") + delta); }
 // Each chapter's region where the chapter is (by id: an operation that moves regions by time range misses one cut
 // down to nothing, as Remove Silences can leave it).
@@ -114,11 +127,7 @@ int addChapter(Timeline& tl, const QString& name, const QString& script, TimeUs 
                 if (tl.tracks[size_t(ti)].type == TrackType::Audio) {
                     auto effect = makeEffectOfType("a_gain", tl.allocId());
                     effect.params["storyGain"].value = 1;
-                    auto& p = effect.params["gain"];
-                    p.value = -22;
-                    p.keys = {{0, -22, Keyframe::Interp::Linear},
-                              {std::max<TimeUs>(0, narration - 100000), -22, Keyframe::Interp::Linear},
-                              {narration, 0, Keyframe::Interp::Linear}};
+                    duckUnderNarration(effect.params["gain"], narration);
                     c->effects.push_back(effect);
                 }
             }
@@ -221,11 +230,7 @@ bool updateChapter(Timeline& tl, int id, const QString& name, const QString& scr
             for (auto& effect : c->effects)
                 if (effect.type == "a_gain" && effect.params.count("storyGain")) {
                     effect.params["storyGain"].value = 1;
-                    auto& p = effect.params["gain"];
-                    p.value = -22;
-                    p.keys = {{0, -22, Keyframe::Interp::Linear},
-                              {std::max<TimeUs>(0, narration - 100000), -22, Keyframe::Interp::Linear},
-                              {narration, 0, Keyframe::Interp::Linear}};
+                    duckUnderNarration(effect.params["gain"], narration);
                 }
         }
     for (int j = 0; j < tl.chapters.size(); ++j)
@@ -561,9 +566,9 @@ bool unpack(Timeline& tl, int clipId, QString* error)
             if (c.groupId)
                 c.groupId = groups[c.groupId];
             effects(c.effects);
-            const int owner = c.narration["caption_owner"].toInt();
+            const int owner = c.narration.value(QLatin1String("caption_owner")).toInt(); // (value(): [] would add the key)
             if (owner)
-                c.narration["caption_owner"] = mapping[owner];
+                c.narration["caption_owner"] = mapping.count(owner) ? mapping[owner] : 0;
         }
         shiftTrack(t, container.start);
         tl.tracks.insert(tl.tracks.begin() + index++, std::move(t));

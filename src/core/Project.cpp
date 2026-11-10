@@ -912,7 +912,7 @@ void repairTimeline(Timeline& tl)
                 chapter[key] = QString::number(std::clamp<TimeUs>(chapter[key].toString().toLongLong(), 0, kMost));
         for (const auto& key : {"clips", "stretch"}) {
             QJsonArray repaired; std::set<int> added;
-            for (auto value : chapter[key].toArray())
+            for (auto value : chapter.value(QLatin1String(key)).toArray()) // (value(): [] would add the key)
                 if (int id = reference(value.toInt(), clips); id && added.insert(id).second) repaired.append(id);
             if (chapter.contains(key)) chapter[key] = repaired;
         }

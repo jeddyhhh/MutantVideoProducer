@@ -132,8 +132,14 @@ TimeUs rampTimeForOffset(const Clip& c, double offset, TimeUs lo, TimeUs hi)
 
 void scaleRampTime(Clip& c, double factor)
 {
-    for (auto& k : c.velocity.points)
+    for (size_t i = 0; i < c.velocity.points.size(); ++i) {
+        Keyframe& k = c.velocity.points[i];
         k.time = TimeUs(std::llround(double(k.time) * factor));
+        // Still one after the other: a freeze's jump is two points 1 us apart, and squeezed onto one time (a short
+        // event) they were made one when the project was opened again, a ramp down instead of a jump.
+        if (i > 0)
+            k.time = std::max(k.time, c.velocity.points[i - 1].time + 1);
+    }
 }
 
 void trimRampPoints(Clip& c)
