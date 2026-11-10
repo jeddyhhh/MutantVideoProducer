@@ -182,6 +182,31 @@ int main(int argc, char** argv)
         check(story::removeChapter(tl, a, &error) && !tl.findClip(pieces[0]) && tl.duration() == 5 * kUsPerSecond,
               "and both go when the chapter is deleted: " + error);
     }
+    {
+        // Ripple edits (Ctrl+Del, auto ripple on all tracks) move the chapters with their clips, as they move markers.
+        Timeline tl;
+        const auto fps = p.settings().fps;
+        const int intro = ops::insertGenerated(tl, *findGeneratorPreset("solid_white"), 0, -1, fps);
+        tl.findClip(intro)->length = 3 * kUsPerSecond;
+        const int a = story::addChapter(tl, "A", "", 2 * kUsPerSecond, 3 * kUsPerSecond, nullptr, 0, fps, &error);
+        const int b = story::addChapter(tl, "B", "", 2 * kUsPerSecond, 3 * kUsPerSecond, nullptr, 0, fps, &error);
+        auto at = [&](int i, const char* key) { return tl.chapters[i].toObject()[key].toString().toLongLong(); };
+        const bool laid = a && b && at(0, "start") == 3 * kUsPerSecond && at(1, "start") == 8 * kUsPerSecond;
+        ops::rippleRemoveClipsAll(tl, {intro}, true);
+        check(laid && at(0, "start") == 0 && at(1, "start") == 5 * kUsPerSecond && tl.findMarker(b)->time == 5 * kUsPerSecond,
+              QStringLiteral("a ripple delete in front of the story moves its chapters back with their clips (%1, %2)")
+                  .arg(at(0, "start")).arg(at(1, "start")));
+        ops::rippleShift(tl, 5 * kUsPerSecond, 2 * kUsPerSecond, {}, {}, true); // (time put in between the chapters)
+        check(at(0, "start") == 0 && at(0, "narration") + at(0, "listening") == 5 * kUsPerSecond && at(1, "start") == 7 * kUsPerSecond
+                  && at(1, "narration") + at(1, "listening") == 5 * kUsPerSecond,
+              QStringLiteral("time rippled in between two chapters moves the later one, and neither grows (%1, %2)")
+                  .arg(at(0, "narration") + at(0, "listening")).arg(at(1, "start")));
+        ops::rippleShift(tl, 7 * kUsPerSecond, -2 * kUsPerSecond, {}, {}, true);
+        error.clear();
+        check(at(1, "start") == 5 * kUsPerSecond && story::moveChapter(tl, a, 1, &error) && timelineProblem(tl).isEmpty()
+                  && tl.chapters[0].toObject()["id"].toInt() == b && at(0, "start") == 0,
+              "and the chapters can still be swapped afterwards: " + error);
+    }
     Timeline adopted = original;
     int adoptedId = story::adoptChapter(adopted, "Existing edit", "Script", 2 * kUsPerSecond, 3 * kUsPerSecond, kUsPerSecond, &error);
     check(adoptedId && adopted.chapters[0].toObject()["clips"].toArray().size() == 2,

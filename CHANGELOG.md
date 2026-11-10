@@ -48,6 +48,9 @@ What changed in each version of Mutant Video Producer. The newest is first.
   every track), cutting or switching to that angle past the split said "no picture there" and left a gap. An angle is
   now all the pieces of its event; a cut-short stretch's fade is kept within it. Deleting the first piece of a split
   angle (the head of a camera's file, a silence at its start) no longer loses the angle: it passes to the rest.
+- Story: ripple edits on all tracks (Ctrl+Del with Ripple All, a ripple drag or trim, a paste that makes room) moved
+  the clips and markers but left the chapters where they were, so a chapter was later swapped or deleted at the wrong
+  place. Chapters and their regions now move with the edit; one the edit is inside of gets longer or shorter.
 - Story: splitting a chapter's clip (S) left the new piece unassigned, so the chapter couldn't be swapped or deleted
   until it was assigned by hand. Both pieces are the chapter's now.
 - Story: a clip dragged out of its chapter was still moved when the chapter was swapped with its neighbour (it could

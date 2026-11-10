@@ -427,7 +427,7 @@ void VoiceJob::finish(const QString& failure)
                     const auto oldLength = old->length;
                     if (m_options.value("ripple").toBool()) {
                         const TimeUs end = old->end(), delta = clip.length - oldLength;
-                        ops::rippleShift(tl, end, delta, {}, ops::expandToGroups(tl, {replacement}), true);
+                        ops::rippleShift(tl, end, delta, {}, ops::expandToGroups(tl, {replacement}), true, false);
                         for (int ci = 0; ci < tl.chapters.size(); ++ci) {
                             auto chapter = tl.chapters[ci].toObject();
                             if (chapter["start"].toString().toLongLong() >= end) {

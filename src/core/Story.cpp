@@ -194,7 +194,7 @@ bool updateChapter(Timeline& tl, int id, const QString& name, const QString& scr
                 if (!own.count(c.id) && c.start < from && c.end() > oldEnd)
                     return fail(error, "An unassigned clip crosses this chapter's end. Split and assign it before changing the duration.");
     if (shift)
-        ops::rippleShift(tl, from, shift, {}, own, true);
+        ops::rippleShift(tl, from, shift, {}, own, true, false);
     for (int cid : own)
         if (auto* c = tl.findClip(cid)) {
             if (stretch.count(cid) && c->start == at && c->length == old) {
@@ -304,7 +304,7 @@ bool removeChapter(Timeline& tl, int id, QString* error)
             if (clip.start < at + length && clip.end() > at && !owned.count(clip.id))
                 return fail(error, "Assign all material in the chapter before deleting its range.");
     ops::removeClips(tl, owned);
-    ops::rippleShift(tl, at + length, -length, {}, {}, true);
+    ops::rippleShift(tl, at + length, -length, {}, {}, true, false);
     std::erase_if(tl.markers, [&](const Marker& m) { return m.id == id; });
     tl.chapters.removeAt(i);
     for (int j = 0; j < tl.chapters.size(); ++j) {
@@ -611,7 +611,7 @@ bool replaceCompound(Timeline& tl, int clipId, const Timeline& content, bool rip
         }
     }
     if (ripple && delta)
-        ops::rippleShift(tl, container.end(), delta, {}, group, true);
+        ops::rippleShift(tl, container.end(), delta, {}, group, true, false);
     const auto immutable = std::make_shared<const Timeline>(content);
     for (int id : group)
         if (auto* c = tl.findClip(id); c && c->isSequence() && c->sequence == container.sequence) {

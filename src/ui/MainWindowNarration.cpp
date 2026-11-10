@@ -259,7 +259,7 @@ void MainWindow::narrationStudio(const std::vector<Caption>& supplied, const QJs
 
         if (ripple->isChecked()) {
             const TimeUs end = c->end(), delta = length - c->length;
-            ops::rippleShift(tl, end, delta, {}, ops::expandToGroups(tl, {current}), true);
+            ops::rippleShift(tl, end, delta, {}, ops::expandToGroups(tl, {current}), true, false);
             for (int ci = 0; ci < tl.chapters.size(); ++ci) {
                 auto chapter = tl.chapters[ci].toObject();
                 if (chapter["start"].toString().toLongLong() >= end) {

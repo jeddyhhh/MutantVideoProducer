@@ -4,6 +4,8 @@ Open the **Story** tab beside History in the Editor's lower panel. Add a chapter
 
 For an existing edit, select a timeline region and click **Chapter from region**. Mutant Video Producer splits clips at the boundaries and assigns the pieces to that chapter. **Assign selected clips** adds other material within the range, including linked video/audio. Draft scripts stay available when switching chapters; **Save changes** commits a draft to the project. Duration changes move following clips, chapters and markers together. **Move up/down** swaps adjacent chapters; **Delete** removes the assigned range and closes its gap. Assign all material in the affected ranges first.
 
+Chapters follow the edit. Splitting an assigned clip (**S**) keeps both pieces in its chapter. Ripple edits on all tracks (Ripple Delete, a drag or trim with **Options > Auto Ripple > All Tracks, Markers and Regions**, Remove Silences, Insert Time) move the chapters and their regions with the clips; a chapter the edit is inside of gets longer or shorter. A clip dragged out of its chapter's range stays where you put it when the chapter is moved or deleted.
+
 **Generate chapter voice** opens Narration Studio for the script. It keeps the listening section free of narration; if speech will not fit, expand the narration window or shorten the script. Audio from an unsuccessful fit is retained in the profile's Voice folder.
 
 ## Narration Studio
