@@ -52,6 +52,7 @@ What changed in each version of Mutant Video Producer. The newest is first.
   the clips and markers but left the chapters where they were, so a chapter was later swapped or deleted at the wrong
   place. Chapters and their regions now move with the edit; one the edit is inside of gets longer or shorter.
   A chapter cut down to nothing by Remove Silences kept its region in the old place when it was swapped or deleted.
+  A compound sequence ending inside a chapter, made shorter with ripple, moved the next chapter back over it.
 - Story: splitting a chapter's clip (S) left the new piece unassigned, so the chapter couldn't be swapped or deleted
   until it was assigned by hand. Both pieces are the chapter's now.
 - Story: a clip dragged out of its chapter was still moved when the chapter was swapped with its neighbour (it could

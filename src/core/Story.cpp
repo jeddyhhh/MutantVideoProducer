@@ -599,6 +599,7 @@ bool replaceCompound(Timeline& tl, int clipId, const Timeline& content, bool rip
         && container.length == container.sequence.value->duration();
     const TimeUs delta = full ? content.duration() - container.length : 0;
     const auto group = ops::expandToGroups(tl, {clipId});
+    std::set<int> resized; // (the chapter that is the compound: its listening time follows the content)
     for (int i = 0; i < tl.chapters.size(); ++i) {
         auto chapter = tl.chapters[i].toObject();
         const auto own = ids(chapter);
@@ -619,15 +620,17 @@ bool replaceCompound(Timeline& tl, int clipId, const Timeline& content, bool rip
                 }
             chapter["listening"] = QString::number(listening);
             tl.chapters[i] = chapter;
+            resized.insert(chapter["id"].toInt());
             if (auto* marker = tl.findMarker(chapter["id"].toInt()))
                 marker->length = time(chapter, "narration") + listening;
-        } else if (ripple && delta && start >= container.end()) {
-            shiftChapter(chapter, delta);
-            tl.chapters[i] = chapter;
         }
     }
-    if (ripple && delta)
+    if (ripple && delta) {
+        // The others as any ripple edit at the compound's end moves them: later ones along, one it ends inside of
+        // longer or shorter (moved back past it, the next would overlap it).
         ops::rippleShift(tl, container.end(), delta, {}, group, true, false);
+        ops::rippleChapters(tl, container.end(), delta, resized);
+    }
     const auto immutable = std::make_shared<const Timeline>(content);
     for (int id : group)
         if (auto* c = tl.findClip(id); c && c->isSequence() && c->sequence == container.sequence) {

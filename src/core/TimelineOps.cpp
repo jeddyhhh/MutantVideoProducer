@@ -628,10 +628,13 @@ TimeUs closeSpans(const Spans& spans, TimeUs t)
 // Story chapters through a ripple edit: each one's start, the end of its narration and its end go where `moved`
 // (of a start) and `movedEnd` (of an end) put them, and its region with it. (They are kept as times in the chapter
 // list, not found from the events: left behind, a chapter was swapped or deleted where its clips no longer were.)
-void moveChapters(Timeline& tl, const std::function<TimeUs(TimeUs)>& moved, const std::function<TimeUs(TimeUs)>& movedEnd)
+void moveChapters(Timeline& tl, const std::function<TimeUs(TimeUs)>& moved, const std::function<TimeUs(TimeUs)>& movedEnd,
+                  const std::set<int>& except = {})
 {
     for (int i = 0; i < tl.chapters.size(); ++i) {
         QJsonObject c = tl.chapters[i].toObject();
+        if (except.count(c.value(QStringLiteral("id")).toInt()))
+            continue;
         const auto get = [&](const char* key) { return c.value(QLatin1String(key)).toString().toLongLong(); };
         const TimeUs start = get("start"), spoken = start + get("narration"), end = spoken + get("listening");
         const TimeUs s = moved(start), sp = std::max(s, movedEnd(spoken)), e = std::max(sp, movedEnd(end));
@@ -700,15 +703,22 @@ void rippleShift(Timeline& tl, TimeUs from, TimeUs delta, const std::set<int>& t
         for (Marker& m : tl.markers)
             if (m.time >= from)
                 m.time = std::max<TimeUs>(0, m.time + delta);
-    if (markers && chapters) {
-        // What starts at `from` moves; what ends there stays (time put in between two chapters is in neither). Closing
-        // up (delta < 0), times in the stretch closed land on its start, so a chapter cut into gets shorter.
-        const TimeUs closedTo = std::max<TimeUs>(0, from + std::min<TimeUs>(delta, 0));
-        moveChapters(
-            tl, [&](TimeUs t) { return t >= from ? std::max<TimeUs>(0, t + delta) : std::min(t, closedTo); },
-            [&](TimeUs t) { return t > from ? std::max<TimeUs>(0, t + delta) : std::min(t, closedTo); });
-    }
+    if (markers && chapters)
+        rippleChapters(tl, from, delta);
     tl.sortClips();
+    tl.sortMarkers();
+}
+
+void rippleChapters(Timeline& tl, TimeUs from, TimeUs delta, const std::set<int>& except)
+{
+    if (delta == 0)
+        return;
+    // What starts at `from` moves; what ends there stays (time put in between two chapters is in neither). Closing
+    // up (delta < 0), times in the stretch closed land on its start, so a chapter cut into gets shorter.
+    const TimeUs closedTo = std::max<TimeUs>(0, from + std::min<TimeUs>(delta, 0));
+    moveChapters(
+        tl, [&](TimeUs t) { return t >= from ? std::max<TimeUs>(0, t + delta) : std::min(t, closedTo); },
+        [&](TimeUs t) { return t > from ? std::max<TimeUs>(0, t + delta) : std::min(t, closedTo); }, except);
     tl.sortMarkers();
 }
 

@@ -772,7 +772,7 @@ void editFuzz(const QString& mediaDir, int iterations)
     AudioMixer mixer(48000);
     for (int i = 0; i < iterations && problem.isEmpty(); ++i) {
         Timeline tl = project.timeline();
-        const int op = int(rng() % 31);
+        const int op = int(rng() % 34);
         const auto media = project.media();
         stage(QStringLiteral("editing step %1 (op %2)").arg(i).arg(op), 60);
         switch (op) {
@@ -941,6 +941,31 @@ void editFuzz(const QString& mediaDir, int iterations)
             break;
         }
         case 30: cuts::insertTime(tl, std::max<TimeUs>(0, anyTime()), TimeUs(rng() % 5000000), settings.fps); break;
+        case 31: story::compound(tl, someClips(tl), QStringLiteral("S%1").arg(i)); break;
+        case 32: { // a compound unpacked, or its content changed (Edit Compound Sequence's Save)
+            std::vector<const Clip*> sequences;
+            for (const Track& t : tl.tracks)
+                for (const Clip& c : t.clips)
+                    if (c.isSequence())
+                        sequences.push_back(&c);
+            if (sequences.empty())
+                break;
+            const Clip* c = sequences[rng() % sequences.size()];
+            if (rng() % 2) {
+                story::unpack(tl, c->id);
+            } else {
+                Timeline inner = *c->sequence.value;
+                if (!inner.tracks.empty() && !inner.tracks[0].clips.empty()) {
+                    Clip& first = inner.tracks[0].clips[0];
+                    first.length = std::max<TimeUs>(settings.fps.frameDuration(), first.length + (rng() % 2 ? 1 : -1) * TimeUs(rng() % 2000000));
+                    ops::clampFades(first);
+                    inner.sortClips();
+                }
+                story::replaceCompound(tl, c->id, inner, rng() % 2);
+            }
+            break;
+        }
+        case 33: story::directorsDice(tl, someClips(tl), unsigned(rng()), int(rng() % 3), (rng() % 101) / 100.0); break;
         default: { // a marker or region
             Marker m;
             m.id = tl.allocId();
@@ -994,7 +1019,7 @@ void editFuzz(const QString& mediaDir, int iterations)
     }
     check(problem.isEmpty(),
           QStringLiteral("random editing: %1 edits (insert, split, delete, ripple, group, tracks, titles, speed, trims, ramps, reverse, "
-                         "fades, FX, loops, overwrite, transitions, markers, story chapters, multicam, Remove Silences, Insert Time) keep the "
+                         "fades, FX, loops, overwrite, transitions, markers, story chapters, multicam, Remove Silences, Insert Time, compounds) keep the "
                          "timeline sound%2")
               .arg(steps)
               .arg(problem.isEmpty() ? QString() : QStringLiteral(": ") + problem));

@@ -207,6 +207,33 @@ int main(int argc, char** argv)
                   && tl.chapters[0].toObject()["id"].toInt() == b && at(0, "start") == 0,
               "and the chapters can still be swapped afterwards: " + error);
     }
+    {
+        // A compound that ends where a chapter ends (but starts before it) made shorter with ripple: the chapter after
+        // moves back, so the one the compound ends in gets shorter too, and they don't overlap.
+        Timeline tl;
+        const auto fps = p.settings().fps;
+        const int lead = ops::insertGenerated(tl, *findGeneratorPreset("solid_white"), 0, -1, fps);
+        tl.findClip(lead)->length = 3 * kUsPerSecond;
+        const int a = story::addChapter(tl, "A", "", 2 * kUsPerSecond, 3 * kUsPerSecond, nullptr, 0, fps, &error); // 3..8 s
+        const int b = story::addChapter(tl, "B", "", 2 * kUsPerSecond, 3 * kUsPerSecond, nullptr, 0, fps, &error); // 8..13 s
+        std::set<int> before; // the lead-in and chapter A's placeholder: 0..8 s
+        for (const Track& t : tl.tracks)
+            for (const Clip& c : t.clips)
+                if (c.end() <= 8 * kUsPerSecond)
+                    before.insert(c.id);
+        const auto packed = story::compound(tl, before, "Front", &error);
+        Timeline inner = *tl.findClip(packed.front())->sequence.value;
+        for (Track& t : inner.tracks)
+            for (Clip& c : t.clips)
+                if (c.end() == 8 * kUsPerSecond)
+                    c.length -= kUsPerSecond; // (the content a second shorter)
+        const bool replaced = !packed.empty() && story::replaceCompound(tl, packed.front(), inner, true, &error);
+        auto at = [&](int i, const char* key) { return tl.chapters[i].toObject()[key].toString().toLongLong(); };
+        check(a && b && replaced && at(0, "start") + at(0, "narration") + at(0, "listening") == 7 * kUsPerSecond
+                  && at(1, "start") == 7 * kUsPerSecond && tl.findMarker(b)->time == 7 * kUsPerSecond,
+              QStringLiteral("a compound ending in a chapter, shortened with ripple, shortens it and moves the next one back (%1 / %2) %3")
+                  .arg(at(0, "start") + at(0, "narration") + at(0, "listening")).arg(at(1, "start")).arg(error));
+    }
     Timeline adopted = original;
     int adoptedId = story::adoptChapter(adopted, "Existing edit", "Script", 2 * kUsPerSecond, 3 * kUsPerSecond, kUsPerSecond, &error);
     check(adoptedId && adopted.chapters[0].toObject()["clips"].toArray().size() == 2,

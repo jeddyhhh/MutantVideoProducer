@@ -123,6 +123,8 @@ void rippleRemoveClipsAll(Timeline& tl, const std::set<int>& ids, bool markers);
 // leaves them to a caller that sets them itself.
 void rippleShift(Timeline& tl, TimeUs from, TimeUs delta, const std::set<int>& trackIds, const std::set<int>& exclude,
                  bool markers, bool chapters = true);
+// The story chapters (and their regions) of that ripple edit alone; the chapters `except` (ids) stay as they are.
+void rippleChapters(Timeline& tl, TimeUs from, TimeUs delta, const std::set<int>& except = {});
 // Opens a gap of `length` at `at` on those tracks: events crossing `at` are
 // split first, then everything from `at` on moves later.
 void rippleInsert(Timeline& tl, TimeUs at, TimeUs length, const std::set<int>& trackIds, const std::set<int>& exclude,
