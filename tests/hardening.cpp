@@ -810,7 +810,7 @@ void editFuzz(const QString& mediaDir, int iterations)
                     if (rng() % 4)
                         continue;
                     const MediaItem* m = c.mediaId ? media.at(c.mediaId).get() : nullptr;
-                    const int sub = int(rng() % 9);
+                    const int sub = int(rng() % 10);
                     const Clip was = c;
                     switch (sub) {
                     case 0: ops::setClipSpeed(c, m, std::pow(10.0, (int(rng() % 400) - 200) / 100.0), rng() % 2, settings.fps); break;
@@ -843,6 +843,30 @@ void editFuzz(const QString& mediaDir, int iterations)
                     case 8:
                         c.frameBlend = !c.frameBlend;
                         c.stabilize = rng() % 2 ? 0.0 : 0.5;
+                        break;
+                    case 9: // a setting of one of its effects keyframed (later splits, trims and ripples move the keys)
+                        if (!c.effects.empty()) {
+                            EffectInstance& e = c.effects[rng() % c.effects.size()];
+                            const auto meta = effectMeta(e.type);
+                            if (!meta || !meta->params)
+                                break;
+                            for (const ParamDef& d : *meta->params)
+                                if (d.type == ParamType::Number && rng() % 2 == 0) {
+                                    ParamValue& v = e.params[d.id];
+                                    v.keys.clear();
+                                    std::set<TimeUs> times;
+                                    for (int k = 0; k < 1 + int(rng() % 4); ++k)
+                                        times.insert(TimeUs(rng() % uint64_t(std::max<TimeUs>(1, c.length))));
+                                    for (TimeUs at : times) {
+                                        Keyframe key;
+                                        key.time = at;
+                                        key.value = d.min + (d.max - d.min) * (rng() % 1001) / 1000.0;
+                                        key.interp = Keyframe::Interp(rng() % 9);
+                                        v.keys.push_back(key);
+                                    }
+                                    break;
+                                }
+                        }
                         break;
                     }
                     if (c.sourceIn < 0 || c.length <= 0 || c.start < 0)
