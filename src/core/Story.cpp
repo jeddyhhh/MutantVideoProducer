@@ -56,6 +56,19 @@ void shiftTrack(Track& track, TimeUs delta)
             k.time += delta;
 }
 void shiftChapter(QJsonObject& chapter, TimeUs delta) { chapter["start"] = QString::number(time(chapter, "start") + delta); }
+// Each chapter's region where the chapter is (by id: an operation that moves regions by time range misses one cut
+// down to nothing, as Remove Silences can leave it).
+void regions(Timeline& tl)
+{
+    for (const auto value : tl.chapters) {
+        const auto c = value.toObject();
+        if (Marker* m = tl.findMarker(c["id"].toInt())) {
+            m->time = time(c, "start");
+            m->length = std::max<TimeUs>(1, time(c, "narration") + time(c, "listening"));
+        }
+    }
+    tl.sortMarkers();
+}
 } // namespace
 namespace story {
 int addChapter(Timeline& tl, const QString& name, const QString& script, TimeUs narration, TimeUs listening, const MediaItem* source,
@@ -235,6 +248,7 @@ bool updateChapter(Timeline& tl, int id, const QString& name, const QString& scr
     }
     tl.sortClips();
     tl.sortMarkers();
+    regions(tl);
     return true;
 }
 bool bindChapter(Timeline& tl, int id, const std::set<int>& selection, QString* error)
@@ -289,6 +303,7 @@ bool moveChapter(Timeline& tl, int id, int direction, QString* error)
     tl.chapters[std::max(i, j)] = a;
     tl.sortClips();
     tl.sortMarkers();
+    regions(tl);
     return true;
 }
 bool removeChapter(Timeline& tl, int id, QString* error)
@@ -314,6 +329,7 @@ bool removeChapter(Timeline& tl, int id, QString* error)
             tl.chapters[j] = q;
         }
     }
+    regions(tl);
     return true;
 }
 int adoptChapter(Timeline& tl, const QString& name, const QString& script, TimeUs from, TimeUs to, TimeUs narration, QString* error)

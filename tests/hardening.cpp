@@ -9,12 +9,15 @@
 #include "core/Captions.h"
 #include "core/CubeLut.h"
 #include "core/Compositor.h"
+#include "core/Cuts.h"
 #include "core/Effects.h"
 #include "core/AudioEffects.h"
 #include "core/Exporter.h"
 #include "core/Generators.h"
 #include "core/MediaInfo.h"
+#include "core/Multicam.h"
 #include "core/Project.h"
+#include "core/Story.h"
 #include "core/TimelineOps.h"
 #include "core/VideoDecoder.h"
 #include "core/AudioDecoder.h"
@@ -738,7 +741,8 @@ void editFuzz(const QString& mediaDir, int iterations)
         return;
     }
     const ProjectSettings settings = project.settings();
-    std::mt19937 rng(99);
+    const uint32_t seed = qEnvironmentVariableIntValue("MVP_EDIT_SEED"); // (to try other sequences of edits)
+    std::mt19937 rng(seed ? seed : 99);
     auto anyTime = [&]() -> TimeUs {
         switch (rng() % 6) {
         case 0: return 0;
@@ -768,7 +772,7 @@ void editFuzz(const QString& mediaDir, int iterations)
     AudioMixer mixer(48000);
     for (int i = 0; i < iterations && problem.isEmpty(); ++i) {
         Timeline tl = project.timeline();
-        const int op = int(rng() % 24);
+        const int op = int(rng() % 31);
         const auto media = project.media();
         stage(QStringLiteral("editing step %1 (op %2)").arg(i).arg(op), 60);
         switch (op) {
@@ -885,6 +889,58 @@ void editFuzz(const QString& mediaDir, int iterations)
             break;
         }
         case 22: ops::replaceMedia(tl, media, someClips(tl), mediaIds[rng() % mediaIds.size()], settings.fps); break;
+        case 24: { // story chapters: a new one (on a file, or a placeholder), or one made from what is there
+            const TimeUs narration = TimeUs(rng() % 8) * kUsPerSecond / 2, listening = TimeUs(rng() % 8) * kUsPerSecond / 2;
+            if (rng() % 2)
+                story::addChapter(tl, QStringLiteral("C%1").arg(i), {}, narration, listening,
+                                  rng() % 2 ? media.at(mediaIds[rng() % mediaIds.size()]).get() : nullptr, std::max<TimeUs>(0, anyTime()),
+                                  settings.fps);
+            else {
+                const TimeUs from = std::max<TimeUs>(0, anyTime());
+                story::adoptChapter(tl, QStringLiteral("A%1").arg(i), {}, from, from + narration + listening + 1, narration);
+            }
+            break;
+        }
+        case 25:
+        case 26: { // a chapter changed, swapped, assigned clips or deleted
+            if (tl.chapters.isEmpty())
+                break;
+            const int id = tl.chapters[qsizetype(rng() % uint32_t(tl.chapters.size()))].toObject()[QStringLiteral("id")].toInt();
+            switch (rng() % 4) {
+            case 0: story::updateChapter(tl, id, QStringLiteral("U%1").arg(i), {}, TimeUs(rng() % 8) * kUsPerSecond / 2,
+                                         TimeUs(rng() % 8) * kUsPerSecond / 2, settings.fps); break;
+            case 1: story::moveChapter(tl, id, rng() % 2 ? 1 : -1); break;
+            case 2: story::bindChapter(tl, id, someClips(tl)); break;
+            default: story::removeChapter(tl, id); break;
+            }
+            break;
+        }
+        case 27:
+        case 28: { // multicam: made from some picture events, then cut and switched
+            if (multicam::trackIndex(tl) < 0) {
+                std::vector<int> angles;
+                for (const Track& t : tl.tracks)
+                    if (isVisualTrack(t.type))
+                        for (const Clip& c : t.clips)
+                            if (rng() % 3 == 0 && angles.size() < 3)
+                                angles.push_back(c.id);
+                multicam::create(tl, media, angles, nullptr);
+            } else if (rng() % 2)
+                multicam::cut(tl, media, 1 + int(rng() % 3), std::max<TimeUs>(0, anyTime()), nullptr);
+            else
+                multicam::switchAngle(tl, media, 1 + int(rng() % 3), std::max<TimeUs>(0, anyTime()), nullptr);
+            break;
+        }
+        case 29: { // Remove Silences / Edit by Transcript: stretches cut out of every track
+            std::vector<cuts::Range> ranges;
+            for (int k = 0; k < 1 + int(rng() % 3); ++k) {
+                const TimeUs from = std::max<TimeUs>(0, anyTime());
+                ranges.push_back({from, from + TimeUs(rng() % 4000000)});
+            }
+            cuts::removeRanges(tl, ranges, settings.fps);
+            break;
+        }
+        case 30: cuts::insertTime(tl, std::max<TimeUs>(0, anyTime()), TimeUs(rng() % 5000000), settings.fps); break;
         default: { // a marker or region
             Marker m;
             m.id = tl.allocId();
@@ -902,6 +958,32 @@ void editFuzz(const QString& mediaDir, int iterations)
             problem = QStringLiteral("step %1 (op %2): %3").arg(i).arg(op).arg(p);
             break;
         }
+        // Story chapters: not before 0, no negative parts, laid one after another without overlapping, each with its
+        // region where it is.
+        {
+            std::vector<std::pair<TimeUs, TimeUs>> spans;
+            for (const QJsonValue v : tl.chapters) {
+                const QJsonObject c = v.toObject();
+                const auto get = [&](const char* key) { return c.value(QLatin1String(key)).toString().toLongLong(); };
+                const TimeUs start = get("start"), length = get("narration") + get("listening");
+                if (start < 0 || get("narration") < 0 || get("listening") < 0)
+                    problem = QStringLiteral("chapter %1 at %2 (%3 + %4)").arg(c[QStringLiteral("id")].toInt()).arg(start).arg(get("narration")).arg(get("listening"));
+                if (const Marker* m = tl.findMarker(c[QStringLiteral("id")].toInt());
+                    m && (m->time != start || m->length != std::max<TimeUs>(1, length))) // (a region cut to nothing is 1 us)
+                    problem = QStringLiteral("chapter %1 at %2 for %3, its region at %4 for %5")
+                                  .arg(c[QStringLiteral("id")].toInt()).arg(start).arg(length).arg(m->time).arg(m->length);
+                spans.emplace_back(start, start + length);
+            }
+            std::sort(spans.begin(), spans.end());
+            for (size_t k = 1; k < spans.size() && problem.isEmpty(); ++k)
+                if (spans[k].first < spans[k - 1].second && spans[k - 1].second > spans[k - 1].first && spans[k].second > spans[k].first)
+                    problem = QStringLiteral("chapters overlap: %1-%2 and %3-%4")
+                                  .arg(spans[k - 1].first).arg(spans[k - 1].second).arg(spans[k].first).arg(spans[k].second);
+            if (!problem.isEmpty()) {
+                problem = QStringLiteral("step %1 (op %2): %3").arg(i).arg(op).arg(problem);
+                break;
+            }
+        }
         if (tl == project.timeline())
             continue;
         project.applyEdit(tl, QStringLiteral("step %1").arg(i));
@@ -912,7 +994,8 @@ void editFuzz(const QString& mediaDir, int iterations)
     }
     check(problem.isEmpty(),
           QStringLiteral("random editing: %1 edits (insert, split, delete, ripple, group, tracks, titles, speed, trims, ramps, reverse, "
-                         "fades, FX, loops, overwrite, transitions, markers) keep the timeline sound%2")
+                         "fades, FX, loops, overwrite, transitions, markers, story chapters, multicam, Remove Silences, Insert Time) keep the "
+                         "timeline sound%2")
               .arg(steps)
               .arg(problem.isEmpty() ? QString() : QStringLiteral(": ") + problem));
     // Undo to the start, checking each step, and redo to the end.

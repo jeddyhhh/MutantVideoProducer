@@ -643,7 +643,7 @@ void moveChapters(Timeline& tl, const std::function<TimeUs(TimeUs)>& moved, cons
         tl.chapters[i] = c;
         if (Marker* m = tl.findMarker(c.value(QStringLiteral("id")).toInt())) {
             m->time = s;
-            m->length = e - s;
+            m->length = std::max<TimeUs>(1, e - s); // (stays a region, as Remove Silences leaves one cut to nothing)
         }
     }
 }
