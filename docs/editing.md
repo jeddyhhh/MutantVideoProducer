@@ -212,6 +212,9 @@ or a separate sound recorder, with the first.
 The Multicam track's events are ordinary events named **Angle 1**, **Angle 2**...: roll an edit
 (**Ctrl+Alt+drag** the cut) to move a cut, and add transitions between them as usual.
 
+A camera's event can be split or cut after the multicam is made (Split, Remove Silences, Insert
+Time): the angle is all of that file's pieces on its track, each where it now sits.
+
 Animation scenes can be angles too: copies of one scene, each with its own scene camera (a wide shot, a close-up of
 each character), cut as if three cameras had filmed it. Set the cameras before making the multicam: its events are
 copies of the angles as they were then.

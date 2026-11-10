@@ -593,6 +593,7 @@ int main(int argc, char** argv)
         const bool hidden = made && std::all_of(tl.tracks.begin(), tl.tracks.end(), [&](const Track& t) {
             return t.clips.empty() || &t == &tl.tracks[size_t(mi)] || t.muted;
         });
+        const Timeline fresh = tl;
         const bool cut = multicam::cut(tl, media, 2, 10 * kUsPerSecond, &error);
         const auto& cuts = tl.tracks[size_t(mi)].clips;
         const bool pieces = cuts.size() == 2 && multicam::angleOf(cuts[0]) == 1 && cuts[0].end() == 10 * kUsPerSecond
@@ -605,6 +606,29 @@ int main(int argc, char** argv)
         const bool refused = !multicam::cut(tl, media, 3, 12 * kUsPerSecond, &error) && !multicam::create(tl, media, {a1}, &error);
         check(made && mi == 0 && hidden && cut && pieces && covered && refused && multicam::angles(tl, media).size() == 2 && timelineProblem(tl).isEmpty(),
               QStringLiteral("multicam: two angles under a Multicam track; a cut at 10 s, a switch, no angle 3 (%1)").arg(error));
+        {
+            // An angle's event split in two (S with nothing selected, Remove Silences: they split every track): the
+            // angle is still that camera, both halves of it.
+            Timeline sp = fresh;
+            ops::splitClips(sp, {a2}, 20 * kUsPerSecond);
+            QString why;
+            const bool late = multicam::cut(sp, media, 2, 25 * kUsPerSecond, &why);
+            const bool across = late && multicam::cut(sp, media, 2, 15 * kUsPerSecond, &why);
+            const auto& mc = sp.tracks[size_t(multicam::trackIndex(sp))].clips;
+            bool whole = across && mc.size() == 4 && mc[0].end() == 15 * kUsPerSecond && mc[3].end() == 30 * kUsPerSecond;
+            for (size_t i = 1; whole && i < mc.size(); ++i)
+                whole = mc[i].start == mc[i - 1].end() && multicam::angleOf(mc[i]) == 2;
+            check(whole && mc[2].start == 20 * kUsPerSecond && mc[2].sourceIn == 23 * kUsPerSecond && mc[3].sourceIn == 28 * kUsPerSecond
+                      && timelineProblem(sp).isEmpty(),
+                  QStringLiteral("multicam: an angle whose event was split is cut to on both sides of the split, in sync (%1)").arg(why));
+            Timeline sw = fresh;
+            ops::splitClips(sw, {a2}, 20 * kUsPerSecond);
+            const bool switched2 = multicam::switchAngle(sw, media, 2, 25 * kUsPerSecond, &why);
+            const auto& sc = sw.tracks[size_t(multicam::trackIndex(sw))].clips;
+            check(switched2 && sc.size() == 2 && sc[0].start == 2 * kUsPerSecond && sc[0].end() == 20 * kUsPerSecond
+                      && sc[1].start == 20 * kUsPerSecond && sc[1].end() == 30 * kUsPerSecond && timelineProblem(sw).isEmpty(),
+                  QStringLiteral("multicam: a stretch switched to a split angle shows all of it (%1)").arg(why));
+        }
         Project saved;
         saved.applyEdit(tl, "multicam");
         QTemporaryDir out;
