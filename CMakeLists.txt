@@ -250,6 +250,7 @@ add_executable(mvp WIN32
     src/ui/SequenceEditor.h      src/ui/SequenceEditor.cpp
     src/ui/MainWindowNarration.cpp
     tests/transport.cpp tests/transport.h
+    tests/mcp-fuzz.cpp tests/mcp-fuzz.h
     tests/collection-ui.cpp tests/collection-ui.h
     # The scripted GUI tests (--editor-test, --live-test): members, so they reach the widgets' internals.
     tests/gui/MainWindowTest.cpp tests/gui/MainWindowTest2.cpp tests/gui/TimelineWidgetTest.cpp tests/gui/LiveViewTest.cpp

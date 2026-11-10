@@ -48,6 +48,7 @@
 #include "ui/StoryPanel.h"
 #include "ui/Vst3Window.h"
 #include "../../tests/transport.h"
+#include "../../tests/mcp-fuzz.h"
 #include "../../tests/collection-ui.h"
 #include "core/Story.h"
 #include "ui/RenderStatusDialog.h"
@@ -198,6 +199,8 @@ int MainWindow::runEditorTest(QStringList& log)
     }
     if (qEnvironmentVariableIsSet("MVP_COLLECTION_ONLY"))
         return runCollectionUiTests(this, log);
+    if (const int rounds = qEnvironmentVariableIntValue("MVP_MCP_FUZZ"); rounds > 0) // (by hand: AI control fuzzing)
+        return runMcpFuzz(m_mcp, m_project, log, rounds);
     const QString mediaPath = m_project->media().begin()->second->path;
     const QDir work(QFileInfo(autosaveDir()).absolutePath()); // the test's own folder
     QSettings().clear();
