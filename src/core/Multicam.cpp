@@ -121,6 +121,32 @@ int angleOf(const Clip& c)
     return c.name.startsWith(kPrefix) ? c.name.mid(kPrefix.size()).toInt() : 0;
 }
 
+void passOn(Timeline& tl, const std::set<int>& leaving)
+{
+    if (tl.multicam.isEmpty() || leaving.empty())
+        return;
+    QJsonArray ids = tl.multicam.value(QStringLiteral("angles")).toArray();
+    bool changed = false;
+    for (int i = 0; i < ids.size(); ++i) {
+        const Clip* base = leaving.count(ids[i].toInt()) ? tl.findClip(ids[i].toInt()) : nullptr;
+        if (!base)
+            continue;
+        const Clip *next = nullptr, *previous = nullptr; // the piece after it, else the one before
+        for (const Clip* c : angleClips(tl, i + 1)) {
+            if (c == base || leaving.count(c->id))
+                continue;
+            if (c->start >= base->start ? !next || c->start < next->start : !previous || c->start > previous->start)
+                (c->start >= base->start ? next : previous) = c;
+        }
+        if (const Clip* heir = next ? next : previous) {
+            ids[i] = heir->id;
+            changed = true;
+        }
+    }
+    if (changed)
+        tl.multicam[QStringLiteral("angles")] = ids;
+}
+
 bool create(Timeline& tl, const MediaMap& media, const std::vector<int>& clipIds, QString* error)
 {
     auto fail = [&](const QString& why) {

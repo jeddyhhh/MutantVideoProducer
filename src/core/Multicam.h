@@ -10,6 +10,7 @@
 #include "core/Project.h"
 
 #include <QString>
+#include <set>
 #include <vector>
 
 namespace multicam {
@@ -35,5 +36,8 @@ bool create(Timeline& tl, const MediaMap& media, const std::vector<int>& clipIds
 bool cut(Timeline& tl, const MediaMap& media, int angle, TimeUs t, QString* error);
 // The stretch of the Multicam track under t shows `angle` instead: what pressing a number does when stopped.
 bool switchAngle(Timeline& tl, const MediaMap& media, int angle, TimeUs t, QString* error);
+// The events `leaving` are about to be removed: an angle whose own event is one of them passes to another piece of
+// that event (it was split: the head of a camera's file cut off, a silence at its start removed), if one stays.
+void passOn(Timeline& tl, const std::set<int>& leaving);
 
 } // namespace multicam

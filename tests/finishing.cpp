@@ -629,6 +629,24 @@ int main(int argc, char** argv)
                       && sc[1].start == 20 * kUsPerSecond && sc[1].end() == 30 * kUsPerSecond && timelineProblem(sw).isEmpty(),
                   QStringLiteral("multicam: a stretch switched to a split angle shows all of it (%1)").arg(why));
         }
+        {
+            // The first piece of a split angle deleted (the head of a camera's file cut off, a silence at its start
+            // removed): the angle passes to what is left of that event.
+            QString why;
+            Timeline rm = fresh;
+            ops::splitClips(rm, {a2}, 20 * kUsPerSecond);
+            ops::removeClips(rm, {a2});
+            const bool kept = multicam::angles(rm, media).size() == 2 && multicam::cut(rm, media, 2, 25 * kUsPerSecond, &why);
+            Timeline rr = fresh;
+            ops::splitClips(rr, {a1}, 6 * kUsPerSecond);
+            ops::rippleRemoveClips(rr, {a1});
+            const bool rippled = multicam::angles(rr, media).size() == 2 && multicam::switchAngle(rr, media, 2, 3 * kUsPerSecond, &why)
+                                 && multicam::switchAngle(rr, media, 1, 3 * kUsPerSecond, &why);
+            Timeline gone = fresh;
+            ops::removeClips(gone, {a2}); // (all of it: the angle goes)
+            check(kept && rippled && multicam::angles(gone, media).size() == 1 && timelineProblem(rm).isEmpty() && timelineProblem(rr).isEmpty(),
+                  QStringLiteral("multicam: an angle whose first piece is deleted passes to the rest of its event (%1)").arg(why));
+        }
         Project saved;
         saved.applyEdit(tl, "multicam");
         QTemporaryDir out;

@@ -46,7 +46,8 @@ What changed in each version of Mutant Video Producer. The newest is first.
 
 - Multicam: after an angle's event was split (Split with nothing selected, Remove Silences and Insert Time split
   every track), cutting or switching to that angle past the split said "no picture there" and left a gap. An angle is
-  now all the pieces of its event; a cut-short stretch's fade is kept within it.
+  now all the pieces of its event; a cut-short stretch's fade is kept within it. Deleting the first piece of a split
+  angle (the head of a camera's file, a silence at its start) no longer loses the angle: it passes to the rest.
 - Story: a clip dragged out of its chapter was still moved when the chapter was swapped with its neighbour (it could
   end up before the start of the timeline) and deleted with the chapter. It now stays where it was put.
 - A hand-edited project's story chapter times are read within a sane range (they could overflow when chapters were

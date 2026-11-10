@@ -1,5 +1,7 @@
 #include "core/TimelineOps.h"
 
+#include "core/Multicam.h"
+
 #include <QRegularExpression>
 #include <algorithm>
 #include <cmath>
@@ -497,6 +499,7 @@ int insertGenerated(Timeline& tl, const GeneratorPreset& preset, TimeUs at, int 
 
 void removeClips(Timeline& tl, const std::set<int>& ids)
 {
+    multicam::passOn(tl, ids);
     for (auto& track : tl.tracks)
         track.clips.erase(std::remove_if(track.clips.begin(), track.clips.end(),
                                          [&](const Clip& c) { return ids.count(c.id) > 0; }),
@@ -604,6 +607,7 @@ TimeUs closeSpans(const Spans& spans, TimeUs t)
 
 void rippleRemoveClips(Timeline& tl, const std::set<int>& ids)
 {
+    multicam::passOn(tl, ids);
     for (auto& track : tl.tracks) {
         const Spans spans = removedSpans({&track}, ids);
         std::erase_if(track.clips, [&](const Clip& c) { return ids.count(c.id) > 0; });
