@@ -772,7 +772,7 @@ void editFuzz(const QString& mediaDir, int iterations)
     AudioMixer mixer(48000);
     for (int i = 0; i < iterations && problem.isEmpty(); ++i) {
         Timeline tl = project.timeline();
-        const int op = int(rng() % 34);
+        const int op = int(rng() % 36);
         const auto media = project.media();
         stage(QStringLiteral("editing step %1 (op %2)").arg(i).arg(op), 60);
         switch (op) {
@@ -990,6 +990,105 @@ void editFuzz(const QString& mediaDir, int iterations)
             break;
         }
         case 33: story::directorsDice(tl, someClips(tl), unsigned(rng()), int(rng() % 3), (rng() % 101) / 100.0); break;
+        case 34:
+        case 35: { // the Live tab's pads, FX, layers, scenes, overlays, setlist and sequencer (saved with the project)
+            auto chain = [&] {
+                EffectChain fx;
+                for (int k = 0; k < int(rng() % 3); ++k)
+                    fx.push_back(makeEffect(vfx[rng() % vfx.size()], tl.allocId()));
+                return fx;
+            };
+            auto share = [&] { return (rng() % 1001) / 1000.0; };
+            auto overlay = [&] {
+                LiveOverlay o;
+                o.kind = LiveOverlay::Kind(rng() % 7);
+                o.enabled = rng() % 2;
+                o.text = QStringLiteral("text %1").arg(rng() % 100);
+                o.anchor = int(rng() % 9);
+                o.size = 1 + int(rng() % 40);
+                o.width = 10 + int(rng() % 90);
+                o.color = int(rng() & 0xffffff);
+                o.opacity = share();
+                o.pulse = rng() % 2;
+                return o;
+            };
+            switch (rng() % 6) {
+            case 0: {
+                LivePad& pad = tl.livePads[rng() % kLivePads];
+                pad.name = rng() % 3 ? QStringLiteral("Pad %1").arg(i) : QString();
+                pad.effects = chain();
+                pad.momentary = rng() % 2;
+                pad.locked = rng() % 4 == 0;
+                break;
+            }
+            case 1:
+                if (rng() % 2)
+                    tl.liveEffects = chain();
+                else
+                    tl.liveLayerEffects[rng() % kLiveLayers] = chain();
+                break;
+            case 2: { // a scene saved (its chains are copies of the Live ones: their ids repeat on purpose)
+                LiveScene& sc = tl.liveScenes[rng() % kLiveScenes];
+                sc.name = QStringLiteral("Scene %1").arg(i);
+                sc.liveEffects = tl.liveEffects;
+                sc.pad = int(rng() % (kLivePads + 1)) - 1;
+                for (int l = 0; l < kLiveLayers; ++l) {
+                    LiveLayer& layer = sc.layers[size_t(l)];
+                    layer.source = rng() % 2 ? QStringLiteral("Camera %1").arg(l) : QString();
+                    layer.settings.mode = LiveLayerSettings::Mode(rng() % 2);
+                    layer.settings.corner = int(rng() % 6);
+                    layer.settings.x = layer.settings.corner == 5 ? share() : 0.5; // (only a dragged layer keeps x, y)
+                    layer.settings.y = layer.settings.corner == 5 ? share() : 0.5;
+                    layer.settings.size = 0.05 + share() * 0.95;
+                    layer.settings.opacity = share();
+                    layer.settings.blend = int(rng() % 4);
+                    layer.settings.noEffects = rng() % 2;
+                    layer.effects = tl.liveLayerEffects[size_t(l)];
+                }
+                sc.overlays.clear();
+                for (int k = 0; k < int(rng() % 3); ++k)
+                    sc.overlays.push_back(overlay());
+                sc.used = true;
+                break;
+            }
+            case 3:
+                if (tl.liveOverlays.size() < 8 && rng() % 3)
+                    tl.liveOverlays.push_back(overlay());
+                else if (!tl.liveOverlays.empty())
+                    tl.liveOverlays.erase(tl.liveOverlays.begin() + std::ptrdiff_t(rng() % tl.liveOverlays.size()));
+                break;
+            case 4: {
+                if (tl.liveSetlist.size() >= 20 || rng() % 4 == 0) {
+                    if (!tl.liveSetlist.empty())
+                        tl.liveSetlist.erase(tl.liveSetlist.begin() + std::ptrdiff_t(rng() % tl.liveSetlist.size()));
+                    break;
+                }
+                LiveSong song;
+                song.name = QStringLiteral("Song %1").arg(i);
+                song.padSet = rng() % 2 ? QStringLiteral("Set %1").arg(rng() % 4) : QString();
+                song.bpm = rng() % 3 ? 60 + int(rng() % 140) : 0;
+                song.lockBpm = rng() % 2;
+                song.scene = int(rng() % (kLiveScenes + 1)) - 1;
+                song.notes = rng() % 2 ? QStringLiteral("notes %1").arg(i) : QString();
+                tl.liveSetlist.push_back(song);
+                break;
+            }
+            default: { // the sequencer: its loop, time signature and grid, and blocks
+                LiveSequence& q = tl.liveSequence;
+                q.on = rng() % 2;
+                q.bars = 1 + int(rng() % 8);
+                q.beatsPerBar = 1 + int(rng() % 16);
+                q.beatUnit = std::array{2, 4, 8, 16}[rng() % 4];
+                q.snap = std::array{0, 1, 2, 4, 8, 16, 32, -8, -16}[rng() % 9];
+                if (rng() % 3 == 0)
+                    q.blocks.clear();
+                for (int k = 0; k < int(rng() % 4); ++k)
+                    q.blocks.push_back({int(rng() % kLivePads), int(rng() % uint32_t(q.loopTicks())), 1 + int(rng() % 384)});
+                break;
+            }
+            }
+            break;
+        }
         default: { // a marker or region
             Marker m;
             m.id = tl.allocId();
@@ -1040,7 +1139,13 @@ void editFuzz(const QString& mediaDir, int iterations)
         ++steps;
         if (i % 10 == 0 && !exercise(*project.snapshot(), comp, mixer))
             problem = QStringLiteral("step %1 (op %2): a picture came back empty or the sound had NaN").arg(i).arg(op);
-        if (i % 50 == 0 && problem.isEmpty()) { // saved and opened again: the same edit
+        // (a project file holds times up to about 11.6 days, so audio sample counts can't overflow: an edit the fuzz has
+        // slowed past that isn't one a file can hold)
+        const bool fileSized = std::all_of(tl.tracks.begin(), tl.tracks.end(), [](const Track& t) {
+            return std::all_of(t.clips.begin(), t.clips.end(),
+                               [](const Clip& c) { return c.end() <= 1'000'000'000'000 && c.generatorSpan <= 1'000'000'000'000; });
+        });
+        if (i % 50 == 0 && problem.isEmpty() && fileSized) { // saved and opened again: the same edit
             const QString file = QDir::temp().filePath(QStringLiteral("mvp-edit-fuzz-%1.mvp").arg(QCoreApplication::applicationPid()));
             Project back;
             QString why;
@@ -1076,6 +1181,15 @@ void editFuzz(const QString& mediaDir, int iterations)
                 for (auto it = a.begin(); it != a.end(); ++it)
                     if (b.value(it.key()) != it.value())
                         differ << it.key();
+                const Timeline& was = kept;
+                const Timeline& now = back.timeline();
+                if (!(was.livePads == now.livePads)) differ << QStringLiteral("livePads");
+                if (!(was.liveEffects == now.liveEffects)) differ << QStringLiteral("liveEffects");
+                if (!(was.liveLayerEffects == now.liveLayerEffects)) differ << QStringLiteral("liveLayerEffects");
+                if (!(was.liveOverlays == now.liveOverlays)) differ << QStringLiteral("liveOverlays");
+                if (!(was.liveScenes == now.liveScenes)) differ << QStringLiteral("liveScenes");
+                if (!(was.liveSetlist == now.liveSetlist)) differ << QStringLiteral("liveSetlist");
+                if (!(was.liveSequence == now.liveSequence)) differ << QStringLiteral("liveSequence");
                 problem = QStringLiteral("step %1 (op %2): opened again, the edit differs (%3)").arg(i).arg(op).arg(differ.join(QStringLiteral(", ")));
                 if (qEnvironmentVariableIsSet("MVP_EDIT_DIFF"))
                     for (const QString& key : differ)
@@ -1087,7 +1201,7 @@ void editFuzz(const QString& mediaDir, int iterations)
     }
     check(problem.isEmpty(),
           QStringLiteral("random editing: %1 edits (insert, split, delete, ripple, group, tracks, titles, speed, trims, ramps, reverse, "
-                         "fades, FX, loops, overwrite, transitions, markers, story chapters, multicam, Remove Silences, Insert Time, compounds) keep the "
+                         "fades, FX, loops, overwrite, transitions, markers, story chapters, multicam, Remove Silences, Insert Time, compounds, the Live tab) keep the "
                          "timeline sound%2")
               .arg(steps)
               .arg(problem.isEmpty() ? QString() : QStringLiteral(": ") + problem));

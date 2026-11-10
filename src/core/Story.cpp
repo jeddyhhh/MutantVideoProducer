@@ -221,8 +221,10 @@ bool updateChapter(Timeline& tl, int id, const QString& name, const QString& scr
         if (auto* c = tl.findClip(cid)) {
             if (stretch.count(cid) && c->start == at && c->length == old) {
                 c->length = duration;
-                const auto available = c->narration["story_source_duration"].toString().toLongLong();
-                if (available > 0 && !c->narration["story_source_still"].toBool() && c->sourceIn + c->sourceSpan() > available)
+                ops::clampFades(*c); // (shortened: its fades within it)
+                const auto available = c->narration.value(QLatin1String("story_source_duration")).toString().toLongLong();
+                if (available > 0 && !c->narration.value(QLatin1String("story_source_still")).toBool()
+                    && c->sourceIn + c->sourceSpan() > available)
                     c->loopLength = available;
             }
             if (c->narration.contains("takes"))
@@ -643,6 +645,7 @@ bool replaceCompound(Timeline& tl, int clipId, const Timeline& content, bool rip
             c->length = full ? immutable->duration() : std::min(c->length, ops::maxClipLength(nullptr, *c));
             if (c->length <= 0)
                 return fail(error, "A trimmed container would have no source left after this edit.");
+            ops::clampFades(*c); // (made shorter: its fades within it)
         }
     tl.nextId = std::max(tl.nextId, content.nextId);
     tl.sortClips();

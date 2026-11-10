@@ -47,6 +47,8 @@ What changed in each version of Mutant Video Producer. The newest is first.
 - A Freeze in the Middle speed ramp on a very short event (a frame or two) became a slow ramp down after the project
   was saved and opened again: its jumps had been squeezed onto one time. A story chapter with no narration window
   had its footage sound's level change the same way.
+- A compound sequence made shorter by editing its content (or a chapter's clip shortened with its chapter) kept a
+  fade longer than itself, which changed when the project was opened again.
 - Multicam: after an angle's event was split (Split with nothing selected, Remove Silences and Insert Time split
   every track), cutting or switching to that angle past the split said "no picture there" and left a gap. An angle is
   now all the pieces of its event; a cut-short stretch's fade is kept within it. Deleting the first piece of a split
