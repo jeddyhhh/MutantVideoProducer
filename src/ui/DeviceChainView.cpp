@@ -14,6 +14,7 @@
 #include "ui/PreviewWidget.h"
 #include "core/EffectMask.h"
 #include "core/MotionTracker.h"
+#include "core/Compositor.h"
 #include "core/PanCrop.h"
 #include "core/Stabilizer.h"
 #include "core/LiveModulation.h"
@@ -50,6 +51,8 @@
 #include <QMimeData>
 #include <QMouseEvent>
 #include <QPainter>
+#include <QPainterPath>
+#include <QThreadPool>
 #include <QPushButton>
 #include <QScrollArea>
 #include <QScrollBar>
@@ -67,6 +70,68 @@
 namespace {
 
 constexpr int kBodyHeight = 140;
+
+// A device's family colour (its category's): its title tinted, a stripe down its left side, its cable to the next.
+QColor familyColour(const QString& type)
+{
+    if (type.startsWith(QLatin1String("user.")))
+        return QColor(0xffd23f); // (the Effect Builder's)
+    if (type.startsWith(QLatin1String("retro.")))
+        return QColor(0x5ce1e6);
+    static const std::map<QString, QColor> kFamilies = {
+        {QStringLiteral("Color"), QColor(0xff8a3d)},        {QStringLiteral("Blur & Sharpen"), QColor(0x4fa3ff)},
+        {QStringLiteral("Stylize"), QColor(0xc86bff)},      {QStringLiteral("Keying & Compositing"), QColor(0x3ddc84)},
+        {QStringLiteral("Utility"), QColor(0x9aa4b2)},      {QStringLiteral("Advanced"), QColor(0xffd23f)},
+        {QStringLiteral("Dynamics"), QColor(0xff5a7a)},     {QStringLiteral("EQ & Filters"), QColor(0x33d1c6)},
+        {QStringLiteral("Reverb & Delay"), QColor(0x7a8cff)}, {QStringLiteral("Modulation"), QColor(0xff7ad9)},
+        {QStringLiteral("Restoration"), QColor(0x8bd450)},  {QStringLiteral("Plugins"), QColor(0xb0b0b0)}};
+    const auto meta = effectMeta(type);
+    const QString family = meta ? meta->category : QString();
+    if (auto it = kFamilies.find(family); it != kFamilies.end())
+        return it->second;
+    static const QColor kOthers[] = {QColor(0xff6b6b), QColor(0x4ecdc4), QColor(0xa29bfe), QColor(0xfdcb6e), QColor(0x55efc4),
+                                     QColor(0xfd79a8), QColor(0x74b9ff), QColor(0xe17055)};
+    return kOthers[qHash(family) % (sizeof(kOthers) / sizeof(kOthers[0]))]; // (the glitch and console families, and the rest)
+}
+
+// The picture after a device, at the cursor (DeviceChainView::renderPreviews fills it in).
+class DevicePreview : public QWidget {
+public:
+    explicit DevicePreview(int height)
+    {
+        const int h = std::max(40, height - 16);
+        setFixedSize(std::min(160, h * 16 / 9), h);
+        setToolTip(QObject::tr("The picture after this effect, at the cursor (the event alone, through the chain up to here)"));
+    }
+    void setImage(const QImage& image)
+    {
+        m_image = image;
+        update();
+    }
+
+protected:
+    void paintEvent(QPaintEvent*) override
+    {
+        QPainter p(this);
+        p.setRenderHint(QPainter::Antialiasing, true);
+        p.setRenderHint(QPainter::SmoothPixmapTransform, true);
+        const QRectF r = QRectF(rect()).adjusted(1, 1, -1, -1);
+        p.setPen(QPen(theme::c().deep, 1));
+        p.setBrush(theme::c().base);
+        p.drawRoundedRect(r, 3, 3);
+        if (m_image.isNull()) {
+            p.setPen(theme::c().faint);
+            p.drawText(r, Qt::AlignCenter, QStringLiteral("…"));
+            return;
+        }
+        const QSizeF s = QSizeF(m_image.size()).scaled(r.size() - QSizeF(4, 4), Qt::KeepAspectRatio);
+        const QRectF img(r.center().x() - s.width() / 2, r.center().y() - s.height() / 2, s.width(), s.height());
+        p.drawImage(img, m_image);
+    }
+
+private:
+    QImage m_image;
+};
 
 QString pathToString(const ChainPath& p)
 {
@@ -401,7 +466,12 @@ public:
         setFixedHeight(22);
         setAutoFillBackground(true);
         QPalette pal = palette();
-        pal.setColor(QPalette::Window, selected ? theme::c().key.darker(170) : theme::c().panel);
+        QColor tint = theme::c().panel; // (a device's title: tinted with its family's colour)
+        if (!m_isRack) {
+            const QColor f = familyColour(e.type);
+            tint = QColor::fromRgbF(tint.redF() * 0.7 + f.redF() * 0.3, tint.greenF() * 0.7 + f.greenF() * 0.3, tint.blueF() * 0.7 + f.blueF() * 0.3);
+        }
+        pal.setColor(QPalette::Window, selected ? theme::c().key.darker(170) : tint);
         setPalette(pal);
         auto* l = new QHBoxLayout(this);
         l->setContentsMargins(3, 0, 3, 0);
@@ -603,6 +673,51 @@ protected:
         showIndicator(dropIndex(e->position().toPoint().x()));
     }
     void dragLeaveEvent(QDragLeaveEvent*) override { m_indicator->hide(); }
+    // Cables: the picture's (or sound's) way through the chain, from a jack on the left through each device in turn
+    // to one on the right, each cable in the colours of the devices it joins.
+    void paintEvent(QPaintEvent*) override
+    {
+        if (m_devices.empty())
+            return;
+        QPainter p(this);
+        p.setRenderHint(QPainter::Antialiasing, true);
+        const QColor plain = theme::c().faint;
+        auto colour = [&](size_t i) { return i < m_colours.size() && m_colours[i].isValid() ? m_colours[i] : plain; };
+        auto cable = [&](QPointF a, QPointF b, QColor from, QColor to) {
+            QPainterPath path(a);
+            const double sag = std::min(10.0, (b.x() - a.x()) * 0.35);
+            path.cubicTo(a + QPointF((b.x() - a.x()) * 0.4, sag), b - QPointF((b.x() - a.x()) * 0.4, -sag), b);
+            QLinearGradient g(a, b);
+            g.setColorAt(0, from);
+            g.setColorAt(1, to);
+            p.setPen(QPen(QColor(0, 0, 0, 110), 7, Qt::SolidLine, Qt::RoundCap)); // (its shadow)
+            p.drawPath(path.translated(0, 2));
+            p.setPen(QPen(QBrush(g), 4.5, Qt::SolidLine, Qt::RoundCap));
+            p.drawPath(path);
+            p.setPen(QPen(QColor(255, 255, 255, 70), 1.2, Qt::SolidLine, Qt::RoundCap)); // (a highlight along it)
+            p.drawPath(path.translated(0, -1.2));
+            for (const auto& [at, c] : {std::pair{a, from}, std::pair{b, to}}) { // the plugs
+                p.setPen(QPen(c.darker(170), 1));
+                p.setBrush(c.darker(120));
+                p.drawRoundedRect(QRectF(at.x() - 3.5, at.y() - 5.5, 7, 11), 2, 2);
+            }
+        };
+        auto y = [&](QWidget* d) { return d->geometry().top() + 11.0; }; // (the title bar's middle)
+        auto jack = [&](QPointF at) {
+            p.setPen(QPen(theme::c().line, 1.5));
+            p.setBrush(theme::c().deep);
+            p.drawEllipse(at, 5, 5);
+        };
+        const QPointF in(7, y(m_devices.front()));
+        jack(in);
+        cable(in + QPointF(5, 0), QPointF(m_devices.front()->geometry().left() - 1, y(m_devices.front())), plain, colour(0));
+        for (size_t i = 0; i + 1 < m_devices.size(); ++i)
+            cable(QPointF(m_devices[i]->geometry().right() + 1, y(m_devices[i])), QPointF(m_devices[i + 1]->geometry().left() - 1, y(m_devices[i + 1])),
+                  colour(i), colour(i + 1));
+        const QPointF out(m_devices.back()->geometry().right() + 18, y(m_devices.back()));
+        cable(QPointF(m_devices.back()->geometry().right() + 1, out.y()), out - QPointF(5, 0), colour(m_devices.size() - 1), plain);
+        jack(out);
+    }
     void dropEvent(QDropEvent* e) override
     {
         m_indicator->hide();
@@ -634,6 +749,7 @@ private:
     DeviceChainView* m_view;
     ChainPath m_path;
     std::vector<QWidget*> m_devices;
+    std::vector<QColor> m_colours; // (each device's family colour: its cables)
     QFrame* m_indicator;
 };
 
@@ -765,7 +881,8 @@ class DeviceWidget : public QFrame {
 public:
     // Devices nested in a rack keep the standard height (the rack grows to fit them).
     DeviceWidget(DeviceChainView* view, const ChainPath& path, int index, const EffectInstance& e, bool nested)
-        : m_view(view), m_effectId(e.id), m_user(e.type.startsWith(QLatin1String("user.")))
+        : m_view(view), m_effectId(e.id), m_user(e.type.startsWith(QLatin1String("user."))),
+          m_family(e.isRack() ? QColor() : familyColour(e.type))
     {
         const int bodyHeight = nested ? kBodyHeight : view->m_bodyHeight;
         const bool selected = view->m_selected.count(e.id) > 0;
@@ -837,6 +954,14 @@ public:
         auto* bodyRow = new QHBoxLayout(body);
         bodyRow->setContentsMargins(0, 0, 0, 0);
         bodyRow->setSpacing(0);
+        if (path.steps.empty() && view->previewable()) { // (the picture after it: devices of the chain itself, not a rack's)
+            auto* thumb = new DevicePreview(bodyHeight);
+            bodyRow->addSpacing(6);
+            bodyRow->addWidget(thumb, 0, Qt::AlignVCenter);
+            view->m_thumbs[e.id] = thumb;
+            if (auto it = view->m_thumbImages.find(e.id); it != view->m_thumbImages.end())
+                thumb->setImage(it->second); // (the last one made, until the next)
+        }
         if (meta && meta->params && !m_user) {
             // The settings as a picture (an EQ's curve, a compressor's transfer curve...), left of the controls.
             const DeviceChainView::ParamRef ref{path, index, -1};
@@ -984,6 +1109,8 @@ public:
         finish();
     }
 
+    QColor family() const { return m_family; }
+
 protected:
     void mouseDoubleClickEvent(QMouseEvent* e) override
     {
@@ -992,11 +1119,20 @@ protected:
         else
             QFrame::mouseDoubleClickEvent(e);
     }
+    void paintEvent(QPaintEvent* e) override
+    {
+        QFrame::paintEvent(e);
+        if (!m_family.isValid())
+            return;
+        QPainter p(this); // its family's stripe, down the left side
+        p.fillRect(QRect(lineWidth(), lineWidth(), 3, height() - 2 * lineWidth()), m_family);
+    }
 
 private:
     DeviceChainView* m_view;
     int m_effectId;
     bool m_user;
+    QColor m_family;
 };
 
 ChainStrip::ChainStrip(DeviceChainView* view, ChainPath path, const EffectChain& chain, bool nested)
@@ -1004,11 +1140,12 @@ ChainStrip::ChainStrip(DeviceChainView* view, ChainPath path, const EffectChain&
 {
     setAcceptDrops(true);
     auto* l = new QHBoxLayout(this);
-    l->setContentsMargins(6, 4, 24, 4);
-    l->setSpacing(8);
+    l->setContentsMargins(chain.empty() ? 6 : 22, 4, chain.empty() ? 24 : 34, 4); // (room for the jacks and cables)
+    l->setSpacing(chain.empty() ? 8 : 22);
     for (int i = 0; i < int(chain.size()); ++i) {
         auto* d = new DeviceWidget(view, m_path, i, chain[size_t(i)], nested);
         m_devices.push_back(d);
+        m_colours.push_back(d->family());
         l->addWidget(d, 0, Qt::AlignTop);
     }
     if (chain.empty()) {
@@ -1262,7 +1399,11 @@ DeviceChainView::DeviceChainView(Project* project, std::function<TimeUs()> curso
         else
             refreshValues();
     });
+    m_thumbTimer.setSingleShot(true);
+    m_thumbTimer.setInterval(250);
+    connect(&m_thumbTimer, &QTimer::timeout, this, &DeviceChainView::renderPreviews);
     connect(m_project, &Project::changed, this, [this] {
+        schedulePreviews(); // (a setting dragged too)
         if (m_applying)
             return;
         // Changed elsewhere (undo, timeline edit): drop any pending burst.
@@ -1386,6 +1527,10 @@ TimeUs DeviceChainView::keyTolerance() const
 void DeviceChainView::setTarget(const FxTarget& target)
 {
     const FxTarget t = target.isChain() ? target : FxTarget{};
+    if (!(t == m_target)) { // (another chain: its own pictures, and none of the last one's still on the way)
+        m_thumbImages.clear();
+        ++m_thumbGeneration;
+    }
     emit targetChanged(t);
     // Remember the event / track context for the scope tabs.
     const Timeline& tl = m_project->timeline();
@@ -3032,6 +3177,7 @@ void DeviceChainView::rebuild()
     m_key = structureKey();
     m_controls.clear();
     m_displays.clear();
+    m_thumbs.clear();
     const int scrollX = m_scroll->horizontalScrollBar()->value();
     if (QWidget* old = m_scroll->takeWidget())
         old->deleteLater();
@@ -3109,4 +3255,106 @@ void DeviceChainView::refreshValues()
         d->update();
     if (m_preview && m_maskOverlay && m_preview->overlay() == m_maskOverlay.get())
         m_preview->update();
+    schedulePreviews();
+}
+
+bool DeviceChainView::previewable() const
+{
+    if (isAudio() || !targetExists())
+        return false;
+    return m_target.kind == FxTarget::Kind::Clip || m_target.kind == FxTarget::Kind::Track || m_target.kind == FxTarget::Kind::Output;
+}
+
+void DeviceChainView::schedulePreviews()
+{
+    if (!m_thumbs.empty() && previewable())
+        m_thumbTimer.start();
+}
+
+void DeviceChainView::renderPreviews()
+{
+    if (m_thumbs.empty() || !previewable())
+        return;
+    if (m_thumbBusy) { // (one at a time: this one again when it is done)
+        m_thumbAgain = true;
+        return;
+    }
+    const auto source = m_project->snapshot();
+    const Timeline& tl = source->timeline;
+    const EffectChain* chain = root(tl);
+    if (!chain || chain->empty())
+        return;
+    // What goes into the chain: the event alone (without its effects, fades or transitions), the track alone (without its
+    // effects), or the whole picture (without the output's effects).
+    auto snap = std::make_shared<ProjectSnapshot>(*source);
+    TimeUs at = m_cursor(), local = at;
+    const FrameRate fps = source->settings.fps;
+    if (m_target.kind == FxTarget::Kind::Clip) {
+        int ti = -1;
+        const Clip* c = tl.findClip(m_target.id, &ti);
+        if (!c || ti < 0)
+            return;
+        at = std::clamp(at, c->start, std::max(c->start, c->end() - fps.frameDuration()));
+        local = at - c->start;
+        Track track = tl.tracks[size_t(ti)];
+        Clip only = *c;
+        only.effects.clear();
+        only.transitionIn = only.transitionOut = {};
+        only.fadeIn = only.fadeOut = 0;
+        only.gain = 1;
+        only.muted = false;
+        track.clips = {only};
+        track.effects.clear();
+        track.muted = false;
+        track.level = 1;
+        track.blend = 0;
+        track.matte = 0;
+        track.composite = Envelope{false, 1.0, {}};
+        snap->timeline.tracks = {track};
+    } else if (m_target.kind == FxTarget::Kind::Track) {
+        const int ti = tl.trackIndex(m_target.id);
+        if (ti < 0)
+            return;
+        Track track = tl.tracks[size_t(ti)];
+        track.effects.clear();
+        track.muted = false;
+        track.blend = 0;
+        track.matte = 0;
+        snap->timeline.tracks = {track};
+    }
+    snap->timeline.outputEffects.clear();
+    const QSize size(256, std::max(2, int(256.0 * source->settings.height / std::max(1, source->settings.width))));
+    const int generation = ++m_thumbGeneration;
+    m_thumbBusy = true;
+    QPointer<DeviceChainView> self(this);
+    QThreadPool::globalInstance()->start([self, snap, devices = *chain, at, local, size, rate = fps.toDouble(), generation] {
+        std::map<int, QImage> made;
+        {
+            Compositor renderer(false); // (its own: the editor's is the preview's)
+            QImage picture = renderer.render(*snap, at, size);
+            for (const EffectInstance& e : devices) {
+                if (e.enabled && !picture.isNull())
+                    picture = renderer.renderLive(picture, EffectChain{e}, local, rate, true);
+                QImage flat(picture.size(), QImage::Format_RGB32);
+                flat.fill(Qt::black);
+                QPainter(&flat).drawImage(0, 0, picture);
+                made[e.id] = flat;
+            }
+        }
+        QMetaObject::invokeMethod(qApp, [self, made = std::move(made), generation] {
+            if (!self)
+                return;
+            self->m_thumbBusy = false;
+            if (generation == self->m_thumbGeneration) {
+                self->m_thumbImages = made;
+                for (const auto& [id, image] : made)
+                    if (auto it = self->m_thumbs.find(id); it != self->m_thumbs.end())
+                        static_cast<DevicePreview*>(it->second)->setImage(image);
+            }
+            if (self->m_thumbAgain) {
+                self->m_thumbAgain = false;
+                self->schedulePreviews();
+            }
+        });
+    });
 }

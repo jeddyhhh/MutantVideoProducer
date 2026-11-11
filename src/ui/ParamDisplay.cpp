@@ -753,6 +753,271 @@ private:
     std::vector<std::pair<QString, QString>> m_pairs;
 };
 
+// ---- Blur: how far each pixel spreads (the bell curves across and down, and the footprint) ------------------------------
+
+class BlurDisplay : public HandleDisplay {
+public:
+    BlurDisplay(const std::vector<ParamDef>& defs, Get get, Set set) : HandleDisplay(defs, std::move(get), std::move(set))
+    {
+        setFixedWidth(130);
+        setToolTip(tr("How far each point spreads: across (the curve at the bottom) and down (at the left). Drag the handles."));
+    }
+
+private:
+    static constexpr double kMost = 200; // (the radius at the plot's edge; square-root scaled so small radii show)
+    double reach(double radius, double half) const { return std::sqrt(std::clamp(radius, 0.0, kMost) / kMost) * half; }
+    double fromReach(double d, double half) const { return std::pow(std::clamp(d / half, 0.0, 1.0), 2) * kMost; }
+    void paintPlot(QPainter& p, const QRectF& r) const override
+    {
+        const QPointF c = r.center();
+        const double rx = std::max(1.5, reach(value("horizontal"), r.width() / 2 - 6));
+        const double ry = std::max(1.5, reach(value("vertical"), r.height() / 2 - 6));
+        QRadialGradient g(c, 1);
+        g.setColorAt(0, alpha(theme::c().accent, 200));
+        g.setColorAt(1, alpha(theme::c().accent, 0));
+        p.save();
+        p.translate(c);
+        p.scale(rx, ry);
+        p.setPen(Qt::NoPen);
+        p.setBrush(g);
+        p.drawEllipse(QPointF(0, 0), 1, 1);
+        p.restore();
+        p.setBrush(Qt::NoBrush);
+        p.setPen(QPen(alpha(theme::c().ink, 60), 1, Qt::DashLine));
+        p.drawEllipse(c, rx, ry);
+        auto bell = [&](bool across) { // a Gaussian with sigma = reach / 2.5, along the bottom or the left edge
+            QPainterPath path;
+            const double sigma = (across ? rx : ry) / 2.5;
+            for (int i = 0; i <= 80; ++i) {
+                const double u = (i / 80.0 - 0.5) * (across ? r.width() : r.height());
+                const double v = std::exp(-u * u / (2 * sigma * sigma)) * 22;
+                const QPointF pt = across ? QPointF(c.x() + u, r.bottom() - 3 - v) : QPointF(r.left() + 3 + v, c.y() + u);
+                if (i == 0)
+                    path.moveTo(pt);
+                else
+                    path.lineTo(pt);
+            }
+            p.setPen(QPen(theme::c().bright, 1.4));
+            p.drawPath(path);
+        };
+        bell(true);
+        bell(false);
+    }
+    std::vector<Handle> handles() const override
+    {
+        const QRectF r = plot();
+        const QPointF c = r.center();
+        const double hx = r.width() / 2 - 6, hy = r.height() / 2 - 6;
+        return {{QPointF(c.x() + reach(value("horizontal"), hx), c.y()), QString(), tr("Across %1 px").arg(value("horizontal"), 0, 'f', 1),
+                 [this, c, hx](QPointF m) { setValue("horizontal", fromReach(m.x() - c.x(), hx)); }},
+                {QPointF(c.x(), c.y() - reach(value("vertical"), hy)), QString(), tr("Down %1 px").arg(value("vertical"), 0, 'f', 1),
+                 [this, c, hy](QPointF m) { setValue("vertical", fromReach(c.y() - m.y(), hy)); }}};
+    }
+};
+
+// ---- Sharpen: an edge, as it is (dashed) and sharpened (unsharp masking: the overshoot either side) --------------------
+
+class SharpenDisplay : public HandleDisplay {
+public:
+    SharpenDisplay(const std::vector<ParamDef>& defs, Get get, Set set) : HandleDisplay(defs, std::move(get), std::move(set))
+    {
+        setFixedWidth(130);
+        setToolTip(tr("A dark-to-light edge, as it is (dashed) and sharpened: Amount is how far it overshoots, Radius how wide."));
+    }
+
+private:
+    void paintPlot(QPainter& p, const QRectF& r) const override
+    {
+        const double amount = value("amount"), sigma = std::max(0.3, value("radius"));
+        constexpr double kSpan = 24; // pixels either side of the edge
+        auto y = [&](double v) { return r.bottom() - 8 - (r.height() - 16) * (0.15 + 0.7 * std::clamp(v, -0.2, 1.2) / 1.0) / 1.15; };
+        QPainterPath before, after;
+        for (int i = 0; i <= 120; ++i) {
+            const double x = (i / 120.0 - 0.5) * 2 * kSpan;
+            const double step = x >= 0 ? 1.0 : 0.0;
+            const double blurred = 0.5 * std::erfc(-x / (sigma * std::sqrt(2.0)));
+            const double out = step + amount * (step - blurred);
+            const double px = r.left() + r.width() * i / 120.0;
+            if (i == 0) {
+                before.moveTo(px, y(step));
+                after.moveTo(px, y(out));
+            } else {
+                before.lineTo(px, y(step));
+                after.lineTo(px, y(out));
+            }
+        }
+        p.setPen(QPen(alpha(theme::c().ink, 70), 1, Qt::DashLine));
+        p.drawPath(before);
+        p.setPen(QPen(theme::c().accent, 1.8));
+        p.drawPath(after);
+    }
+};
+
+// ---- Glow: which brightnesses glow, and how strongly ---------------------------------------------------------------------
+
+class GlowDisplay : public HandleDisplay {
+public:
+    GlowDisplay(const std::vector<ParamDef>& defs, Get get, Set set) : HandleDisplay(defs, std::move(get), std::move(set))
+    {
+        setFixedWidth(130);
+        setToolTip(tr("Brightness across (dark to bright): what is above the threshold glows, as strongly as the curve is high. Drag "
+                      "the handle: across for the threshold, up for the intensity."));
+    }
+
+private:
+    void paintPlot(QPainter& p, const QRectF& r) const override
+    {
+        const double th = value("threshold"), in = value("intensity");
+        QLinearGradient ramp(r.topLeft(), r.topRight());
+        ramp.setColorAt(0, QColor(0, 0, 0));
+        ramp.setColorAt(1, QColor(255, 255, 255));
+        p.fillRect(QRectF(r.left(), r.bottom() - 6, r.width(), 6), ramp);
+        QPainterPath area;
+        area.moveTo(r.left(), r.bottom() - 6);
+        for (int i = 0; i <= 100; ++i) {
+            const double l = i / 100.0, e0 = th, e1 = std::min(1.0, th + 0.15);
+            const double t = std::clamp((l - e0) / std::max(1e-4, e1 - e0), 0.0, 1.0);
+            const double k = t * t * (3 - 2 * t) * in / 3.0;
+            area.lineTo(r.left() + r.width() * l, r.bottom() - 6 - (r.height() - 12) * k);
+        }
+        area.lineTo(r.right(), r.bottom() - 6);
+        area.closeSubpath();
+        QLinearGradient fill(r.bottomLeft(), r.topLeft());
+        fill.setColorAt(0, alpha(theme::c().accent, 60));
+        fill.setColorAt(1, alpha(QColor(255, 240, 200), 200));
+        p.fillPath(area, fill);
+        p.setPen(QPen(theme::c().bright, 1.4));
+        p.drawPath(area);
+        p.setPen(QPen(alpha(theme::c().key, 160), 1, Qt::DashLine));
+        const double x = r.left() + r.width() * th;
+        p.drawLine(QPointF(x, r.top()), QPointF(x, r.bottom()));
+    }
+    std::vector<Handle> handles() const override
+    {
+        const QRectF r = plot();
+        const double x = r.left() + r.width() * value("threshold");
+        const double y = r.bottom() - 6 - (r.height() - 12) * value("intensity") / 3.0;
+        return {{QPointF(x, y), QString(), tr("Threshold %1, intensity %2").arg(value("threshold"), 0, 'f', 2).arg(value("intensity"), 0, 'f', 2),
+                 [this, r](QPointF m) {
+                     setValue("threshold", (m.x() - r.left()) / r.width());
+                     setValue("intensity", (r.bottom() - 6 - m.y()) / (r.height() - 12) * 3.0);
+                 }}};
+    }
+};
+
+// ---- An effect shown on a test picture (vignette, pixelate...): the effect itself, run on a small card ------------------------
+
+class SwatchDisplay : public HandleDisplay {
+public:
+    SwatchDisplay(const EffectDef& fx, const std::vector<ParamDef>& defs, Get get, Set set)
+        : HandleDisplay(defs, std::move(get), std::move(set)), m_fx(fx)
+    {
+        setFixedWidth(176);
+        setToolTip(tr("The effect on a test picture, with these settings."));
+    }
+
+private:
+    static QImage card(QSize size)
+    {
+        QImage img(size, QImage::Format_ARGB32_Premultiplied);
+        img.fill(Qt::black);
+        QPainter p(&img);
+        QLinearGradient sky(0, 0, 0, size.height());
+        sky.setColorAt(0, QColor(70, 150, 220));
+        sky.setColorAt(0.6, QColor(250, 210, 150));
+        sky.setColorAt(1, QColor(60, 90, 70));
+        p.fillRect(img.rect(), sky);
+        p.setRenderHint(QPainter::Antialiasing, true);
+        p.setPen(Qt::NoPen);
+        p.setBrush(QColor(255, 240, 180));
+        p.drawEllipse(QPointF(size.width() * 0.7, size.height() * 0.38), size.height() * 0.14, size.height() * 0.14);
+        const QColor bars[6] = {QColor(230, 60, 60), QColor(240, 170, 40), QColor(240, 230, 60), QColor(70, 190, 90), QColor(60, 120, 230), QColor(160, 80, 210)};
+        for (int i = 0; i < 6; ++i)
+            p.fillRect(QRectF(size.width() * (0.08 + i * 0.06), size.height() * 0.62, size.width() * 0.05, size.height() * 0.3), bars[i]);
+        p.end(); // (finished before it is handed on: the effect then works on the picture, not a copy being painted)
+        return img;
+    }
+    void paintPlot(QPainter& p, const QRectF& r) const override
+    {
+        const double w = std::min(r.width() - 6, (r.height() - 6) * 16 / 9);
+        const QRectF f(r.center().x() - w / 2, r.center().y() - w * 9 / 32, w, w * 9 / 16);
+        QImage img = card(f.size().toSize());
+        if (m_fx.apply) {
+            RenderContext ctx;
+            ctx.scale = img.width() / 1920.0;
+            ctx.contentRect = QRectF(img.rect());
+            std::unique_ptr<EffectState> state;
+            m_fx.apply(img, params(), ctx, state);
+        }
+        p.drawImage(f, img);
+        p.setPen(QPen(alpha(theme::c().ink, 60), 1));
+        p.setBrush(Qt::NoBrush); // (the frame's brush is still set: it would cover the picture)
+        p.drawRect(f);
+    }
+
+    const EffectDef& m_fx;
+};
+
+// ---- Transform: where the picture goes (its frame, moved, scaled, turned and cropped) -----------------------------------------
+
+class TransformDisplay : public HandleDisplay {
+public:
+    TransformDisplay(const std::vector<ParamDef>& defs, Get get, Set set) : HandleDisplay(defs, std::move(get), std::move(set))
+    {
+        setFixedWidth(176);
+        setToolTip(tr("The frame (dashed) and where the picture goes in it. Drag the middle to move it, the corner to scale it."));
+    }
+
+private:
+    QRectF frame(const QRectF& r) const // a 16:9 frame, a third of the plot each way (so positions off the frame show)
+    {
+        const double w = std::min(r.width() * 0.62, (r.height() * 0.62) * 16 / 9);
+        return QRectF(r.center().x() - w / 2, r.center().y() - w * 9 / 32, w, w * 9 / 16);
+    }
+    QPolygonF placed(const QRectF& f) const
+    {
+        const double W = f.width(), H = f.height();
+        const QRectF crop(value("cropLeft") * W, value("cropTop") * H, W * (1 - value("cropLeft") - value("cropRight")),
+                          H * (1 - value("cropTop") - value("cropBottom")));
+        QTransform m;
+        m.translate(f.left() + W / 2 + value("x") * W, f.top() + H / 2 + value("y") * H);
+        m.rotate(value("rotation"));
+        m.scale(value("scale"), value("scale"));
+        m.translate(-W / 2, -H / 2);
+        return m.map(QPolygonF(crop));
+    }
+    void paintPlot(QPainter& p, const QRectF& r) const override
+    {
+        const QRectF f = frame(r);
+        p.fillRect(f, alpha(theme::c().ink, 14));
+        p.setPen(QPen(alpha(theme::c().ink, 90), 1, Qt::DashLine));
+        p.drawRect(f);
+        const QPolygonF q = placed(f);
+        p.setPen(QPen(theme::c().accent, 1.6));
+        p.setBrush(alpha(theme::c().accent, int(40 + 60 * value("opacity"))));
+        p.drawPolygon(q);
+        p.setBrush(Qt::NoBrush);
+        p.setPen(QPen(theme::c().bright, 1.2));
+        p.drawLine(q[0], q[1]); // (its top edge brighter: which way up it is)
+    }
+    std::vector<Handle> handles() const override
+    {
+        const QRectF f = frame(plot());
+        const QPolygonF q = placed(f);
+        const QPointF mid = (q[0] + q[2]) / 2;
+        const double W = f.width(), H = f.height();
+        return {{mid, QString(), tr("Position %1, %2").arg(value("x"), 0, 'f', 3).arg(value("y"), 0, 'f', 3),
+                 [this, f, W, H](QPointF m) {
+                     setValue("x", (m.x() - f.left() - W / 2) / W);
+                     setValue("y", (m.y() - f.top() - H / 2) / H);
+                 }},
+                {q[2], QString(), tr("Scale %1").arg(value("scale"), 0, 'f', 3),
+                 [this, mid, W, H](QPointF m) { // (the corner's distance from the middle, against the full frame's half diagonal)
+                     setValue("scale", QLineF(mid, m).length() / (std::hypot(W, H) / 2));
+                 }}};
+    }
+};
+
 } // namespace
 
 ParamDisplay::ParamDisplay(const std::vector<ParamDef>& defs, Get get, Set set) : m_defs(defs), m_get(std::move(get)), m_set(std::move(set))
@@ -813,9 +1078,19 @@ ParamDisplay* ParamDisplay::create(const QString& type, const std::vector<ParamD
         return new SweepDisplay(defs, std::move(get), std::move(set));
     if (type == QLatin1String("a_stereo"))
         return new StereoDisplay(defs, std::move(get), std::move(set));
+    if (type == QLatin1String("gaussian_blur"))
+        return new BlurDisplay(defs, std::move(get), std::move(set));
+    if (type == QLatin1String("sharpen"))
+        return new SharpenDisplay(defs, std::move(get), std::move(set));
+    if (type == QLatin1String("glow"))
+        return new GlowDisplay(defs, std::move(get), std::move(set));
+    if (type == QLatin1String("transform"))
+        return new TransformDisplay(defs, std::move(get), std::move(set));
     const EffectDef* fx = findEffect(type);
     if (!fx)
         return nullptr;
+    if ((type == QLatin1String("vignette") || type == QLatin1String("pixelate")) && fx->apply)
+        return new SwatchDisplay(*fx, defs, std::move(get), std::move(set));
     if (fx->luts)
         return new CurvesDisplay(*fx, defs, std::move(get), std::move(set));
     if (fx->colorMatrix)

@@ -4,6 +4,7 @@
 #include "core/Project.h"
 #include "ui/FxTarget.h"
 
+#include <QImage>
 #include <QTimer>
 #include <QWidget>
 #include <functional>
@@ -160,6 +161,11 @@ private:
     void changeEvent(QEvent* e) override; // a new theme: the devices are built again in its colours
     void refreshValues();
     QString structureKey() const;
+    // The devices' pictures (what the picture looks like after each one, at the cursor): an event's, a track's or the
+    // output's video chain. Made in the background a moment after the cursor or a setting stops changing.
+    bool previewable() const;
+    void schedulePreviews();
+    void renderPreviews();
 
     Project* m_project;
     std::function<TimeUs()> m_cursor;
@@ -182,6 +188,11 @@ private:
     int m_bodyHeight = 140; // height of a (top-level) device's controls
     std::vector<ParamControl*> m_controls;
     std::vector<QWidget*> m_displays; // the devices' pictures of their settings (ParamDisplay), drawn again as values change
+    std::map<int, QWidget*> m_thumbs;             // effect id -> its preview (a DevicePreview, in the current widgets)
+    std::map<int, QImage> m_thumbImages;           // the last pictures made (shown again when the widgets are rebuilt)
+    QTimer m_thumbTimer;
+    int m_thumbGeneration = 0;
+    bool m_thumbBusy = false, m_thumbAgain = false;
     std::map<int, int> m_rackChain; // rack effect id -> chain shown
     std::set<int> m_folded;         // effect ids
     std::set<int> m_selected;       // effect ids

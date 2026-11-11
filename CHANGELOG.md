@@ -6,6 +6,15 @@ What changed in each version of Mutant Video Producer. The newest is first.
 
 ### Added
 
+- Effect devices show the picture after each effect, at the cursor: the event (or track, or the whole picture for the
+  output's effects) run through the chain up to that device, made in the background a moment after the cursor or a
+  setting stops moving.
+- Pictures of their settings for Gaussian Blur (how far a point spreads, with handles), Sharpen (an edge and its
+  overshoot), Glow (which brightnesses glow, with a handle), Vignette and Pixelate (the effect on a test card) and
+  Transform (where the picture goes in the frame: drag to move or scale).
+- Devices are coloured by family (colour, blur, stylize, keying, dynamics, EQ...): a tinted title and a stripe down the
+  side, and cables between them in their colours, from a jack on the left to one on the right.
+
 - **Paste Event Attributes** (Edit, Ctrl+Shift+V) gives the selected events the copied event's effects, Pan/Crop,
   fades, transitions, level, playback rate, fixes and label; **Selectively Paste Event Attributes...** picks which.
 - **Replace Media** (right-click an event): it shows another file, keeping its place, trims, effects and keyframes
