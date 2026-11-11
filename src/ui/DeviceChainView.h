@@ -190,6 +190,7 @@ private:
     std::vector<QWidget*> m_displays; // the devices' pictures of their settings (ParamDisplay), drawn again as values change
     std::map<int, QWidget*> m_thumbs;             // effect id -> its preview (a DevicePreview, in the current widgets)
     std::map<int, QImage> m_thumbImages;           // the last pictures made (shown again when the widgets are rebuilt)
+    std::set<int> m_previewOpen;                   // effect ids whose picture drawer is open
     QTimer m_thumbTimer;
     int m_thumbGeneration = 0;
     bool m_thumbBusy = false, m_thumbAgain = false;

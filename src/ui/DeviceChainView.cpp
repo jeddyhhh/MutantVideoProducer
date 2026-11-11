@@ -51,7 +51,8 @@
 #include <QMimeData>
 #include <QMouseEvent>
 #include <QPainter>
-#include <QPainterPath>
+#include <QPropertyAnimation>
+#include <QAbstractButton>
 #include <QThreadPool>
 #include <QPushButton>
 #include <QScrollArea>
@@ -93,6 +94,67 @@ QColor familyColour(const QString& type)
                                      QColor(0xfd79a8), QColor(0x74b9ff), QColor(0xe17055)};
     return kOthers[qHash(family) % (sizeof(kOthers) / sizeof(kOthers[0]))]; // (the glitch and console families, and the rest)
 }
+
+// The thin tab down a device's left side that opens (and shuts) the drawer with its picture.
+class DrawerTab : public QAbstractButton {
+public:
+    explicit DrawerTab(bool open) : m_open(open)
+    {
+        setFixedWidth(13);
+        setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Expanding);
+        setCursor(Qt::PointingHandCursor);
+        setFocusPolicy(Qt::NoFocus);
+        setAttribute(Qt::WA_Hover, true);
+        tip();
+    }
+    void setOpen(bool open)
+    {
+        m_open = open;
+        tip();
+        update();
+    }
+
+protected:
+    void paintEvent(QPaintEvent*) override
+    {
+        QPainter p(this);
+        p.setRenderHint(QPainter::Antialiasing, true);
+        const bool hot = underMouse();
+        const QRectF r = QRectF(rect()).adjusted(1, 3, -1, -3);
+        p.setPen(Qt::NoPen);
+        p.setBrush(hot ? theme::c().line : theme::c().panel);
+        p.drawRoundedRect(r, 4, 4);
+        // An arrow at the top, pointing the way the drawer will go; the word down the middle.
+        const QColor ink = hot || m_open ? theme::c().key : theme::c().faint;
+        const double cx = r.center().x(), ty = r.top() + 10;
+        QPolygonF arrow;
+        if (m_open)
+            arrow << QPointF(cx + 2.5, ty - 4) << QPointF(cx - 2.5, ty) << QPointF(cx + 2.5, ty + 4);
+        else
+            arrow << QPointF(cx - 2.5, ty - 4) << QPointF(cx + 2.5, ty) << QPointF(cx - 2.5, ty + 4);
+        p.setBrush(ink);
+        p.drawPolygon(arrow);
+        QFont f = font();
+        f.setPointSizeF(6.5);
+        f.setBold(true);
+        f.setLetterSpacing(QFont::AbsoluteSpacing, 1.2);
+        p.setFont(f);
+        p.setPen(ink);
+        p.save();
+        p.translate(r.center().x(), r.center().y() + 6);
+        p.rotate(-90);
+        p.drawText(QRectF(-r.height() / 2, -6, r.height(), 12), Qt::AlignCenter, QObject::tr("PICTURE"));
+        p.restore();
+    }
+    QSize sizeHint() const override { return QSize(13, 60); }
+
+private:
+    void tip()
+    {
+        setToolTip(m_open ? QObject::tr("Hide the picture after this effect") : QObject::tr("Show the picture after this effect, at the cursor"));
+    }
+    bool m_open;
+};
 
 // The picture after a device, at the cursor (DeviceChainView::renderPreviews fills it in).
 class DevicePreview : public QWidget {
@@ -673,51 +735,6 @@ protected:
         showIndicator(dropIndex(e->position().toPoint().x()));
     }
     void dragLeaveEvent(QDragLeaveEvent*) override { m_indicator->hide(); }
-    // Cables: the picture's (or sound's) way through the chain, from a jack on the left through each device in turn
-    // to one on the right, each cable in the colours of the devices it joins.
-    void paintEvent(QPaintEvent*) override
-    {
-        if (m_devices.empty())
-            return;
-        QPainter p(this);
-        p.setRenderHint(QPainter::Antialiasing, true);
-        const QColor plain = theme::c().faint;
-        auto colour = [&](size_t i) { return i < m_colours.size() && m_colours[i].isValid() ? m_colours[i] : plain; };
-        auto cable = [&](QPointF a, QPointF b, QColor from, QColor to) {
-            QPainterPath path(a);
-            const double sag = std::min(10.0, (b.x() - a.x()) * 0.35);
-            path.cubicTo(a + QPointF((b.x() - a.x()) * 0.4, sag), b - QPointF((b.x() - a.x()) * 0.4, -sag), b);
-            QLinearGradient g(a, b);
-            g.setColorAt(0, from);
-            g.setColorAt(1, to);
-            p.setPen(QPen(QColor(0, 0, 0, 110), 7, Qt::SolidLine, Qt::RoundCap)); // (its shadow)
-            p.drawPath(path.translated(0, 2));
-            p.setPen(QPen(QBrush(g), 4.5, Qt::SolidLine, Qt::RoundCap));
-            p.drawPath(path);
-            p.setPen(QPen(QColor(255, 255, 255, 70), 1.2, Qt::SolidLine, Qt::RoundCap)); // (a highlight along it)
-            p.drawPath(path.translated(0, -1.2));
-            for (const auto& [at, c] : {std::pair{a, from}, std::pair{b, to}}) { // the plugs
-                p.setPen(QPen(c.darker(170), 1));
-                p.setBrush(c.darker(120));
-                p.drawRoundedRect(QRectF(at.x() - 3.5, at.y() - 5.5, 7, 11), 2, 2);
-            }
-        };
-        auto y = [&](QWidget* d) { return d->geometry().top() + 11.0; }; // (the title bar's middle)
-        auto jack = [&](QPointF at) {
-            p.setPen(QPen(theme::c().line, 1.5));
-            p.setBrush(theme::c().deep);
-            p.drawEllipse(at, 5, 5);
-        };
-        const QPointF in(7, y(m_devices.front()));
-        jack(in);
-        cable(in + QPointF(5, 0), QPointF(m_devices.front()->geometry().left() - 1, y(m_devices.front())), plain, colour(0));
-        for (size_t i = 0; i + 1 < m_devices.size(); ++i)
-            cable(QPointF(m_devices[i]->geometry().right() + 1, y(m_devices[i])), QPointF(m_devices[i + 1]->geometry().left() - 1, y(m_devices[i + 1])),
-                  colour(i), colour(i + 1));
-        const QPointF out(m_devices.back()->geometry().right() + 18, y(m_devices.back()));
-        cable(QPointF(m_devices.back()->geometry().right() + 1, out.y()), out - QPointF(5, 0), colour(m_devices.size() - 1), plain);
-        jack(out);
-    }
     void dropEvent(QDropEvent* e) override
     {
         m_indicator->hide();
@@ -749,7 +766,6 @@ private:
     DeviceChainView* m_view;
     ChainPath m_path;
     std::vector<QWidget*> m_devices;
-    std::vector<QColor> m_colours; // (each device's family colour: its cables)
     QFrame* m_indicator;
 };
 
@@ -954,13 +970,41 @@ public:
         auto* bodyRow = new QHBoxLayout(body);
         bodyRow->setContentsMargins(0, 0, 0, 0);
         bodyRow->setSpacing(0);
-        if (path.steps.empty() && view->previewable()) { // (the picture after it: devices of the chain itself, not a rack's)
+        if (path.steps.empty() && view->previewable()) {
+            // The picture after it (devices of the chain itself, not a rack's), in a drawer: a thin tab down the left side
+            // slides it open and shut.
+            const bool open = view->m_previewOpen.count(e.id) > 0;
             auto* thumb = new DevicePreview(bodyHeight);
-            bodyRow->addSpacing(6);
-            bodyRow->addWidget(thumb, 0, Qt::AlignVCenter);
+            auto* drawer = new QWidget;
+            auto* dl = new QHBoxLayout(drawer);
+            dl->setContentsMargins(4, 0, 2, 0);
+            dl->addWidget(thumb, 0, Qt::AlignVCenter);
+            const int full = thumb->width() + 6;
+            drawer->setMaximumWidth(open ? full : 0);
+            auto* tab = new DrawerTab(open);
+            bodyRow->addSpacing(3); // (the family stripe)
+            bodyRow->addWidget(tab);
+            bodyRow->addWidget(drawer);
             view->m_thumbs[e.id] = thumb;
             if (auto it = view->m_thumbImages.find(e.id); it != view->m_thumbImages.end())
                 thumb->setImage(it->second); // (the last one made, until the next)
+            const int id = e.id;
+            QObject::connect(tab, &QAbstractButton::clicked, drawer, [view, tab, drawer, full, id] {
+                const bool opening = !view->m_previewOpen.count(id);
+                if (opening)
+                    view->m_previewOpen.insert(id);
+                else
+                    view->m_previewOpen.erase(id);
+                tab->setOpen(opening);
+                auto* slide = new QPropertyAnimation(drawer, "maximumWidth", drawer);
+                slide->setDuration(180);
+                slide->setEasingCurve(QEasingCurve::OutCubic);
+                slide->setStartValue(drawer->width());
+                slide->setEndValue(opening ? full : 0);
+                slide->start(QAbstractAnimation::DeleteWhenStopped);
+                if (opening)
+                    view->schedulePreviews();
+            });
         }
         if (meta && meta->params && !m_user) {
             // The settings as a picture (an EQ's curve, a compressor's transfer curve...), left of the controls.
@@ -1140,12 +1184,11 @@ ChainStrip::ChainStrip(DeviceChainView* view, ChainPath path, const EffectChain&
 {
     setAcceptDrops(true);
     auto* l = new QHBoxLayout(this);
-    l->setContentsMargins(chain.empty() ? 6 : 22, 4, chain.empty() ? 24 : 34, 4); // (room for the jacks and cables)
-    l->setSpacing(chain.empty() ? 8 : 22);
+    l->setContentsMargins(6, 4, 24, 4);
+    l->setSpacing(8);
     for (int i = 0; i < int(chain.size()); ++i) {
         auto* d = new DeviceWidget(view, m_path, i, chain[size_t(i)], nested);
         m_devices.push_back(d);
-        m_colours.push_back(d->family());
         l->addWidget(d, 0, Qt::AlignTop);
     }
     if (chain.empty()) {
@@ -3267,8 +3310,13 @@ bool DeviceChainView::previewable() const
 
 void DeviceChainView::schedulePreviews()
 {
-    if (!m_thumbs.empty() && previewable())
-        m_thumbTimer.start();
+    if (!previewable())
+        return;
+    for (const auto& [id, thumb] : m_thumbs) // (only when a drawer is open: the pictures cost a render)
+        if (m_previewOpen.count(id)) {
+            m_thumbTimer.start();
+            return;
+        }
 }
 
 void DeviceChainView::renderPreviews()
