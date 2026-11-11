@@ -208,6 +208,8 @@ private:
     void stabilizeClip(int clipId);
     void matchColour(); // the selected video events, to the shot at the cursor (a Color Match effect on each)
     void autoColour();  // the selected video events' levels and white balance (a White Balance effect on each)
+    void soundFromPicture(); // a picture made into sound (it shows in a spectrogram), at the cursor
+    void makingOfReplay();   // the undo history played back as a video
     void showSpectrogram(int clipId); // an audio event's sound as a picture (a window; a click there moves the cursor)
     // Tools > Effect Builder: make a video effect from nodes (an effect file to change, or a new one).
     NodeEffectEditor* effectBuilder(const QString& file = {});

@@ -130,6 +130,19 @@ Choose **Custom** to start from any FFmpeg format and encoder: about 150 output 
   project size, as PNG, JPEG or WebP.
 - **File > Copy Frame to Clipboard** (**Ctrl+Shift+C**).
 
+## Making-of replay
+
+**Tools > Making-of Replay...** plays back how the edit was made, as an MP4 video (1280 x 720, no sound).
+Each undo step gets a short moment: its name, the timeline with the events sliding to their new places,
+new ones popping in, removed ones fading out and each event's effects as dots along its top, and above
+it the picture where that step changed it.
+
+- It replays this session's undo history up to now. The history starts when the project is opened and
+  is not saved with it, so open the project, edit, and make the replay before you close it.
+- About 50 seconds for a long history: each step lasts between 0.13 and 0.5 seconds. Steps you have
+  undone are left out.
+- **Stop** in the progress window cancels it and deletes the part-made file.
+
 ## Publishing to YouTube
 
 - **Tools > YouTube > Chapters for the Description...** lists chapters as `00:00 Name`, from the

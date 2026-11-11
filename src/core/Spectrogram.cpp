@@ -3,6 +3,8 @@
 #include "core/AudioMixer.h"
 #include "core/Fft.h"
 
+#include <QRandomGenerator>
+
 #include <algorithm>
 #include <cmath>
 
@@ -107,6 +109,64 @@ std::vector<float> eventSound(const ProjectSnapshot& snap, int clipId, bool befo
         for (int k = 0; k < n; ++k)
             out[size_t(i + k)] = 0.5f * (chunk[size_t(k) * 2] + chunk[size_t(k) * 2 + 1]);
     }
+    return out;
+}
+
+std::vector<float> fromPicture(const QImage& picture, int rate, double seconds, double lowHz, double highHz)
+{
+    const int total = int(std::clamp(seconds, 0.1, 600.0) * rate);
+    std::vector<float> out(size_t(std::max(0, total)), 0.0f);
+    highHz = std::min(highHz, rate * 0.45);
+    if (picture.isNull() || total <= 0 || lowHz <= 0 || highHz <= lowHz)
+        return out;
+    // A sine for each row, its loudness through time from the row's pixels (40 a second, as the spectrogram window draws).
+    constexpr int kRows = 200;
+    const int cols = std::max(2, int(std::lround(double(total) / rate * 40)));
+    const QImage img = picture.convertToFormat(QImage::Format_ARGB32).scaled(cols, kRows, Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
+    const double colSamples = double(total) / cols;
+    QRandomGenerator random(7); // (the same picture: the same sound)
+    std::vector<double> amp(static_cast<size_t>(cols), 0.0);
+    for (int row = 0; row < kRows; ++row) {
+        bool any = false;
+        for (int x = 0; x < cols; ++x) {
+            const QRgb px = img.pixel(x, row);
+            const double v = qGray(px) / 255.0 * qAlpha(px) / 255.0;
+            amp[size_t(x)] = v < 0.03 ? 0.0 : std::pow(10.0, -60.0 * (1.0 - v) / 20.0); // (brightness on the colours' dB scale)
+            any = any || amp[size_t(x)] > 0;
+        }
+        if (!any)
+            continue;
+        const double hz = lowHz * std::pow(highHz / lowHz, 1.0 - double(row) / (kRows - 1));
+        const double step = 2 * 3.14159265358979 * hz / rate;
+        double phase = random.generateDouble() * 2 * 3.14159265358979;
+        // The rotation's sin and cos, exact again every block (so it doesn't drift).
+        for (int i = 0; i < total; i += 1024) {
+            double re = std::cos(phase + step * i), im = std::sin(phase + step * i);
+            const double cr = std::cos(step), ci = std::sin(step);
+            const int n = std::min(1024, total - i);
+            for (int k = 0; k < n; ++k) {
+                const double at = std::clamp((i + k) / colSamples - 0.5, 0.0, cols - 1.0);
+                const int c0 = std::min(int(at), cols - 2);
+                const double a = amp[size_t(c0)] + (amp[size_t(c0 + 1)] - amp[size_t(c0)]) * (at - c0);
+                out[size_t(i + k)] += float(a * im);
+                const double nre = re * cr - im * ci;
+                im = re * ci + im * cr;
+                re = nre;
+            }
+        }
+    }
+    // A 5 ms fade at each end (no clicks), then a peak of -1 dBFS.
+    const int fade = std::min(total / 2, rate / 200);
+    for (int i = 0; i < fade; ++i) {
+        out[size_t(i)] *= float(i) / fade;
+        out[size_t(total - 1 - i)] *= float(i) / fade;
+    }
+    float peak = 0;
+    for (float s : out)
+        peak = std::max(peak, std::abs(s));
+    if (peak > 0)
+        for (float& s : out)
+            s *= 0.891f / peak;
     return out;
 }
 

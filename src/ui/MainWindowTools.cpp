@@ -16,6 +16,16 @@
 #include "core/SceneDetect.h"
 #include "core/ColorMatch.h"
 #include "core/Spectrogram.h"
+#include "ui/MakingOf.h"
+#include <QDataStream>
+#include <QDesktopServices>
+#include <QFileDialog>
+#include <QImageReader>
+#include <QInputDialog>
+#include <QProgressDialog>
+#include <QSaveFile>
+#include <QStandardPaths>
+#include <QUrl>
 #include "ui/NodeEffectEditor.h"
 #include "core/Reframe.h"
 #include "core/PanCrop.h"
@@ -498,6 +508,110 @@ void MainWindow::showSpectrogram(int clipId)
     connect(m_engine, &PlaybackEngine::positionChanged, view, follow);
     dlg->show();
     QTimer::singleShot(0, dlg, draw);
+}
+
+void MainWindow::soundFromPicture()
+{
+    stopPlayback(false);
+    QStringList filters;
+    for (const QByteArray& f : QImageReader::supportedImageFormats())
+        filters << QStringLiteral("*.") + QString::fromLatin1(f);
+    const QString file = QFileDialog::getOpenFileName(this, tr("Sound from a Picture"), QString(),
+                                                      tr("Pictures (%1)").arg(filters.join(QLatin1Char(' '))));
+    if (file.isEmpty())
+        return;
+    const QImage picture(file);
+    if (picture.isNull()) {
+        QMessageBox::warning(this, tr("Sound from a Picture"), tr("%1 could not be read as a picture.").arg(QDir::toNativeSeparators(file)));
+        return;
+    }
+    bool ok = false;
+    const double suggested = std::clamp(4.0 * picture.width() / std::max(1, picture.height()), 2.0, 30.0);
+    const double seconds = QInputDialog::getDouble(this, tr("Sound from a Picture"),
+                                                   tr("How long, in seconds (the picture is stretched across it; it shows "
+                                                      "in the event's spectrogram, bright parts loud):"),
+                                                   std::round(suggested * 10) / 10, 0.5, 120, 1, &ok);
+    if (!ok)
+        return;
+    constexpr int kRate = 48000;
+    QApplication::setOverrideCursor(Qt::WaitCursor);
+    const std::vector<float> mono = spectrogram::fromPicture(picture, kRate, seconds);
+    QApplication::restoreOverrideCursor();
+    const QString project = m_project->filePath();
+    QString folder = !project.isEmpty() ? QFileInfo(project).dir().filePath(QFileInfo(project).completeBaseName() + QStringLiteral("-sounds"))
+                                        : brand::userFolder(QStandardPaths::DocumentsLocation, QStringLiteral("Sounds"));
+    QDir().mkpath(folder);
+    const QString base = QDir(folder).filePath(QFileInfo(file).completeBaseName() + QStringLiteral(" (painted)"));
+    QString path = base + QStringLiteral(".wav");
+    for (int n = 2; QFile::exists(path); ++n)
+        path = QStringLiteral("%1 %2.wav").arg(base).arg(n);
+    QSaveFile out(path);
+    if (out.open(QIODevice::WriteOnly)) { // 32-bit float stereo WAV
+        QDataStream st(&out);
+        st.setByteOrder(QDataStream::LittleEndian);
+        st.setFloatingPointPrecision(QDataStream::SinglePrecision);
+        const quint32 bytes = quint32(mono.size() * 8);
+        st.writeRawData("RIFF", 4);
+        st << quint32(36 + bytes);
+        st.writeRawData("WAVEfmt ", 8);
+        st << quint32(16) << quint16(3) << quint16(2) << quint32(kRate) << quint32(kRate * 8) << quint16(8) << quint16(32);
+        st.writeRawData("data", 4);
+        st << bytes;
+        for (float v : mono)
+            st << v << v;
+    }
+    if (!out.commit()) {
+        QMessageBox::warning(this, tr("Sound from a Picture"), tr("Could not write %1: %2").arg(QDir::toNativeSeparators(path), out.errorString()));
+        return;
+    }
+    const TimeUs at = m_timeline->cursorTime();
+    importFiles({path}, at);
+    // Its spectrogram, to see the picture come back.
+    for (const auto& [id, m] : m_project->media())
+        if (m && QFileInfo(m->path) == QFileInfo(path))
+            for (const Track& t : m_project->timeline().tracks)
+                for (const Clip& c : t.clips)
+                    if (c.mediaId == id && c.start == at && t.type == TrackType::Audio) {
+                        showSpectrogram(c.id);
+                        return;
+                    }
+}
+
+void MainWindow::makingOfReplay()
+{
+    stopPlayback(false);
+    if (m_project->historySteps() == 0) {
+        QMessageBox::information(this, tr("Making-of Replay"),
+                                 tr("There is nothing to replay yet. The replay plays back this session's undo history: "
+                                    "make some edits first (the history starts when the project is opened)."));
+        return;
+    }
+    const QString project = m_project->filePath();
+    const QString title = project.isEmpty() ? tr("Untitled") : QFileInfo(project).completeBaseName();
+    const QString folder = project.isEmpty() ? liveRecordingsFolder() : QFileInfo(project).absolutePath();
+    const QString path = QFileDialog::getSaveFileName(this, tr("Making-of Replay"), QDir(folder).filePath(tr("%1 - making of.mp4").arg(title)),
+                                                      tr("MP4 video (*.mp4)"));
+    if (path.isEmpty())
+        return;
+    QProgressDialog progress(tr("Replaying %n edit(s)...", nullptr, m_project->historySteps()), tr("Stop"), 0, 1000, this);
+    progress.setWindowTitle(tr("Making-of Replay"));
+    progress.setWindowModality(Qt::WindowModal);
+    progress.setMinimumDuration(0);
+    QString error;
+    const bool ok = makingof::render(*m_project, path, [&](double done) {
+        progress.setValue(int(done * 1000));
+        QApplication::processEvents();
+        return !progress.wasCanceled();
+    }, &error);
+    progress.close();
+    if (!ok) {
+        if (!error.isEmpty())
+            QMessageBox::warning(this, tr("Making-of Replay"), error);
+        return;
+    }
+    if (QMessageBox::question(this, tr("Making-of Replay"), tr("Made %1. Play it now?").arg(QDir::toNativeSeparators(path)))
+        == QMessageBox::Yes)
+        QDesktopServices::openUrl(QUrl::fromLocalFile(path));
 }
 
 void MainWindow::autoColour()

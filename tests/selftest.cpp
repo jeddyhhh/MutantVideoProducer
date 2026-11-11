@@ -2455,6 +2455,48 @@ int cmdAudioFx(const QString& mediaDir, const QString& outDir)
         }
     }
     {
+        // Sound from a picture: a bright square at the top right is loud late, high up; the spectrogram draws it back
+        // there.
+        constexpr int rate = 48000;
+        QImage square(100, 100, QImage::Format_RGB32);
+        square.fill(Qt::black);
+        for (int y = 10; y < 40; ++y)
+            for (int x = 60; x < 90; ++x)
+                square.setPixel(x, y, qRgb(255, 255, 255));
+        const std::vector<float> painted = spectrogram::fromPicture(square, rate, 4);
+        double early = 0, late = 0, peak = 0;
+        for (size_t i = 0; i < painted.size(); ++i) {
+            (i < painted.size() / 2 ? early : late) += double(painted[i]) * painted[i];
+            peak = std::max(peak, double(std::abs(painted[i])));
+        }
+        const QImage back = spectrogram::render(painted, rate, QSize(160, 384));
+        const int high = int(std::lround(spectrogram::rowOf(6000, rate, 384))), low = int(std::lround(spectrogram::rowOf(300, rate, 384)));
+        const int highGrey = qGray(back.pixel(120, high)), lowGrey = qGray(back.pixel(120, low));
+        check(painted.size() == size_t(rate * 4) && late > early * 1000 && std::abs(peak - 0.891) < 0.01 && highGrey > lowGrey + 80,
+              QStringLiteral("a picture made into sound comes back in its spectrogram (high late %1, low late %2; late/early energy %3)")
+                  .arg(highGrey).arg(lowGrey).arg(late / std::max(1e-12, early), 0, 'g', 3));
+        // The making-of replay's history: each step's timeline in order, the first the one before any.
+        Project history;
+        const Timeline empty = history.timeline();
+        Timeline one = empty;
+        Clip c;
+        c.id = one.allocId();
+        c.length = kUsPerSecond;
+        c.generator.type = QStringLiteral("solid");
+        one.tracks.front().clips.push_back(c);
+        history.applyEdit(one, QStringLiteral("Add"));
+        Timeline two = one;
+        two.tracks.front().clips.front().start = kUsPerSecond;
+        history.applyEdit(two, QStringLiteral("Move"));
+        QString first, second;
+        const Timeline s0 = history.historyState(0), s1 = history.historyState(1, &first), s2 = history.historyState(2, &second);
+        history.undoStack()->undo();
+        check(s0.tracks.front().clips.empty() && s1.tracks.front().clips.size() == 1 && s2.tracks.front().clips.front().start == kUsPerSecond
+                  && first == QStringLiteral("Add") && second == QStringLiteral("Move") && history.historySteps() == 1
+                  && history.historyState(1).tracks.front().clips.front().start == 0,
+              QStringLiteral("the undo history replays as timelines, step by step (up to an undo)"));
+    }
+    {
         // Pre-rendering's stretches: an edit changes its own stretch's key only; a colour label changes none; frames on
         // disk come back.
         ProjectSnapshot s = snapFor(sine, 3 * kUsPerSecond);

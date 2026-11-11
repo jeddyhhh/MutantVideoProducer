@@ -23,4 +23,9 @@ double hzAt(double row, int rate, int height);
 // `maxSeconds` from its start.
 std::vector<float> eventSound(const ProjectSnapshot& snap, int clipId, bool beforeEffects, int rate, double maxSeconds = 600);
 
+// The other way: a picture made into sound `seconds` long, which a spectrogram draws back as the picture (its bottom at
+// `lowHz`, its top at `highHz`, on the same log scale; bright is loud, dark or see-through is quiet). Mono, peaking at
+// -1 dBFS.
+std::vector<float> fromPicture(const QImage& picture, int rate, double seconds, double lowHz = 150, double highHz = 16000);
+
 } // namespace spectrogram

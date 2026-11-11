@@ -413,6 +413,10 @@ public:
     void applyEdit(const Timeline& after, const QString& description);
 
     QUndoStack* undoStack() { return &m_undo; }
+    // The undo history up to now, as timelines: 0 the one before its first step, i the one after step i (named `name`),
+    // historySteps() the current one. For a replay of how the edit was made.
+    int historySteps() const { return m_undo.index(); }
+    Timeline historyState(int i, QString* name = nullptr) const;
 
     std::shared_ptr<const ProjectSnapshot> snapshot() const;
 

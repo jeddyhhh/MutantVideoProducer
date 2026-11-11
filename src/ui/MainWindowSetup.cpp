@@ -743,6 +743,14 @@ void MainWindow::createActions()
         }
         statusBar()->showMessage(tr("Select an audio event first"), 4000);
     }));
+    tools->addAction(act(tr("Sound from a &Picture..."), QKeySequence(), [this] {
+        if (editorActive())
+            soundFromPicture();
+    }));
+    tools->addAction(act(tr("&Making-of Replay..."), QKeySequence(), [this] {
+        if (editorActive())
+            makingOfReplay();
+    }));
     tools->addAction(act(tr("Render Selection to &New Track"), QKeySequence(), [this] {
         if (editorActive())
             renderInPlace();

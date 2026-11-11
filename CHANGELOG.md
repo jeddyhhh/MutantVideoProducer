@@ -6,6 +6,10 @@ What changed in each version of Mutant Video Producer. The newest is first.
 
 ### Added
 
+- **Making-of Replay** (Tools): this session's undo history played back as a video: each step's name, the timeline's
+  events sliding into place, popping in and fading out, effects stacking up as dots, and the picture where it changed.
+- **Sound from a Picture** (Tools): a picture made into sound that shows the picture in a spectrogram, placed at the
+  cursor with its Spectrogram window open.
 - Effect devices can show the picture after each effect, at the cursor, in a drawer opened by a thin PICTURE tab down
   the device's left side: the event (or track, or the whole picture for the output's effects) run through the chain up
   to that device, made in the background a moment after the cursor or a setting stops moving, while a drawer is open.

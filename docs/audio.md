@@ -51,6 +51,20 @@ as colour, from black through red and orange to white.
 - Its white line follows the timeline's cursor, and the playhead while playing. Click it to move the
   cursor there. It shows the first 10 minutes of a longer event.
 
+## Sound from a picture
+
+**Tools > Sound from a Picture...** turns a picture into sound that draws the picture back in a
+spectrogram, the way some musicians hide faces in their tracks. Choose a picture and how long the sound
+should be (the picture is stretched across that time). The sound goes on the timeline at the cursor, and
+its Spectrogram window opens to show the picture.
+
+- Bright parts are loud and dark or see-through parts are quiet. The picture's bottom edge is 150 Hz and
+  its top edge is 16 kHz.
+- Each row of the picture becomes a tone. It sounds like a chorus of whistles, so use it under other sound
+  or as a hidden message.
+- The sound is saved as a WAV file next to the project (in a "-sounds" folder), or in Documents if the
+  project has not been saved yet.
+
 ## Separating stems
 
 **Right-click an audio event > Separate Stems...** splits its sound with the **Stem Separation** engine (Tools > AI

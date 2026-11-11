@@ -405,6 +405,8 @@ public:
     {
     }
     void undo() override { m_project->restorePacked(m_before); }
+    const PackedTimeline& before() const { return *m_before; }
+    const PackedTimeline& after() const { return *m_after; }
     void redo() override
     {
         if (m_firstRedo) { // already applied when pushed
@@ -639,6 +641,18 @@ void Project::commitEdit(const Timeline& before, const QString& description)
     auto packedBefore = PackedTimeline::pack(before, m_packed.get());
     m_packed = PackedTimeline::pack(m_timeline, packedBefore.get());
     m_undo.push(new TimelineEditCommand(this, std::move(packedBefore), m_packed, description));
+}
+
+Timeline Project::historyState(int i, QString* name) const
+{
+    i = std::clamp(i, 0, historySteps());
+    const auto* step = i > 0 ? dynamic_cast<const TimelineEditCommand*>(m_undo.command(i - 1))
+                             : dynamic_cast<const TimelineEditCommand*>(m_undo.command(0));
+    if (name)
+        *name = i > 0 && step ? step->text() : QString();
+    if (!step || i == historySteps())
+        return m_timeline;
+    return i > 0 ? step->after().unpack() : step->before().unpack();
 }
 
 void Project::applyEdit(const Timeline& after, const QString& description)

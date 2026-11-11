@@ -1,5 +1,7 @@
 // The production tools' checks (pre-rendering, colour labels, the spectrogram): a part of runEditorTest.
 
+#include "core/MediaInfo.h"
+#include "ui/MakingOf.h"
 #include "ui/MainWindow.h"
 
 #include "core/Compositor.h"
@@ -154,6 +156,19 @@ void MainWindow::runProductionToolsTest(const std::function<void(bool, const QSt
         check(labelled && saved && spectrum,
               QStringLiteral("colour labels on an event and its group (drawn in its colour, one undo step, saved with the "
                              "project); the Spectrogram window opens for an audio event, its cursor following the timeline's"));
+    }
+    {
+        // The making-of replay: this session's undo history as a video (one moment a step, and a second before and
+        // two and a half after).
+        const int steps = m_project->historySteps();
+        const QString path = work.filePath(QStringLiteral("making-of.mp4"));
+        QString error;
+        const bool made = steps > 0 && makingof::render(*m_project, path, {}, &error);
+        const MediaInfo info = probeMedia(path);
+        const double seconds = info.ok() && info.hasVideo() ? double(info.duration) / kUsPerSecond : 0;
+        const double expected = 1 + steps * std::clamp(std::lround(30 * 50.0 / std::max(1, steps)), 4L, 15L) / 30.0 + 2.5;
+        check(made && info.hasVideo() && info.video.front().width == 1280 && std::abs(seconds - expected) < 0.5,
+              QStringLiteral("the making-of replay plays %1 undo steps back as a %2 s video (%3)").arg(steps).arg(seconds, 0, 'f', 1).arg(error));
     }
     {
         // Paste Event Attributes from the Edit menu: one picture's effects and Pan/Crop onto another, one undo step.
