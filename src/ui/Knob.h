@@ -21,6 +21,8 @@ public:
     QString valueText() const;
 
     QSize sizeHint() const override;
+    // As tall as its name, the dial and the value need (a squeezed knob drew its value over the dial).
+    QSize minimumSizeHint() const override { return m_compact ? QSize(48, 24) : QSize(40, sizeHint().height()); }
 
 signals:
     void valueEdited(double v); // user change (dragging, wheel, reset)

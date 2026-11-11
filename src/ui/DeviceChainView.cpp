@@ -861,27 +861,47 @@ public:
         }
         auto* controls = new QWidget;
         bodyRow->addWidget(controls, 1);
-        auto* grid = new QGridLayout(controls);
-        grid->setContentsMargins(6, 4, 6, 4);
-        grid->setHorizontalSpacing(6);
-        grid->setVerticalSpacing(4);
+        // Columns side by side, each its own stack: a shared grid made each row as tall as its tallest control in any
+        // column, so a column of toggles under a row of knobs overflowed the body and every knob was squeezed (its value
+        // drawn over its dial).
+        auto* columns = new QHBoxLayout(controls);
+        columns->setContentsMargins(6, 4, 6, 4);
+        columns->setSpacing(6);
+        std::vector<QVBoxLayout*> stacks;
+        auto at = [&](int c) {
+            while (int(stacks.size()) <= c) {
+                auto* v = new QVBoxLayout;
+                v->setSpacing(4);
+                v->setAlignment(Qt::AlignTop);
+                columns->addLayout(v);
+                stacks.push_back(v);
+            }
+            return stacks[size_t(c)];
+        };
+        auto finish = [&] {
+            for (QVBoxLayout* v : stacks)
+                v->addStretch(1);
+            columns->addStretch(1);
+        };
         int row = 0, col = 0, used = 0;
         if (m_user) {
             // Made in the Effect Builder: its graph is changed there, not here.
             auto* warn = new QLabel(QObject::tr("\u26A0 Double-click this effect to change it in the Effect Builder"));
             warn->setObjectName(QStringLiteral("userEffectHint"));
             theme::style(warn, QStringLiteral("color: @warn; font-weight: bold;"));
-            grid->addWidget(warn, row++, col, Qt::AlignTop | Qt::AlignHCenter);
+            at(col)->addWidget(warn, 0, Qt::AlignTop | Qt::AlignHCenter);
+            ++row;
             used += 46;
             setToolTip(QObject::tr("Double-click to change this effect in the Effect Builder (Tools)"));
         }
         const bool anyShown = meta && meta->params && std::any_of(meta->params->begin(), meta->params->end(), [](const ParamDef& d) { return !d.hidden; });
         if (!anyShown && m_user) {
-            grid->setRowStretch(grid->rowCount(), 1);
+            finish();
             return;
         }
         if (!meta || !meta->params || meta->params->empty()) {
-            grid->addWidget(new QLabel(QObject::tr("No settings")), 0, 0);
+            at(0)->addWidget(new QLabel(QObject::tr("No settings")));
+            finish();
             return;
         }
         // Column-major: fill each column down to the body height, by the
@@ -903,22 +923,35 @@ public:
                 used = 0;
                 ++col;
             }
-            grid->addWidget(c, row, col, 1, wide ? 2 : 1, Qt::AlignTop | Qt::AlignHCenter);
+            at(col)->addWidget(c, 0, Qt::AlignTop | Qt::AlignHCenter);
             ++row;
             used += need + 4;
-            if (wide) {
-                col += 2;
+            if (wide) { // (a text box: a column of its own)
+                col += 1;
                 row = 0;
                 used = 0;
             }
         }
+        // A button after the settings: in their last column if it fits there, else at the top of a new one (added to a
+        // full column, the grid squeezed every row to fit, and the knobs drew their values over their dials).
+        auto placeAfter = [&](QWidget* w) {
+            const int need = w->sizeHint().height();
+            if (used > 0 && used + need > avail) {
+                row = 0;
+                used = 0;
+                ++col;
+            }
+            at(col)->addWidget(w, 0, Qt::AlignTop | Qt::AlignHCenter);
+            ++row;
+            used += need + 4;
+        };
         if (masked) {
             auto* track = new QPushButton(QObject::tr("Track Motion"));
             track->setToolTip(QObject::tr("Follow what is inside the mask from the cursor to the end of the event:\n"
                                           "keyframes the mask's position on every frame (Event FX of a video event)"));
             track->setEnabled(view->m_target.kind == FxTarget::Kind::Clip);
             QObject::connect(track, &QPushButton::clicked, view, [view, path, index] { view->trackMask(path, index); });
-            grid->addWidget(track, row, col, Qt::AlignTop | Qt::AlignHCenter);
+            placeAfter(track);
         }
         if (e.type == QLatin1String("corner_pin")) {
             auto* track = new QPushButton(QObject::tr("Track Corners"));
@@ -927,7 +960,7 @@ public:
                                           "lower track), then follow them from the cursor on: keyframes on every frame (Event FX)"));
             track->setEnabled(view->m_target.kind == FxTarget::Kind::Clip);
             QObject::connect(track, &QPushButton::clicked, view, [view, path, index] { view->trackCorners(path, index); });
-            grid->addWidget(track, row, col, Qt::AlignTop | Qt::AlignHCenter);
+            placeAfter(track);
         }
         if (e.type == QLatin1String("white_balance")) {
             // Set from the event: Auto, or a click on something that should be grey or white.
@@ -946,9 +979,9 @@ public:
             buttons->addWidget(autoButton);
             buttons->addWidget(pick);
             buttons->addStretch();
-            grid->addLayout(buttons, 0, col + 1, -1, 1, Qt::AlignTop);
+            at(col + 1)->addLayout(buttons);
         }
-        grid->setRowStretch(grid->rowCount(), 1);
+        finish();
     }
 
 protected:

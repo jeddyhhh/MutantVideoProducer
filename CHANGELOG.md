@@ -44,6 +44,10 @@ What changed in each version of Mutant Video Producer. The newest is first.
 
 ### Fixed
 
+- Effect devices: knobs could be squeezed so their values were drawn over their dials. A device's columns shared row
+  heights (a column of toggles under a row of knobs overflowed the device), and Track Motion and Track Corners were
+  added to a full column. Each column is its own stack now, those buttons start a new column when they don't fit, and
+  a knob is never shorter than its name, dial and value.
 - The speaker camera showed the wide shot for a moment at the start of a scene whose first line begins within its hold
   time, then cut to the speaker; it is on the first speaker from the scene's first frame now.
 - A Freeze in the Middle speed ramp on a very short event (a frame or two) became a slow ramp down after the project
