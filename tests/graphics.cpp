@@ -386,6 +386,25 @@ int main(int argc, char **argv) {
       }
       check(seen == "AB", QStringLiteral("at a hand-over the speaker camera cuts once (%1)").arg(seen));
     }
+    // The scene's start, a moment before its first line: already on whoever speaks first (no glimpse of the wide shot,
+    // then a cut to them). A long wait before the first line is still the wide shot.
+    {
+      QJsonArray soon, later;
+      for (int i = 0; i < 64; ++i) {
+        soon.append(i >= 10 ? 1 : 0);  // Bob from 0.3 s (64 bins over 2 s)
+        later.append(i >= 48 ? 1 : 0); // Bob from 3 s (64 bins over 4 s)
+      }
+      QJsonObject start = talk;
+      start["audio"] = QJsonObject{{"ann", envelope(quiet)}, {"bob", envelope(soon)}};
+      const QImage first = drawn(start, 0.0), firstLater = drawn(start, 0.2);
+      start["audio"] = QJsonObject{{"ann", QJsonObject{{"version", 1}, {"duration", 4}, {"left", quiet}, {"right", quiet}, {"rate", 1}, {"offset", 0}}},
+                                   {"bob", QJsonObject{{"version", 1}, {"duration", 4}, {"left", later}, {"right", later}, {"rate", 1}, {"offset", 0}}}};
+      const QImage waiting = drawn(start, 0.2);
+      check(qBlue(first.pixel(160, 90)) > 200 && qBlue(firstLater.pixel(160, 90)) > 200 && qAlpha(waiting.pixel(160, 90)) == 0,
+            QStringLiteral("before a scene's first line the speaker camera is already on the first speaker; a long wait is the wide shot "
+                           "(%1, %2, %3)")
+                .arg(first.pixel(160, 90), 0, 16).arg(firstLater.pixel(160, 90), 0, 16).arg(waiting.pixel(160, 90), 0, 16));
+    }
     // No glimpses: as a reaction shot of Bob ends, Ann's line has just finished and Bob speaks next; the camera stays on
     // Bob instead of cutting to Ann for a frame or two.
     {

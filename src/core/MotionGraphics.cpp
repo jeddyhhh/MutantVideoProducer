@@ -1264,18 +1264,25 @@ public:
             }
             return double(NAN);
           };
-          QString before;
+          QString before, after;
           double last = -1e9, next = 1e9;
           for (const auto &[id, binding] : cast) {
             if (const double at = heard(binding, now - hold, now, true); at > last) {
               last = at;
               before = id;
             }
-            if (const double at = heard(binding, now, now + hold, false); at < next)
+            if (const double at = heard(binding, now, now + hold, false); at < next) {
               next = at;
+              after = id;
+            }
           }
           if (!before.isEmpty() && next - last <= hold)
             who = before;
+          // The scene's start, before its first line (nothing heard since it began, the line within `hold` seconds of
+          // it): framed on whoever speaks first, as if the shot had been on them already. (It showed the wide shot for
+          // a moment, then cut to the close-up.)
+          else if (before.isEmpty() && !after.isEmpty() && now < hold && next <= hold)
+            who = after;
         }
         QString other; // the listener: who spoke most in the seconds before the shot
         if (kind == "listener" || kind == "two") {

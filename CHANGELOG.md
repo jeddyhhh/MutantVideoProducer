@@ -44,6 +44,8 @@ What changed in each version of Mutant Video Producer. The newest is first.
 
 ### Fixed
 
+- The speaker camera showed the wide shot for a moment at the start of a scene whose first line begins within its hold
+  time, then cut to the speaker; it is on the first speaker from the scene's first frame now.
 - A Freeze in the Middle speed ramp on a very short event (a frame or two) became a slow ramp down after the project
   was saved and opened again: its jumps had been squeezed onto one time. A story chapter with no narration window
   had its footage sound's level change the same way.
