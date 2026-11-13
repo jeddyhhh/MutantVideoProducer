@@ -137,6 +137,10 @@ public:
     // Timeline drops give each video its own tracks; cursor placement can reuse tracks.
     void insertMedia(const std::vector<int>& mediaIds, TimeUs at, int trackIndex, bool newVideoTracks = false);
     void insertMediaAtCursor(int mediaId);
+    // Three-point editing at the cursor, whatever auto ripple and auto crossfade are set to: Insert pushes everything
+    // from the cursor on (every unlocked track, and the markers) later by the media's length; Overwrite covers what is
+    // there. On the selected track (else the first of its kind); the media's In / Out marks pick the part.
+    void editAtCursor(const std::vector<int>& mediaIds, bool insert);
     // Adds an effect to the selected video events; returns the first event's id (0 if none).
     int addEffectToSelection(const QString& effectType);
     // Adds a preset's devices to the selected events of its kind; returns the first event's id (0 if none).

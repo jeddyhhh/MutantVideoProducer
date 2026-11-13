@@ -12,6 +12,7 @@
 
 #include "core/Compositor.h"
 #include "core/FrameConverter.h"
+#include "core/HdrToneMap.h"
 #include "core/Hardware.h"
 #include "core/MotionGraphics.h"
 #include "core/NodeGraph.h"
@@ -143,11 +144,31 @@ uniform float uNorm;
 uniform vec3 uOffset;
 uniform vec3 uScale;
 uniform mat3 uMatrix;
+uniform int uTransfer;    // 0 SDR, 1 PQ, 2 HLG: tone-mapped to SDR BT.709 as HdrToneMap.h does
+float hdrLinear(float e) {
+    if (uTransfer == 1) {
+        float p = pow(e, 1.0 / 78.84375);
+        return pow(max(p - 0.8359375, 0.0) / (18.8515625 - 18.6875 * p), 1.0 / 0.1593017578125) * (10000.0 / 203.0);
+    }
+    return e <= 0.5 ? e * e / 3.0 : (exp((e - 0.55991073) / 0.17883277) + 0.28466892) / 12.0;
+}
+vec3 hdrToSdr(vec3 e) {
+    vec3 l = vec3(hdrLinear(e.r), hdrLinear(e.g), hdrLinear(e.b));
+    if (uTransfer == 2) l *= (1000.0 / 203.0) * pow(max(dot(l, vec3(0.2627, 0.6780, 0.0593)), 1e-6), 0.2);
+    vec3 s = max(mat3(1.6605, -0.1246, -0.0182, -0.5876, 1.1329, -0.1006, -0.0728, -0.0083, 1.1187) * l, 0.0);
+    float peak = max(s.r, max(s.g, s.b));
+    if (peak > 0.6) {
+        float x = (peak - 0.6) / 0.4;
+        s *= (0.6 + 0.4 * x / (1.0 + x)) / peak;
+    }
+    return pow(clamp(s, 0.0, 1.0), vec3(1.0 / 2.4));
+}
 void main() {
     float y = texture(uY, vUv).r * uNorm;
     vec2 c = uLayout == 1 ? texture(uU, vUv).rg * uNorm : vec2(texture(uU, vUv).r, texture(uV, vUv).r) * uNorm;
     if (uSwapUV) c = c.yx;
     vec3 rgb = clamp(uMatrix * ((vec3(y, c) - uOffset) * uScale), 0.0, 1.0);
+    if (uTransfer != 0) rgb = hdrToSdr(rgb);
     float a = uHasAlpha ? clamp(texture(uA, vUv).r * uNorm, 0.0, 1.0) : 1.0;
     fragColor = vec4(rgb * a, a);
 }
@@ -1690,6 +1711,7 @@ struct GpuCompositor::Impl : protected QOpenGLExtraFunctions {
         progYuv->setUniformValue("uOffset", QVector3D(yOff, cOff, cOff));
         progYuv->setUniformValue("uScale", QVector3D(yScale, cScale, cScale));
         progYuv->setUniformValue("uMatrix", rowsToMat3(m));
+        progYuv->setUniformValue("uTransfer", GLint(hdr::transferOf(f->color_trc)));
         fullscreen(*progYuv, out);
         return true;
     }

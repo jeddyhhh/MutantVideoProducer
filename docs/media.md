@@ -11,6 +11,14 @@
   unless you chose a shape in [File > New](getting-started.md#starting-a-project). **File >
   Properties** (**Alt+Enter**) changes them later.
 
+- **HDR video** (most phones record HLG; HDR10 masters use PQ) is tone-mapped to the ordinary SDR picture
+  everything else is in: its BT.2020 colours become BT.709 and its highlights roll off instead of clipping. The
+  bright parts of an HDR picture look a little softer than on an HDR screen, but the faces and the sky look right
+  instead of grey and washed out. Renders are SDR.
+- **Interlaced video** (DV and other camcorders, TV recordings, DVDs) is deinterlaced as it is decoded: each frame is
+  made from both its fields and the frames either side (FFmpeg's bwdif), so moving things don't show comb lines.
+  Progressive footage is left alone.
+
 ### Placing files
 
 - **Drag** a file from Project Media onto a track, or **double-click** it to place it at the cursor.
@@ -28,6 +36,12 @@
   See [Groups](editing.md#groups).
 - Dropped into the middle of the timeline with auto ripple on, the file is inserted: what comes
   after moves along.
+- **Insert at Cursor** (**,**) and **Overwrite at Cursor** (**.**) on the Edit menu put the files
+  selected in Project Media (only their Mark In / Out part, if marked) at the cursor, on the selected
+  track. **Insert** splits whatever the cursor is in and moves everything after it later, on every
+  unlocked track, with the markers. **Overwrite** covers whatever is there. Both work the same
+  whatever auto ripple and auto crossfades are set to. With Mark In / Out, this is three-point editing:
+  the part of the source, and where it goes.
 
 ## Project Media
 

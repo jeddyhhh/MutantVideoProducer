@@ -605,6 +605,35 @@ void TimelineWidget::insertMediaAtCursor(int mediaId)
     insertMedia({mediaId}, m_cursor, m_selectedTrack < int(tracks.size()) ? m_selectedTrack : -1);
 }
 
+void TimelineWidget::editAtCursor(const std::vector<int>& mediaIds, bool insert)
+{
+    Timeline tl = m_project->timeline();
+    const int track = m_selectedTrack < int(tl.tracks.size()) ? m_selectedTrack : -1;
+    const TimeUs at = std::max<TimeUs>(0, m_project->settings().fps.snap(m_cursor));
+    std::set<int> created;
+    TimeUs pos = at;
+    for (int id : mediaIds) {
+        auto media = m_project->mediaItem(id);
+        if (!media || !media->info.ok())
+            continue;
+        const auto ids = ops::insertMedia(tl, *media, pos, track, m_project->settings().fps, false);
+        created.insert(ids.begin(), ids.end());
+        if (!ids.empty())
+            if (const Clip* c = tl.findClip(ids.front()))
+                pos = c->end();
+    }
+    if (created.empty())
+        return;
+    if (insert)
+        ops::rippleInsert(tl, at, pos - at, {}, created, true);
+    else
+        ops::overwriteOverlaps(tl, created);
+    m_project->applyEdit(tl, insert ? tr("Insert") : tr("Overwrite"));
+    setSelection(created);
+    setCursorTime(pos);
+    emit cursorMoved(pos);
+}
+
 void TimelineWidget::zoomAround(double x, double factor)
 {
     const TimeUs anchor = xToTime(x);

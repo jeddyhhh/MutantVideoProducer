@@ -554,6 +554,21 @@ void MainWindow::createActions()
     edit->addAction(act(tr("Ripple De&lete"), QKeySequence(QStringLiteral("Ctrl+Del")), [this] { m_timeline->deleteSelection(true); }));
     heading(edit, tr("Events"));
     edit->addAction(act(tr("&Split"), QKeySequence(QStringLiteral("S")), [this] { m_timeline->splitAtCursor(); }));
+    // Three-point editing: the files selected in Project Media (their In / Out part) at the cursor.
+    auto editAtCursor = [this](bool insert) {
+        if (!editorActive())
+            return;
+        QList<int> ids = m_bin->selectedMediaIds();
+        if (m_youtubeBin && m_youtubeBin->isVisible() && !m_youtubeBin->selectedMediaIds().isEmpty())
+            ids = m_youtubeBin->selectedMediaIds();
+        if (ids.isEmpty()) {
+            statusBar()->showMessage(tr("Select files in Project Media first (with Mark In / Out for a part of one)"), 5000);
+            return;
+        }
+        m_timeline->editAtCursor(std::vector<int>(ids.begin(), ids.end()), insert);
+    };
+    edit->addAction(act(tr("&Insert at Cursor"), QKeySequence(QStringLiteral(",")), [editAtCursor] { editAtCursor(true); }));
+    edit->addAction(act(tr("&Overwrite at Cursor"), QKeySequence(QStringLiteral(".")), [editAtCursor] { editAtCursor(false); }));
     edit->addAction(act(tr("Select &All"), QKeySequence::SelectAll, [this] { m_timeline->selectAll(); }));
     edit->addAction(act(tr("&Group Selected Events"), QKeySequence(QStringLiteral("G")), [this] { m_timeline->groupSelection(); }));
     edit->addAction(act(tr("&Ungroup Selected Events"), QKeySequence(QStringLiteral("U")), [this] { m_timeline->ungroupSelection(); }));

@@ -1,5 +1,7 @@
 #include "core/SmartRender.h"
 
+#include "core/HdrToneMap.h"
+
 #include "core/FFmpeg.h"
 #include "core/PanCrop.h"
 
@@ -223,6 +225,10 @@ Plan plan(const ProjectSnapshot& snap, const ExportSettings& s)
             return no(QStringLiteral("%1 runs at %2 fps, not %3").arg(name).arg(av_q2d(rate), 0, 'f', 3).arg(s.fps.toDouble(), 0, 'f', 3));
         if (askedFormat != AV_PIX_FMT_NONE && par->format != askedFormat)
             return no(QStringLiteral("%1 is %2, not %3").arg(name, QString::fromLatin1(av_get_pix_fmt_name(AVPixelFormat(par->format))), s.pixelFormat));
+        if (hdr::transferOf(par->color_trc) != hdr::Transfer::Sdr)
+            return no(QStringLiteral("%1 is HDR (a render tone-maps it to SDR)").arg(name));
+        if (par->field_order != AV_FIELD_PROGRESSIVE && par->field_order != AV_FIELD_UNKNOWN)
+            return no(QStringLiteral("%1 is interlaced (a render deinterlaces it)").arg(name));
         const QByteArray extra(reinterpret_cast<const char*>(par->extradata), par->extradata_size);
         if (i == 0) {
             extradata = extra;

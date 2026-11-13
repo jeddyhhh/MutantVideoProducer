@@ -102,6 +102,14 @@ gen audio_amrnb.amr         $A -c:a libopencore_amrnb -ar 8000 -ac 1 -b:a 12.2k
 gen audio_gamecube.ast      $A -c:a pcm_s16be_planar
 gen audio_mp3_with_cover.mp3 $A -f lavfi -i "testsrc2=size=300x300" -map 0:a -map 1:v -frames:v 1 -c:a libmp3lame -c:v mjpeg -disposition:v attached_pic -shortest
 
+# HDR as phones and HDR10 masters tag it: 10-bit HEVC in BT.2020 with PQ or HLG.
+gen hdr_pq.mkv              $V -c:v libx265 -preset ultrafast -pix_fmt yuv420p10le -color_primaries bt2020 -color_trc smpte2084 -colorspace bt2020nc -x265-params colorprim=bt2020:transfer=smpte2084:colormatrix=bt2020nc:log-level=error
+gen hdr_hlg.mp4             $V -c:v libx265 -preset ultrafast -pix_fmt yuv420p10le -color_primaries bt2020 -color_trc arib-std-b67 -colorspace bt2020nc -x265-params colorprim=bt2020:transfer=arib-std-b67:colormatrix=bt2020nc:log-level=error -tag:v hvc1
+# Interlaced: a moving picture's 50 fields a second woven into 25 frames, flagged top field first; and the same weave
+# saved as plain progressive frames (what it looks like when nothing deinterlaces it).
+FIELDS="-f lavfi -i testsrc2=size=720x576:rate=50:duration=4"
+gen interlaced_mpeg2.ts     $FIELDS -vf tinterlace=interleave_top,setfield=tff -c:v mpeg2video -flags +ilme+ildct -top 1 -b:v 12M
+gen woven_progressive.mkv   $FIELDS -vf tinterlace=interleave_top,setfield=prog -c:v ffv1
 # Phone video with rotation metadata (portrait recording).
 "$FFMPEG" -hide_banner -loglevel error -y -display_rotation 90 -i "$OUT/h264_aac.mp4" -c copy "$OUT/phone_rotated.mp4" \
     && echo "made   phone_rotated.mp4" || { echo "FAILED phone_rotated.mp4"; fail=$((fail+1)); }

@@ -50,6 +50,8 @@ already in use can be moved to the new command. **Reset All** brings back the de
 |---|---|
 | Ctrl+drag an event | Copy it |
 | Ctrl+drag an edge | Change speed (time-stretch) |
+| , (comma) | Insert the Project Media selection at the cursor (later events move along) |
+| . (full stop) | Overwrite at the cursor with the Project Media selection |
 | Alt+drag an event | Slip the footage inside it |
 | Ctrl+Alt+drag an event | Slide it between its neighbours |
 | Ctrl+Alt+drag a cut | Roll it (trim adjacent) |

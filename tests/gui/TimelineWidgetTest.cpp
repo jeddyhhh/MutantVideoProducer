@@ -947,6 +947,52 @@ int TimelineWidget::runEditTest(QStringList& log)
     setTrackBlend(videoTrack, 3);
     check(m_project->timeline().tracks[size_t(videoTrack)].blend == 3, QStringLiteral("a video track's compositing mode can be set (Multiply)"));
     reset();
+    {
+        // Insert and Overwrite at the cursor, whatever auto ripple and crossfades are set to: the file's marked part (1 s)
+        // put halfway into an event of the whole file. Insert splits it and pushes the rest 1 s later; Overwrite covers
+        // that second of it.
+        Timeline cleared = m_project->timeline();
+        for (auto& t : cleared.tracks)
+            t.clips.clear();
+        ops::insertMedia(cleared, *media, 0, -1, fps);
+        m_project->applyEdit(cleared, QStringLiteral("test"));
+        const Timeline base = m_project->timeline();
+        const TimeUs whole = base.duration(), at = fps.snap(whole / 2), part = kUsPerSecond;
+        const MediaItem marks = *media;
+        m_project->setMediaDetails(mediaId, marks.folder, marks.rating, kUsPerSecond / 2, kUsPerSecond / 2 + part, marks.origin);
+        auto pictureTrack = [&](const Timeline& tl) -> const Track* {
+            for (const Track& t : tl.tracks)
+                for (const Clip& c : t.clips)
+                    if (m_selection.count(c.id) && isVisualTrack(t.type))
+                        return &t;
+            return nullptr;
+        };
+        auto spans = [&](const Track* t) {
+            QStringList out;
+            for (const Clip& c : t ? t->clips : std::vector<Clip>{})
+                out << secs(c.start) + QLatin1Char('-') + secs(c.end());
+            return out.join(QLatin1Char(' '));
+        };
+        const QString expectInsert = QStringList{secs(0) + '-' + secs(at), secs(at) + '-' + secs(at + part),
+                                                 secs(at + part) + '-' + secs(whole + part)}.join(' ');
+        const QString expectOverwrite = QStringList{secs(0) + '-' + secs(at), secs(at) + '-' + secs(at + part),
+                                                    secs(at + part) + '-' + secs(whole)}.join(' ');
+        setCursorTime(at);
+        editAtCursor({mediaId}, true);
+        const QString inserted = spans(pictureTrack(m_project->timeline()));
+        const bool insertOk = inserted == expectInsert && near(cursorTime(), at + part)
+                              && m_project->undoStack()->undoText() == tr("Insert") && m_project->timeline().duration() == whole + part;
+        m_project->undoStack()->undo();
+        setCursorTime(at);
+        editAtCursor({mediaId}, false);
+        const QString overwritten = spans(pictureTrack(m_project->timeline()));
+        const bool overwriteOk = overwritten == expectOverwrite && m_project->timeline().duration() == whole;
+        m_project->undoStack()->undo();
+        check(insertOk && overwriteOk && m_project->timeline() == base,
+              QStringLiteral("Insert at the cursor pushes the rest later (%1), Overwrite covers what is there (%2), each one undo step")
+                  .arg(inserted, overwritten));
+        m_project->setMediaDetails(mediaId, marks.folder, marks.rating, marks.markIn, marks.markOut, marks.origin);
+    }
 
     m_snapping = snapWas;
     return failures;

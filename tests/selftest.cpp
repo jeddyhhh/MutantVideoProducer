@@ -71,6 +71,7 @@
 #include "core/FFmpeg.h"
 #include "core/FormatRegistry.h"
 #include "core/FrameConverter.h"
+#include "core/HdrToneMap.h"
 #include "core/Generators.h"
 #include "core/GpuCompositor.h"
 #include "core/Hardware.h"
@@ -1282,6 +1283,106 @@ std::shared_ptr<MediaItem> loadItem(const QString& path, int id)
     return item->info.ok() ? item : nullptr;
 }
 
+// Decoding as it should look: HDR tone-mapped to SDR, interlaced footage deinterlaced.
+int cmdDecoding(const QString& mediaDir, const QString& outDir)
+{
+    QDir().mkpath(outDir);
+    int failures = 0;
+    auto check = [&](bool ok, const QString& what) {
+        print(QStringLiteral("%1  %2").arg(ok ? QStringLiteral("PASS") : QStringLiteral("FAIL"), what));
+        if (!ok)
+            ++failures;
+    };
+    // HDR: a neutral grey of a known signal, in a 10-bit BT.2020 frame tagged PQ or HLG (or BT.709: as it is), comes
+    // out at the tone mapping's grey.
+    {
+        auto greyOf = [](double e, int trc) {
+            ff::FramePtr f(av_frame_alloc());
+            f->format = AV_PIX_FMT_YUV420P10LE;
+            f->width = f->height = 16;
+            av_frame_get_buffer(f.get(), 0);
+            for (int plane = 0; plane < 3; ++plane)
+                for (int y = 0; y < (plane ? 8 : 16); ++y)
+                    for (int x = 0; x < (plane ? 8 : 16); ++x)
+                        reinterpret_cast<uint16_t*>(f->data[plane] + y * f->linesize[plane])[x] = plane ? 512 : uint16_t(std::lround(64 + 876 * e));
+            f->colorspace = AVCOL_SPC_BT2020_NCL;
+            f->color_range = AVCOL_RANGE_MPEG;
+            f->color_trc = AVColorTransferCharacteristic(trc);
+            FrameConverter c;
+            return qRed(c.convert(f.get(), QSize(16, 16), true).pixel(8, 8));
+        };
+        double worst = 0;
+        QStringList seen;
+        for (const auto t : {hdr::Transfer::Pq, hdr::Transfer::Hlg})
+            for (double e : {0.2, 0.5, 0.58, 0.75, 0.95}) {
+                double lin = hdr::toLinear(e, t);
+                if (t == hdr::Transfer::Hlg)
+                    lin *= hdr::hlgOotfGain(lin);
+                const double expected = 255 * hdr::encode(hdr::toneMap(lin));
+                const int got = greyOf(e, t == hdr::Transfer::Pq ? AVCOL_TRC_SMPTE2084 : AVCOL_TRC_ARIB_STD_B67);
+                worst = std::max(worst, std::abs(got - expected));
+                seen << QString::number(got);
+            }
+        const int sdr = greyOf(0.5, AVCOL_TRC_BT709);
+        check(worst <= 2.5 && std::abs(sdr - 127.5) <= 2,
+              QStringLiteral("HDR greys (PQ, then HLG) tone-map to SDR: %1 (worst %2 off); a BT.709 grey stays %3")
+                  .arg(seen.join(QLatin1Char(' '))).arg(worst, 0, 'f', 1).arg(sdr));
+        // PQ's diffuse white (203 nits) is a little under SDR white; a 1000-nit highlight is still under it.
+        const double white = 255 * hdr::encode(hdr::toneMap(1.0)), highlight = 255 * hdr::encode(hdr::toneMap(1000 / hdr::kWhiteNits));
+        check(white > 220 && white < 240 && highlight > white && highlight < 255,
+              QStringLiteral("diffuse white at %1, a 1000-nit highlight at %2").arg(white, 0, 'f', 0).arg(highlight, 0, 'f', 0));
+    }
+    // Interlaced: the flagged file's frames come out without the comb lines that the same weave shows when it isn't
+    // flagged, on the right frames, the same after a seek back.
+    {
+        const QDir dir(mediaDir);
+        auto comb = [](const QImage& img) { // the lines' difference from their neighbours'
+            double sum = 0;
+            for (int y = 1; y + 1 < img.height(); ++y)
+                for (int x = 0; x < img.width(); x += 2)
+                    sum += std::abs(2 * qGray(img.pixel(x, y)) - qGray(img.pixel(x, y - 1)) - qGray(img.pixel(x, y + 1)));
+            return sum / (double(img.height() - 2) * img.width() / 2);
+        };
+        struct Decoded {
+            QImage early, late, again;
+            TimeUs earlyPts = -1;
+        };
+        auto decode = [&](const QString& file) {
+            Decoded d;
+            const QString path = dir.filePath(file);
+            const MediaInfo info = probeMedia(path);
+            if (!info.ok() || !info.hasVideo())
+                return d;
+            VideoDecoder dec;
+            if (!dec.open(path, info.video.front().index, nullptr, false))
+                return d;
+            FrameConverter conv;
+            auto grab = [&](TimeUs t) {
+                const AVFrame* f = dec.frameAt(t);
+                return f ? conv.convert(f, QSize(f->width, f->height), true) : QImage();
+            };
+            d.early = grab(kUsPerSecond);
+            d.earlyPts = dec.currentPts();
+            d.late = grab(kUsPerSecond * 5 / 2);
+            d.again = grab(kUsPerSecond);
+            return d;
+        };
+        const Decoded inter = decode(QStringLiteral("interlaced_mpeg2.ts")), woven = decode(QStringLiteral("woven_progressive.mkv"));
+        if (inter.early.isNull() || woven.early.isNull()) {
+            check(false, QStringLiteral("interlaced_mpeg2.ts and woven_progressive.mkv decode (tests/make_test_media.sh makes them)"));
+        } else {
+            const double a = (comb(inter.early) + comb(inter.late)) / 2, b = (comb(woven.early) + comb(woven.late)) / 2;
+            inter.early.save(QDir(outDir).filePath(QStringLiteral("deinterlaced.png")));
+            woven.early.save(QDir(outDir).filePath(QStringLiteral("woven.png")));
+            check(a * 2 < b && std::abs(inter.earlyPts - kUsPerSecond) <= 40000 && imageDifference(inter.early, inter.again) < 0.5,
+                  QStringLiteral("interlaced footage is deinterlaced (comb %1, against %2 for the same weave unflagged; the frame at "
+                                 "%3 s; the same after a seek back)")
+                      .arg(a, 0, 'f', 1).arg(b, 0, 'f', 1).arg(double(inter.earlyPts) / kUsPerSecond, 0, 'f', 2));
+        }
+    }
+    return failures ? 1 : 0;
+}
+
 int cmdGpu(const QString& mediaDir, const QString& outDir)
 {
     QDir().mkpath(outDir);
@@ -1864,7 +1965,8 @@ int cmdGpu(const QString& mediaDir, const QString& outDir)
     } sources[] = {{"3ds_stereo_mjpeg.avi", "source_3ds_mjpeg", false}, {"phone_rotated.mp4", "source_rotated", false},
                    {"hevc_10bit.mp4", "source_hevc_10bit", false},      {"h264_10bit_422.mkv", "source_h264_422_10bit", false},
                    {"png_alpha.mov", "source_png_alpha_over_video", true}, {"quicktime_cinepak.mov", "source_cinepak", false},
-                   {"dv_ntsc.dv", "source_dv_anamorphic", false}};
+                   {"dv_ntsc.dv", "source_dv_anamorphic", false},       {"hdr_pq.mkv", "source_hdr_pq", false},
+                   {"hdr_hlg.mp4", "source_hdr_hlg", false},          {"interlaced_mpeg2.ts", "source_interlaced", false}};
     for (const auto& src : sources) {
         auto item = loadItem(dir.filePath(QString::fromLatin1(src.file)), 7);
         if (!item) {
@@ -1879,7 +1981,8 @@ int cmdGpu(const QString& mediaDir, const QString& outDir)
     contactSheet(sheet).save(QDir(outDir).filePath(QStringLiteral("gpu.png")));
 
     // ---- Hardware decoding gives the same pictures as software decoding ----------
-    for (const char* file : {"h264_aac.mp4", "hevc_10bit.mp4", "uhd_hevc10.mp4", "vp9_vorbis.webm", "av1_flac.mkv"}) {
+    for (const char* file : {"h264_aac.mp4", "hevc_10bit.mp4", "uhd_hevc10.mp4", "vp9_vorbis.webm", "av1_flac.mkv", "hdr_hlg.mp4",
+                             "interlaced_mpeg2.ts"}) {
         auto item = loadItem(dir.filePath(QString::fromLatin1(file)), 9);
         if (!item)
             continue;
@@ -8188,6 +8291,8 @@ int main(int argc, char** argv)
         return cmdEnvelopes(args[1], args[2]);
     if (args.size() == 2 && args[0] == QLatin1String("audio-cache"))
         return cmdAudioCache(args[1]);
+    if (args.size() == 3 && args[0] == QLatin1String("decoding"))
+        return cmdDecoding(args[1], args[2]);
     if (args.size() == 3 && args[0] == QLatin1String("audiofx"))
         return cmdAudioFx(args[1], args[2]);
     if (args.size() == 2 && args[0] == QLatin1String("live"))

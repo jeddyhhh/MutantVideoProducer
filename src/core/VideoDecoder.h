@@ -13,6 +13,9 @@
 // jumps backwards or far ahead seek to the preceding keyframe first.
 // Media time 0 is the start of the file (container start_time removed),
 // shared with AudioDecoder so audio and video stay in sync.
+struct AVFilterGraph;
+struct AVFilterContext;
+
 class VideoDecoder {
 public:
     VideoDecoder();
@@ -46,7 +49,12 @@ public:
     int streamIndex() const { return m_streamIndex; }
 
 private:
+    // The next frame, deinterlaced when the file is interlaced (bwdif: each frame from its two fields and its
+    // neighbours, one frame a frame).
     bool readFrame(AVFrame* dst, TimeUs* pts);
+    bool readDecoded(AVFrame* dst, TimeUs* pts);
+    bool startDeinterlace(const AVFrame* f);
+    void stopDeinterlace();
     bool seekAndPrime(TimeUs t);
     void seek(TimeUs t);
     bool reopen();
@@ -84,6 +92,20 @@ private:
     AVPixelFormat m_hwFormat = AV_PIX_FMT_NONE;
     bool m_hwOnlyDecoder = false;         // decoder chosen for its hardware path (can't run in software)
     ff::FramePtr m_swFrame;               // hardware frames are copied here
+    // Deinterlacing (from the first interlaced frame on): the filter, the times of the frames in it, a frame's colour tags.
+    AVFilterGraph* m_deint = nullptr;
+    AVFilterContext* m_deintIn = nullptr;
+    AVFilterContext* m_deintOut = nullptr;
+    std::deque<TimeUs> m_deintPts;
+    bool m_deintFlushed = false;
+    bool m_deintFailed = false;
+    bool m_interlaced = false; // a frame said so
+    int m_deintW = 0, m_deintH = 0, m_deintFmt = -1;
+    AVColorTransferCharacteristic m_deintTrc = AVCOL_TRC_UNSPECIFIED;
+    AVColorSpace m_deintSpace = AVCOL_SPC_UNSPECIFIED;
+    AVColorPrimaries m_deintPrimaries = AVCOL_PRI_UNSPECIFIED;
+    AVColorRange m_deintRange = AVCOL_RANGE_UNSPECIFIED;
+    ff::FramePtr m_raw; // a decoded frame on its way into the filter
 
     // Recently decoded frames, kept while the caller is stepping backwards
     // (reverse playback) so each step doesn't re-decode from the keyframe.

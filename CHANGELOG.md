@@ -6,6 +6,9 @@ What changed in each version of Mutant Video Producer. The newest is first.
 
 ### Added
 
+- **Insert at Cursor** (**,**) and **Overwrite at Cursor** (**.**) on the Edit menu: the files selected in Project
+  Media (their Mark In / Out part) at the cursor, either pushing what follows along or covering it, whatever auto
+  ripple and auto crossfades are set to.
 - **Making-of Replay** (Tools): this session's undo history played back as a video: each step's name, the timeline's
   events sliding into place, popping in and fading out, effects stacking up as dots, and the picture where it changed.
 - **Sound from a Picture** (Tools): a picture made into sound that shows the picture in a spectrogram, placed at the
@@ -57,6 +60,10 @@ What changed in each version of Mutant Video Producer. The newest is first.
 
 ### Fixed
 
+- HDR video (phones' HLG, HDR10's PQ) looked grey and washed out: it is now tone-mapped to SDR BT.709 (the colours
+  turned into BT.709's, the highlights rolled off), the same on the CPU and the GPU.
+- Interlaced video (DV, camcorders, TV recordings, DVDs) showed comb lines on anything moving: it is deinterlaced as
+  it is decoded (FFmpeg's bwdif). Smart render no longer copies HDR or interlaced video as it is.
 - Effect devices: knobs could be squeezed so their values were drawn over their dials. A device's columns shared row
   heights (a column of toggles under a row of knobs overflowed the device), and Track Motion and Track Corners were
   added to a full column. Each column is its own stack now, those buttons start a new column when they don't fit, and
