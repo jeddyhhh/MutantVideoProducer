@@ -1,3 +1,4 @@
+#include "core/FileNames.h"
 #include "core/Profiles.h"
 #include <QRegularExpression>
 // Starting out: the welcome window, File > New's shapes and frame rates,
@@ -175,11 +176,7 @@ void MainWindow::newProjectDialog()
     newProject(chosen);
     const QString home = Profiles::instance().folder(QStringLiteral("Projects"));
     if (!home.isEmpty()) {
-        QString name = projectName->text().trimmed();
-        name.replace(QRegularExpression(QStringLiteral("[<>:\"/\\\\|?*]")), QStringLiteral("_"));
-        if (name.isEmpty()) name = tr("Untitled");
-        while (name.endsWith(QLatin1Char('.')) || name.endsWith(QLatin1Char(' '))) name.chop(1);
-        if (name.isEmpty()) name = tr("Untitled");
+        const QString name = safeFileName(projectName->text(), tr("Untitled"));
         QString path = QDir(home).filePath(name + QStringLiteral(".mvp"));
         for (int n = 2; QFileInfo::exists(path); ++n) path = QDir(home).filePath(name + QStringLiteral(" %1.mvp").arg(n));
         QString error;
