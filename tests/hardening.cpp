@@ -16,6 +16,7 @@
 #include "core/Generators.h"
 #include "core/Graphics.h"
 #include "core/MotionGraphics.h"
+#include "core/NodeGraph.h"
 #include "core/MediaInfo.h"
 #include "core/Multicam.h"
 #include "core/Project.h"
@@ -26,6 +27,7 @@
 
 #include <QCoreApplication>
 #include <QDir>
+#include <QDirIterator>
 #include <QElapsedTimer>
 #include <QFile>
 #include <QFileInfo>
@@ -1590,7 +1592,7 @@ QByteArray mangleText(QByteArray text, std::mt19937& rng)
     return text;
 }
 
-void parserFuzz(int iterations)
+void parserFuzz(const QString& examplesDir, int iterations)
 {
     stage(QStringLiteral("mangled LUTs"), 300);
     QByteArray cube = "TITLE \"test\"\nLUT_3D_SIZE 4\nDOMAIN_MIN 0 0 0\nDOMAIN_MAX 1 1 1\n";
@@ -1677,6 +1679,7 @@ void parserFuzz(int iterations)
         case 3: return QJsonArray{};
         case 4: return v.isDouble() ? QJsonValue(1e300) : v;
         case 5: return v.isDouble() ? QJsonValue(-1e300) : v;
+        case 6: return v.isDouble() ? QJsonValue(int(rng() % 8)) : v; // (node links rewired, loops among them)
         default: return v;
         }
     };
@@ -1693,6 +1696,32 @@ void parserFuzz(int iterations)
             graphics::drawScene(img, scene, t);
     }
     check(true, QStringLiteral("graphics scenes: %1 mangled scenes (%2 still valid) draw without crashing or hanging").arg(iterations).arg(valid));
+
+    // Node effects (.mvpfx files people share): mangled and rewired, run for a few frames.
+    std::vector<QJsonObject> graphs;
+    QDirIterator files(QDir(examplesDir).filePath(QStringLiteral("../effects")), {QStringLiteral("*.mvpfx")}, QDir::Files, QDirIterator::Subdirectories);
+    while (files.hasNext()) {
+        QFile f(files.next());
+        if (f.open(QIODevice::ReadOnly))
+            graphs.push_back(QJsonDocument::fromJson(f.readAll()).object());
+    }
+    int ran = 0;
+    for (int i = 0; i < iterations && !graphs.empty(); ++i) {
+        const nodes::Graph g = nodes::fromJson(mangle(graphs[size_t(i) % graphs.size()]).toObject());
+        stage(QStringLiteral("mangled node effect %1").arg(i), 60);
+        ran += nodes::problem(g).isEmpty();
+        QImage source(64, 36, QImage::Format_ARGB32_Premultiplied);
+        source.fill(qRgb(90, 140, 200));
+        nodes::Evaluator eval;
+        RenderContext ctx;
+        ctx.fps = 30;
+        for (int f = 0; f < 3; ++f) {
+            ctx.time = ctx.timelineTime = TimeUs(f) * kUsPerSecond / 30;
+            eval.run(g, source, ctx, f == 0);
+        }
+    }
+    check(!graphs.empty(), QStringLiteral("node effects: %1 mangled and rewired graphs from %2 files (%3 still runnable) run without crashing or hanging")
+                               .arg(iterations).arg(graphs.size()).arg(ran));
 }
 
 } // namespace
@@ -1722,7 +1751,7 @@ int cmdHarden(const QString& mediaDir, const QString& examplesDir, const QString
     if (part("big"))
         bigProject(mediaDir, outDir);
     if (part("parsers"))
-        parserFuzz(iterations);
+        parserFuzz(examplesDir, iterations);
     g_deadline = 0;
     print(QStringLiteral("%1  harden: %2 failure(s) in %3 s")
               .arg(g_failures ? QStringLiteral("FAIL") : QStringLiteral("PASS"))
