@@ -1,6 +1,7 @@
 #include "ui/StemJob.h"
 
 #include "core/AiRuntime.h"
+#include "core/FileNames.h"
 #include "core/MediaInfo.h"
 #include "core/Profiles.h"
 #include "core/StemSeparation.h"
@@ -55,7 +56,7 @@ bool StemJob::start(int clipId, int stems, bool best, QString* error)
     const QString home = m_project->filePath().isEmpty() ? Profiles::instance().folder(QStringLiteral("Media"))
                                                          : QFileInfo(m_project->filePath()).absolutePath();
     const auto media = m_project->mediaItem(clip->mediaId);
-    const QString name = media ? QFileInfo(media->path).completeBaseName() : QStringLiteral("event");
+    const QString name = safeFileName(media ? QFileInfo(media->path).completeBaseName() : QString(), QStringLiteral("event"));
     m_folder = QDir(home).filePath(QStringLiteral("Stems/%1 %2").arg(name, QUuid::createUuid().toString(QUuid::Id128).left(6)));
     if (!QDir().mkpath(m_folder))
         return fail(tr("Can't make the folder %1").arg(QDir::toNativeSeparators(m_folder)));
