@@ -212,18 +212,23 @@ void TimelineWidget::contextMenuEvent(QContextMenuEvent* e)
             if (isVisualTrack(tr0.type))
                 addCompositingMenus(&menu, ti);
             menu.addSeparator();
-            QAction* lock = menu.addAction(tr("Lock Track"), this, [this, ti] { toggleTrackLock(ti); });
+            // (by the track's id: while the menu is open an edit, the AI's, can add or remove tracks above it)
+            auto now = [this, trackId] { return m_project->timeline().trackIndex(trackId); };
+            QAction* lock = menu.addAction(tr("Lock Track"), this, [this, now] { toggleTrackLock(now()); });
             lock->setCheckable(true);
             lock->setChecked(tr0.locked);
             lock->setToolTip(tr("Protect its events from edits: they can't be selected, moved or dropped onto, and ripples leave them in place"));
             const int n = int(m_project->timeline().tracks.size());
-            menu.addAction(tr("Move Track Up"), this, [this, ti] { moveTrack(ti, ti - 1); })->setEnabled(ti > 0);
-            menu.addAction(tr("Move Track Down"), this, [this, ti] { moveTrack(ti, ti + 1); })->setEnabled(ti + 1 < n);
+            menu.addAction(tr("Move Track Up"), this, [this, now] { if (const int i = now(); i >= 0) moveTrack(i, i - 1); })->setEnabled(ti > 0);
+            menu.addAction(tr("Move Track Down"), this, [this, now] { if (const int i = now(); i >= 0) moveTrack(i, i + 1); })->setEnabled(ti + 1 < n);
         }
         if (ti >= 0) {
             menu.addSeparator();
-            menu.addAction(tr("Delete Track"), this, [this, ti] {
+            menu.addAction(tr("Delete Track"), this, [this, trackId = m_project->timeline().tracks[size_t(ti)].id] {
                 Timeline tl = m_project->timeline();
+                const int ti = tl.trackIndex(trackId);
+                if (ti < 0)
+                    return;
                 ops::removeTrack(tl, ti);
                 m_project->applyEdit(tl, tr("Delete Track"));
             });

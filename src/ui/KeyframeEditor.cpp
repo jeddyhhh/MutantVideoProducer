@@ -1611,7 +1611,10 @@ void KeyframeEditor::contextMenu(const QPoint& pos, const QPoint& global)
                     setPickedValue(v);
             });
         if (h.kind == Hit::Key)
-            menu.addAction(tr("Go to Keyframe"), this, [this, h] { emit seekRequested(keyops::toTimeline(m_project->timeline(), m_channels[size_t(h.channel)], h.time)); });
+            menu.addAction(tr("Go to Keyframe"), this, [this, h] {
+                if (const keyops::Channel* c = channel(h.channel))
+                    emit seekRequested(keyops::toTimeline(m_project->timeline(), *c, h.time));
+            });
     }
     if (ch) {
         menu.addSeparator();
@@ -1620,17 +1623,24 @@ void KeyframeEditor::contextMenu(const QPoint& pos, const QPoint& global)
         menu.addAction(tr("Add Keyframe at Cursor"), this, [this, index] { addKeyAt(index, m_cursor()); });
         if (pos.x() >= kListW && !m_graph)
             menu.addAction(tr("Add Keyframe Here"), this, [this, index, t = xToTime(pos.x())] { addKeyAt(index, t); });
+        // (while the menu is open an edit, the AI's, can rebuild the channels: the index is checked again when picked)
         if (const ParamValue* p = values(index); p && !p->keys.empty()) {
             menu.addAction(tr("Pick All Keyframes of %1").arg(name), this, [this, index] {
+                const ParamValue* p = values(index);
+                if (!p)
+                    return;
                 m_picked.clear();
-                for (const Keyframe& k : values(index)->keys)
+                for (const Keyframe& k : p->keys)
                     m_picked[m_channels[size_t(index)].address.key()].insert(k.time);
                 updateFields();
                 m_canvas->update();
             });
             menu.addAction(tr("Remove All Keyframes of %1").arg(name), this, [this, index] {
+                const ParamValue* p = values(index);
+                if (!p)
+                    return;
                 Times all;
-                for (const Keyframe& k : values(index)->keys)
+                for (const Keyframe& k : p->keys)
                     all.insert(k.time);
                 m_picked = {{m_channels[size_t(index)].address.key(), all}};
                 deletePicked();

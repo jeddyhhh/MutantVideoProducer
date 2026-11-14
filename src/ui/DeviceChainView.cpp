@@ -2744,6 +2744,14 @@ void DeviceChainView::ungroup(const ChainPath& path, int index)
     editRoot([&](EffectChain& r, Timeline&) { ungroupRack(r, path, index); }, tr("Ungroup Rack"));
 }
 
+// The rack's chains, or null when the indices no longer fit: they are from when a menu or dialog opened, and an edit
+// meanwhile (the AI's) may have moved things.
+static std::vector<RackChain>* rackChains(EffectChain& root, const ChainPath& path, int rackIndex)
+{
+    EffectChain* c = resolveChain(root, path);
+    return c && rackIndex >= 0 && size_t(rackIndex) < c->size() ? &(*c)[size_t(rackIndex)].chains : nullptr;
+}
+
 void DeviceChainView::addChain(const ChainPath& path, int rackIndex)
 {
     const EffectInstance* rack = effectAt(path, rackIndex);
@@ -2751,8 +2759,8 @@ void DeviceChainView::addChain(const ChainPath& path, int rackIndex)
         return;
     const int rackId = rack->id, n = int(rack->chains.size());
     editRoot([&](EffectChain& r, Timeline&) {
-        if (EffectChain* c = resolveChain(r, path))
-            (*c)[size_t(rackIndex)].chains.push_back(makeRackChain(isAudio(), tr("Chain %1").arg(n + 1)));
+        if (auto* chains = rackChains(r, path, rackIndex))
+            chains->push_back(makeRackChain(isAudio(), tr("Chain %1").arg(n + 1)));
     }, tr("Add Chain"));
     selectChain(rackId, n);
 }
@@ -2760,20 +2768,17 @@ void DeviceChainView::addChain(const ChainPath& path, int rackIndex)
 void DeviceChainView::removeChain(const ChainPath& path, int rackIndex, int chain)
 {
     editRoot([&](EffectChain& r, Timeline&) {
-        if (EffectChain* c = resolveChain(r, path)) {
-            auto& chains = (*c)[size_t(rackIndex)].chains;
-            if (chain < int(chains.size()))
-                chains.erase(chains.begin() + chain);
-        }
+        if (auto* chains = rackChains(r, path, rackIndex); chains && chain >= 0 && chain < int(chains->size()))
+            chains->erase(chains->begin() + chain);
     }, tr("Delete Chain"));
 }
 
 void DeviceChainView::duplicateChain(const ChainPath& path, int rackIndex, int chain)
 {
     editRoot([&](EffectChain& r, Timeline& tl) {
-        if (EffectChain* c = resolveChain(r, path)) {
-            auto& chains = (*c)[size_t(rackIndex)].chains;
-            if (chain >= int(chains.size()))
+        if (auto* found = rackChains(r, path, rackIndex)) {
+            auto& chains = *found;
+            if (chain < 0 || chain >= int(chains.size()))
                 return;
             RackChain copy = chains[size_t(chain)];
             copy.name = tr("%1 copy").arg(copy.name);
@@ -2786,7 +2791,7 @@ void DeviceChainView::duplicateChain(const ChainPath& path, int rackIndex, int c
 void DeviceChainView::renameChain(const ChainPath& path, int rackIndex, int chain)
 {
     const EffectInstance* rack = effectAt(path, rackIndex);
-    if (!rack || chain >= int(rack->chains.size()))
+    if (!rack || chain < 0 || chain >= int(rack->chains.size()))
         return;
     bool ok = false;
     const QString name = QInputDialog::getText(this, tr("Rename Chain"), tr("Chain name:"), QLineEdit::Normal,
@@ -2794,19 +2799,16 @@ void DeviceChainView::renameChain(const ChainPath& path, int rackIndex, int chai
     if (!ok)
         return;
     editRoot([&](EffectChain& r, Timeline&) {
-        if (EffectChain* c = resolveChain(r, path))
-            (*c)[size_t(rackIndex)].chains[size_t(chain)].name = name;
+        if (auto* chains = rackChains(r, path, rackIndex); chains && chain >= 0 && chain < int(chains->size()))
+            (*chains)[size_t(chain)].name = name;
     }, tr("Rename Chain"));
 }
 
 void DeviceChainView::setChainFlag(const ChainPath& path, int rackIndex, int chain, bool solo, bool on)
 {
     editRoot([&](EffectChain& r, Timeline&) {
-        if (EffectChain* c = resolveChain(r, path)) {
-            auto& chains = (*c)[size_t(rackIndex)].chains;
-            if (chain < int(chains.size()))
-                (solo ? chains[size_t(chain)].solo : chains[size_t(chain)].enabled) = on;
-        }
+        if (auto* chains = rackChains(r, path, rackIndex); chains && chain >= 0 && chain < int(chains->size()))
+            (solo ? (*chains)[size_t(chain)].solo : (*chains)[size_t(chain)].enabled) = on;
     }, solo ? tr("Solo Chain") : tr("Chain On/Off"));
 }
 

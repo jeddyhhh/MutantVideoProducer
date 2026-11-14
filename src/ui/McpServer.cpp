@@ -831,6 +831,13 @@ QJsonObject McpServer::handle(const QJsonObject& msg)
                 QStringLiteral("a window is open in Mutant Video Producer (\"%1\"): it needs closing first, then try again").arg(modal->windowTitle()));
             return response;
         }
+        // Likewise a menu that's open (its actions hold the indices of when it opened) and a drag under way (a timeline
+        // drag rebuilds from the timeline as it was at the press, and would undo the edit).
+        if ((QApplication::activePopupWidget() || QGuiApplication::mouseButtons() != Qt::NoButton) && !readOnly.contains(name)) {
+            response[QStringLiteral("result")] =
+                errorResult(QStringLiteral("the user has a menu open or is dragging something in Mutant Video Producer: try again in a moment"));
+            return response;
+        }
         emit activity(name);
         response[QStringLiteral("result")] = callTool(name, params[QStringLiteral("arguments")].toObject());
     } else {

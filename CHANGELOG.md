@@ -69,6 +69,9 @@ What changed in each version of Mutant Video Producer. The newest is first.
   mixing at once): it scans at most 15 minutes a call now and says where it stopped (scanned_to).
 - The AI's normalize_audio could crash the app on a silent event whose Gain effect (from a damaged project) had no
   gain setting.
+- An AI edit that came in while a menu was open, or while something was being dragged, could crash the app when the
+  menu's action ran (the keyframe editor's Go to Keyframe and Pick/Remove All Keyframes, a rack's chain actions), make
+  a track menu's action hit another track, or be undone by the drag. The AI's edits wait for the menu or drag now.
 - Crash reports on Windows: a fatal error inside Qt ended the program without one, and aborts and unhandled C++
   exceptions were reported without the stack.
 - The AI's node-effect preview, and the effect editor's framing picture of a generated event, drew pixel-sized
