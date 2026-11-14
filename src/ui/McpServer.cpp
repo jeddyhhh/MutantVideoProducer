@@ -60,6 +60,7 @@
 
 #include <QApplication>
 #include <QDirIterator>
+#include <QElapsedTimer>
 #include <QRegularExpression>
 #include <QTimer>
 #include <QBuffer>
@@ -97,6 +98,21 @@
 namespace {
 
 constexpr int kMaxBody = 16 * 1024 * 1024;
+
+// A long scan's progress: the window kept painting meanwhile (not "Not Responding" for the seconds it takes), the
+// user's input held back.
+std::function<bool(double)> windowKeptGoing()
+{
+    auto clock = std::make_shared<QElapsedTimer>();
+    clock->start();
+    return [clock](double) {
+        if (clock->elapsed() >= 50) {
+            QCoreApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
+            clock->restart();
+        }
+        return true;
+    };
+}
 
 // Seconds from a client, kept within ±11.5 days (as project files are):
 // anything bigger would overflow the times built from it.
@@ -2177,7 +2193,10 @@ QJsonObject McpServer::ToolCall::tool_graphics_overlay()
             const auto snap = project->snapshot();
             BeatSettings bs;
             bs.band = BeatSettings::Full;
-            const BeatScan scan = scanBeats(*snap, c->start + us(from), c->start + us(std::min(to, sec(c->length))), {}, bs);
+            // (at most 15 minutes of music listened to, as detect_beats: the dancers stop after it)
+            const TimeUs scanFrom = c->start + us(from);
+            const BeatScan scan = scanBeats(*snap, scanFrom, std::min(c->start + us(std::min(to, sec(c->length))), scanFrom + 15 * 60 * kUsPerSecond),
+                                            {}, bs, windowKeptGoing());
             QStringList moves;
             for (auto v : a["moves"].toArray())
                 moves << v.toString();
@@ -2878,7 +2897,7 @@ QJsonObject McpServer::ToolCall::tool_detect_beats()
         return errorResult(QStringLiteral("the timeline has no sound there"));
     BeatSettings bs;
     bs.band = BeatSettings::Full;
-    const BeatScan scan = scanBeats(*snap, from, to, {}, bs);
+    const BeatScan scan = scanBeats(*snap, from, to, {}, bs, windowKeptGoing());
     if (scan.beats.empty())
         return errorResult(QStringLiteral("no beat found (is there music on the timeline?)"));
     Timeline tl = project->timeline();
