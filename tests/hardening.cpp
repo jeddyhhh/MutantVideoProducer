@@ -14,6 +14,8 @@
 #include "core/AudioEffects.h"
 #include "core/Exporter.h"
 #include "core/Generators.h"
+#include "core/Graphics.h"
+#include "core/MotionGraphics.h"
 #include "core/MediaInfo.h"
 #include "core/Multicam.h"
 #include "core/Project.h"
@@ -41,6 +43,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <functional>
 #include <mutex>
 #include <random>
 #include <set>
@@ -1643,6 +1646,53 @@ void parserFuzz(int iterations)
               .arg(iterations)
               .arg(captions)
               .arg(subProblem.isEmpty() ? QString() : QStringLiteral(": ") + subProblem));
+
+    // Graphics scenes (from project files and the AI): arrays cut short, wrong types, keys gone.
+    // Drawn whether or not they pass validation (a project file's scene isn't checked again).
+    const std::function<QJsonValue(const QJsonValue&)> mangle = [&](const QJsonValue& v) -> QJsonValue {
+        const uint32_t r = rng() % 100;
+        if (v.isArray()) {
+            const QJsonArray a = v.toArray();
+            if (r < 4)
+                return QJsonArray{};
+            if (r < 8 && !a.isEmpty())
+                return QJsonArray{mangle(a.at(0))};
+            QJsonArray out;
+            for (const QJsonValue& e : a)
+                out.append(mangle(e));
+            return out;
+        }
+        if (v.isObject()) {
+            const QJsonObject o = v.toObject();
+            QJsonObject out;
+            for (auto it = o.begin(); it != o.end(); ++it)
+                if (rng() % 100 >= 3)
+                    out.insert(it.key(), mangle(it.value()));
+            return out;
+        }
+        switch (r) {
+        case 0: return QStringLiteral("x");
+        case 1: return QJsonValue();
+        case 2: return QJsonObject{};
+        case 3: return QJsonArray{};
+        case 4: return v.isDouble() ? QJsonValue(1e300) : v;
+        case 5: return v.isDouble() ? QJsonValue(-1e300) : v;
+        default: return v;
+        }
+    };
+    QStringList scenePresets = graphics::presets();
+    scenePresets += motion::presets();
+    int valid = 0;
+    for (int i = 0; i < iterations; ++i) {
+        const QString name = scenePresets[qsizetype(i) % scenePresets.size()];
+        const QJsonObject scene = mangle(graphics::scene(name)).toObject();
+        stage(QStringLiteral("mangled graphics scene %1 (%2)").arg(i).arg(name), 60);
+        valid += graphics::validateScene(scene).isEmpty();
+        QImage img(96, 54, QImage::Format_ARGB32_Premultiplied);
+        for (double t : {0.0, 1.3, 1e9})
+            graphics::drawScene(img, scene, t);
+    }
+    check(true, QStringLiteral("graphics scenes: %1 mangled scenes (%2 still valid) draw without crashing or hanging").arg(iterations).arg(valid));
 }
 
 } // namespace
