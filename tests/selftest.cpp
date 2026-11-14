@@ -5948,6 +5948,37 @@ int cmdLive(const QString& outDir)
                   QStringLiteral("a %1 s video keeps playing after its end (looped: %2 new pictures in 0.5 s)").arg(info.duration / 1e6, 0, 'f', 1).arg(l1 - l0));
             loop.stop();
         }
+        // An interlaced file as a source: its pictures come without comb lines, as in the editor.
+        const QString inter = QDir(QStringLiteral("testmedia")).absoluteFilePath(QStringLiteral("interlaced_mpeg2.ts"));
+        const QString woven = QDir(QStringLiteral("testmedia")).absoluteFilePath(QStringLiteral("woven_progressive.mkv"));
+        if (QFileInfo::exists(inter) && QFileInfo::exists(woven)) {
+            auto combOf = [](const QString& path) {
+                LiveSource src;
+                src.kind = LiveSource::Kind::File;
+                src.id = path;
+                LiveCapture cap;
+                QString error;
+                cap.start(src, {}, QSize(720, 576), &error);
+                double sum = 0;
+                int n = 0;
+                for (int i = 0; i < 8; ++i) {
+                    QThread::msleep(150);
+                    const QImage img = cap.latest();
+                    if (img.isNull())
+                        continue;
+                    for (int y = 1; y + 1 < img.height(); ++y)
+                        for (int x = 0; x < img.width(); x += 2)
+                            sum += std::abs(2 * qGray(img.pixel(x, y)) - qGray(img.pixel(x, y - 1)) - qGray(img.pixel(x, y + 1)));
+                    n += (img.height() - 2) * (img.width() / 2);
+                }
+                cap.stop();
+                return n ? sum / n : -1.0;
+            };
+            const double a2 = combOf(inter), b2 = combOf(woven);
+            check(a2 >= 0 && a2 * 2 < b2,
+                  QStringLiteral("an interlaced video file as a Live source is deinterlaced (comb %1, against %2 unflagged)")
+                      .arg(a2, 0, 'f', 1).arg(b2, 0, 'f', 1));
+        }
     }
     // ---- Replay buffer: the last seconds, saved on demand while it carries on ----
     {

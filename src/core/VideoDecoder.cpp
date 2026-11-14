@@ -3,9 +3,6 @@
 #include "core/Hardware.h"
 
 extern "C" {
-#include <libavfilter/avfilter.h>
-#include <libavfilter/buffersink.h>
-#include <libavfilter/buffersrc.h>
 #include <libavutil/hwcontext.h>
 }
 
@@ -39,8 +36,9 @@ VideoDecoder::~VideoDecoder() = default;
 
 void VideoDecoder::close()
 {
-    stopDeinterlace();
-    m_deintFailed = m_interlaced = false;
+    m_deint.reset();
+    m_deintPts.clear();
+    m_deintFlushed = m_interlaced = false;
     clearHistory();
     m_dec.reset();
     m_fmt.reset();
@@ -155,94 +153,42 @@ bool VideoDecoder::reopen()
     return open(path, idx, nullptr, m_allowHardware);
 }
 
-void VideoDecoder::stopDeinterlace()
-{
-    avfilter_graph_free(&m_deint);
-    m_deintIn = m_deintOut = nullptr;
-    m_deintPts.clear();
-    m_deintFlushed = false;
-}
-
-bool VideoDecoder::startDeinterlace(const AVFrame* f)
-{
-    stopDeinterlace();
-    m_deint = avfilter_graph_alloc();
-    const AVRational sar = f->sample_aspect_ratio.num ? f->sample_aspect_ratio : AVRational{1, 1};
-    const QByteArray args = QStringLiteral("video_size=%1x%2:pix_fmt=%3:time_base=%4/%5:pixel_aspect=%6/%7:colorspace=%8:range=%9")
-                                .arg(f->width).arg(f->height).arg(f->format)
-                                .arg(m_stream->time_base.num).arg(m_stream->time_base.den).arg(sar.num).arg(sar.den)
-                                .arg(int(f->colorspace)).arg(int(f->color_range))
-                                .toLatin1();
-    AVFilterContext* bwdif = nullptr;
-    bool ok = m_deint && avfilter_graph_create_filter(&m_deintIn, avfilter_get_by_name("buffer"), "in", args.constData(), nullptr, m_deint) >= 0
-              && avfilter_graph_create_filter(&bwdif, avfilter_get_by_name("bwdif"), "deint", "mode=send_frame:parity=auto:deint=interlaced",
-                                              nullptr, m_deint) >= 0
-              && avfilter_graph_create_filter(&m_deintOut, avfilter_get_by_name("buffersink"), "out", nullptr, nullptr, m_deint) >= 0
-              && avfilter_link(m_deintIn, 0, bwdif, 0) >= 0 && avfilter_link(bwdif, 0, m_deintOut, 0) >= 0
-              && avfilter_graph_config(m_deint, nullptr) >= 0;
-    if (!ok) {
-        stopDeinterlace();
-        m_deintFailed = true; // (shown as it is)
-        return false;
-    }
-    m_deintW = f->width;
-    m_deintH = f->height;
-    m_deintFmt = f->format;
-    return true;
-}
-
 bool VideoDecoder::readFrame(AVFrame* dst, TimeUs* ptsOut)
 {
     if (!m_raw)
         m_raw.reset(av_frame_alloc());
     for (;;) {
-        if (m_deint) {
-            av_frame_unref(dst); // (the sink moves its frame in without letting go of what was there)
-            const int got = av_buffersink_get_frame(m_deintOut, dst);
-            if (got >= 0) {
-                *ptsOut = m_deintPts.empty() ? m_lastPts : m_deintPts.front();
-                if (!m_deintPts.empty())
-                    m_deintPts.pop_front();
-                // (a format conversion on the way may drop them)
-                dst->color_trc = m_deintTrc;
-                dst->colorspace = m_deintSpace;
-                dst->color_primaries = m_deintPrimaries;
-                dst->color_range = m_deintRange;
-                return true;
-            }
-            if (got == AVERROR_EOF)
-                return false;
+        if (m_interlaced && m_deint.pull(dst)) {
+            *ptsOut = m_deintPts.empty() ? m_lastPts : m_deintPts.front();
+            if (!m_deintPts.empty())
+                m_deintPts.pop_front();
+            return true;
         }
         TimeUs t = 0;
         if (!readDecoded(m_raw.get(), &t)) {
-            if (m_deint && !m_deintFlushed) { // the frames still in the filter
-                av_buffersrc_add_frame(m_deintIn, nullptr);
+            if (m_interlaced && !m_deintFlushed) { // the frames still in the filter
+                m_deint.flush();
                 m_deintFlushed = true;
                 continue;
             }
             return false;
         }
-        const AVFrame* f = m_raw.get();
+        AVFrame* f = m_raw.get();
         m_interlaced = m_interlaced || (f->flags & AV_FRAME_FLAG_INTERLACED);
-        if (m_deint && (f->width != m_deintW || f->height != m_deintH || f->format != m_deintFmt))
-            stopDeinterlace(); // (a new size or format midway: the frames still in the filter are let go)
-        if (!m_deint && m_interlaced && !m_deintFailed)
-            startDeinterlace(f);
-        if (!m_deint) {
-            av_frame_unref(dst);
-            av_frame_move_ref(dst, m_raw.get());
-            *ptsOut = t;
-            return true;
+        if (m_interlaced && (f->width != m_deintW || f->height != m_deintH || f->format != m_deintFmt)) {
+            m_deint.reset(); // (a new size or format midway: the frames still in the filter are let go)
+            m_deintPts.clear();
+            m_deintW = f->width, m_deintH = f->height, m_deintFmt = f->format;
         }
-        m_deintTrc = f->color_trc;
-        m_deintSpace = f->colorspace;
-        m_deintPrimaries = f->color_primaries;
-        m_deintRange = f->color_range;
-        if (av_buffersrc_add_frame(m_deintIn, m_raw.get()) < 0) {
-            av_frame_unref(m_raw.get());
+        if (m_interlaced && m_deint.push(f)) {
+            av_frame_unref(f);
+            m_deintPts.push_back(t);
             continue;
         }
-        m_deintPts.push_back(t);
+        av_frame_unref(dst);
+        av_frame_move_ref(dst, f);
+        *ptsOut = t;
+        return true;
     }
 }
 
@@ -301,7 +247,9 @@ bool VideoDecoder::readDecoded(AVFrame* dst, TimeUs* ptsOut)
 
 void VideoDecoder::seek(TimeUs t)
 {
-    stopDeinterlace(); // (a fresh filter after the jump: no neighbours from before it)
+    m_deint.reset(); // (a fresh filter after the jump: no neighbours from before it)
+    m_deintPts.clear();
+    m_deintFlushed = false;
     m_hasCur = m_hasNext = m_draining = m_eof = m_hasLastPts = m_hasPrev = false;
     int64_t ts = av_rescale_q(t + m_startOffset, AV_TIME_BASE_Q, m_stream->time_base);
     // Seeking before the first timestamp confuses some demuxers (MPEG-TS).

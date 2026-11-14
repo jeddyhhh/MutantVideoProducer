@@ -1,5 +1,6 @@
 #include "core/LiveCapture.h"
 
+#include "core/Deinterlacer.h"
 #include "core/FFmpeg.h"
 #include "core/FrameConverter.h"
 
@@ -339,6 +340,10 @@ struct LiveCapture::Impl {
     double fps = 0;
     QSize srcSize, maxSize;
     FrameConverter converter;
+    // Interlaced pictures (a DV file, a 1080i capture card): made whole first, one frame behind.
+    Deinterlacer deint;
+    ff::FramePtr whole;
+    bool interlaced = false;
     // Files: the playlist, the one playing, and pacing by their timestamps.
     bool file = false;
     QStringList playlist;
@@ -466,9 +471,24 @@ struct LiveCapture::Impl {
         }
     }
 
+    void deliverWhole(const AVFrame* frame, QElapsedTimer& timer, int& frames)
+    {
+        interlaced = interlaced || (frame->flags & AV_FRAME_FLAG_INTERLACED);
+        if (!interlaced || !deint.push(frame)) {
+            deliver(frame, timer, frames);
+            return;
+        }
+        if (!whole)
+            whole.reset(av_frame_alloc());
+        while (deint.pull(whole.get()))
+            deliver(whole.get(), timer, frames);
+    }
+
     // Files: opens the next one in the playlist that opens (from `from`), restarting the pacing.
     bool openFile(int from)
     {
+        deint.reset();
+        interlaced = false;
         for (int tries = 0; tries < int(playlist.size()); ++tries) {
             const int i = (from + tries) % int(playlist.size());
             QString e;
@@ -529,7 +549,7 @@ struct LiveCapture::Impl {
                     avcodec_send_packet(dec, nullptr);
                     while (avcodec_receive_frame(dec, frame.get()) == 0) {
                         pace(frame.get());
-                        deliver(frame.get(), timer, frames);
+                        deliverWhole(frame.get(), timer, frames);
                         av_frame_unref(frame.get());
                     }
                 }
@@ -555,7 +575,7 @@ struct LiveCapture::Impl {
                     while (avcodec_receive_frame(dec, frame.get()) == 0) {
                         if (file)
                             pace(frame.get());
-                        deliver(frame.get(), timer, frames);
+                        deliverWhole(frame.get(), timer, frames);
                         av_frame_unref(frame.get());
                     }
                 }

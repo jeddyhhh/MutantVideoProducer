@@ -68,7 +68,8 @@ What changed in each version of Mutant Video Producer. The newest is first.
 - HDR video (phones' HLG, HDR10's PQ) looked grey and washed out: it is now tone-mapped to SDR BT.709 (the colours
   turned into BT.709's, the highlights rolled off), the same on the CPU and the GPU.
 - Interlaced video (DV, camcorders, TV recordings, DVDs) showed comb lines on anything moving: it is deinterlaced as
-  it is decoded (FFmpeg's bwdif). Smart render no longer copies HDR or interlaced video as it is.
+  it is decoded (FFmpeg's bwdif), in the editor and in the Live tab's video files and capture cards. Smart render no
+  longer copies HDR or interlaced video as it is.
 - Effect devices: knobs could be squeezed so their values were drawn over their dials. A device's columns shared row
   heights (a column of toggles under a row of knobs overflowed the device), and Track Motion and Track Corners were
   added to a full column. Each column is its own stack now, those buttons start a new column when they don't fit, and

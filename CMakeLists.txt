@@ -135,6 +135,7 @@ add_library(mvp_core STATIC
     src/core/Proxy.h             src/core/Proxy.cpp
     src/core/PreviewCache.h      src/core/PreviewCache.cpp
     src/core/Spectrogram.h       src/core/Spectrogram.cpp
+    src/core/Deinterlacer.h      src/core/Deinterlacer.cpp
     src/core/RetroShaders.h      src/core/RetroShaders.cpp
     src/core/Scopes.h            src/core/Scopes.cpp
     src/core/VideoShare.h        src/core/VideoShare.cpp
