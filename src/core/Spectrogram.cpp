@@ -2,6 +2,7 @@
 
 #include "core/AudioMixer.h"
 #include "core/Fft.h"
+#include "core/Parallel.h"
 
 #include <QRandomGenerator>
 
@@ -124,37 +125,53 @@ std::vector<float> fromPicture(const QImage& picture, int rate, double seconds, 
     const int cols = std::max(2, int(std::lround(double(total) / rate * 40)));
     const QImage img = picture.convertToFormat(QImage::Format_ARGB32).scaled(cols, kRows, Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
     const double colSamples = double(total) / cols;
+    struct Row {
+        double step, phase;
+        std::vector<double> amp; // a column's loudness
+    };
+    std::vector<Row> rows;
     QRandomGenerator random(7); // (the same picture: the same sound)
-    std::vector<double> amp(static_cast<size_t>(cols), 0.0);
     for (int row = 0; row < kRows; ++row) {
+        Row r{0, 0, std::vector<double>(static_cast<size_t>(cols), 0.0)};
         bool any = false;
         for (int x = 0; x < cols; ++x) {
             const QRgb px = img.pixel(x, row);
             const double v = qGray(px) / 255.0 * qAlpha(px) / 255.0;
-            amp[size_t(x)] = v < 0.03 ? 0.0 : std::pow(10.0, -60.0 * (1.0 - v) / 20.0); // (brightness on the colours' dB scale)
-            any = any || amp[size_t(x)] > 0;
+            r.amp[size_t(x)] = v < 0.03 ? 0.0 : std::pow(10.0, -60.0 * (1.0 - v) / 20.0); // (brightness on the colours' dB scale)
+            any = any || r.amp[size_t(x)] > 0;
         }
         if (!any)
             continue;
-        const double hz = lowHz * std::pow(highHz / lowHz, 1.0 - double(row) / (kRows - 1));
-        const double step = 2 * 3.14159265358979 * hz / rate;
-        double phase = random.generateDouble() * 2 * 3.14159265358979;
-        // The rotation's sin and cos, exact again every block (so it doesn't drift).
-        for (int i = 0; i < total; i += 1024) {
-            double re = std::cos(phase + step * i), im = std::sin(phase + step * i);
-            const double cr = std::cos(step), ci = std::sin(step);
-            const int n = std::min(1024, total - i);
+        r.step = 2 * 3.14159265358979 * lowHz * std::pow(highHz / lowHz, 1.0 - double(row) / (kRows - 1)) / rate;
+        r.phase = random.generateDouble() * 2 * 3.14159265358979;
+        rows.push_back(std::move(r));
+    }
+    // Blocks of samples side by side on the cores; in each, every row's sine (its rotation exact again at the block's
+    // start, so it doesn't drift) at its loudness between the columns.
+    constexpr int kBlock = 1024;
+    parallelFor((total + kBlock - 1) / kBlock, [&](int b0, int b1) {
+        int c0[kBlock];
+        double frac[kBlock];
+        for (int blk = b0; blk < b1; ++blk) {
+            const int i = blk * kBlock, n = std::min(kBlock, total - i);
             for (int k = 0; k < n; ++k) {
                 const double at = std::clamp((i + k) / colSamples - 0.5, 0.0, cols - 1.0);
-                const int c0 = std::min(int(at), cols - 2);
-                const double a = amp[size_t(c0)] + (amp[size_t(c0 + 1)] - amp[size_t(c0)]) * (at - c0);
-                out[size_t(i + k)] += float(a * im);
-                const double nre = re * cr - im * ci;
-                im = re * ci + im * cr;
-                re = nre;
+                c0[k] = std::min(int(at), cols - 2);
+                frac[k] = at - c0[k];
+            }
+            for (const Row& r : rows) {
+                double re = std::cos(r.phase + r.step * i), im = std::sin(r.phase + r.step * i);
+                const double cr = std::cos(r.step), ci = std::sin(r.step);
+                for (int k = 0; k < n; ++k) {
+                    const double a = r.amp[size_t(c0[k])] + (r.amp[size_t(c0[k] + 1)] - r.amp[size_t(c0[k])]) * frac[k];
+                    out[size_t(i + k)] += float(a * im);
+                    const double nre = re * cr - im * ci;
+                    im = re * ci + im * cr;
+                    re = nre;
+                }
             }
         }
-    }
+    }, 4);
     // A 5 ms fade at each end (no clicks), then a peak of -1 dBFS.
     const int fade = std::min(total / 2, rate / 200);
     for (int i = 0; i < fade; ++i) {
