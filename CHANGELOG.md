@@ -65,6 +65,8 @@ What changed in each version of Mutant Video Producer. The newest is first.
   (stems, effects, pad sets, sequences, characters, Deliver's outputs) also no longer end in a dot or use a Windows
   device name (CON, NUL, COM1...). Separating an event's stems named its file just ".wav" for generated media.
 - The AI's group tool with action ungroup and no events read past an empty list; it is refused now.
+- The AI's detect_beats on a timeline with sound far out could freeze the app for minutes (up to four hours of
+  mixing at once): it scans at most 15 minutes a call now and says where it stopped (scanned_to).
 - The AI's node-effect preview, and the effect editor's framing picture of a generated event, drew pixel-sized
   settings (blur radii, outlines) too big in a very tall project.
 - Placing a file at the cursor (double-click in Project Media) put it on the selected track even when that track was

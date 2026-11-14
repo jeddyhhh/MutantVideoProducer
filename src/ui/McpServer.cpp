@@ -1073,7 +1073,7 @@ QJsonArray McpServer::toolList()
     t.append(tool("detect_beats", "Finds the beat of the music on the timeline and puts a marker on every beat or bar. Returns the tempo.",
                   {{QStringLiteral("every"), prop("integer", "Marker every N beats: 1, 2, 4 (a bar), 8, 16 (default 4)")},
                    {QStringLiteral("from"), prop("number", "Seconds (default 0)")},
-                   {QStringLiteral("to"), prop("number", "Seconds (default: the end)")}}));
+                   {QStringLiteral("to"), prop("number", "Seconds (default: the end; at most 15 minutes after from a call, see scanned_to)")}}));
     t.append(tool("get_frame", "The picture at a time (default: the cursor), as an image, with the effects.",
                   {{QStringLiteral("time"), prop("number", "Seconds")},
                    {QStringLiteral("width"), prop("integer", "Image width, 160-1920 (default 640)")},
@@ -2862,9 +2862,13 @@ QJsonObject McpServer::ToolCall::tool_remove_markers()
 QJsonObject McpServer::ToolCall::tool_detect_beats()
 {
     const auto snap = project->snapshot();
-    const TimeUs from = us(std::max(0.0, num("from"))), to = has("to") ? us(num("to")) : snap->timeline.duration();
+    const TimeUs from = us(std::max(0.0, num("from")));
+    // At most 15 minutes a call (about 20 s of mixing; hours froze the app for minutes): the AI goes on from scanned_to.
+    constexpr TimeUs kMostPerCall = 15 * 60 * kUsPerSecond;
+    const TimeUs asked = has("to") ? us(num("to")) : snap->timeline.duration();
+    const TimeUs to = std::min({asked, snap->timeline.soundEnd(), from + kMostPerCall});
     if (to <= from)
-        return errorResult(QStringLiteral("the timeline is empty there"));
+        return errorResult(QStringLiteral("the timeline has no sound there"));
     BeatSettings bs;
     bs.band = BeatSettings::Full;
     const BeatScan scan = scanBeats(*snap, from, to, {}, bs);
@@ -2874,7 +2878,8 @@ QJsonObject McpServer::ToolCall::tool_detect_beats()
     const int n = addBeatMarkers(tl, scan.beats, std::clamp(integer("every", 4), 1, 16), true, from, to);
     apply(tl, QStringLiteral("Detect Beats"));
     return jsonResult(
-        {{QStringLiteral("bpm"), scan.bpm}, {QStringLiteral("markers"), n}, {QStringLiteral("first_beat"), sec(scan.beats.front())}});
+        {{QStringLiteral("bpm"), scan.bpm}, {QStringLiteral("markers"), n}, {QStringLiteral("first_beat"), sec(scan.beats.front())},
+         {QStringLiteral("scanned_to"), sec(to)}});
 }
 
 QJsonObject McpServer::ToolCall::tool_get_frame()
