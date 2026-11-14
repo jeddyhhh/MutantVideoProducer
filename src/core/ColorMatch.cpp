@@ -86,7 +86,7 @@ QImage eventPicture(const ProjectSnapshot& snap, int clipId, TimeUs t, int befor
     ProjectSnapshot alone = snap;
     alone.timeline.tracks = {track};
     alone.timeline.outputEffects.clear();
-    const QSize size(width, std::max(1, int(double(width) * snap.settings.height / std::max(1, snap.settings.width))));
+    const QSize size = sizeForWidth(width, snap.settings.width, snap.settings.height, std::max(width, 2) * 4);
     Compositor renderer(false, true);
     return renderer.render(alone, std::clamp(t, c.start, c.end() - 1), size);
 }
@@ -200,7 +200,7 @@ int match(Timeline& tl, const ProjectSnapshot& snap, const std::set<int>& ids, T
     if (targets.empty())
         return fail(QStringLiteral("Select the video events to match first."));
     const int w = 320;
-    const QSize size(w, std::max(1, int(double(w) * snap.settings.height / std::max(1, snap.settings.width))));
+    const QSize size = sizeForWidth(w, snap.settings.width, snap.settings.height, std::max(w, 2) * 4);
     Histogram ref;
     {
         Compositor renderer;

@@ -2881,8 +2881,9 @@ QJsonObject McpServer::ToolCall::tool_get_frame()
     const TimeUs t = has("time") ? us(num("time")) : w->m_timeline->cursorTime();
     const QString saveTo = str("save_to");
     // (saved: the project's size unless a width is given)
-    const int width = std::clamp(integer("width", saveTo.isEmpty() ? 640 : ps.width), 160, saveTo.isEmpty() ? 1920 : 8192);
-    const QSize size(width, std::max(2, int(std::lround(double(width) * ps.height / std::max(1, ps.width)))));
+    const int maxSide = saveTo.isEmpty() ? 1920 : 8192;
+    const int width = std::clamp(integer("width", saveTo.isEmpty() ? 640 : ps.width), 160, maxSide);
+    const QSize size = sizeForWidth(width, ps.width, ps.height, maxSide);
     if (!server.m_frameRenderer) { // (the GPU renderer, as the preview and renders have it; the CPU's without a GPU)
         server.m_frameSurface = createGpuSurface();
         server.m_frameRenderer = createFrameRenderer(true, server.m_frameSurface.get(), nullptr);
@@ -3977,7 +3978,7 @@ QJsonObject McpServer::ToolCall::tool_node_effect()
     if (action == QLatin1String("preview")) {
         const TimeUs t = has("time") ? us(num("time")) : w->m_timeline->cursorTime();
         const int width = std::clamp(integer("width", 640), 160, 1280);
-        const QSize size(width, std::max(2, int(std::lround(double(width) * ps.height / std::max(1, ps.width)))));
+        const QSize size = sizeForWidth(width, ps.width, ps.height, 1280);
         Compositor renderer(true);
         const QImage frame = renderer.render(*project->snapshot(), t, size);
         RenderContext ctx;

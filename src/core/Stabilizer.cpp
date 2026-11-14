@@ -1,5 +1,6 @@
 #include "core/Brand.h"
 #include "core/Stabilizer.h"
+#include "core/Project.h"
 
 #include "core/FrameConverter.h"
 #include "core/MediaInfo.h"
@@ -215,7 +216,7 @@ bool analyze(const QString& path, int stream, const std::function<bool(double)>&
         return false;
     }
     FrameConverter conv;
-    const QSize size(kWidth, std::max(16, int(std::lround(double(kWidth) * vs->height / std::max(1, vs->width)))));
+    const QSize size = sizeForWidth(kWidth, vs->width, vs->height, kWidth * 4).expandedTo(QSize(16, 16));
     Motion m;
     m.width = size.width();
     m.height = size.height();

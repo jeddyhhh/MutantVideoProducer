@@ -44,7 +44,12 @@ ExportSettings settingsFromPreset(const ExportPreset& p, const ProjectSettings& 
         s.height = p.height;
     } else if (p.width > 0) {
         s.width = p.width;
-        s.height = std::max(2, int(std::lround(double(p.width) * project.height / project.width / 2.0)) * 2);
+        s.height = std::max(2, int(std::lround(double(p.width) * project.height / std::max(1, project.width) / 2.0)) * 2);
+        if (s.height > 8192) { // (a very tall project: the template's width would make a picture no encoder takes)
+            const QSize fit = sizeForWidth(p.width, project.width, project.height, 8192);
+            s.width = std::max(2, fit.width() & ~1);
+            s.height = std::max(2, fit.height() & ~1);
+        }
     }
     s.fps = p.fps.valid() ? p.fps : project.fps;
     s.quality = p.quality;

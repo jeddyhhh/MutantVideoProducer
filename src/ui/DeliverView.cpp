@@ -990,7 +990,8 @@ void DeliverView::fillOutputs()
         const TimeUs length = limitFor(*p) > 0 ? std::min(duration, limitFor(*p)) : duration;
         bool exact = true;
         const double bytes = estimateBytes(*p, ps.width, ps.height, ps.fps.toDouble(), length, &exact);
-        const int w = p->width > 0 ? p->width : ps.width, h = p->height > 0 ? p->height : (p->width > 0 ? p->width * ps.height / std::max(1, ps.width) : ps.height);
+        const ExportSettings sized = settingsFromPreset(*p, ps); // (the size the render will be)
+        const int w = sized.width, h = sized.height;
         QStringList detail;
         if (!p->videoEncoder.isEmpty())
             detail << QStringLiteral("%1x%2").arg(w).arg(h) << tr("%1 fps").arg(p->fps.valid() ? p->fps.toDouble() : ps.fps.toDouble(), 0, 'g', 5)

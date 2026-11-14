@@ -197,6 +197,7 @@ bool VideoDecoder::readFrame(AVFrame* dst, TimeUs* ptsOut)
         m_raw.reset(av_frame_alloc());
     for (;;) {
         if (m_deint) {
+            av_frame_unref(dst); // (the sink moves its frame in without letting go of what was there)
             const int got = av_buffersink_get_frame(m_deintOut, dst);
             if (got >= 0) {
                 *ptsOut = m_deintPts.empty() ? m_lastPts : m_deintPts.front();

@@ -3371,7 +3371,7 @@ void DeviceChainView::renderPreviews()
         snap->timeline.tracks = {track};
     }
     snap->timeline.outputEffects.clear();
-    const QSize size(256, std::max(2, int(256.0 * source->settings.height / std::max(1, source->settings.width))));
+    const QSize size = sizeForWidth(256, source->settings.width, source->settings.height, 1024);
     const int generation = ++m_thumbGeneration;
     m_thumbBusy = true;
     QPointer<DeviceChainView> self(this);

@@ -9,6 +9,7 @@
 #include <QColor>
 #include <QJsonArray>
 #include <QObject>
+#include <QSize>
 #include <QString>
 #include <QUndoStack>
 #include <algorithm>
@@ -475,6 +476,16 @@ private:
 };
 
 // Creates a default empty timeline: one video track and one audio track.
+// A picture `width` wide in the shape `shapeW` x `shapeH`, neither side over `maxSide` (so a very tall or very wide
+// project or file still gives a picture of a sensible size).
+inline QSize sizeForWidth(int width, int shapeW, int shapeH, int maxSide = 8192)
+{
+    QSize s(std::max(2, width), std::max(2, int(std::lround(double(width) * shapeH / std::max(1, shapeW)))));
+    if (s.width() > maxSide || s.height() > maxSide)
+        s = s.scaled(maxSide, maxSide, Qt::KeepAspectRatio);
+    return s.expandedTo(QSize(2, 2));
+}
+
 Timeline defaultTimeline();
 
 // What the rest of the program counts on in a timeline (events with a
