@@ -60,6 +60,11 @@ What changed in each version of Mutant Video Producer. The newest is first.
 
 ### Fixed
 
+- Placing a file at the cursor (double-click in Project Media) put it on the selected track even when that track was
+  locked, and a video's sound on a locked audio track; locked tracks are passed by now.
+- A very tall or very wide project (e.g. 16 x 8192) made pictures of it far too big: a frame for the AI's get_frame took
+  a minute and failed, and the effect editor's, the device drawer's and a template's width-only render sizes ran to
+  hundreds of thousands of pixels. They keep to a sensible size now.
 - HDR video (phones' HLG, HDR10's PQ) looked grey and washed out: it is now tone-mapped to SDR BT.709 (the colours
   turned into BT.709's, the highlights rolled off), the same on the CPU and the GPU.
 - Interlaced video (DV, camcorders, TV recordings, DVDs) showed comb lines on anything moving: it is deinterlaced as
