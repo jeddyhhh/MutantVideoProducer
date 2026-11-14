@@ -72,6 +72,10 @@ void appendLog()
         append("%s\n", g_log[k % kLines]);
 }
 
+#ifdef Q_OS_WIN
+void writeReport(const char* what, EXCEPTION_POINTERS* ep, HANDLE thread, const CONTEXT* context);
+#endif
+
 void logHandler(QtMsgType type, const QMessageLogContext& context, const QString& message)
 {
     const int i = g_next.fetch_add(1) % kLines;
@@ -80,6 +84,12 @@ void logHandler(QtMsgType type, const QMessageLogContext& context, const QString
     g_log[i][line.size()] = 0;
     if (g_previous)
         g_previous(type, context, message);
+#ifdef Q_OS_WIN
+    // A fatal error (a failed Q_ASSERT, qFatal) ends the program with TerminateProcess on Windows, past the abort
+    // handler: the report is written here.
+    if (type == QtFatalMsg)
+        writeReport("a fatal error", nullptr, nullptr, nullptr);
+#endif
 }
 
 #ifdef Q_OS_WIN
@@ -172,6 +182,11 @@ void writeReport(const char* what, EXCEPTION_POINTERS* ep, HANDLE thread = nullp
         appendStack(GetCurrentThread(), *ep->ContextRecord);
     else if (context)
         appendStack(thread, *context);
+    else { // (an abort, a fatal error, an unhandled C++ exception: where this thread is)
+        CONTEXT here{};
+        RtlCaptureContext(&here);
+        appendStack(GetCurrentThread(), here);
+    }
     appendLog();
     HANDLE f = CreateFileW(txt, GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
     if (f != INVALID_HANDLE_VALUE) {

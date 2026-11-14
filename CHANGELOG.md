@@ -67,6 +67,10 @@ What changed in each version of Mutant Video Producer. The newest is first.
 - The AI's group tool with action ungroup and no events read past an empty list; it is refused now.
 - The AI's detect_beats on a timeline with sound far out could freeze the app for minutes (up to four hours of
   mixing at once): it scans at most 15 minutes a call now and says where it stopped (scanned_to).
+- The AI's normalize_audio could crash the app on a silent event whose Gain effect (from a damaged project) had no
+  gain setting.
+- Crash reports on Windows: a fatal error inside Qt ended the program without one, and aborts and unhandled C++
+  exceptions were reported without the stack.
 - The AI's node-effect preview, and the effect editor's framing picture of a generated event, drew pixel-sized
   settings (blur radii, outlines) too big in a very tall project.
 - Placing a file at the cursor (double-click in Project Media) put it on the selected track even when that track was

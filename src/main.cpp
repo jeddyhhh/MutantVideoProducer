@@ -203,7 +203,7 @@ int main(int argc, char** argv)
         args.remove(i, 2);
     }
     // A crash leaves a report (the next start offers it). Developer option:
-    // --crash-test segv|abort crashes on purpose, with its own reports folder.
+    // --crash-test segv|abort|fatal crashes on purpose, with its own reports folder.
     const QStringList crashTest = takeAll(QStringLiteral("--crash-test"));
     if (!crashTest.isEmpty())
         QApplication::setApplicationName(QStringLiteral("MvpCrashTest"));
@@ -212,6 +212,8 @@ int main(int argc, char** argv)
         qWarning("crash test: %s", qPrintable(crashTest.front()));
         if (crashTest.front() == QLatin1String("abort"))
             std::abort();
+        if (crashTest.front() == QLatin1String("fatal"))
+            qFatal("crash test: a fatal error");
         volatile int* nowhere = nullptr;
         *nowhere = 1;
     }

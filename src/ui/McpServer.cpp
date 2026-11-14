@@ -4568,8 +4568,12 @@ QJsonObject McpServer::ToolCall::tool_normalize_audio()
     w->m_timeline->selectClips(selection);
     QJsonArray gains;
     for (int id : audio)
-        if (const Clip* c = project->timeline().findClip(id); c && !c->effects.empty() && c->effects.front().type == QLatin1String("a_gain"))
-            gains.append(QJsonObject{{QStringLiteral("event_id"), id}, {QStringLiteral("gain_db"), c->effects.front().params.at(QStringLiteral("gain")).value}});
+        if (const Clip* c = project->timeline().findClip(id); c && !c->effects.empty() && c->effects.front().type == QLatin1String("a_gain")) {
+            // (a silent event is left as it was, and its Gain, from a damaged project, may have no gain)
+            const auto& p = c->effects.front().params;
+            if (const auto g = p.find(QStringLiteral("gain")); g != p.end())
+                gains.append(QJsonObject{{QStringLiteral("event_id"), id}, {QStringLiteral("gain_db"), g->second.value}});
+        }
     return jsonResult({{QStringLiteral("normalized"), project->undoStack()->index() != before}, {QStringLiteral("gains"), gains}});
 }
 
