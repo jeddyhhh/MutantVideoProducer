@@ -390,7 +390,14 @@ int TimelineWidget::runEditTest(QStringList& log)
     m_project->applyEdit(base, QStringLiteral("edit test"));
     const int baseUndo = m_project->undoStack()->index();
     const int videoTrack = 0, audioTrack = 1;
-    auto clipAt = [&](int track, int i) -> const Clip& { return m_project->timeline().tracks[size_t(track)].clips[size_t(i)]; };
+    // Out of range (media without audio, say) gives an empty clip so a check fails instead of crashing.
+    static const Clip kNoClip;
+    auto clipAt = [&](int track, int i) -> const Clip& {
+        const auto& tracks = m_project->timeline().tracks;
+        if (track < 0 || size_t(track) >= tracks.size() || i < 0 || size_t(i) >= tracks[size_t(track)].clips.size())
+            return kNoClip;
+        return tracks[size_t(track)].clips[size_t(i)];
+    };
     const int idA = clipAt(videoTrack, 0).id;
     auto selectA = [&] { setSelection(ops::expandToGroups(m_project->timeline(), {clipAt(videoTrack, 0).id})); };
     auto reset = [&] {

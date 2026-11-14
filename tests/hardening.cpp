@@ -247,7 +247,8 @@ void damagedMedia(const QString& mediaDir, const QString& outDir)
     const QStringList sources = {QStringLiteral("h264_aac.mp4"),    QStringLiteral("vp9_vorbis.webm"), QStringLiteral("hevc_opus.mkv"),
                                  QStringLiteral("mpeg2_mp2.ts"),    QStringLiteral("audio.mp3"),       QStringLiteral("audio.wav"),
                                  QStringLiteral("still.png"),       QStringLiteral("still.jpg"),       QStringLiteral("animated.gif"),
-                                 QStringLiteral("prores_pcm24.mov")};
+                                 QStringLiteral("prores_pcm24.mov"), QStringLiteral("interlaced_mpeg2.ts"), QStringLiteral("hdr_pq.mkv"),
+                                 QStringLiteral("hdr_hlg.mp4")};
     std::mt19937 rng(1234);
     int made = 0, opened = 0;
     QStringList failures;
