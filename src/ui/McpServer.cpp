@@ -3985,7 +3985,7 @@ QJsonObject McpServer::ToolCall::tool_node_effect()
         RenderContext ctx;
         ctx.time = t;
         ctx.timelineTime = t;
-        ctx.scale = double(width) / std::max(1, ps.width);
+        ctx.scale = double(frame.width()) / std::max(1, ps.width); // (a tall project's frame is narrower than asked)
         ctx.fps = ps.fps.toDouble();
         ctx.contentRect = QRectF(frame.rect());
         nodes::Evaluator eval;
