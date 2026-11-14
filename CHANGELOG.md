@@ -63,7 +63,10 @@ What changed in each version of Mutant Video Producer. The newest is first.
 - Rendering stems: a track whose name had a backslash in it (Left\Right) was written to a folder that doesn't exist, and
   two tracks of the same name wrote over each other's file (the second is "Name 2" now). Names made into file names
   (stems, effects, pad sets, sequences, characters, Deliver's outputs) also no longer end in a dot or use a Windows
-  device name (CON, NUL, COM1...).
+  device name (CON, NUL, COM1...). Separating an event's stems named its file just ".wav" for generated media.
+- The AI's group tool with action ungroup and no events read past an empty list; it is refused now.
+- The AI's node-effect preview, and the effect editor's framing picture of a generated event, drew pixel-sized
+  settings (blur radii, outlines) too big in a very tall project.
 - Placing a file at the cursor (double-click in Project Media) put it on the selected track even when that track was
   locked, and a video's sound on a locked audio track; locked tracks are passed by now.
 - A very tall or very wide project (e.g. 16 x 8192) made pictures of it far too big: a frame for the AI's get_frame took
