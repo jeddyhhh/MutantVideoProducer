@@ -619,10 +619,13 @@ void TimelineWidget::mouseDoubleClickEvent(QMouseEvent* e)
             // (the compositing mode menu opened on the first click)
         } else if (!muteRect(hr).contains(p) && !soloRect(hr).contains(p) && !fxRect(hr).contains(p)) {
             bool ok = false;
+            const int trackId = tl.tracks[ti].id;
             const QString name = QInputDialog::getText(this, tr("Rename Track"), tr("Track name:"), QLineEdit::Normal,
                                                        tl.tracks[ti].name, &ok);
-            if (ok) {
-                tl.tracks[ti].name = name;
+            // (a job may have finished while the box was open: its edit kept, the track found again)
+            tl = m_project->timeline();
+            if (const int now = tl.trackIndex(trackId); ok && now >= 0) {
+                tl.tracks[size_t(now)].name = name;
                 m_project->applyEdit(tl, tr("Rename Track"));
             }
         }

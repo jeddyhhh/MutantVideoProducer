@@ -1,6 +1,7 @@
 #include "ui/LiveClipsBrowser.h"
 
 #include "ui/Theme.h"
+#include "core/FileNames.h"
 #include "core/FrameConverter.h"
 #include "core/LiveRecorder.h"
 #include "core/Profiles.h"
@@ -200,13 +201,16 @@ void LiveClipsBrowser::contextMenuEvent(QContextMenuEvent* e)
         });
         menu.addAction(tr("Rename..."), this, [this, path] {
             bool ok = false;
-            const QString name = QInputDialog::getText(this, tr("Rename Clip"), tr("Name:"), QLineEdit::Normal,
-                                                       QFileInfo(path).completeBaseName(), &ok).trimmed();
+            // (a name, not a path: a / or .. in it would move the clip out of the recordings)
+            const QString name = safeFileName(QInputDialog::getText(this, tr("Rename Clip"), tr("Name:"), QLineEdit::Normal,
+                                                                    QFileInfo(path).completeBaseName(), &ok), QString());
             if (!ok || name.isEmpty())
                 return;
             const QString target = QFileInfo(path).dir().filePath(name + QLatin1Char('.') + QFileInfo(path).suffix());
             if (QFileInfo::exists(target) || !QFile::rename(path, target))
                 QMessageBox::warning(this, tr("Rename Clip"), tr("Could not rename the clip to \"%1\".").arg(name));
+            else
+                QFile::rename(liveThumbnailPath(path), liveThumbnailPath(target));
             refresh();
         });
         menu.addAction(tr("Move to Recycle Bin"), this, [this, path] {

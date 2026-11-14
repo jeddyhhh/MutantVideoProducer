@@ -6,11 +6,13 @@
 #include "core/Profiles.h"
 #include "core/StemSeparation.h"
 
+#include <QApplication>
 #include <QDir>
 #include <QFileInfo>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QSaveFile>
+#include <QTimer>
 #include <QUuid>
 
 StemJob::StemJob(Project* project, QObject* parent) : QObject(parent), m_project(project)
@@ -136,6 +138,12 @@ void StemJob::finish(const QString& failure)
 {
     if (!m_busy)
         return;
+    // Not while something is dragged, or a menu or a box is open: what it then commits, made from the timeline as it
+    // was before, would drop the stems again. Placed as soon as it's over.
+    if (failure.isEmpty() && (QGuiApplication::mouseButtons() != Qt::NoButton || QApplication::activePopupWidget() || QApplication::activeModalWidget())) {
+        QTimer::singleShot(250, this, [this] { finish(m_cancelled ? tr("Cancelled") : QString()); });
+        return;
+    }
     QString error = failure;
     const QStringList order = m_count == 4 ? QStringList{"vocals", "drums", "bass", "other"} : QStringList{"voice", "background"};
     if (error.isEmpty() && m_project->session() != m_session)

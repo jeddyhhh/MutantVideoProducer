@@ -113,6 +113,7 @@ std::function<bool(double)> windowKeptGoing()
         return true;
     };
 }
+const QString kChangedWhileScanning = QStringLiteral("the project changed while this was scanning: try again");
 
 // Seconds from a client, kept within ±11.5 days (as project files are):
 // anything bigger would overflow the times built from it.
@@ -1660,6 +1661,12 @@ struct McpServer::ToolCall {
         project->applyEdit(tl, QStringLiteral("AI: ") + what);
         w->refreshPreview();
     }
+    // After a scan that kept the window going: another call (or a finished job) may have edited the timeline or
+    // opened another project, which the edit made from `before` would undo.
+    bool changedSince(const ProjectSnapshot& before) const
+    {
+        return project->session() != before.session || !(project->timeline() == before.timeline);
+    }
     bool has(const char* key) const { return a.contains(QLatin1String(key)); }
     // The "params" argument into a generated event's settings (as add_effect sets an effect's).
     QString setGeneratorParams(Clip& c) const
@@ -2197,6 +2204,8 @@ QJsonObject McpServer::ToolCall::tool_graphics_overlay()
             const TimeUs scanFrom = c->start + us(from);
             const BeatScan scan = scanBeats(*snap, scanFrom, std::min(c->start + us(std::min(to, sec(c->length))), scanFrom + 15 * 60 * kUsPerSecond),
                                             {}, bs, windowKeptGoing());
+            if (changedSince(*snap))
+                return errorResult(kChangedWhileScanning);
             QStringList moves;
             for (auto v : a["moves"].toArray())
                 moves << v.toString();
@@ -2898,6 +2907,8 @@ QJsonObject McpServer::ToolCall::tool_detect_beats()
     BeatSettings bs;
     bs.band = BeatSettings::Full;
     const BeatScan scan = scanBeats(*snap, from, to, {}, bs, windowKeptGoing());
+    if (project->session() != snap->session) // (another project opened meanwhile: its timeline re-read below is not the one heard)
+        return errorResult(kChangedWhileScanning);
     if (scan.beats.empty())
         return errorResult(QStringLiteral("no beat found (is there music on the timeline?)"));
     Timeline tl = project->timeline();
@@ -3814,7 +3825,8 @@ QJsonObject McpServer::ToolCall::tool_scene_changes()
     std::set<int> ids;
     for (const QJsonValue v : a.value(QStringLiteral("event_ids")).toArray())
         ids.insert(v.toInt());
-    const MediaMap media = project->snapshot()->media;
+    const auto snap = project->snapshot();
+    const MediaMap& media = snap->media;
     int skipped = 0;
     const std::vector<int> events = scenes::videoEvents(tl, media, ids, &skipped);
     if (events.empty())
@@ -3831,6 +3843,8 @@ QJsonObject McpServer::ToolCall::tool_scene_changes()
         return jsonResult({{QStringLiteral("cuts"), times}});
     }
     const auto cuts = scenes::splitEvents(tl, media, events, sensitivity, ps.fps, windowKeptGoing());
+    if (changedSince(*snap))
+        return errorResult(kChangedWhileScanning);
     for (TimeUs t : cuts.value_or(std::vector<TimeUs>{}))
         times.append(sec(t));
     if (!times.isEmpty())

@@ -775,6 +775,10 @@ void TimelineWidget::renameMarker(int markerId)
                                                QLineEdit::Normal, m->name, &ok);
     if (!ok)
         return;
+    tl = m_project->timeline(); // (a job may have finished while the box was open: its edit kept)
+    m = tl.findMarker(markerId);
+    if (!m)
+        return;
     m->name = name.trimmed();
     m_project->applyEdit(tl, m->isRegion() ? tr("Rename Region") : tr("Rename Marker"));
 }
@@ -887,10 +891,12 @@ void TimelineWidget::setDenoise(double amount)
 void TimelineWidget::addCompositingMenus(QMenu* menu, int ti)
 {
     const Track& track = m_project->timeline().tracks[size_t(ti)];
+    // (by the track's id: while the menu is open a job can add or remove tracks above it)
+    auto now = [this, id = track.id] { return m_project->timeline().trackIndex(id); };
     QMenu* blend = menu->addMenu(tr("Compositing Mode"));
     const QStringList modes = blendModeNames();
     for (int i = 0; i < int(modes.size()); ++i) {
-        QAction* a = blend->addAction(modes[i], this, [this, ti, i] { setTrackBlend(ti, i); });
+        QAction* a = blend->addAction(modes[i], this, [this, now, i] { setTrackBlend(now(), i); });
         a->setCheckable(true);
         a->setChecked(track.blend == i);
     }
@@ -904,7 +910,7 @@ void TimelineWidget::addCompositingMenus(QMenu* menu, int ti)
         QT_TR_NOOP("Not shown: the track below shows where this track is bright, and fades out where it is dark"),
         QT_TR_NOOP("Not shown: the track below shows where this track is dark, and fades out where it is bright")};
     for (int i = 0; i < int(mattes.size()); ++i) {
-        QAction* a = matte->addAction(mattes[i], this, [this, ti, i] { setTrackMatte(ti, i); });
+        QAction* a = matte->addAction(mattes[i], this, [this, now, i] { setTrackMatte(now(), i); });
         a->setCheckable(true);
         a->setChecked(track.matte == i);
         a->setToolTip(tr(tips[i]));

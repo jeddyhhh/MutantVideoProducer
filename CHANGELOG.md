@@ -69,6 +69,17 @@ What changed in each version of Mutant Video Producer. The newest is first.
   mixing at once): it scans at most 15 minutes a call now and says where it stopped (scanned_to), and the window
   keeps drawing while it listens. So does graphics_overlay's dance (which listened to the whole scene's length), and
   scene_changes while it looks through long footage.
+- An edit made while the AI's dance or scene_changes was still scanning (or while Tools > Split at Scene Changes or
+  Auto Reframe was, such as separated stems or a generated voice being put on the timeline) was undone when the scan
+  finished. The other edit is kept now, and the scan's result is dropped with a message to try again. Renaming a
+  marker or a track likewise undid an edit that landed while its name box was open, and a track header's menu
+  (envelopes, ducking, compositing mode, track matte, track listing) could act on the track next to it when tracks
+  were added or removed above it while the menu was open. Saving a device's preset could crash if the timeline changed
+  while its name box was open.
+- Separated stems that came in while an event was being dragged (or a menu or a box was open) could vanish again
+  when the drag ended. They're put on the timeline once it's over now.
+- Renaming a live recording took the name as a path: a / or .. in it moved the clip out of the recordings folder. Its
+  thumbnail is renamed with it now too.
 - The AI's normalize_audio could crash the app on a silent event whose Gain effect (from a damaged project) had no
   gain setting.
 - An AI edit that came in while a menu was open, or while something was being dragged, could crash the app when the

@@ -2568,9 +2568,12 @@ void DeviceChainView::saveChainPreset(const EffectChain& devices)
 
 void DeviceChainView::savePreset(const ChainPath& path, int index)
 {
-    const EffectInstance* dev = effectAt(path, index);
-    if (!dev)
+    const EffectInstance* at = effectAt(path, index);
+    if (!at)
         return;
+    // (a copy: the timeline it points into can change while the name box is open)
+    const EffectInstance device = *at;
+    const EffectInstance* dev = &device;
     if (dev->isRack()) {
         saveChainPreset({*dev});
         return;

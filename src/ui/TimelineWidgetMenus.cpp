@@ -148,6 +148,9 @@ void TimelineWidget::contextMenuEvent(QContextMenuEvent* e)
     }
     if (p.x() < kHeaderWidth && p.y() >= kTopH) {
         const int ti = trackAt(p.y());
+        // (by the track's id: while the menu is open an edit, a job's, can add or remove tracks above it)
+        const int trackId = ti >= 0 ? m_project->timeline().tracks[size_t(ti)].id : 0;
+        auto now = [this, trackId] { return m_project->timeline().trackIndex(trackId); };
         menu.addAction(tr("Insert Video Track"), this, [this] { insertTrack(TrackType::Video); });
         menu.addAction(tr("Insert Audio Track"), this, [this] { insertTrack(TrackType::Audio); });
         if (ti >= 0) {
@@ -155,15 +158,18 @@ void TimelineWidget::contextMenuEvent(QContextMenuEvent* e)
             const Track& trk = m_project->timeline().tracks[size_t(ti)];
             menu.addSeparator();
             auto envAction = [&](const QString& label, EnvelopeKind k) {
-                QAction* a = menu.addAction(label, this, [this, k] { toggleEnvelope(k); });
+                QAction* a = menu.addAction(label, this, [this, k, now] {
+                    m_selectedTrack = now();
+                    toggleEnvelope(k);
+                });
                 a->setCheckable(true);
                 a->setChecked(trk.envelope(k)->active);
             };
             if (trk.type == TrackType::Audio) {
                 envAction(tr("Volume Envelope\tV"), EnvelopeKind::Volume);
                 envAction(tr("Pan Envelope\tP"), EnvelopeKind::Pan);
-                menu.addAction(tr("Track Listing for YouTube..."), this, [this, ti] {
-                    const QString listing = upload::trackListing(*m_project, ti);
+                menu.addAction(tr("Track Listing for YouTube..."), this, [this, now] {
+                    const QString listing = upload::trackListing(*m_project, now());
                     if (listing.isEmpty()) {
                         emit message(tr("This track has no events to list."));
                         return;
@@ -180,13 +186,13 @@ void TimelineWidget::contextMenuEvent(QContextMenuEvent* e)
                 QMenu* duck = menu.addMenu(tr("Auto Duck Under"));
                 duck->setToolTipsVisible(true);
                 const float amount = trk.duckAmount;
-                QAction* off = duck->addAction(tr("Off"), this, [this, ti, amount] { setTrackDuck(ti, 0, amount); });
+                QAction* off = duck->addAction(tr("Off"), this, [this, now, amount] { setTrackDuck(now(), 0, amount); });
                 off->setCheckable(true);
                 off->setChecked(trk.duckUnder == 0);
                 for (const Track& other : m_project->timeline().tracks)
                     if (other.type == TrackType::Audio && other.id != trk.id) {
                         QAction* a = duck->addAction(other.name.isEmpty() ? tr("Audio") : other.name, this,
-                                                     [this, ti, id = other.id, amount] { setTrackDuck(ti, id, amount); });
+                                                     [this, now, id = other.id, amount] { setTrackDuck(now(), id, amount); });
                         a->setToolTip(tr("Turn this track down while that one has sound (e.g. music under a voice)"));
                         a->setCheckable(true);
                         a->setChecked(trk.duckUnder == other.id);
@@ -194,7 +200,7 @@ void TimelineWidget::contextMenuEvent(QContextMenuEvent* e)
                 duck->addSeparator();
                 QMenu* by = duck->addMenu(tr("Duck By"));
                 for (float db : {-6.0f, -9.0f, -12.0f, -18.0f, -24.0f, -36.0f}) {
-                    QAction* a = by->addAction(tr("%1 dB").arg(double(db)), this, [this, ti, db, under = trk.duckUnder] { setTrackDuck(ti, under, db); });
+                    QAction* a = by->addAction(tr("%1 dB").arg(double(db)), this, [this, now, db, under = trk.duckUnder] { setTrackDuck(now(), under, db); });
                     a->setCheckable(true);
                     a->setChecked(std::abs(trk.duckAmount - db) < 0.01f);
                 }
@@ -205,15 +211,12 @@ void TimelineWidget::contextMenuEvent(QContextMenuEvent* e)
         }
         if (ti >= 0) {
             const Track& tr0 = m_project->timeline().tracks[ti];
-            const int trackId = tr0.id;
             menu.addAction(tr0.type == TrackType::Image ? tr("Image Track FX...")
                          : isVisualTrack(tr0.type) ? tr("Video Track FX...") : tr("Audio Track FX..."), this,
                            [this, trackId] { emit trackEffectsRequested(trackId); });
             if (isVisualTrack(tr0.type))
                 addCompositingMenus(&menu, ti);
             menu.addSeparator();
-            // (by the track's id: while the menu is open an edit, the AI's, can add or remove tracks above it)
-            auto now = [this, trackId] { return m_project->timeline().trackIndex(trackId); };
             QAction* lock = menu.addAction(tr("Lock Track"), this, [this, now] { toggleTrackLock(now()); });
             lock->setCheckable(true);
             lock->setChecked(tr0.locked);
@@ -224,7 +227,7 @@ void TimelineWidget::contextMenuEvent(QContextMenuEvent* e)
         }
         if (ti >= 0) {
             menu.addSeparator();
-            menu.addAction(tr("Delete Track"), this, [this, trackId = m_project->timeline().tracks[size_t(ti)].id] {
+            menu.addAction(tr("Delete Track"), this, [this, trackId] {
                 Timeline tl = m_project->timeline();
                 const int ti = tl.trackIndex(trackId);
                 if (ti < 0)

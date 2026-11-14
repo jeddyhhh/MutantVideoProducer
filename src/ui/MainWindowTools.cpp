@@ -635,7 +635,8 @@ void MainWindow::autoColour()
 void MainWindow::splitAtSceneChanges()
 {
     Timeline tl = m_project->timeline();
-    const MediaMap media = m_project->snapshot()->media;
+    const auto before = m_project->snapshot();
+    const MediaMap& media = before->media;
     int skipped = 0;
     const std::vector<int> events = scenes::videoEvents(tl, media, m_timeline->selection(), &skipped);
     if (events.empty()) {
@@ -662,6 +663,8 @@ void MainWindow::splitAtSceneChanges()
     progress.setValue(1000);
     if (!cuts)
         return;
+    if (m_project->timeline() != before->timeline) // (a job finished meanwhile: its edit would be undone)
+        return void(QMessageBox::information(this, tr("Split at Scene Changes"), tr("The project changed while it looked: try again.")));
     if (cuts->empty()) {
         statusBar()->showMessage(tr("No scene changes found (try a higher sensitivity)"), 5000);
         return;
@@ -673,7 +676,8 @@ void MainWindow::splitAtSceneChanges()
 void MainWindow::autoReframe()
 {
     Timeline tl = m_project->timeline();
-    const MediaMap media = m_project->snapshot()->media;
+    const auto before = m_project->snapshot();
+    const MediaMap& media = before->media;
     std::vector<int> events;
     for (int id : m_timeline->selection()) {
         const Clip* c = tl.findClip(id);
@@ -711,6 +715,8 @@ void MainWindow::autoReframe()
     progress.setValue(1000);
     if (framed < 0)
         return;
+    if (m_project->timeline() != before->timeline) // (a job finished meanwhile: its edit would be undone)
+        return void(QMessageBox::information(this, tr("Auto Reframe"), tr("The project changed while it looked: try again.")));
     if (!framed) {
         statusBar()->showMessage(tr("Nothing to reframe: the frame already shows the whole picture"), 5000);
         return;
