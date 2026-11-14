@@ -824,6 +824,11 @@ bool load(const QString& path, Graph* g, QString* error)
             *error = f.errorString();
         return false;
     }
+    if (f.size() > 64LL * 1024 * 1024) { // (an effect is a few kilobytes: not read whole when it's something else)
+        if (error)
+            *error = QStringLiteral("not an effect made in the Effect Builder (too big)");
+        return false;
+    }
     const QJsonObject o = QJsonDocument::fromJson(f.readAll()).object();
     if (o[QStringLiteral("format")].toString() != QLatin1String("mvp-node-effect")) {
         if (error)

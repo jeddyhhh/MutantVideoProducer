@@ -122,6 +122,11 @@ std::shared_ptr<const CubeLut> loadCubeLut(const QString& path, QString* error)
             *error = f.errorString();
         return nullptr;
     }
+    if (f.size() > 1024LL * 1024 * 1024) { // (the biggest, 256 points a side, is about 500 MB of text)
+        if (error)
+            *error = QStringLiteral("the file is too big to be a .cube LUT");
+        return nullptr;
+    }
     std::shared_ptr<const CubeLut> lut = parseCubeLut(f.readAll(), error);
     if (lut) {
         std::lock_guard lock(mutex);

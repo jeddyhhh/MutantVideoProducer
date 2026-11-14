@@ -74,6 +74,8 @@ What changed in each version of Mutant Video Producer. The newest is first.
 - An AI edit that came in while a menu was open, or while something was being dragged, could crash the app when the
   menu's action ran (the keyframe editor's Go to Keyframe and Pick/Remove All Keyframes, a rack's chain actions), make
   a track menu's action hit another track, or be undone by the drag. The AI's edits wait for the menu or drag now.
+- Opening a huge file picked by mistake as a project, a .cube LUT, subtitles or an Effect Builder effect read all of
+  it into memory first (minutes, or a crash when it didn't fit): such files are refused at once now.
 - Crash reports on Windows: a fatal error inside Qt ended the program without one, and aborts and unhandled C++
   exceptions were reported without the stack.
 - The AI's node-effect preview, and the effect editor's framing picture of a generated event, drew pixel-sized

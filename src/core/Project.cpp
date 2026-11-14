@@ -1412,6 +1412,12 @@ bool Project::loadFile(const QString& path, QString* error, QStringList* missing
             *error = f.errorString();
         return false;
     }
+    // (projects are kilobytes to a few megabytes: a huge file given the extension would be read whole into memory)
+    if (f.size() > 512LL * 1024 * 1024) {
+        if (error)
+            *error = QStringLiteral("The file is too big to be a project file.");
+        return false;
+    }
     QJsonParseError perr;
     const QJsonDocument doc = QJsonDocument::fromJson(f.readAll(), &perr);
     if (doc.isNull()) {

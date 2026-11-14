@@ -28,6 +28,8 @@ std::vector<Caption> parseSubtitles(const QString& text);
 // A subtitle file's text: UTF-8, UTF-16 (with its byte-order mark) or, when it isn't valid UTF-8, the system code page
 // (older .srt files are often Windows-1252).
 QString subtitleText(const QByteArray& bytes);
+// Bigger isn't read (a film's subtitles are well under a megabyte; a video picked by mistake would be read whole).
+inline constexpr qint64 kMaxSubtitleFile = 64LL * 1024 * 1024;
 // Cuts captions longer than maxChars on words, each piece timed by its share of the characters.
 void splitLongCaptions(std::vector<Caption>& captions, int maxChars);
 QString writeSrt(const std::vector<Caption>& captions);
