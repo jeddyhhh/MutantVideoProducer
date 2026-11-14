@@ -421,8 +421,9 @@ private:
                 }
             }
             m_dialogMoves.remove(dialog);
+            // (a progress window has no OK: accept() would hide it, the work going on with nothing left to stop it)
             const bool accept = pick(3) == 0 && !isOffLimits(dialog->windowTitle(), dialog->objectName(), {})
-                                && !dialog->inherits("QFileDialog");
+                                && !dialog->inherits("QFileDialog") && !dialog->inherits("QProgressDialog");
             write(QStringLiteral("    dialog \"%1\": %2").arg(dialog->windowTitle(), accept ? QStringLiteral("OK") : QStringLiteral("Cancel")));
             if (accept)
                 dialog->accept();
