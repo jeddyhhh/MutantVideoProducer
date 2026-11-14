@@ -3825,12 +3825,12 @@ QJsonObject McpServer::ToolCall::tool_scene_changes()
         for (int id : events) {
             const Clip& c = *tl.findClip(id);
             const TimeUs to = c.sourceIn + TimeUs(double(c.length) * c.speed);
-            for (TimeUs cut : scenes::detect(*media.at(c.mediaId), c.streamIndex, c.sourceIn, to, sensitivity))
+            for (TimeUs cut : scenes::detect(*media.at(c.mediaId), c.streamIndex, c.sourceIn, to, sensitivity, windowKeptGoing()))
                 times.append(sec(c.start + TimeUs(double(cut - c.sourceIn) / c.speed)));
         }
         return jsonResult({{QStringLiteral("cuts"), times}});
     }
-    const auto cuts = scenes::splitEvents(tl, media, events, sensitivity, ps.fps);
+    const auto cuts = scenes::splitEvents(tl, media, events, sensitivity, ps.fps, windowKeptGoing());
     for (TimeUs t : cuts.value_or(std::vector<TimeUs>{}))
         times.append(sec(t));
     if (!times.isEmpty())

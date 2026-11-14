@@ -67,7 +67,8 @@ What changed in each version of Mutant Video Producer. The newest is first.
 - The AI's group tool with action ungroup and no events read past an empty list; it is refused now.
 - The AI's detect_beats on a timeline with sound far out could freeze the app for minutes (up to four hours of
   mixing at once): it scans at most 15 minutes a call now and says where it stopped (scanned_to), and the window
-  keeps drawing while it listens. So does graphics_overlay's dance (which listened to the whole scene's length).
+  keeps drawing while it listens. So does graphics_overlay's dance (which listened to the whole scene's length), and
+  scene_changes while it looks through long footage.
 - The AI's normalize_audio could crash the app on a silent event whose Gain effect (from a damaged project) had no
   gain setting.
 - An AI edit that came in while a menu was open, or while something was being dragged, could crash the app when the
