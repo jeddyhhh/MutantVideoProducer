@@ -139,7 +139,8 @@ it the picture where that step changed it.
 
 - It replays this session's undo history up to now. The history starts when the project is opened and
   is not saved with it, so open the project, edit, and make the replay before you close it.
-- About 50 seconds for a long history: each step lasts between 0.13 and 0.5 seconds. Steps you have
+- About 50 seconds for a long history: each step lasts between 0.13 and 0.5 seconds, and a history of
+  more than 375 steps shows about 375 of them, evenly spread (and the last). Steps you have
   undone are left out.
 - **Stop** in the progress window cancels it and deletes the part-made file.
 

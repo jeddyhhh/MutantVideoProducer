@@ -300,8 +300,8 @@ std::vector<int> insertMedia(Timeline& tl, const MediaItem& media, TimeUs at, in
     const TrackType pictureType = info.isStill ? TrackType::Image : TrackType::Video;
     if (!wantVideo && !wantAudio)
         return created;
-    if (preferredTrack >= int(tl.tracks.size()))
-        preferredTrack = -1;
+    if (preferredTrack >= int(tl.tracks.size()) || (preferredTrack >= 0 && tl.tracks[size_t(preferredTrack)].locked))
+        preferredTrack = -1; // (nothing lands on a locked track)
 
     QString clipTrackName;
     if (newTracks && pictureType != TrackType::Image) {
@@ -327,7 +327,7 @@ std::vector<int> insertMedia(Timeline& tl, const MediaItem& media, TimeUs at, in
 
     auto firstOfType = [&](TrackType type, int from) {
         for (int i = std::max(from, 0); i < int(tl.tracks.size()); ++i)
-            if (tl.tracks[i].type == type)
+            if (tl.tracks[i].type == type && !tl.tracks[i].locked)
                 return i;
         return -1;
     };

@@ -571,7 +571,7 @@ void MainWindow::soundFromPicture()
         if (m && QFileInfo(m->path) == QFileInfo(path))
             for (const Track& t : m_project->timeline().tracks)
                 for (const Clip& c : t.clips)
-                    if (c.mediaId == id && c.start == at && t.type == TrackType::Audio) {
+                    if (c.mediaId == id && t.type == TrackType::Audio) { // (a new file: its only event)
                         showSpectrogram(c.id);
                         return;
                     }

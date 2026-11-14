@@ -136,8 +136,11 @@ bool render(const Project& project, const QString& path, const std::function<boo
             *error = QStringLiteral("There is nothing to replay yet: the history starts when the project is opened.");
         return false;
     }
-    const int perStep = std::clamp(int(std::lround(kFps * 50.0 / steps)), 4, 15), motion = std::min(perStep, 8);
-    const int64_t totalFrames = kFps + int64_t(steps) * perStep + kFps * 5 / 2;
+    // About 50 seconds: a long history shows every stride-th step (the last always), each at least 4 frames.
+    constexpr int kMostMoments = kFps * 50 / 4;
+    const int stride = (steps + kMostMoments - 1) / kMostMoments, moments = (steps + stride - 1) / stride;
+    const int perStep = std::clamp(int(std::lround(kFps * 50.0 / moments)), 4, 15), motion = std::min(perStep, 8);
+    const int64_t totalFrames = kFps + int64_t(moments) * perStep + kFps * 5 / 2;
     LiveRecorder rec;
     if (!rec.start(path, QSize(kW, kH), kFps, error))
         return false;
@@ -189,7 +192,8 @@ bool render(const Project& project, const QString& path, const std::function<boo
     bool going = true;
     for (int f = 0; f < kFps && going; ++f)
         going = emitFrame(prevPic, prevPic, 1, prev, prev, {}, 0, spot, QStringLiteral("Where it started"));
-    for (int i = 1; i <= steps && going; ++i) {
+    // (every stride-th step, then the last)
+    for (int i = std::min(stride, steps); i <= steps && going; i = i == steps ? steps + 1 : std::min(i + stride, steps)) {
         QString name;
         const Timeline cur = project.historyState(i, &name);
         std::set<int> changed;

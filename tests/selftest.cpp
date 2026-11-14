@@ -64,6 +64,7 @@
 #undef far
 #endif
 #include <atomic>
+#include <ctime>
 #include <thread>
 #include "core/LiveRecorder.h"
 #include "core/Effects.h"
@@ -2649,11 +2650,20 @@ int cmdAudioFx(const QString& mediaDir, const QString& outDir)
             audioClip(s).effects.push_back(makeEffectOfType(QString::fromLatin1(fx), s.timeline.allocId()));
         audioTrack(s).effects.push_back(makeEffectOfType(QStringLiteral("a_reverb"), s.timeline.allocId()));
         s.timeline.audioMasterEffects.push_back(makeEffectOfType(QStringLiteral("a_limiter"), s.timeline.allocId()));
-        QElapsedTimer timer;
-        timer.start();
+        // (the work it took, as CPU time: the other tests running beside it don't slow it down on paper)
+        auto cpuSeconds = [] {
+#ifdef Q_OS_WIN
+            FILETIME created, exited, kernel, user;
+            GetProcessTimes(GetCurrentProcess(), &created, &exited, &kernel, &user);
+            auto secs = [](const FILETIME& f) { return double((quint64(f.dwHighDateTime) << 32) | f.dwLowDateTime) / 1e7; };
+            return secs(kernel) + secs(user);
+#else
+            return double(std::clock()) / CLOCKS_PER_SEC;
+#endif
+        };
+        const double cpu0 = cpuSeconds();
         mixRange(s, 0, 4.0);
-        const double factor = 4000.0 / std::max(0.01, double(timer.nsecsElapsed()) / 1e6);
-        // (about 50x alone; it fell to 17x with the other tests running beside it)
+        const double factor = 4.0 / std::max(1e-5, cpuSeconds() - cpu0); // (about 30x)
 #ifdef NDEBUG
         const double fastest = 5;
 #else
@@ -3439,6 +3449,19 @@ int cmdEditing(const QString& mediaDir, const QString& outDir)
     }
     const FrameRate fps{30, 1};
     const TimeUs S = kUsPerSecond;
+    {
+        // Nothing lands on a locked track: not the picture asked for there, nor the sound that goes with it.
+        Timeline tl = defaultTimeline();
+        for (Track& t : tl.tracks)
+            t.locked = true;
+        const size_t before = tl.tracks.size();
+        const auto ids = ops::insertMedia(tl, *video, 0, 0, fps);
+        bool clean = !ids.empty();
+        for (const Track& t : tl.tracks)
+            clean = clean && (!t.locked || t.clips.empty());
+        check(clean && tl.tracks.size() == before + 2,
+              QStringLiteral("a file placed with every track locked goes on new tracks (%1 tracks)").arg(tl.tracks.size()));
+    }
     {
         Timeline tl = defaultTimeline();
         ops::insertMedia(tl, *video, 0, 0, fps);
