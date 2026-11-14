@@ -4177,6 +4177,8 @@ QJsonObject McpServer::ToolCall::tool_group()
             return errorResult(QStringLiteral("group needs two events or more"));
         ops::groupClips(tl, ids);
     } else if (str("action") == QLatin1String("ungroup")) {
+        if (ids.empty())
+            return errorResult(QStringLiteral("ungroup needs event_ids"));
         ops::ungroupClips(tl, ids);
     } else {
         return errorResult(QStringLiteral("action is group or ungroup"));
