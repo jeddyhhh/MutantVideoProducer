@@ -1,3 +1,4 @@
+#include "core/FileNames.h"
 #include "ui/NodeEffectEditor.h"
 #include "core/FrameConverter.h"
 #include "core/GpuCompositor.h"
@@ -1207,9 +1208,7 @@ bool NodeEffectEditor::save(bool as)
     if (as || path.isEmpty()) {
         QDir().mkpath(nodes::userEffectsFolder());
         const QString suggested = QDir(nodes::userEffectsFolder())
-                                      .filePath(QString(m_graph.name.trimmed().isEmpty() ? tr("My Effect") : m_graph.name.trimmed())
-                                                    .replace(QRegularExpression(QStringLiteral("[\\\\/:*?\"<>|]")), QStringLiteral(" "))
-                                                + QStringLiteral(".mvpfx"));
+                                      .filePath(safeFileName(m_graph.name, tr("My Effect")) + QStringLiteral(".mvpfx"));
         path = QFileDialog::getSaveFileName(this, tr("Save Effect"), suggested, tr("Effects (*.mvpfx)"));
         if (path.isEmpty())
             return false;

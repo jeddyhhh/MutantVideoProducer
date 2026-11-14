@@ -1,3 +1,4 @@
+#include "core/FileNames.h"
 #include "core/Brand.h"
 #include "core/LivePadSets.h"
 
@@ -20,9 +21,7 @@ QString fileFor(const QString& name)
     QString base;
     for (const QChar c : name.trimmed())
         base += c.isLetterOrNumber() || c == QLatin1Char(' ') || c == QLatin1Char('-') || c == QLatin1Char('_') ? c : QLatin1Char('_');
-    if (base.isEmpty())
-        base = QStringLiteral("set");
-    return QDir(directory()).filePath(base + QStringLiteral(".json"));
+    return QDir(directory()).filePath(safeFileName(base, QStringLiteral("set")) + QStringLiteral(".json"));
 }
 
 std::optional<LivePadSet> read(const QString& path)

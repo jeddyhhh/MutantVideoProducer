@@ -1,3 +1,4 @@
+#include "core/FileNames.h"
 #include "core/Brand.h"
 #include "ui/McpServer.h"
 #include "ui/StemJob.h"
@@ -3994,8 +3995,7 @@ QJsonObject McpServer::ToolCall::tool_node_effect()
     }
     if (g.name.isEmpty())
         return errorResult(QStringLiteral("give the graph a name"));
-    static const QRegularExpression illegal(QStringLiteral("[\\\\/:*?\"<>|]"));
-    const QString file = QDir(nodes::userEffectsFolder()).filePath(QString(g.name).replace(illegal, QStringLiteral(" ")).simplified() + QStringLiteral(".mvpfx"));
+    const QString file = QDir(nodes::userEffectsFolder()).filePath(safeFileName(g.name, QStringLiteral("Effect")) + QStringLiteral(".mvpfx"));
     const QString id = nodes::effectId(g.name);
     if (!a.value(QStringLiteral("overwrite")).toBool() && (QFileInfo::exists(file) || nodes::findUserEffect(id)))
         return errorResult(QStringLiteral("there is already an effect called \"%1\" (overwrite true replaces it)").arg(g.name));

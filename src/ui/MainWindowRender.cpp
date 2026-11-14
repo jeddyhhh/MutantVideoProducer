@@ -1,4 +1,5 @@
 // Tools > Render Selection to New Track (render in place) and File > Export Stems.
+#include "core/FileNames.h"
 #include "ui/MainWindow.h"
 #include "ui/TimelineWidget.h"
 #include "ui/RenderStatusDialog.h"
@@ -224,8 +225,8 @@ std::shared_ptr<ProjectSnapshot> MainWindow::stemSnapshot() const
 std::vector<ExportSettings> MainWindow::stemSettings(const QString& folder, TimeUs from, TimeUs to) const
 {
     const QString base = m_project->filePath().isEmpty() ? tr("Untitled") : QFileInfo(m_project->filePath()).completeBaseName();
-    static const QRegularExpression illegal(QStringLiteral("[\\/:*?\"<>|]"));
     std::vector<ExportSettings> jobs;
+    QSet<QString> used; // (two tracks of one name: their own files)
     for (const Track& t : m_project->timeline().tracks) {
         if (t.type != TrackType::Audio || t.muted || t.clips.empty())
             continue;
@@ -237,7 +238,12 @@ std::vector<ExportSettings> MainWindow::stemSettings(const QString& folder, Time
         s.rangeStart = from;
         s.rangeEnd = to;
         s.onlyAudioTrack = t.id;
-        s.path = QDir(folder).filePath(QStringLiteral("%1 - %2.wav").arg(base, QString(t.name).replace(illegal, QStringLiteral(" ")).simplified()));
+        const QString name = safeFileName(t.name, tr("Audio"));
+        QString file = QStringLiteral("%1 - %2.wav").arg(base, name);
+        for (int n = 2; used.contains(file.toLower()); ++n)
+            file = QStringLiteral("%1 - %2 %3.wav").arg(base, name).arg(n);
+        used.insert(file.toLower());
+        s.path = QDir(folder).filePath(file);
         jobs.push_back(s);
     }
     return jobs;

@@ -1,3 +1,4 @@
+#include "core/FileNames.h"
 #include "ui/DeliverView.h"
 
 #include "core/Captions.h"
@@ -907,7 +908,7 @@ QString DeliverView::outputPath(const ExportPreset& p) const
             label.remove(QLatin1Char('(')).remove(QLatin1Char(')'));
             break;
         }
-    label.replace(illegal, QStringLiteral(" "));
+    label = safeFileName(label, QStringLiteral("Output"));
     const QString ext = p.extension.isEmpty() ? QStringLiteral("mp4") : p.extension;
     return QDir(QDir::fromNativeSeparators(m_folder->text())).filePath(baseName() + QStringLiteral(" - ") + label.simplified() + QLatin1Char('.') + ext);
 }

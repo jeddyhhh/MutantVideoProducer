@@ -1,3 +1,4 @@
+#include "core/FileNames.h"
 #include "core/Graphics.h"
 #include "core/AudioDecoder.h"
 #include "core/BeatTracker.h"
@@ -685,7 +686,7 @@ bool saveCharacter(const QJsonObject &character, QString *path, QString *error) 
   QString name;
   for (QChar c : character["name"].toString())
     name += c.isLetterOrNumber() || c == ' ' || c == '-' ? c : QChar('_');
-  name = name.trimmed().isEmpty() ? QStringLiteral("Character") : name.trimmed();
+  name = safeFileName(name, QStringLiteral("Character"));
   if (!QDir().mkpath(characterFolder())) {
     if (error)
       *error = QStringLiteral("Can't create %1.").arg(characterFolder());

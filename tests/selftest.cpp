@@ -71,6 +71,7 @@
 #include "core/Exporter.h"
 #include "core/FFmpeg.h"
 #include "core/FormatRegistry.h"
+#include "core/FileNames.h"
 #include "core/FrameConverter.h"
 #include "core/HdrToneMap.h"
 #include "core/Generators.h"
@@ -3449,6 +3450,17 @@ int cmdEditing(const QString& mediaDir, const QString& outDir)
     }
     const FrameRate fps{30, 1};
     const TimeUs S = kUsPerSecond;
+    {
+        // Names made into file names (stems, effects, pad sets...): nothing that makes a folder or a device of them.
+        const bool ok = safeFileName(QStringLiteral("Left\\Right/Mix: \"take\" 2?"), QStringLiteral("x")) == QStringLiteral("Left Right Mix take 2")
+                        && safeFileName(QStringLiteral("con"), QStringLiteral("x")) == QStringLiteral("_con")
+                        && safeFileName(QStringLiteral("LPT1.txt"), QStringLiteral("x")) == QStringLiteral("_LPT1.txt")
+                        && safeFileName(QStringLiteral("Console"), QStringLiteral("x")) == QStringLiteral("Console")
+                        && safeFileName(QStringLiteral("ends. . "), QStringLiteral("x")) == QStringLiteral("ends")
+                        && safeFileName(QStringLiteral("  ...  "), QStringLiteral("fallback")) == QStringLiteral("fallback")
+                        && safeFileName(QString(300, QLatin1Char('a')), QStringLiteral("x")).size() == 120;
+        check(ok, QStringLiteral("names make safe file names (no \\ / : * ? \" < > |, no device names, no dot at the end, at most 120 characters)"));
+    }
     {
         // Nothing lands on a locked track: not the picture asked for there, nor the sound that goes with it.
         Timeline tl = defaultTimeline();

@@ -1,3 +1,4 @@
+#include "core/FileNames.h"
 #include "core/LiveSequence.h"
 
 #include "core/LivePadSets.h"
@@ -73,7 +74,7 @@ QString fileFor(const QString& name)
     QString base;
     for (const QChar ch : name.trimmed())
         base += ch.isLetterOrNumber() || ch == QLatin1Char(' ') || ch == QLatin1Char('-') || ch == QLatin1Char('_') ? ch : QLatin1Char('_');
-    return QDir(directory()).filePath((base.isEmpty() ? QStringLiteral("sequence") : base) + QStringLiteral(".json"));
+    return QDir(directory()).filePath(safeFileName(base, QStringLiteral("sequence")) + QStringLiteral(".json"));
 }
 
 // {name, sequence} from a file, if it is one.
