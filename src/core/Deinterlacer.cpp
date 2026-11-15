@@ -26,12 +26,16 @@ bool Deinterlacer::start(const AVFrame* f)
     m_graph = avfilter_graph_alloc();
     const AVRational sar = f->sample_aspect_ratio.num ? f->sample_aspect_ratio : AVRational{1, 1};
     // (the times aren't used: the caller keeps its own)
-    const QByteArray args = QStringLiteral("video_size=%1x%2:pix_fmt=%3:time_base=1/1000000:pixel_aspect=%4/%5:colorspace=%6:range=%7")
+    const QByteArray args = QStringLiteral("video_size=%1x%2:pix_fmt=%3:time_base=1/1000000:pixel_aspect=%4/%5")
                                 .arg(f->width).arg(f->height).arg(f->format).arg(sar.num).arg(sar.den)
-                                .arg(int(f->colorspace)).arg(int(f->color_range))
                                 .toLatin1();
+    const QByteArray colour = QStringLiteral(":colorspace=%1:range=%2").arg(int(f->colorspace)).arg(int(f->color_range)).toLatin1();
+    const AVFilter* buffer = avfilter_get_by_name("buffer");
     AVFilterContext* bwdif = nullptr;
-    const bool ok = m_graph && avfilter_graph_create_filter(&m_in, avfilter_get_by_name("buffer"), "in", args.constData(), nullptr, m_graph) >= 0
+    // Older FFmpeg (Ubuntu 24.04's 6.1) has no colorspace / range options on the buffer source: made without them there
+    const bool ok = m_graph
+                    && (avfilter_graph_create_filter(&m_in, buffer, "in", (args + colour).constData(), nullptr, m_graph) >= 0
+                        || avfilter_graph_create_filter(&m_in, buffer, "in", args.constData(), nullptr, m_graph) >= 0)
                     && avfilter_graph_create_filter(&bwdif, avfilter_get_by_name("bwdif"), "deint",
                                                     "mode=send_frame:parity=auto:deint=interlaced", nullptr, m_graph) >= 0
                     && avfilter_graph_create_filter(&m_out, avfilter_get_by_name("buffersink"), "out", nullptr, nullptr, m_graph) >= 0

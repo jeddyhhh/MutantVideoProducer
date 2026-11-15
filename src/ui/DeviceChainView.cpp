@@ -1284,9 +1284,13 @@ DeviceChainView::DeviceChainView(Project* project, std::function<TimeUs()> curso
     l->addWidget(m_scroll, 1);
     setMinimumHeight(kBodyHeight + 70);
 
-    auto buildMenu = [this](QMenu* menu, const auto& list, bool audio) -> std::map<QString, QMenu*> {
+    // (not a generic lambda: MSVC 14.51 crashed compiling one here)
+    struct MenuItem {
+        QString id, name, category, description;
+    };
+    auto buildMenu = [this](QMenu* menu, const std::vector<MenuItem>& list, bool audio) -> std::map<QString, QMenu*> {
         std::map<QString, QMenu*> categories;
-        for (const auto& e : list) {
+        for (const MenuItem& e : list) {
             // "Parent/Child" categories become nested sub-menus.
             QMenu* sub = menu;
             QString path;
@@ -1312,7 +1316,12 @@ DeviceChainView::DeviceChainView(Project* project, std::function<TimeUs()> curso
         return categories;
     };
     m_videoMenu = new QMenu(this);
-    const auto videoCategories = std::make_shared<const std::map<QString, QMenu*>>(buildMenu(m_videoMenu, videoEffects(), false));
+    const auto videoCategories = std::make_shared<const std::map<QString, QMenu*>>(buildMenu(m_videoMenu, [] {
+        std::vector<MenuItem> items;
+        for (const EffectDef& e : videoEffects())
+            items.push_back({e.id, e.name, e.category, e.description});
+        return items;
+    }(), false));
     QMenu* userMenu = new QMenu(tr("User Created"), m_videoMenu);
     m_videoMenu->insertMenu(m_videoMenu->actions().value(m_videoMenu->actions().size() - 2), userMenu);
     // The Effect Builder's examples, put in their categories each time the menu opens (they can change): Node
@@ -1386,7 +1395,12 @@ DeviceChainView::DeviceChainView(Project* project, std::function<TimeUs()> curso
             retroMenu->addAction(tr("(none yet: Tools > Get Screen Shaders)"))->setEnabled(false);
     });
     m_audioMenu = new QMenu(this);
-    buildMenu(m_audioMenu, audioEffects(), true);
+    buildMenu(m_audioMenu, [] {
+        std::vector<MenuItem> items;
+        for (const AudioEffectDef& e : audioEffects())
+            items.push_back({e.id, e.name, e.category, e.description});
+        return items;
+    }(), true);
     // Preset Chains at the top, as the FX browsers have them: read when opened, so a chain just saved is there.
     for (QMenu* menu : {m_videoMenu, m_audioMenu}) {
         const bool audio = menu == m_audioMenu;
