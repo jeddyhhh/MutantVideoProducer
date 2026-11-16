@@ -1663,6 +1663,13 @@ struct McpServer::ToolCall {
     }
     // After a scan that kept the window going: another call (or a finished job) may have edited the timeline or
     // opened another project, which the edit made from `before` would undo.
+    // A window, menu or drag of the user's open (opened during a long call): an edit now would land under it, and be
+    // put back when it closes.
+    bool userBusy() const
+    {
+        return QApplication::activeModalWidget() || QApplication::activePopupWidget() || QGuiApplication::mouseButtons() != Qt::NoButton
+               || w->m_editorTransaction;
+    }
     bool changedSince(const ProjectSnapshot& before) const
     {
         return project->session() != before.session || !(project->timeline() == before.timeline);
@@ -3036,7 +3043,9 @@ QJsonObject McpServer::ToolCall::tool_render()
             MainWindow* win = w;
             const std::weak_ptr<const int> session = project->session(); // (another project opened meanwhile: not placed in it)
             QObject::connect(completion, &QTimer::timeout, win, [r, completion, win, where, from, to, session] {
-                if (!r->done)
+                // (not while a window, menu or drag of the user's is open: it would put back what it had, and lose the track)
+                if (!r->done || QApplication::activeModalWidget() || QApplication::activePopupWidget()
+                    || QGuiApplication::mouseButtons() != Qt::NoButton || win->m_editorTransaction)
                     return;
                 completion->stop();
                 completion->deleteLater();
@@ -4342,6 +4351,7 @@ QJsonObject McpServer::ToolCall::tool_stabilize()
         // The analysis on a thread, the window kept going (as the menu's progress window does).
         std::atomic<bool> finished{false}, ok{false};
         QString error;
+        const auto session = project->session();
         std::thread worker([&] {
             ok = stabilize::analyze(path, stream, [](double) { return true; }, &error);
             finished = true;
@@ -4351,6 +4361,10 @@ QJsonObject McpServer::ToolCall::tool_stabilize()
         worker.join();
         if (!ok)
             return errorResult(QStringLiteral("couldn't analyse the footage: %1").arg(error));
+        if (project->session() != session)
+            return errorResult(QStringLiteral("another project was opened while this analysed the footage"));
+        if (userBusy()) // (the analysis is kept: again is quick)
+            return errorResult(QStringLiteral("a window, menu or drag was opened in Mutant Video Producer meanwhile: try again once it's closed"));
     }
     tl = project->timeline();
     for (int id : ops::expandToGroups(tl, {clipId}))
@@ -4641,6 +4655,7 @@ QJsonObject McpServer::ToolCall::tool_youtube_clip()
     // The download on a thread, the window kept going.
     std::atomic<bool> finished{false};
     QString path;
+    const auto session = project->session();
     std::thread worker([&] {
         path = youtubeDownload(ytdlp, ffmpegFolder(), o, [](double) { return true; }, &error);
         finished = true;
@@ -4650,6 +4665,11 @@ QJsonObject McpServer::ToolCall::tool_youtube_clip()
     worker.join();
     if (path.isEmpty())
         return errorResult(QStringLiteral("the download failed: %1").arg(youtubeFailureHelp(error)));
+    if (project->session() != session)
+        return errorResult(QStringLiteral("downloaded to %1, but another project was opened meanwhile: not placed").arg(path));
+    if (userBusy())
+        return errorResult(QStringLiteral("downloaded to %1, but a window, menu or drag was opened in Mutant Video Producer meanwhile: "
+                                          "not placed (import_media it once that's closed)").arg(path));
     int mediaId = 0;
     if (a.value(QStringLiteral("place")).toBool(true)) {
         if (has("at"))

@@ -9,6 +9,9 @@ What changed in each version of Mutant Video Producer. The newest is first.
 - A project or file **double-clicked in Explorer while a window of the program's was open** (a render's progress,
   Director's Dice, Split at Scene Changes...) was opened at once, underneath it: closing Director's Dice then put the
   last project's timeline into the new one. It now opens once that window is closed (or a menu or drag is done).
+- **AI control**: a YouTube clip, a Stabilize analysis or a Render in Place finishing while you had a window open (or a
+  menu, or a drag under way) was placed underneath it, and could be lost when it closed. The render now waits for it;
+  the clip and Stabilize say so and leave it to be done again. Another project opened meanwhile isn't edited either.
 
 ## 0.9.8 (2026-11-15)
 
