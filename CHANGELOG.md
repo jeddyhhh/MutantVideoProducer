@@ -2,6 +2,14 @@
 
 What changed in each version of Mutant Video Producer. The newest is first.
 
+## Unreleased
+
+### Fixed
+
+- A project or file **double-clicked in Explorer while a window of the program's was open** (a render's progress,
+  Director's Dice, Split at Scene Changes...) was opened at once, underneath it: closing Director's Dice then put the
+  last project's timeline into the new one. It now opens once that window is closed (or a menu or drag is done).
+
 ## 0.9.8 (2026-11-15)
 
 ### Added

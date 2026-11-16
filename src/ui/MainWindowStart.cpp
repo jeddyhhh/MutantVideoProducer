@@ -28,6 +28,7 @@
 #include "ui/ShortcutsDialog.h"
 
 #include <QApplication>
+#include <QTimer>
 #include <QCheckBox>
 #include <QComboBox>
 #include <QCoreApplication>
@@ -384,17 +385,29 @@ void MainWindow::openFromElsewhere(const QStringList& paths)
         showNormal();
     raise();
     activateWindow();
-    QString project;
-    QStringList media;
-    for (const QString& p : paths)
-        if (QFileInfo(p).suffix().compare(QLatin1String("mvp"), Qt::CaseInsensitive) == 0)
-            project = p;
-        else if (QFileInfo::exists(p))
-            media << p;
-    if (!project.isEmpty() && maybeSave())
-        openProject(project);
-    if (!media.isEmpty())
-        importFiles(media);
+    // A file double-clicked while a window of ours is open (a render's progress, Director's Dice...), a menu or a drag is
+    // opened once that's done: the open one holds the project, and puts back what it had on closing.
+    auto* wait = new QTimer(this);
+    wait->setInterval(250);
+    connect(wait, &QTimer::timeout, this, [this, wait, paths] {
+        if (QApplication::activeModalWidget() || QApplication::activePopupWidget() || QGuiApplication::mouseButtons() != Qt::NoButton
+            || m_editorTransaction)
+            return;
+        wait->deleteLater();
+        wait->stop();
+        QString project;
+        QStringList media;
+        for (const QString& p : paths)
+            if (QFileInfo(p).suffix().compare(QLatin1String("mvp"), Qt::CaseInsensitive) == 0)
+                project = p;
+            else if (QFileInfo::exists(p))
+                media << p;
+        if (!project.isEmpty() && maybeSave())
+            openProject(project);
+        if (!media.isEmpty())
+            importFiles(media);
+    });
+    wait->start();
 }
 
 void MainWindow::offerCrashReport()
