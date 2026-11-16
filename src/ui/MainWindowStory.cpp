@@ -133,16 +133,17 @@ void MainWindow::directorsDice()
     layout->addWidget(preview, 1);
     auto* roll = new QPushButton(tr("Roll / Preview"));
     layout->addWidget(roll);
-    Timeline variation = before;
+    Timeline shown = before; // (what the preview shows: what Apply keeps)
     connect(roll, &QPushButton::clicked, &dlg, [&] {
-        variation = before;
+        Timeline variation = before;
         const int count = story::directorsDice(variation, selection, unsigned(seed->value()), style->currentIndex(), strength->value());
         if (!count) {
             QMessageBox::information(&dlg, tr("Director's Dice"),
                                      tr("Choose footage or images; captions and generated titles are kept intact."));
             return;
         }
-        m_project->setTimelineLive(variation);
+        shown = std::move(variation);
+        m_project->setTimelineLive(shown);
         seekTo(previewTime);
     });
     auto* reroll = new QPushButton(tr("Surprise me again"));
@@ -159,8 +160,15 @@ void MainWindow::directorsDice()
     seekTo(previewTime);
     const bool applied = dlg.exec() == QDialog::Accepted;
     disconnect(image);
+    // Something else edited meanwhile (a voice or render the AI started, finishing): kept, not put back over.
+    if (m_project->timeline() != shown) {
+        QMessageBox::information(this, tr("Director's Dice"),
+                                 tr("Something else changed the project while Director's Dice was open: it was left as it is."));
+        seekTo(originalCursor);
+        return;
+    }
     m_project->setTimelineLive(before);
-    if (applied)
-        m_project->applyEdit(variation, tr("Director's Dice — seed %1").arg(seed->value()));
+    if (applied && shown != before)
+        m_project->applyEdit(shown, tr("Director's Dice — seed %1").arg(seed->value()));
     seekTo(originalCursor);
 }

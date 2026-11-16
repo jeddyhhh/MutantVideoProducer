@@ -12,6 +12,9 @@ What changed in each version of Mutant Video Producer. The newest is first.
 - **AI control**: a YouTube clip, a Stabilize analysis or a Render in Place finishing while you had a window open (or a
   menu, or a drag under way) was placed underneath it, and could be lost when it closed. The render now waits for it;
   the clip and Stabilize say so and leave it to be done again. Another project opened meanwhile isn't edited either.
+- **Director's Dice** put its timeline back on closing even when something else (a voice the AI made, a render
+  finishing) had changed the project meanwhile, losing that change. It now leaves the project as it is then, and says
+  so.
 
 ## 0.9.8 (2026-11-15)
 
