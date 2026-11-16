@@ -387,14 +387,11 @@ void MainWindow::openFromElsewhere(const QStringList& paths)
     activateWindow();
     // A file double-clicked while a window of ours is open (a render's progress, Director's Dice...), a menu or a drag is
     // opened once that's done: the open one holds the project, and puts back what it had on closing.
-    auto* wait = new QTimer(this);
-    wait->setInterval(250);
-    connect(wait, &QTimer::timeout, this, [this, wait, paths] {
-        if (QApplication::activeModalWidget() || QApplication::activePopupWidget() || QGuiApplication::mouseButtons() != Qt::NoButton
-            || m_editorTransaction)
-            return;
-        wait->deleteLater();
-        wait->stop();
+    const auto busy = [this] {
+        return QApplication::activeModalWidget() || QApplication::activePopupWidget() || QGuiApplication::mouseButtons() != Qt::NoButton
+               || m_editorTransaction;
+    };
+    const auto open = [this, paths] {
         QString project;
         QStringList media;
         for (const QString& p : paths)
@@ -406,6 +403,19 @@ void MainWindow::openFromElsewhere(const QStringList& paths)
             openProject(project);
         if (!media.isEmpty())
             importFiles(media);
+    };
+    if (!busy()) {
+        open();
+        return;
+    }
+    auto* wait = new QTimer(this);
+    wait->setInterval(250);
+    connect(wait, &QTimer::timeout, this, [wait, busy, open] {
+        if (busy())
+            return;
+        wait->stop();
+        wait->deleteLater();
+        open();
     });
     wait->start();
 }
