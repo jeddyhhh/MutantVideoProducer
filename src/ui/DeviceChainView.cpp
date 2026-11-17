@@ -904,6 +904,8 @@ public:
         const bool selected = view->m_selected.count(e.id) > 0;
         const bool folded = view->m_folded.count(e.id) > 0;
         setFrameShape(QFrame::Box);
+        // As wide as its controls: the stretches inside made each device expanding, and they shared the panel's width
+        setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Preferred);
         setAutoFillBackground(true);
         QPalette pal = palette();
         pal.setColor(QPalette::Window, e.isRack() ? theme::c().window : theme::c().raised);
