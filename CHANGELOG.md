@@ -12,7 +12,8 @@ What changed in each version of Mutant Video Producer. The newest is first.
 ### Fixed
 
 - **Effect devices** (Event, Track, Output and Live FX) are only as wide as their controls: they were stretched to share
-  the panel's width, leaving empty space on the right of each.
+  the panel's width, leaving empty space on the right of each. An Effect Builder effect's "Double-click this effect"
+  line is across its top, its settings under it (it took the first column, the knobs squeezed beside it).
 
 ## 1.0.0 (2026-11-16)
 

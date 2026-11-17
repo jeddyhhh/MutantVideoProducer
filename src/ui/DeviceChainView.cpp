@@ -1035,9 +1035,23 @@ public:
         // Columns side by side, each its own stack: a shared grid made each row as tall as its tallest control in any
         // column, so a column of toggles under a row of knobs overflowed the body and every knob was squeezed (its value
         // drawn over its dial).
-        auto* columns = new QHBoxLayout(controls);
-        columns->setContentsMargins(6, 4, 6, 4);
+        auto* rows = new QVBoxLayout(controls);
+        rows->setContentsMargins(6, 4, 6, 4);
+        rows->setSpacing(4);
+        int top = 0; // (the height the line across the top takes from the columns)
+        if (m_user) {
+            // Made in the Effect Builder: its graph is changed there, not here. Across the top, the settings under it.
+            auto* warn = new QLabel(QObject::tr("⚠ Double-click this effect to change it in the Effect Builder"));
+            warn->setObjectName(QStringLiteral("userEffectHint"));
+            theme::style(warn, QStringLiteral("color: @warn; font-weight: bold;"));
+            rows->addWidget(warn, 0, Qt::AlignHCenter);
+            top = warn->sizeHint().height() + rows->spacing();
+            setToolTip(QObject::tr("Double-click to change this effect in the Effect Builder (Tools)"));
+        }
+        auto* columns = new QHBoxLayout;
         columns->setSpacing(6);
+        columns->addStretch(1); // (centred under that line)
+        rows->addLayout(columns, 1);
         std::vector<QVBoxLayout*> stacks;
         auto at = [&](int c) {
             while (int(stacks.size()) <= c) {
@@ -1055,16 +1069,6 @@ public:
             columns->addStretch(1);
         };
         int row = 0, col = 0, used = 0;
-        if (m_user) {
-            // Made in the Effect Builder: its graph is changed there, not here.
-            auto* warn = new QLabel(QObject::tr("\u26A0 Double-click this effect to change it in the Effect Builder"));
-            warn->setObjectName(QStringLiteral("userEffectHint"));
-            theme::style(warn, QStringLiteral("color: @warn; font-weight: bold;"));
-            at(col)->addWidget(warn, 0, Qt::AlignTop | Qt::AlignHCenter);
-            ++row;
-            used += 46;
-            setToolTip(QObject::tr("Double-click to change this effect in the Effect Builder (Tools)"));
-        }
         const bool anyShown = meta && meta->params && std::any_of(meta->params->begin(), meta->params->end(), [](const ParamDef& d) { return !d.hidden; });
         if (!anyShown && m_user) {
             finish();
@@ -1077,7 +1081,7 @@ public:
         }
         // Column-major: fill each column down to the body height, by the
         // controls' real heights (knobs are tall, menus and toggles short).
-        const int avail = bodyHeight - 8;
+        const int avail = bodyHeight - 8 - top;
         std::vector<ParamDef> defs = *meta->params;
         const auto shape = e.params.find(QStringLiteral("mask.shape"));
         const bool masked = !view->isAudio() && shape != e.params.end() && shape->second.value >= 0.5;
