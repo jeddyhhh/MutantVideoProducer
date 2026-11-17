@@ -585,6 +585,11 @@ void LivePadPanel::showSetMenu()
     QMenu* fill = menu.addMenu(tr("Fill Empty Pads with Random Chains"));
     for (int t = 0; t < 4; ++t)
         fill->addAction(randomTierName(RandomTier(t)), this, [this, t] { randomizeEmptyPads(t); });
+    QMenu* fillAll = menu.addMenu(tr("Replace All Pads with Random Chains"));
+    fillAll->setToolTip(tr("Every pad that isn't locked gets a new random chain, replacing its effects (Undo puts them back)"));
+    fillAll->setToolTipsVisible(true);
+    for (int t = 0; t < 4; ++t)
+        fillAll->addAction(randomTierName(RandomTier(t)), this, [this, t] { randomizeEmptyPads(t, true); });
     menu.addSeparator();
     QAction* del = menu.addAction(tr("Delete \"%1\"").arg(m_setName), this, [this] {
         if (QMessageBox::question(this, tr("Delete Pad Set"), tr("Delete the saved set \"%1\"? The pads stay as they are.").arg(m_setName))
@@ -678,13 +683,13 @@ bool LivePadPanel::randomizePad(int pad, int tier, uint32_t seed)
     return true;
 }
 
-int LivePadPanel::randomizeEmptyPads(int tier)
+int LivePadPanel::randomizeEmptyPads(int tier, bool all)
 {
     Timeline tl = m_project->timeline();
     int filled = 0;
     for (int pad = 0; pad < kLivePads; ++pad) {
         LivePad& lp = tl.livePads[size_t(pad)];
-        if (lp.locked || !lp.isEmpty())
+        if (lp.locked || (!all && !lp.isEmpty()))
             continue;
         const RandomChain chain = makeRandomChain(RandomTier(std::clamp(tier, 0, 3)), QRandomGenerator::global()->generate(),
                                                   [&tl] { return tl.allocId(); });
@@ -694,8 +699,12 @@ int LivePadPanel::randomizeEmptyPads(int tier)
     }
     if (filled)
         m_project->applyEdit(tl, tr("Random Effects Chains"));
-    emit message(filled ? tr("Filled %1 empty pad(s) with %2 random chains").arg(filled).arg(randomTierName(RandomTier(tier)))
-                        : tr("There are no empty pads to fill"));
+    if (all)
+        emit message(filled ? tr("Replaced %1 pad(s) with %2 random chains").arg(filled).arg(randomTierName(RandomTier(tier)))
+                            : tr("Every pad is locked"));
+    else
+        emit message(filled ? tr("Filled %1 empty pad(s) with %2 random chains").arg(filled).arg(randomTierName(RandomTier(tier)))
+                            : tr("There are no empty pads to fill"));
     return filled;
 }
 

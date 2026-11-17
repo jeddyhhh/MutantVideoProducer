@@ -583,6 +583,25 @@ int LiveView::runSelfTest(QStringList& log)
         check(filled == kLivePads - 3 && lowPads == filled && m_project->timeline().livePads[2].name == wild.name,
               QStringLiteral("Fill Empty Pads with Random Chains > Low fills only the empty pads (%1 filled)").arg(filled));
         {
+            int locked = 0;
+            for (const LivePad& lp : m_project->timeline().livePads)
+                locked += lp.locked;
+            const std::vector<LivePad> before(m_project->timeline().livePads.begin(), m_project->timeline().livePads.end());
+            const int replaced = m_pads->randomizeEmptyPads(3, true);
+            int insane = 0, lockedKept = 0;
+            for (int i = 0; i < kLivePads; ++i) {
+                const LivePad& lp = m_project->timeline().livePads[size_t(i)];
+                if (before[size_t(i)].locked)
+                    lockedKept += lp == before[size_t(i)];
+                else
+                    insane += lp.effects.size() >= 6;
+            }
+            check(locked > 0 && replaced == kLivePads - locked && insane == replaced && lockedKept == locked,
+                  QStringLiteral("Replace All Pads with Random Chains > Insane replaces every unlocked pad, filled or not (%1 replaced, %2 "
+                                 "locked kept)").arg(replaced).arg(lockedKept));
+            m_project->undoStack()->undo();
+        }
+        {
             // From Medium up, random chains now and then start with a node effect (an example), keeping their size.
             int withNodes = 0, sized = 0, id = 1;
             QString example;

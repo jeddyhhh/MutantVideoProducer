@@ -57,7 +57,7 @@ public:
     // names it). seed 0 = a new random one. False if the pad is locked.
     bool randomizePad(int pad, int tier, uint32_t seed = 0);
     // The same for every empty, unlocked pad; returns how many were filled.
-    int randomizeEmptyPads(int tier);
+    int randomizeEmptyPads(int tier, bool all = false); // (all: every unlocked pad, its effects replaced)
     void setLocked(int pad, bool locked);
 
     // Sets.

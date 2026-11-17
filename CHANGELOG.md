@@ -2,6 +2,18 @@
 
 What changed in each version of Mutant Video Producer. The newest is first.
 
+## Unreleased
+
+### Added
+
+- **Live**: the pad set's **≡** menu has **Replace All Pads with Random Chains** (Low to Insane): every pad gets a new
+  random chain, filled or not. Locked pads are left alone; Ctrl+Z puts them back.
+
+### Fixed
+
+- **Effect devices** (Event, Track, Output and Live FX) are only as wide as their controls: they were stretched to share
+  the panel's width, leaving empty space on the right of each.
+
 ## 1.0.0 (2026-11-16)
 
 ### Fixed
