@@ -306,7 +306,7 @@ int MainWindow::runEditorTest(QStringList& log)
         m_project->setTimelineLive(initial);
         {
             // Tools > Effect Builder: a graph built in the editor (Source -> Pixelate and Invert, blended) shows live, undoes,
-            // and saved, is an effect in the Effects tab under User Created.
+            // and saved, is an effect in the Effects tab under Node Editor.
             std::vector<std::pair<QString, QString>> videos;
             for (const auto& [id, m] : m_project->media())
                 if (m && !m->info.video.empty() && !m->info.isStill)
@@ -352,7 +352,7 @@ int MainWindow::runEditorTest(QStringList& log)
                                  "shown setting with it (%2)")
                       .arg(editor.status(), error));
             {
-                // The device chain's Add menu: the saved effect under User Created, and a chain saved now under Preset Chains,
+                // The device chain's Add menu: the saved effect under Node Editor, and a chain saved now under Preset Chains,
                 // without opening anything again.
                 const FxTarget before = m_devices->target();
                 m_devices->setTarget({FxTarget::Kind::Output, 0});
@@ -374,8 +374,10 @@ int MainWindow::runEditorTest(QStringList& log)
                 const QString presetId = PresetLibrary::instance().save(QStringLiteral("GUI Test Chain"), false, QString(),
                                                                         {makeEffectOfType(QStringLiteral("invert"), 1)});
                 QMenu* menu = add ? add->menu() : nullptr;
+                if (menu)
+                    emit menu->aboutToShow(); // (the Effect Builder's effects are put in their menus as it opens)
                 QMenu* chains = submenu(menu, tr("Preset Chains"));
-                QMenu* user = submenu(menu, tr("User Created"));
+                QMenu* user = submenu(menu, tr("Node Editor"));
                 const bool chainListed = holds(chains, QStringLiteral("GUI Test Chain"), holds);
                 const bool effectListed = holds(user, QStringLiteral("GUI Test Mosaic"), holds);
                 PresetLibrary::instance().remove(presetId);
@@ -452,7 +454,7 @@ int MainWindow::runEditorTest(QStringList& log)
                 }
                 check(!presetId.isEmpty() && chainListed && effectListed,
                       QStringLiteral("the device chain's Add menu has a chain just saved under Preset Chains (%1) and a user effect just "
-                                     "saved under User Created (%2)")
+                                     "saved under Node Editor (%2)")
                           .arg(chainListed ? "yes" : "no", effectListed ? "yes" : "no"));
             }
             editor.close();
@@ -497,6 +499,40 @@ int MainWindow::runEditorTest(QStringList& log)
                         updated = after && !after->effects.empty() && after->effects.back().id == effectId && it->second.text != before;
                         opened2->close();
                     }
+                    // Opened again, changed and closed without saving: no question, the change stays in the event's effect.
+                    const QString savedGraph = [&] {
+                        const Clip* c = m_project->timeline().findClip(clipId);
+                        return c && !c->effects.empty() ? c->effects.back().params.at(QStringLiteral("graph")).text : QString();
+                    }();
+                    m_devices->setTarget({FxTarget::Kind::Clip, clipId});
+                    QApplication::processEvents();
+                    QApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete); // (the last editor, closed)
+                    const auto countBefore = findChildren<NodeEffectEditor*>().size();
+                    if (!hints.isEmpty()) {
+                        const auto again = m_devices->findChildren<QLabel*>(QStringLiteral("userEffectHint"));
+                        if (!again.isEmpty()) {
+                            const QPointF at(again.front()->width() / 2.0, again.front()->height() / 2.0);
+                            QMouseEvent dbl(QEvent::MouseButtonDblClick, at, again.front()->mapToGlobal(at), Qt::LeftButton, Qt::LeftButton,
+                                            Qt::NoModifier);
+                            QApplication::sendEvent(again.front(), &dbl);
+                        }
+                    }
+                    const auto list = findChildren<NodeEffectEditor*>();
+                    NodeEffectEditor* opened3 = list.size() > countBefore ? list.back() : nullptr;
+                    bool kept = false;
+                    QString why = opened3 ? QString() : QStringLiteral("not opened");
+                    if (opened3) {
+                        const int undoBefore = m_project->undoStack()->index();
+                        opened3->setParam(blend, QStringLiteral("opacity"), 0.7);
+                        const bool closed = opened3->close();
+                        const Clip* c = m_project->timeline().findClip(clipId);
+                        const QString now = c && !c->effects.empty() ? c->effects.back().params.at(QStringLiteral("graph")).text : QString();
+                        const int steps = m_project->undoStack()->index() - undoBefore;
+                        kept = closed && now != savedGraph && steps == 1;
+                        why = QStringLiteral("closed %1, graph changed %2, %3 undo step(s)").arg(closed).arg(now != savedGraph).arg(steps);
+                    }
+                    check(kept, QStringLiteral("the Effect Builder closes without asking to save; changes made on an event's effect stay in it "
+                                               "(one undo step): %1").arg(why));
                 }
                 check(hinted && opened && updated, QStringLiteral("a user effect on an event says to double-click it (%1); that opens the Effect Builder "
                                                                    "on it (%2), and saving there changes the event's effect (%3)")

@@ -1,7 +1,7 @@
 #pragma once
 // Tools > Effect Builder: make a video effect from a graph of nodes (core/NodeGraph.h). The example video on the left,
 // the graph in the middle (drag nodes in from the list, wire outputs to inputs), the result live on the right with
-// the chosen node's settings under it. Saved, it becomes an effect in the User Created category.
+// the chosen node's settings under it. Saved, it becomes an effect in the Node Editor category.
 
 #include "core/NodeGraph.h"
 #include <QDialog>
@@ -59,9 +59,12 @@ public:
 
 signals:
     void saved(const QString& effectId);
+    // Closed with changes not saved as an effect: opened on an effect, they're kept in it (in the project); else let go.
+    void closedWithChanges(const nodes::Graph& graph);
 
 protected:
     void closeEvent(QCloseEvent* e) override;
+    void reject() override { close(); } // (Escape: as Close)
 
 private:
     void setExample(const QString& path);

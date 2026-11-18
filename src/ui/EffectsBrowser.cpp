@@ -14,7 +14,10 @@
 #include "core/Generators.h"
 #include "core/NodeGraph.h"
 
+#include <QFrame>
+#include <QHBoxLayout>
 #include <QHeaderView>
+#include <QLabel>
 #include <QMimeData>
 #include <functional>
 #include <map>
@@ -24,6 +27,10 @@ constexpr int kIdRole = Qt::UserRole;
 constexpr int kIsPresetRole = Qt::UserRole + 1;
 constexpr int kUserRole = Qt::UserRole + 2;
 constexpr int kNestedRole = Qt::UserRole + 3;
+constexpr int kChainRole = Qt::UserRole + 4;
+
+// Chains (Preset Chains, the Effect Builder's graphs) in orange, single effects in the text colour
+QColor chainColour() { return theme::c().dark ? QColor(0xffa040) : QColor(0xc05a00); }
 
 QTreeWidgetItem* presetItem(QTreeWidgetItem* parent, const Preset& p)
 {
@@ -86,7 +93,7 @@ void EffectsBrowser::populate()
             QTreeWidgetItem* root = groupItem(top, tr("Preset Chains"));
             root->setToolTip(0, tr("Ready-made chains of effects: drag onto an event, a track or the device chain"));
             for (const Preset& p : chains)
-                presetItem(groupItem(sub, p.category.isEmpty() ? tr("Other") : p.category, root), p);
+                presetItem(groupItem(sub, p.category.isEmpty() ? tr("Other") : p.category, root), p)->setForeground(0, chainColour());
             root->setExpanded(false);
         }
         std::map<QString, QTreeWidgetItem*> groups;
@@ -105,9 +112,14 @@ void EffectsBrowser::populate()
             return item;
         };
         auto addEffect = [&](const QString& id, const QString& name, const QString& category, const QString& description) {
-            auto* item = new QTreeWidgetItem(categoryItem(category), {name});
+            // (the user's own Effect Builder effects with its examples, under Node Editor)
+            auto* item = new QTreeWidgetItem(categoryItem(category == QLatin1String("User Created") ? QStringLiteral("Node Editor") : category), {name});
             item->setData(0, kIdRole, id);
             item->setToolTip(0, description);
+            if (id.startsWith(QLatin1String("user."))) { // (a graph of effects, made in the Effect Builder: a chain)
+                item->setData(0, kChainRole, true);
+                item->setForeground(0, chainColour());
+            }
             for (const Preset& p : lib.forEffect(id))
                 presetItem(item, p);
             return item;
@@ -132,6 +144,68 @@ void EffectsBrowser::populate()
                 addEffect(e->id, e->name, e->category, e->description);
         for (auto& [name, g] : groups)
             g->setExpanded(!g->data(0, kNestedRole).toBool()); // categories open, sub-folders and presets folded
+        // Two sections, a line between: single effects (white), then chains (orange): Preset Chains and the categories
+        // made only of chains (the Effect Builder's).
+        std::function<bool(QTreeWidgetItem*)> allChains = [&](QTreeWidgetItem* group) {
+            bool any = false;
+            for (int i = 0; i < group->childCount(); ++i) {
+                QTreeWidgetItem* c = group->child(i);
+                if (c->data(0, kIsPresetRole).toBool())
+                    continue;
+                if (c->data(0, kIdRole).toString().isEmpty() ? !allChains(c) : !c->data(0, kChainRole).toBool())
+                    return false;
+                any = true;
+            }
+            return any;
+        };
+        std::vector<QTreeWidgetItem*> singles, chained;
+        while (topLevelItemCount() > 0) {
+            QTreeWidgetItem* group = takeTopLevelItem(0);
+            const bool chain = group->text(0) == tr("Preset Chains") || allChains(group);
+            if (chain) { // (its folders orange too)
+                std::function<void(QTreeWidgetItem*)> paint = [&](QTreeWidgetItem* g) {
+                    g->setForeground(0, chainColour());
+                    for (int i = 0; i < g->childCount(); ++i)
+                        if (g->child(i)->data(0, kIdRole).toString().isEmpty())
+                            paint(g->child(i));
+                };
+                paint(group);
+            }
+            (chain ? chained : singles).push_back(group);
+        }
+        std::stable_partition(chained.begin(), chained.end(), [this](QTreeWidgetItem* g) { return g->text(0) == tr("Preset Chains"); });
+        auto section = [this](const QString& title, const QColor& colour, const QString& tip) {
+            auto* item = new QTreeWidgetItem(this);
+            item->setFlags(Qt::NoItemFlags);
+            item->setToolTip(0, tip);
+            auto* w = new QWidget;
+            auto* l = new QHBoxLayout(w);
+            l->setContentsMargins(0, 6, 6, 2);
+            l->setSpacing(6);
+            auto* label = new QLabel(title);
+            label->setStyleSheet(QStringLiteral("color: %1; font-weight: bold; letter-spacing: 1px;").arg(colour.name()));
+            auto* line = new QFrame;
+            line->setFixedHeight(2);
+            line->setStyleSheet(QStringLiteral("background: %1;").arg(colour.name()));
+            l->addWidget(label);
+            l->addWidget(line, 1, Qt::AlignVCenter);
+            w->setToolTip(tip);
+            item->setSizeHint(0, w->sizeHint());
+            setItemWidget(item, 0, w);
+        };
+        const QColor single = theme::c().text;
+        if (!singles.empty())
+            section(tr("EFFECTS"), single, tr("Single effects"));
+        for (QTreeWidgetItem* g : singles) {
+            addTopLevelItem(g);
+            g->setExpanded(true);
+        }
+        if (!chained.empty())
+            section(tr("CHAINS"), chainColour(), tr("Chains of effects: Preset Chains, and the Effect Builder's effects (graphs of effects)"));
+        for (QTreeWidgetItem* g : chained) {
+            addTopLevelItem(g);
+            g->setExpanded(g->text(0) != tr("Preset Chains"));
+        }
     } else if (m_kind == Kind::Generators) {
         std::map<QString, QTreeWidgetItem*> groups;
         for (const GeneratorPreset& p : generatorPresets()) {

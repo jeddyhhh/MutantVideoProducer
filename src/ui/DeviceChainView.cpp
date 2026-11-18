@@ -1328,26 +1328,29 @@ DeviceChainView::DeviceChainView(Project* project, std::function<TimeUs()> curso
             items.push_back({e.id, e.name, e.category, e.description});
         return items;
     }(), false));
-    QMenu* userMenu = new QMenu(tr("User Created"), m_videoMenu);
-    m_videoMenu->insertMenu(m_videoMenu->actions().value(m_videoMenu->actions().size() - 2), userMenu);
-    // The Effect Builder's examples, put in their categories each time the menu opens (they can change): Node
-    // Editor, or a category of the effects' own ("Broken VGS/Analogue Circuit Emu" joins the console effects).
+    // Screen shaders, by folder (read when opened: they come with Tools > Get Screen Shaders).
+    QMenu* retroMenu = new QMenu(tr("Retro Shaders"), m_videoMenu);
+    m_videoMenu->insertMenu(m_videoMenu->actions().value(m_videoMenu->actions().size() - 2), retroMenu);
+    // The Effect Builder's effects, put in their categories each time the menu opens (they can change): Node Editor
+    // (the examples, then the user's own), or a category of the effects' own ("Broken VGS/Analogue Circuit Emu" joins
+    // the console effects).
     const auto exampleItems = std::make_shared<std::vector<QPointer<QObject>>>();
-    connect(m_videoMenu, &QMenu::aboutToShow, this, [this, videoCategories, exampleItems, userMenu] {
+    connect(m_videoMenu, &QMenu::aboutToShow, this, [this, videoCategories, exampleItems, retroMenu] {
         for (const QPointer<QObject>& o : *exampleItems)
             delete o.data();
         exampleItems->clear();
         std::map<QString, QMenu*> made;
-        // (by category: new top-level menus come in that order, after the effects' own, before User Created)
-        std::vector<const EffectDef*> examples;
-        for (const EffectDef* e : nodes::userEffects())
-            if (e->category != QLatin1String("User Created"))
-                examples.push_back(e);
-        std::stable_sort(examples.begin(), examples.end(), [](const EffectDef* a, const EffectDef* b) { return a->category < b->category; });
+        // (by category: new top-level menus come in that order, after the effects' own, before Retro Shaders)
+        const auto categoryOf = [](const EffectDef* e) {
+            return e->category == QLatin1String("User Created") ? QStringLiteral("Node Editor") : e->category;
+        };
+        std::vector<const EffectDef*> examples = nodes::userEffects();
+        std::stable_partition(examples.begin(), examples.end(), [](const EffectDef* e) { return e->category != QLatin1String("User Created"); });
+        std::stable_sort(examples.begin(), examples.end(), [&](const EffectDef* a, const EffectDef* b) { return categoryOf(a) < categoryOf(b); });
         for (const EffectDef* e : examples) {
             QMenu* into = m_videoMenu;
             QString path;
-            for (const QString& part : e->category.split(QLatin1Char('/'))) {
+            for (const QString& part : categoryOf(e).split(QLatin1Char('/'))) {
                 path += (path.isEmpty() ? QString() : QStringLiteral("/")) + part;
                 if (const auto it = videoCategories->find(path); it != videoCategories->end()) {
                     into = it->second;
@@ -1357,7 +1360,7 @@ DeviceChainView::DeviceChainView(Project* project, std::function<TimeUs()> curso
                 if (!m) {
                     m = new QMenu(QString(part).replace(QLatin1Char('&'), QStringLiteral("&&")), into);
                     if (into == m_videoMenu)
-                        m_videoMenu->insertMenu(userMenu->menuAction(), m); // (top level: before User Created)
+                        m_videoMenu->insertMenu(retroMenu->menuAction(), m); // (top level: before Retro Shaders)
                     else
                         into->addMenu(m);
                     exampleItems->push_back(m);
@@ -1370,21 +1373,6 @@ DeviceChainView::DeviceChainView(Project* project, std::function<TimeUs()> curso
             connect(a, &QAction::triggered, this, [this, id = e->id] { addEffect(id); });
         }
     });
-    connect(userMenu, &QMenu::aboutToShow, this, [this, userMenu] {
-        userMenu->clear();
-        for (const EffectDef* e : nodes::userEffects()) {
-            if (e->category != QLatin1String("User Created")) // (the examples are in their own menus)
-                continue;
-            QAction* a = userMenu->addAction(QString(e->name).replace(QLatin1Char('&'), QStringLiteral("&&")));
-            a->setToolTip(e->description);
-            connect(a, &QAction::triggered, this, [this, id = e->id] { addEffect(id); });
-        }
-        if (userMenu->isEmpty())
-            userMenu->addAction(tr("(none yet: Tools > Effect Builder)"))->setEnabled(false);
-    });
-    // Screen shaders, by folder (read when opened: they come with Tools > Get Screen Shaders).
-    QMenu* retroMenu = new QMenu(tr("Retro Shaders"), m_videoMenu);
-    m_videoMenu->insertMenu(m_videoMenu->actions().value(m_videoMenu->actions().size() - 2), retroMenu);
     connect(retroMenu, &QMenu::aboutToShow, this, [this, retroMenu] {
         retroMenu->clear();
         std::map<QString, QMenu*> folders;

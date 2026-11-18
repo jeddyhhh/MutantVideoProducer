@@ -158,6 +158,9 @@ Each drag or command is one step of undo.
   EQ *Vocal Presence*, Reverb *Cathedral*, Pixel Sort *Melting Highlights*.
 - **Preset Chains** are whole chains, racks included. Examples: *Podcast Voice*, *Telephone*,
   *Blockbuster Grade*, *Broken Stream*.
+- The effects lists (the Video FX and Audio FX tabs, and the Live tab's) come in two parts, a line between: **EFFECTS**,
+  single effects in white, then **CHAINS** in orange: Preset Chains and the Effect Builder's effects (Node Editor,
+  Analogue Circuit Emu), each a graph of effects.
 - Drag a preset onto an event, a track or the device chain, or double-click it. The device chain's
   **Add** menu has the Preset Chains too.
 - A device's **≡** button loads presets into it, and **Save as Preset...** keeps its settings as your own preset.
@@ -389,16 +392,18 @@ big graphs that mix them with the other nodes (Genlock Drift, Multipath Ghosts, 
 Hue Wobble, Chroma Delay, Generation Loss, Two Sets One Signal, Keyed Broadcast, Feedback Tube,
 Pattern Sync, Tape Flagging and more). Composite Circuit wires up the whole chain from the manual's
 diagram. Each starts with the TV held steady; turn its hold or drift settings to make it roll.
-**User Created** has only the effects you make. Put an example on an event, or open it from **Tools >
-Edit User Effect > Examples** to see how it's wired and make your own from it (saving puts your
-version in your own effects).
+The effects you make are in **Node Editor** too, after the examples. Put an example on an event, or
+open it from **Tools > Edit User Effect > Examples** to see how it's wired and make your own from it
+(saving puts your version in your own effects).
 
 Give it a **Name** (and a description), then **Save as User Created Effect**: it's saved to a
-`.mvpfx` file and appears in the Effects tab and the device chain's **+** menu under **User
-Created**, ready for any event, track or adjustment layer. The graph is saved inside the project
+`.mvpfx` file and appears in the Effects tab and the device chain's **+** menu under **Node
+Editor**, ready for any event, track or adjustment layer. The graph is saved inside the project
 too, so it renders the same on another computer. On an event (or track), the effect's box in the
 device chain says to **double-click it**: that opens it in the Effect Builder, and saving there
-changes that event's effect too. **Tools > Edit User Effect** opens one again (changes apply to
+changes that event's effect too. Closed without saving, it doesn't ask: changes made there stay in that
+event's effect, in the project (**Ctrl+Z** undoes them), and opened from the Tools menu they're let go.
+**Tools > Edit User Effect** opens one again (changes apply to
 the events you add it to from then on), and **Open the Folder** shows the files to share them.
 
 ## GPU acceleration

@@ -429,7 +429,7 @@ NodeEffectEditor::NodeEffectEditor(const std::vector<std::pair<QString, QString>
     bar->addWidget(new QLabel(tr("Name:")));
     m_name = new QLineEdit;
     m_name->setMaximumWidth(260);
-    m_name->setToolTip(tr("The effect's name in the Effects tab (User Created)"));
+    m_name->setToolTip(tr("The effect's name in the Effects tab (Node Editor)"));
     connect(m_name, &QLineEdit::textEdited, this, [this](const QString& text) {
         changed(QStringLiteral("name"));
         m_graph.name = text;
@@ -637,7 +637,8 @@ NodeEffectEditor::NodeEffectEditor(const std::vector<std::pair<QString, QString>
     auto* buttons = new QDialogButtonBox;
     auto* saveButton = buttons->addButton(tr("Save as User Created Effect"), QDialogButtonBox::AcceptRole);
     saveButton->setDefault(true);
-    saveButton->setToolTip(tr("Save it to a file and add it to the Effects tab (User Created), ready for any event, track or adjustment layer"));
+    saveButton->setToolTip(tr("Save it to a file and add it to the Effects tab (Node Editor), ready for any event, track or adjustment layer.\n"
+                              "Closing without saving: changes to an effect opened from an event or chain stay in that effect"));
     buttons->addButton(QDialogButtonBox::Close);
     help::addButton(buttons, QStringLiteral("effects.md#effect-builder"));
     connect(saveButton, &QPushButton::clicked, this, [this] { save(false); });
@@ -1218,7 +1219,7 @@ bool NodeEffectEditor::save(bool as)
         QMessageBox::warning(this, tr("Save Effect"), tr("Couldn't save: %1").arg(error));
         return false;
     }
-    m_status->setText(tr("Saved. \"%1\" is in the Effects tab under User Created.").arg(m_graph.name));
+    m_status->setText(tr("Saved. \"%1\" is in the Effects tab under Node Editor.").arg(m_graph.name));
     return true;
 }
 
@@ -1235,8 +1236,9 @@ bool NodeEffectEditor::maybeSave()
 
 void NodeEffectEditor::closeEvent(QCloseEvent* e)
 {
-    if (maybeSave())
-        e->accept();
-    else
-        e->ignore();
+    // No asking: Save as User Created Effect saves it as an effect; changes made on an effect stay in it (the project).
+    if (m_modified)
+        emit closedWithChanges(m_graph);
+    m_modified = false;
+    e->accept();
 }

@@ -9,6 +9,15 @@ What changed in each version of Mutant Video Producer. The newest is first.
 - **Live**: the pad set's **≡** menu has **Replace All Pads with Random Chains** (Low to Insane): every pad gets a new
   random chain, filled or not. Locked pads are left alone; Ctrl+Z puts them back.
 
+### Changed
+
+- The **effects lists** (Video FX, Audio FX and the Live tab's) are in two parts with a line between: **EFFECTS**, the
+  single effects in white, then **CHAINS** in orange: Preset Chains and the Effect Builder's effects.
+- The effects you make in the Effect Builder are under **Node Editor**, after its examples (there's no User Created
+  menu any more).
+- Closing the **Effect Builder** no longer asks to save. Opened on an effect (double-click), what you changed stays in
+  that effect, in the project (Ctrl+Z undoes it); **Save as User Created Effect** still saves it as an effect of its own.
+
 ### Fixed
 
 - **Effect devices** (Event, Track, Output and Live FX) are only as wide as their controls: they were stretched to share

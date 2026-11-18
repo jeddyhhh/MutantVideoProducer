@@ -317,6 +317,32 @@ void MainWindow::editUserEffect(int effectId)
     NodeEffectEditor* editor = effectBuilder(file);
     if (!graph.nodes.empty())
         editor->setGraph(graph);
+    // Closed with changes it didn't save as an effect: they stay in this effect (in the project, undoable), its settings
+    // changed in the graph with them.
+    connect(editor, &NodeEffectEditor::closedWithChanges, this,
+            [this, effectId, original = editor->graph(), session = std::weak_ptr<const int>(m_project->session())](const nodes::Graph& g) {
+                if (session.lock() != m_project->session())
+                    return; // (another project opened meanwhile)
+                Timeline now = m_project->timeline();
+                EffectInstance* inst = findInstance(now, effectId);
+                if (!inst)
+                    return;
+                inst->params[QStringLiteral("graph")].text = QString::fromUtf8(QJsonDocument(nodes::toJson(g)).toJson(QJsonDocument::Compact));
+                for (const nodes::Exposed& x : g.exposed) {
+                    const nodes::Node* n = g.find(x.node);
+                    const nodes::Node* was = original.find(x.node);
+                    if (!n || !n->params.count(x.param))
+                        continue;
+                    const double value = n->params.at(x.param).value;
+                    if (!was || !was->params.count(x.param) || was->params.at(x.param).value != value) {
+                        ParamValue& p = inst->params[x.id];
+                        p.keys.clear();
+                        p.value = value;
+                    }
+                }
+                m_project->applyEdit(now, tr("Edit Effect in the Effect Builder"));
+                refreshPreview();
+            });
     connect(editor, &NodeEffectEditor::saved, this, [this, effectId](const QString& id) {
         Timeline now = m_project->timeline();
         EffectInstance* inst = findInstance(now, effectId);
@@ -354,7 +380,7 @@ NodeEffectEditor* MainWindow::effectBuilder(const QString& file)
     editor->setAttribute(Qt::WA_DeleteOnClose);
     connect(editor, &NodeEffectEditor::saved, this, [this](const QString& id) {
         const EffectDef* def = findEffect(id);
-        statusBar()->showMessage(tr("Saved \"%1\": it's in the Effects tab under User Created").arg(def ? def->name : id), 8000);
+        statusBar()->showMessage(tr("Saved \"%1\": it's in the Effects tab under Node Editor").arg(def ? def->name : id), 8000);
     });
     if (m_modes && m_modes->currentWidget() == m_live) // on the Live tab: tried on what is live (before its effects)
         editor->setLiveSource([engine = QPointer<LiveEngine>(m_live->engine())] { return engine ? engine->cleanFrame() : QImage(); });
