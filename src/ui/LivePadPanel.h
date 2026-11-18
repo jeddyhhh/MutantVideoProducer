@@ -70,6 +70,8 @@ public:
     bool loadSet(const QString& name);
     bool saveSetAs(const QString& name, QString* error = nullptr);
     bool setModified() const;
+    // The next / previous saved set (the arrows beside the list).
+    void stepSet(int delta);
 
     // Auto switch: 0 off, 1 tempo, 2 audio beats.
     enum AutoMode { AutoOff, AutoTempo, AutoAudio, AutoMidi };
@@ -155,7 +157,6 @@ private:
     void showMenu(int pad, const QPoint& globalPos);
     void showSetMenu();
     void editPad(int pad, const std::function<void(LivePad&)>& change, const QString& description);
-    void stepSet(int delta);
     void beat();
     void flash(bool downbeat);
     double currentBpm() const;

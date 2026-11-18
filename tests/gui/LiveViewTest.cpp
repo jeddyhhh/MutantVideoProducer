@@ -964,6 +964,23 @@ int LiveView::runSelfTest(QStringList& log)
         check(learned && played && m_activePad == -1, QStringLiteral("Learn MIDI: a note learned for pad 3 switches it on and off"));
         m_midiMap = mapBefore;
         saveMidiMap();
+        // Unmapped, a pad controller's pads play the pads as laid out on it: note 36 (channel 10) is the bottom-left one.
+        {
+            MidiMessage drumOn, drumOff;
+            drumOn.status = 0x99;
+            drumOn.data1 = 36;
+            drumOn.data2 = 127;
+            drumOff.status = 0x89;
+            drumOff.data1 = 36;
+            const bool unmapped = !m_midiMap.contains(QStringLiteral("n:9:36"));
+            midiMessage(drumOn);
+            midiMessage(drumOff);
+            const bool on = m_activePad == 12;
+            midiMessage(drumOn);
+            midiMessage(drumOff);
+            check(!unmapped || (on && m_activePad == -1),
+                  QStringLiteral("an unmapped pad controller plays the pads: note 36 on channel 10 switches pad 13 (bottom-left) on and off"));
+        }
         // Modulation: Brightness moved by MIDI controller 7, then by the beat.
         {
             Timeline tl = m_project->timeline();

@@ -32,7 +32,22 @@ struct MidiMessage {
     bool isStop() const { return status == 0xFC; }
     bool isSongPosition() const { return status == 0xF2; }
     int songPosition() const { return data1 | (data2 << 7); }
+    // MIDI Machine Control (a SysEx the transport buttons of many controllers send): status 0xF0, data1 the command
+    // (1 stop, 2 play, 3 deferred play, 4 fast forward, 5 rewind, 6 record, 9 pause).
+    bool isMmc() const { return status == 0xF0; }
 };
+
+// The MMC command in a SysEx message (F0 7F <device> 06 <command> F7), if it is one.
+std::optional<MidiMessage> mmcFromSysex(const uint8_t* data, size_t size, double time);
+
+// What a controller nobody has mapped does on the Live tab, so a pad controller plugged in plays straight away:
+// - notes 36-51 (C1 to D#2, the drum pads of Akai MPD / MPK / LPD, Arturia, Novation and most others) play the
+//   pads, laid out as on the controller: 36 bottom-left, 39 bottom-right, 48 top-left. On a keyboard (MPK,
+//   Launchkey, Oxygen...) only on channel 10, where their pads are, so the keys don't play pads.
+// - transport buttons: Akai's controller mode (CC 115 rewind, 116 fast forward, 117 stop, 118 play, 119 record)
+//   and MMC: play starts capture, stop stops it, record records, rewind / fast forward step the pad sets.
+// An action (LiveView::runAction), or empty. Game controllers have none.
+QString defaultMidiAction(const MidiMessage& m, const QString& deviceName);
 
 // Follows a MIDI clock: the tempo from the ticks, a beat every 24 of them, and
 // where it is in the bar (from Start and the song position).

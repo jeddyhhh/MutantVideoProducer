@@ -16,6 +16,8 @@ What changed in each version of Mutant Video Producer. The newest is first.
 - **Live**: **OSC** from phone and tablet apps like TouchOSC (Setup > MIDI > Listen on port): Learn MIDI maps their
   controls, and `/mvp/pad/1`, `/mvp/padmix`, `/mvp/blackout` and more work without learning.
 - **Live**: **Ableton Link**: the Link button joins the tempo and bars of Ableton Live and other apps on the network.
+- **Live**: pad controllers play the pads without Learn MIDI: notes 36-51 (Akai MPD / MPK, LPD8 and most others) as
+  laid out on the controller, and their transport buttons (MMC or CC 115-119) start, stop, record and step pad sets.
 
 ### Changed
 

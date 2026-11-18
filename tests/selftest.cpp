@@ -6083,6 +6083,31 @@ int cmdLive(const QString& outDir)
               QStringLiteral("an Xbox controller reads as MIDI: A is note 60 on channel 16 (on and off), the right trigger and a stick direction "
                              "are controllers, nothing when nothing moved, and each has its name"));
     }
+    // ---- Pad controllers unmapped: pads by where they are, Akai's transport CCs and MMC ----
+    {
+        auto note = [](int n, int channel) {
+            MidiMessage m;
+            m.status = uint8_t(0x90 | channel);
+            m.data1 = uint8_t(n);
+            m.data2 = 100;
+            return m;
+        };
+        MidiMessage play;
+        play.status = 0xB0;
+        play.data1 = 118;
+        play.data2 = 127;
+        const uint8_t mmcRec[] = {0xF0, 0x7F, 0x7F, 0x06, 0x06, 0xF7}, other[] = {0xF0, 0x47, 0x00, 0x06, 0x06, 0xF7};
+        const auto rec = mmcFromSysex(mmcRec, sizeof mmcRec, 0);
+        const QString mpd = QStringLiteral("MPD26"), mpk = QStringLiteral("MPK mini 3");
+        check(defaultMidiAction(note(36, 9), mpd) == QStringLiteral("pad:12") && defaultMidiAction(note(39, 0), mpd) == QStringLiteral("pad:15")
+                  && defaultMidiAction(note(48, 9), mpd) == QStringLiteral("pad:0") && defaultMidiAction(note(51, 9), mpd) == QStringLiteral("pad:3")
+                  && defaultMidiAction(note(52, 9), mpd).isEmpty() && defaultMidiAction(note(36, 9), mpk) == QStringLiteral("pad:12")
+                  && defaultMidiAction(note(48, 0), mpk).isEmpty() && defaultMidiAction(play, mpd) == QStringLiteral("start")
+                  && rec && rec->isMmc() && defaultMidiAction(*rec, mpd) == QStringLiteral("rec") && !mmcFromSysex(other, sizeof other, 0)
+                  && defaultMidiAction(note(36, 15), QStringLiteral("Xbox controller 1")).isEmpty(),
+              QStringLiteral("an unmapped pad controller: notes 36-51 are the pads as laid out (36 bottom-left, 48 top-left), on a keyboard "
+                             "only on channel 10; CC 118 plays; MMC record records; other SysEx and game controllers do nothing"));
+    }
     // ---- OSC: messages and bundles from a phone app; junk is left out ----
     {
         const auto one = parseOsc(oscPacket(QStringLiteral("/mvp/pad/3"), {0.5f}));

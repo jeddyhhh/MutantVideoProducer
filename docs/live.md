@@ -322,6 +322,14 @@ effect setting with it. Learn messages name the button or stick.
 - Right-click a pad, a switcher tile, **Tap**, **Set 1**, **Find Tempo Again**, **Lock BPM**,
   **Rec**, **Screenshot** or **Save Replay** > **Learn MIDI...**, then press a pad or key on the controller.
 - Notes and buttons that send controllers both work, held for momentary pads.
+- **Pad controllers work unmapped.** Most of them (Akai MPD and MPK, LPD8, Arturia, Novation, NI in MIDI
+  mode) send notes 36 to 51 from their pads, and those play the 16 pads as laid out on the controller:
+  its bottom-left pad (note 36) plays pad 13, the bottom-left one here, and its top-right pad (51) plays
+  pad 4. On a keyboard with pads (MPK, Launchkey, Oxygen...) only channel 10 counts, where the pads are,
+  so the keys don't play pads. 8-pad controllers play the bottom two rows.
+- **Transport buttons** work unmapped too, sent as MMC or as Akai's controller mode (CC 115 to 119):
+  **Play** starts capturing, **Stop** stops, **Record** records, **Rewind** and **Fast Forward** load
+  the previous and next pad set. Anything learned takes over from these.
 - **Velocity sets pad strength** (Setup > MIDI, on by default): a pad hit softly shows less of its
   chain, hit hard all of it (times its Mix). The pad keeps the strength of its last hit; a click or
   a key plays it in full.

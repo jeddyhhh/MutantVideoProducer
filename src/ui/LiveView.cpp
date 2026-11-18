@@ -2011,7 +2011,7 @@ void LiveView::learnMidi(const QString& action, const QString& label)
 
 void LiveView::midiMessage(const MidiMessage& m)
 {
-    if (m.status >= 0xF0) { // MIDI clock: beats (and where the bar is) for Auto: MIDI clock
+    if (m.status >= 0xF0 && !m.isMmc()) { // MIDI clock: beats (and where the bar is) for Auto: MIDI clock
         if (const auto beat = m_midiClock.feed(m))
             m_pads->clockBeat(beat->bpm, beat->barBeat);
         return;
@@ -2019,16 +2019,18 @@ void LiveView::midiMessage(const MidiMessage& m)
     if (m.isController())
         m_engine->setMidiController(m.channel(), m.data1, m.data2); // modulation reads every controller
     const bool note = m.isNoteOn() || m.isNoteOff();
-    if (!note && !m.isController())
+    if (!note && !m.isController() && !m.isMmc())
         return;
-    const QString key = QStringLiteral("%1:%2:%3").arg(note ? QStringLiteral("n") : QStringLiteral("c")).arg(m.channel()).arg(m.data1);
-    if (!m_midiLearn.isEmpty() && (m.isNoteOn() || (m.isController() && m.data2 > 0))) {
+    const QString key = m.isMmc() ? QStringLiteral("m:%1").arg(m.data1)
+                                  : QStringLiteral("%1:%2:%3").arg(note ? QStringLiteral("n") : QStringLiteral("c")).arg(m.channel()).arg(m.data1);
+    if (!m_midiLearn.isEmpty() && (m.isNoteOn() || (m.isController() && m.data2 > 0) || m.isMmc())) {
         for (auto it = m_midiMap.begin(); it != m_midiMap.end();) // one control per action
             it = it.value() == m_midiLearn ? m_midiMap.erase(it) : std::next(it);
         m_midiMap[key] = m_midiLearn;
         saveMidiMap();
         const QString pad = isGamePad(MidiHub::instance()->current()) ? gamePadControlName(m) : QString();
         m_status->setText(tr("%1 now plays %2").arg(!pad.isEmpty() ? tr("The %1").arg(pad)
+                                                    : m.isMmc()    ? tr("Transport button %1 (MMC)").arg(m.data1)
                                                     : note         ? tr("MIDI note %1 (channel %2)").arg(m.data1).arg(m.channel() + 1)
                                                                    : tr("MIDI controller %1 (channel %2)").arg(m.data1).arg(m.channel() + 1),
                                                     m_midiLearnLabel));
@@ -2037,16 +2039,22 @@ void LiveView::midiMessage(const MidiMessage& m)
             m_ccDown.insert(key);
         return;
     }
+    // What it was learned for, or what a pad controller's pads and transport do unmapped.
     const auto it = m_midiMap.find(key);
-    if (it == m_midiMap.end())
+    const QString action = it != m_midiMap.end() ? it.value() : defaultMidiAction(m, MidiHub::instance()->current());
+    if (action.isEmpty())
         return;
-    if (it.value() == QLatin1String("padmix")) { // a fader: the whole range
+    if (action == QLatin1String("padmix")) { // a fader: the whole range
         if (m.isController())
             m_pads->setPadsMix(m.data2 / 127.0);
         return;
     }
+    if (m.isMmc()) { // (a press: no release)
+        runAction(action, true);
+        return;
+    }
     if (note) {
-        runAction(it.value(), m.isNoteOn(), m_velocity->isChecked() && m.isNoteOn() ? m.data2 / 127.0 : 1.0);
+        runAction(action, m.isNoteOn(), m_velocity->isChecked() && m.isNoteOn() ? m.data2 / 127.0 : 1.0);
     } else { // a button sending a controller: down at 64 and over
         const bool down = m.data2 >= 64;
         if (down == m_ccDown.contains(key))
@@ -2055,7 +2063,7 @@ void LiveView::midiMessage(const MidiMessage& m)
             m_ccDown.insert(key);
         else
             m_ccDown.remove(key);
-        runAction(it.value(), down);
+        runAction(action, down);
     }
 }
 
@@ -2128,6 +2136,11 @@ void LiveView::runAction(const QString& action, bool down, double velocity)
         saveScreenshot();
     else if (action == QLatin1String("blackout"))
         m_pads->blackoutButton()->toggle();
+    else if (action == QLatin1String("start") || action == QLatin1String("stop")) {
+        if (m_engine->isRunning() != (action == QLatin1String("start")))
+            startStop();
+    } else if (action == QLatin1String("set:next") || action == QLatin1String("set:prev"))
+        m_pads->stepSet(action == QLatin1String("set:next") ? 1 : -1);
 }
 
 void LiveView::updateOsc()

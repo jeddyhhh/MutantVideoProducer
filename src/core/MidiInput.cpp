@@ -5,6 +5,7 @@
 #include <QMap>
 #include <QRegularExpression>
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <iterator>
 #include <chrono>
@@ -128,6 +129,53 @@ std::optional<MidiClock::Beat> MidiClock::feed(const MidiMessage& m)
     return Beat{m_bpm, barBeat};
 }
 
+std::optional<MidiMessage> mmcFromSysex(const uint8_t* data, size_t size, double time)
+{
+    // F0 7F <device> 06 <command> F7
+    if (size < 6 || data[0] != 0xF0 || data[1] != 0x7F || data[3] != 0x06 || data[5] != 0xF7 || data[4] > 0x7F)
+        return std::nullopt;
+    MidiMessage m;
+    m.status = 0xF0;
+    m.data1 = data[4];
+    m.time = time;
+    return m;
+}
+
+QString defaultMidiAction(const MidiMessage& m, const QString& deviceName)
+{
+    if (isGamePad(deviceName))
+        return {};
+    if (m.isMmc()) {
+        switch (m.data1) {
+        case 1: return QStringLiteral("stop");
+        case 2:
+        case 3: return QStringLiteral("start");
+        case 4: return QStringLiteral("set:next");
+        case 5: return QStringLiteral("set:prev");
+        case 6: return QStringLiteral("rec");
+        default: return {};
+        }
+    }
+    if (m.isController()) {
+        switch (m.data1) {
+        case 115: return QStringLiteral("set:prev");
+        case 116: return QStringLiteral("set:next");
+        case 117: return QStringLiteral("stop");
+        case 118: return QStringLiteral("start");
+        case 119: return QStringLiteral("rec");
+        default: return {};
+        }
+    }
+    if ((m.isNoteOn() || m.isNoteOff()) && m.data1 >= 36 && m.data1 <= 51) {
+        static const QRegularExpression keyboard(QStringLiteral("MPK|key|oxygen|impulse"), QRegularExpression::CaseInsensitiveOption);
+        if (m.channel() != 9 && keyboard.match(deviceName).hasMatch())
+            return {};
+        const int k = m.data1 - 36; // rows from the bottom
+        return QStringLiteral("pad:%1").arg((3 - k / 4) * 4 + k % 4);
+    }
+    return {};
+}
+
 struct MidiInput::Impl {
     std::function<void(const MidiMessage&)> onMessage;
     QString name;
@@ -245,12 +293,26 @@ struct MidiInput::Impl {
 #endif
 #ifdef Q_OS_WIN
     HMIDIIN handle = nullptr;
+    // SysEx (MMC transport buttons) arrives in these, each handed back to the driver once read.
+    std::array<MIDIHDR, 4> headers{};
+    std::array<std::array<char, 256>, 4> buffers{};
+    std::atomic<bool> closing{false};
 
-    static void CALLBACK proc(HMIDIIN, UINT msg, DWORD_PTR instance, DWORD_PTR param1, DWORD_PTR)
+    static void CALLBACK proc(HMIDIIN in, UINT msg, DWORD_PTR instance, DWORD_PTR param1, DWORD_PTR)
     {
+        auto* self = reinterpret_cast<Impl*>(instance);
+        if (msg == MIM_LONGDATA) {
+            auto* h = reinterpret_cast<MIDIHDR*>(param1);
+            if (self->closing || h->dwBytesRecorded == 0)
+                return; // (handed back by midiInReset)
+            if (const auto m = mmcFromSysex(reinterpret_cast<const uint8_t*>(h->lpData), h->dwBytesRecorded, steadyNow()); m && self->onMessage)
+                self->onMessage(*m);
+            h->dwBytesRecorded = 0;
+            midiInAddBuffer(in, h, sizeof(MIDIHDR));
+            return;
+        }
         if (msg != MIM_DATA)
             return;
-        auto* self = reinterpret_cast<Impl*>(instance);
         MidiMessage m;
         m.status = uint8_t(param1 & 0xff);
         m.data1 = uint8_t((param1 >> 8) & 0x7f);
@@ -270,6 +332,7 @@ struct MidiInput::Impl {
         uint8_t running = 0, data[2] = {0, 0};
         int have = 0;
         bool sysex = false;
+        std::vector<uint8_t> sysexBytes; // (MMC)
         while (!quit) {
             pollfd p{fd, POLLIN, 0};
             if (poll(&p, 1, 100) <= 0)
@@ -291,15 +354,26 @@ struct MidiInput::Impl {
                 }
                 if (b == 0xf0) {
                     sysex = true;
+                    sysexBytes.assign(1, b);
                     continue;
                 }
                 if (b >= 0x80) {
+                    if (sysex && b == 0xf7) {
+                        sysexBytes.push_back(b);
+                        if (const auto m = mmcFromSysex(sysexBytes.data(), sysexBytes.size(), now); m && onMessage)
+                            onMessage(*m);
+                    }
                     sysex = false;
                     running = b >= 0xf0 && b != 0xf2 ? 0 : b; // the song position has data; other system messages are ignored
                     have = 0;
                     continue;
                 }
-                if (sysex || !running)
+                if (sysex) {
+                    if (sysexBytes.size() < 16)
+                        sysexBytes.push_back(b);
+                    continue;
+                }
+                if (!running)
                     continue;
                 data[have++] = b;
                 const int kind = running >> 4;
@@ -417,6 +491,15 @@ bool MidiInput::open(const QString& name, std::function<void(const MidiMessage&)
                 *error = QStringLiteral("could not open %1 (is another program using it?)").arg(name);
             return false;
         }
+        d->closing = false;
+        for (size_t b = 0; b < d->headers.size(); ++b) {
+            MIDIHDR& h = d->headers[b];
+            h = MIDIHDR{};
+            h.lpData = d->buffers[b].data();
+            h.dwBufferLength = DWORD(d->buffers[b].size());
+            if (midiInPrepareHeader(d->handle, &h, sizeof h) == MMSYSERR_NOERROR)
+                midiInAddBuffer(d->handle, &h, sizeof h);
+        }
         midiInStart(d->handle);
         d->name = name;
         return true;
@@ -449,8 +532,12 @@ void MidiInput::close()
         d->padThread.join();
 #ifdef Q_OS_WIN
     if (d->handle) {
+        d->closing = true;
         midiInStop(d->handle);
-        midiInReset(d->handle);
+        midiInReset(d->handle); // (hands the SysEx buffers back)
+        for (MIDIHDR& h : d->headers)
+            if (h.dwFlags & MHDR_PREPARED)
+                midiInUnprepareHeader(d->handle, &h, sizeof h);
         midiInClose(d->handle);
         d->handle = nullptr;
     }
