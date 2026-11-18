@@ -38,12 +38,12 @@ The project's **Live tab** is set up for a performance:
 ## 3. Tempo and auto switch
 
 1. Play some music on the computer.
-2. Turn on **Auto** and choose **Audio beats**: the light flashes on each beat it hears, and the BPM shows.
+2. Turn on **Auto** and choose **Follow music**: the light flashes on each beat it hears, and the BPM shows.
 3. Set it to switch every 4 beats, and tick **Random**: the pads change by themselves.
 4. When the tempo is right, click **Lock BPM**.
 5. Press **B** on the first beat of a bar (**Set 1**): switches now land on bars, and the light
    flashes orange on each 1.
-6. No music? Turn off Audio beats, type 120 in the BPM box, or press **Tap** in time.
+6. No music? Choose **Tempo** instead, type 120 in the BPM box, or press **Tap** in time.
 
 ## 4. Launch on the beat
 

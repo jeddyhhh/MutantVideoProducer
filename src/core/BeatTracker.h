@@ -1,6 +1,6 @@
 #pragma once
 
-// Real-time beat detection for the Live tab's Audio beats auto switch.
+// Real-time beat detection for the Live tab's Follow music auto switch (and Find Tempo Again).
 //
 // Hits: the audio input is band-filtered (full range, or just the kick /
 // snare / hi-hat range), turned into an onset curve (rises in loudness, every

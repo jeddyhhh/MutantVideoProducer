@@ -11,7 +11,7 @@ class QLabel;
 class Knob;
 class BeatGraph;
 
-// "Beat Detection" (Live tab, Auto: Audio beats > Tune): the knobs of the
+// "Beat Detection" (Live tab, Auto: Follow music > Tune): the knobs of the
 // beat tracker with a live view of what it hears (the onset curve, the
 // threshold a hit must cross, hits and beats), the tempo and how sure it is.
 // Settings are kept between sessions.

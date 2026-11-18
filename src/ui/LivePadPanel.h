@@ -73,7 +73,7 @@ public:
     // The next / previous saved set (the arrows beside the list).
     void stepSet(int delta);
 
-    // Auto switch: 0 off, 1 tempo, 2 audio beats.
+    // Auto switch: 0 off, 1 tempo, 2 follow music (the audio beats), 3 MIDI clock.
     enum AutoMode { AutoOff, AutoTempo, AutoAudio, AutoMidi };
     void setAutoMode(int mode);
     void setRunning(bool running); // steps only while capturing
@@ -164,6 +164,7 @@ private:
     double currentBpm() const;
     void step();
     void updateAutoTimer();
+    void restartBeatGrid(); // the tempo's beats from now on (a beat one period from now)
     void pollLink();
     void pushTempo(); // to the Link session, when on
 
@@ -208,6 +209,7 @@ private:
     std::vector<int> m_heldPads;
     qint64 m_lastAudioBeatMs = -1000000;
     qint64 m_lastBeatMs = -1;
+    double m_nextBeatMs = 0; // when the tempo's next beat is due (m_clock)
     bool m_running = false;
     // Mix.
     QSlider* m_padMix;

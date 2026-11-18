@@ -1306,6 +1306,25 @@ int LiveView::runSelfTest(QStringList& log)
                   QStringLiteral("Auto Tempo: Find Tempo Again puts the tempo heard in the BPM box once it holds (%1 BPM), then leaves it")
                       .arg(found, 0, 'f', 2));
             m_pads->bpmBox()->setValue(typed);
+            // Tempo stays in time with the music: a beat heard 100 ms after one of its own (at 120 BPM) moves the
+            // beats onto it, so the next comes 500 ms after the heard one, not 400.
+            m_pads->bpmBox()->setValue(120);
+            QElapsedTimer clock;
+            clock.start();
+            std::vector<qint64> ticks;
+            auto tickConn = connect(m_pads, &LivePadPanel::beatTicked, this, [&] { ticks.push_back(clock.elapsed()); });
+            wait(1500, [&] { return !ticks.empty(); });
+            const size_t first = ticks.size();
+            wait(300, [&] { return !ticks.empty() && clock.elapsed() >= ticks.back() + 100; });
+            const qint64 heard = clock.elapsed();
+            m_pads->audioBeat(120, 0.5);
+            wait(1000, [&] { return ticks.size() > first; });
+            disconnect(tickConn);
+            const qint64 next = ticks.size() > first ? ticks[first] - heard : -1;
+            check(next >= 440 && next <= 580,
+                  QStringLiteral("Auto Tempo keeps in time with the music: a beat heard 100 ms late moves the beats onto it (next %1 ms after it)")
+                      .arg(next));
+            m_pads->bpmBox()->setValue(typed);
             m_pads->setAutoMode(LivePadPanel::AutoOff);
         }
         // A spectrum over the bottom of the picture, moving with the audio input.

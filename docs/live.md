@@ -169,7 +169,7 @@ the 16 pads, laid out like the grid. Hold them for momentary pads.
 ### Launch
 
 **Launch** (in the pads panel) sets when a pressed pad switches: **At once**, **On the next beat**,
-or **On the next bar (the 1)**. It follows the beat only while **Auto** is on (Tempo, Audio beats or MIDI clock):
+or **On the next bar (the 1)**. It follows the beat only while **Auto** is on (Tempo, Follow music or MIDI clock):
 with Auto off, pads switch at once and Launch is greyed out. A waiting pad has a dashed outline; press it again to
 cancel. Momentary pads and auto switch always switch at once.
 
@@ -255,9 +255,11 @@ Choosing a song (the list, **◀ / ▶**, **Page Down / Page Up**, or MIDI: righ
 **Auto switch** advances the pads by themselves while running, every 1 to 16 beats, in order or at
 random, with the chosen transition.
 
-- **Tempo**: type the BPM, or press **Tap** in time.
-- **Audio beats**: follow the beats heard on the Audio input. It shows the tempo it hears. The light
-  flashes on each beat.
+- **Tempo**: type the BPM, press **Tap** in time, or press **Find Tempo Again** to take the tempo heard
+  on the Audio input. The BPM then stays as it is, but while music at that tempo (or half or double
+  it) plays on the Audio input, the beats keep in time with it, so they don't wander off the kick.
+- **Follow music**: follow the beats heard on the Audio input, tempo changes and all (a new song is
+  picked up in about 10 seconds). It shows the tempo it hears. The light flashes on each beat.
 - **MIDI clock** (Auto > MIDI clock): follow a clock from DJ software or a drum machine on the MIDI
   input: the tempo from its ticks, the bar from Start and the song position.
 - **Lock BPM**: keep the tempo once it is right. The beats still follow the hits. While locked you

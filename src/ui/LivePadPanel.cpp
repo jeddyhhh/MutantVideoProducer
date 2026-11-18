@@ -230,9 +230,12 @@ LivePadPanel::LivePadPanel(Project* project, QWidget* parent)
     // ---- Auto switch ----
     form->addWidget(new QLabel(tr("Auto")), 4, 0);
     m_auto = new QComboBox;
-    m_auto->addItems({tr("Off"), tr("Tempo"), tr("Audio beats"), tr("MIDI clock")});
-    m_auto->setToolTip(tr("Switch pads by themselves while capturing: on a tempo (type the BPM or tap it), or on beats\n"
-                          "heard on the Audio input. Uses the transition above; empty pads are skipped."));
+    m_auto->addItems({tr("Off"), tr("Tempo"), tr("Follow music"), tr("MIDI clock")});
+    m_auto->setToolTip(tr("Switch pads by themselves while capturing.\n"
+                          "Tempo: on the BPM typed, tapped or found (Find Tempo Again); kept in time with the music on the\n"
+                          "Audio input while it plays.\n"
+                          "Follow music: on the beats heard on the Audio input, its tempo changes and all.\n"
+                          "Uses the transition above; empty pads are skipped."));
     form->addWidget(m_auto, 4, 1);
     m_every = new QComboBox;
     for (int n : {1, 2, 4, 8, 16})
@@ -246,7 +249,7 @@ LivePadPanel::LivePadPanel(Project* project, QWidget* parent)
     m_bpm->setDecimals(2);
     m_bpm->setSingleStep(0.01);
     m_bpm->setSuffix(tr(" BPM"));
-    m_bpm->setToolTip(tr("Tempo (with Audio beats: the tempo heard). The arrows step 0.01, Page Up / Down 0.1."));
+    m_bpm->setToolTip(tr("Tempo (with Follow music: the tempo heard). The arrows step 0.01, Page Up / Down 0.1."));
     m_findTempo = new QToolButton;
     m_findTempo->setText(tr("Find Tempo Again"));
     m_findTempo->setToolTip(tr("Forget the tempo and beat grid and listen afresh (after a song change); unlocks a locked tempo"));
@@ -289,7 +292,7 @@ LivePadPanel::LivePadPanel(Project* project, QWidget* parent)
     beatRow->addWidget(m_random);
     m_tune = new QToolButton;
     m_tune->setText(tr("Tune..."));
-    m_tune->setToolTip(tr("Beat detection settings for Audio beats: what to listen to, sensitivity, tempo range, "
+    m_tune->setToolTip(tr("Beat detection settings (Follow music, Find Tempo Again, Tempo kept in time): what to listen to, sensitivity, tempo range, "
                           "stability, latency, with a live view of what it hears"));
     connect(m_tune, &QToolButton::clicked, this, &LivePadPanel::showBeatTuner);
     beatRow->addWidget(m_tune);
@@ -409,7 +412,16 @@ LivePadPanel::LivePadPanel(Project* project, QWidget* parent)
     connect(m_setMenu, &QToolButton::clicked, this, &LivePadPanel::showSetMenu);
     connect(m_project, &Project::changed, this, &LivePadPanel::refresh);
     m_beatTimer.setTimerType(Qt::PreciseTimer);
+    m_beatTimer.setSingleShot(true);
     connect(&m_beatTimer, &QTimer::timeout, this, [this] {
+        // Each beat is due a period after the last was due (not after it fired), so a timer
+        // late by a millisecond, or a period like 689.57 ms, doesn't drift off the music.
+        const double period = 60000.0 / std::max(30.0, m_bpm->value());
+        const double now = double(m_clock.nsecsElapsed()) / 1e6;
+        m_nextBeatMs += period;
+        if (m_nextBeatMs < now) // (held up a long while: from here)
+            m_nextBeatMs = now + period;
+        m_beatTimer.start(int(std::max(1.0, std::round(m_nextBeatMs - now))));
         // Auto off: the clock follows the audio beats while they come.
         if (m_auto->currentIndex() == AutoOff && m_clock.elapsed() - m_lastAudioBeatMs < 2000)
             return;
@@ -936,10 +948,17 @@ void LivePadPanel::updateAutoTimer()
     if (linkOn())
         m_beatTimer.stop(); // (Link's beats instead)
     else if (m_auto->currentIndex() == AutoOff || m_auto->currentIndex() == AutoTempo)
-        m_beatTimer.start(int(std::lround(60000.0 / std::max(30.0, m_bpm->value()))));
+        restartBeatGrid();
     else
         m_beatTimer.stop();
     emit tempoChanged(currentBpm());
+}
+
+void LivePadPanel::restartBeatGrid()
+{
+    const double period = 60000.0 / std::max(30.0, m_bpm->value());
+    m_nextBeatMs = double(m_clock.nsecsElapsed()) / 1e6 + period;
+    m_beatTimer.start(int(std::lround(period)));
 }
 
 void LivePadPanel::tap()
@@ -1005,6 +1024,21 @@ void LivePadPanel::audioBeat(double bpm, double confidence)
             m_adoptHeard = false;
             m_bpm->setValue(bpm); // (saved, the clock and Link follow)
             emit message(tr("Tempo found: %1 BPM").arg(bpm, 0, 'f', 2));
+        }
+    }
+    if (m_auto->currentIndex() == AutoTempo && !linkOn() && bpm > 0 && m_lastBeatMs >= 0) {
+        // Tempo keeps its BPM but stays in time with the music: a beat heard near one of its own moves the
+        // beats onto it. Only when the music is at that tempo (or half or double it): another song leaves it be.
+        const double ratio = bpm / std::max(30.0, m_bpm->value());
+        if (std::abs(ratio - 1) < 0.04 || std::abs(ratio - 2) < 0.08 || std::abs(ratio - 0.5) < 0.02) {
+            const double period = 60000.0 / std::max(30.0, m_bpm->value());
+            const double since = double(m_clock.elapsed() - m_lastBeatMs);
+            if (since < 0.25 * period) {
+                restartBeatGrid(); // ours came a little early: the next ones a period from the heard one
+            } else if (since > 0.75 * period && since < 1.25 * period) {
+                restartBeatGrid(); // the heard one is a little before ours: it is the beat
+                beat();
+            }
         }
     }
     if (m_auto->currentIndex() == AutoTempo || m_auto->currentIndex() == AutoMidi || linkOn())
@@ -1175,7 +1209,7 @@ void LivePadPanel::setDownbeat()
     } else if (m_auto->currentIndex() == AutoTempo && m_lastBeatMs >= 0) {
         const double since = std::fmod(double(now - m_lastBeatMs), period);
         if (since > 0.2 * period && since < 0.8 * period) {
-            m_beatTimer.start(); // the tempo's beats from here
+            restartBeatGrid(); // the tempo's beats from here
             moved = true;
         }
     }

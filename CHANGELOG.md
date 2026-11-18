@@ -25,6 +25,8 @@ What changed in each version of Mutant Video Producer. The newest is first.
 
 ### Changed
 
+- **Live**: Auto's **Audio beats** is now called **Follow music**. **Tempo** keeps its BPM but stays in time with music
+  at that tempo on the Audio input, and its beats no longer drift (a period like 689.57 ms was rounded every beat).
 - **Live**: Space no longer starts and stops the Live tab: it was too easy to hit while playing the pads. Use **Start**.
 - The **effects lists** (Video FX, Audio FX and the Live tab's) are in two parts with a line between: **EFFECTS**, the
   single effects in white, then **CHAINS** in orange: Preset Chains and the Effect Builder's effects. They start
