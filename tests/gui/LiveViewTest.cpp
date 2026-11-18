@@ -600,6 +600,22 @@ int LiveView::runSelfTest(QStringList& log)
                   QStringLiteral("Replace All Pads with Random Chains > Insane replaces every unlocked pad, filled or not (%1 replaced, %2 "
                                  "locked kept)").arg(replaced).arg(lockedKept));
             m_project->undoStack()->undo();
+            int toggles = 0;
+            for (const LivePad& lp : m_project->timeline().livePads)
+                toggles += !lp.locked && !lp.momentary;
+            const int made = m_pads->makeAllMomentary();
+            int held = 0, lockedSame = 0;
+            for (int i = 0; i < kLivePads; ++i) {
+                const LivePad& lp = m_project->timeline().livePads[size_t(i)];
+                if (before[size_t(i)].locked)
+                    lockedSame += lp.momentary == before[size_t(i)].momentary;
+                else
+                    held += lp.momentary;
+            }
+            check(made == toggles && made > 0 && held == kLivePads - locked && lockedSame == locked && m_pads->makeAllMomentary() == 0,
+                  QStringLiteral("Make All Pads Momentary makes every unlocked pad momentary (%1 changed), locked ones left alone")
+                      .arg(made));
+            m_project->undoStack()->undo();
         }
         {
             // From Medium up, random chains now and then start with a node effect (an example), keeping their size.

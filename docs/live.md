@@ -150,7 +150,8 @@ A 4x4 grid of pads. Each holds its own effect chain, applied on top of the Live 
   the **Node Editor** examples, and from High the **Analogue Circuit Emu** ones too. That effect
   counts as the chain's one heavy effect.
   The **≡** menu's **Fill Empty Pads with Random Chains** fills every empty pad. **Replace All Pads with Random Chains**
-  gives every pad a new chain, replacing what it had (locked pads are left alone). **Ctrl+Z** undoes either.
+  gives every pad a new chain, replacing what it had (locked pads are left alone). **Make All Pads Momentary** makes
+  every pad play only while held (locked ones are left alone). **Ctrl+Z** undoes any of them.
 
 ### Pad keys
 

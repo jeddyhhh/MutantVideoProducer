@@ -8,6 +8,7 @@ What changed in each version of Mutant Video Producer. The newest is first.
 
 - **Live**: the pad set's **≡** menu has **Replace All Pads with Random Chains** (Low to Insane): every pad gets a new
   random chain, filled or not. Locked pads are left alone; Ctrl+Z puts them back.
+- **Live**: the same menu's **Make All Pads Momentary** makes every pad (not locked) play only while held.
 
 ### Changed
 

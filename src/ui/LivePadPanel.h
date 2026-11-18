@@ -58,6 +58,7 @@ public:
     bool randomizePad(int pad, int tier, uint32_t seed = 0);
     // The same for every empty, unlocked pad; returns how many were filled.
     int randomizeEmptyPads(int tier, bool all = false); // (all: every unlocked pad, its effects replaced)
+    int makeAllMomentary(); // every unlocked pad momentary, one undo step: how many changed
     void setLocked(int pad, bool locked);
 
     // Sets.

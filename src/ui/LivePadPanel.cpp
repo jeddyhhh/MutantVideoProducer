@@ -604,6 +604,10 @@ void LivePadPanel::showSetMenu()
     fillAll->setToolTipsVisible(true);
     for (int t = 0; t < 4; ++t)
         fillAll->addAction(randomTierName(RandomTier(t)), this, [this, t] { randomizeEmptyPads(t, true); });
+    QAction* allHeld = menu.addAction(tr("Make All Pads Momentary"), this, [this] { makeAllMomentary(); });
+    allHeld->setToolTip(tr("Every pad that isn't locked plays only while held (Undo puts them back)"));
+    allHeld->setEnabled(std::any_of(m_project->timeline().livePads.begin(), m_project->timeline().livePads.end(),
+                                    [](const LivePad& p) { return !p.locked && !p.momentary; }));
     menu.addSeparator();
     QAction* del = menu.addAction(tr("Delete \"%1\"").arg(m_setName), this, [this] {
         if (QMessageBox::question(this, tr("Delete Pad Set"), tr("Delete the saved set \"%1\"? The pads stay as they are.").arg(m_setName))
@@ -720,6 +724,21 @@ int LivePadPanel::randomizeEmptyPads(int tier, bool all)
         emit message(filled ? tr("Filled %1 empty pad(s) with %2 random chains").arg(filled).arg(randomTierName(RandomTier(tier)))
                             : tr("There are no empty pads to fill"));
     return filled;
+}
+
+int LivePadPanel::makeAllMomentary()
+{
+    Timeline tl = m_project->timeline();
+    int changed = 0;
+    for (LivePad& lp : tl.livePads)
+        if (!lp.locked && !lp.momentary) {
+            lp.momentary = true;
+            ++changed;
+        }
+    if (changed)
+        m_project->applyEdit(tl, tr("Make All Pads Momentary"));
+    emit message(changed ? tr("%1 pad(s) made momentary: each plays only while held").arg(changed) : tr("Every pad is momentary already"));
+    return changed;
 }
 
 // ---- Auto switch -------------------------------------------------------------------------
