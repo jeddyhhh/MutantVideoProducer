@@ -1289,6 +1289,25 @@ int LiveView::runSelfTest(QStringList& log)
         check(bars == expected && std::abs(m_pads->bpmBox()->value() - 100) < 2,
               QStringLiteral("MIDI clock drives the beats (%1 beats from the 1) and shows its tempo (%2 BPM)").arg(bars.size()).arg(m_pads->bpmBox()->value(), 0, 'f', 2));
         m_pads->setAutoMode(LivePadPanel::AutoOff);
+        // Auto on Tempo: Find Tempo Again puts the tempo heard in the BPM box once it is steady.
+        {
+            m_pads->setAutoMode(LivePadPanel::AutoTempo);
+            const double typed = m_pads->bpm();
+            m_pads->findTempoAgain();
+            m_pads->audioBeat(87.01, 0.5); // (the first: nothing to compare with)
+            for (int i = 0; i < 3; ++i)
+                m_pads->audioBeat(87.01, 0.5);
+            const bool waits = m_pads->bpm() == typed;
+            for (int i = 0; i < 4; ++i)
+                m_pads->audioBeat(87.01, 0.5);
+            const double found = m_pads->bpm();
+            m_pads->audioBeat(120, 0.5); // (then the typed tempo is kept)
+            check(waits && std::abs(found - 87.01) < 0.01 && m_pads->bpm() == found,
+                  QStringLiteral("Auto Tempo: Find Tempo Again puts the tempo heard in the BPM box once it holds (%1 BPM), then leaves it")
+                      .arg(found, 0, 'f', 2));
+            m_pads->bpmBox()->setValue(typed);
+            m_pads->setAutoMode(LivePadPanel::AutoOff);
+        }
         // A spectrum over the bottom of the picture, moving with the audio input.
         const int beatSource = m_audio->findText(QStringLiteral("Test beat"));
         if (beatSource >= 0) {

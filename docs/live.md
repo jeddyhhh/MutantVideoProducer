@@ -263,6 +263,8 @@ random, with the chosen transition.
 - **Lock BPM**: keep the tempo once it is right. The beats still follow the hits. While locked you
   can type or tap the tempo yourself.
 - **Find Tempo Again**: forget the tempo, the lock and any octave set by hand, and listen afresh.
+  With Auto on **Tempo** (or off), the tempo heard on the Audio input goes into the BPM box once it
+  holds steady for a few beats; the tempo clock then runs on it.
 - **÷2 / ×2**: halve or double the tempo when it is heard at twice or half the speed (a 60 BPM song
   read as 120). That octave then stays.
 - **Set 1** (or **B**): mark the first beat of a bar. Pressed just after a beat, that beat was the 1;
@@ -335,7 +337,7 @@ effect setting with it. Learn messages name the button or stick.
 - **Transport buttons** work unmapped too, sent as MMC or as Akai's controller mode (CC 115 to 119):
   **Play** starts capturing, **Stop** stops, **Record** records, **Rewind** and **Fast Forward** load
   the previous and next pad set. Anything learned takes over from these.
-- **Velocity sets pad strength** (Setup > MIDI, on by default): a pad hit softly shows less of its
+- **Velocity sets pad strength** (Setup > MIDI, off unless ticked): a pad hit softly shows less of its
   chain, hit hard all of it (times its Mix). The pad keeps the strength of its last hit; a click or
   a key plays it in full.
 - See also MIDI clock (above) and MIDI modulation.

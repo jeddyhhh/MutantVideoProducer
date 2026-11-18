@@ -222,4 +222,8 @@ private:
     QTimer m_linkTimer;
     double m_linkBeat = 0;
     int m_linkPolls = 0;
+    // Find Tempo Again with Auto on Tempo (or off): the tempo heard goes in the BPM box once it holds steady.
+    bool m_adoptHeard = false;
+    double m_adoptLast = 0;
+    int m_adoptSteady = 0;
 };

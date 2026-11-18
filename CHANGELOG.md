@@ -12,7 +12,10 @@ What changed in each version of Mutant Video Producer. The newest is first.
 - **Live**: **Blackout** (or Backspace) fades the output, recordings and the stream to black and back. MIDI-learnable.
 - **Live**: each pad has a **Mix** (how much of its chain shows, saved with it), and an **All pads** fader sets it for
   every pad at once (MIDI-learnable to a knob or fader).
-- **Live**: MIDI **velocity** sets how strongly a pad plays: hit softly, less of its chain shows (Setup > MIDI).
+- **Live**: MIDI **velocity** can set how strongly a pad plays: hit softly, less of its chain shows (tick it in
+  Setup > MIDI).
+- **Live**: with Auto on Tempo (or off), **Find Tempo Again** puts the tempo heard on the Audio input in the BPM box
+  once it holds steady.
 - **Live**: **OSC** from phone and tablet apps like TouchOSC (Setup > MIDI > Listen on port): Learn MIDI maps their
   controls, and `/mvp/pad/1`, `/mvp/padmix`, `/mvp/blackout` and more work without learning.
 - **Live**: **Ableton Link**: the Link button joins the tempo and bars of Ableton Live and other apps on the network.

@@ -372,6 +372,7 @@ LivePadPanel::LivePadPanel(Project* project, QWidget* parent)
     connect(m_every, qOverload<int>(&QComboBox::currentIndexChanged), this, save);
     connect(m_random, &QCheckBox::toggled, this, save);
     connect(m_bpm, qOverload<double>(&QDoubleSpinBox::valueChanged), this, [this, save] {
+        m_adoptHeard = false; // (typed: that one)
         save();
         updateAutoTimer();
         if (m_tracker && m_lockBpm->isChecked()) // typed while locked: the new tempo
@@ -943,6 +944,7 @@ void LivePadPanel::updateAutoTimer()
 
 void LivePadPanel::tap()
 {
+    m_adoptHeard = false;
     const qint64 now = m_clock.elapsed();
     if (!m_taps.empty() && now - m_taps.back() > 2500) // a pause starts a new count
         m_taps.clear();
@@ -996,6 +998,15 @@ void LivePadPanel::pressPad(int pad)
 void LivePadPanel::audioBeat(double bpm, double confidence)
 {
     (void)confidence;
+    if (m_adoptHeard && bpm > 0) {
+        m_adoptSteady = std::abs(bpm - m_adoptLast) < 0.5 ? m_adoptSteady + 1 : 0;
+        m_adoptLast = bpm;
+        if (m_adoptSteady >= 6) { // (the same tempo for 7 beats)
+            m_adoptHeard = false;
+            m_bpm->setValue(bpm); // (saved, the clock and Link follow)
+            emit message(tr("Tempo found: %1 BPM").arg(bpm, 0, 'f', 2));
+        }
+    }
     if (m_auto->currentIndex() == AutoTempo || m_auto->currentIndex() == AutoMidi || linkOn())
         return; // the typed / tapped tempo, the MIDI clock or Ableton Link drives the clock
     m_lastAudioBeatMs = m_clock.elapsed();
@@ -1045,7 +1056,12 @@ void LivePadPanel::findTempoAgain()
         m_tracker->forget(); // the tempo, the lock and an octave set with x2 / /2
     setTempoLocked(false);
     m_beatIndex = 15;
-    emit message(tr("Listening for the tempo again"));
+    // On Tempo (or Auto off) the heard tempo doesn't drive the clock: put it in the BPM box once it is steady.
+    m_adoptHeard = m_auto->currentIndex() == AutoTempo || m_auto->currentIndex() == AutoOff;
+    m_adoptSteady = 0;
+    m_adoptLast = 0;
+    emit message(m_adoptHeard ? tr("Listening for the tempo: the BPM follows once it is steady (Audio input)")
+                              : tr("Listening for the tempo again"));
 }
 
 void LivePadPanel::setCuedPad(int pad)

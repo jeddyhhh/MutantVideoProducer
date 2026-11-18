@@ -634,7 +634,7 @@ LiveView::LiveView(Project* project, QWidget* parent) : QWidget(parent), m_proje
     m_velocity = new QCheckBox(tr("Velocity sets pad strength"));
     m_velocity->setToolTip(tr("Hit a MIDI pad softly and less of its chain shows, hard and all of it (times the pad's Mix).\n"
                               "Off: every hit plays the pad in full. Keys and the mouse always do."));
-    m_velocity->setChecked(QSettings().value(QStringLiteral("live/midiVelocity"), true).toBool());
+    m_velocity->setChecked(QSettings().value(QStringLiteral("live/midiVelocity"), false).toBool());
     connect(m_velocity, &QCheckBox::toggled, this, [](bool on) { QSettings().setValue(QStringLiteral("live/midiVelocity"), on); });
     m_oscBox = new QCheckBox(tr("Listen on port"));
     m_oscBox->setObjectName(QStringLiteral("liveOsc"));
