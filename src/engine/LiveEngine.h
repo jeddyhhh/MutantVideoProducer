@@ -85,6 +85,14 @@ public:
     // Momentary pads held down now, in the order they were pressed: their
     // chains go on top of the active pad's, straight away.
     void setHeldPads(const std::vector<int>& pads);
+    // How hard a pad was hit (MIDI velocity, 0..1; keys and the mouse: 1): its chain shows that much, times its own Mix.
+    void setPadVelocity(int pad, double velocity);
+    // The pads' fader: how much of every pad's chain shows over the Live FX (0..1).
+    void setPadsMix(double mix) { m_padsMix = std::clamp(mix, 0.0, 1.0); }
+    double padsMix() const { return m_padsMix; }
+    // Blackout: the output (and recordings, the stream, Spout...) fades to black in half a second, and back.
+    void setBlackout(bool on) { m_blackout = on; }
+    bool blackout() const { return m_blackout; }
     // A layer's source (empty name = none), opened or closed without touching the main one.
     void setLayer(int layer, const LiveSource& source);
     void setLayerSettings(int layer, const LiveLayerSettings& settings);
@@ -199,6 +207,9 @@ private:
     double m_padSeconds = 0;
     bool m_padChange = false;
     std::vector<int> m_held;           // guarded by m_mutex
+    std::array<std::atomic<double>, kLivePads> m_velocity{};
+    std::atomic<double> m_padsMix{1.0};
+    std::atomic<bool> m_blackout{false};
     std::array<LiveSource, kLiveLayers> m_layerRequest;         // guarded by m_mutex
     std::array<bool, kLiveLayers> m_layerChange{};
     std::array<LiveLayerSettings, kLiveLayers> m_layerSettings; // guarded by m_mutex

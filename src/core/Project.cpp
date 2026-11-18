@@ -1002,6 +1002,8 @@ QJsonArray livePadsToJson(const LivePads& pads)
             o[QStringLiteral("locked")] = true;
         if (pad.momentary)
             o[QStringLiteral("momentary")] = true;
+        if (pad.mix != 1.0)
+            o[QStringLiteral("mix")] = pad.mix;
         a.append(o);
     }
     return a;
@@ -1166,6 +1168,7 @@ LivePads livePadsFromJson(const QJsonArray& a)
         pads[size_t(i)].effects = chainFromJson(o[QStringLiteral("effects")]);
         pads[size_t(i)].locked = o[QStringLiteral("locked")].toBool();
         pads[size_t(i)].momentary = o[QStringLiteral("momentary")].toBool();
+        pads[size_t(i)].mix = std::clamp(o[QStringLiteral("mix")].toDouble(1.0), 0.0, 1.0);
     }
     return pads;
 }

@@ -17,6 +17,7 @@
 #include "ui/LivePadPanel.h"
 #include "ui/LiveSequencer.h"
 #include "ui/MidiHub.h"
+#include "core/Osc.h"
 #include "ui/PreviewWidget.h"
 #include "ui/SetlistDialog.h"
 #include "ui/StreamDialog.h"
@@ -173,6 +174,59 @@ int LiveView::runSelfTest(QStringList& log)
               .arg(midDiff, 0, 'f', 0).arg(endDiff, 0, 'f', 0));
     m_pads->padButton(0)->click(); // off again
     m_pads->transitionBox()->setCurrentIndex(0);
+    // Mix: a pad's own (a dry / wet), the All pads fader, how hard a pad is hit; OSC; blackout.
+    {
+        QElapsedTimer gone; // (the 2 s crossfade off)
+        gone.start();
+        wait(2600, [&] { return gone.elapsed() >= 2500; });
+        settle(5);
+        plain = last.copy();
+        m_pads->padButton(0)->click();
+        settle(5);
+        const double full = changed(last);
+        editChain(1);
+        m_pads->padMixSlider()->setValue(50);
+        const bool saved = m_project->timeline().livePads[0].mix == 0.5;
+        settle(5);
+        const double half = changed(last);
+        check(saved && half > full * 0.3 && half < full * 0.7,
+              QStringLiteral("a pad's Mix at 50% shows half of its chain (%1 of %2)").arg(half, 0, 'f', 0).arg(full, 0, 'f', 0));
+        m_project->undoStack()->undo();
+        check(m_project->timeline().livePads[0].mix == 1.0 && m_pads->padMixSlider()->value() == 100, QStringLiteral("a pad's Mix can be undone"));
+        m_pads->setPadsMix(0);
+        settle(5);
+        const double none = changed(last);
+        check(m_engine->padsMix() == 0 && none < full * 0.2, QStringLiteral("the All pads fader at 0 hides every pad (%1)").arg(none, 0, 'f', 0));
+        m_pads->setPadsMix(1);
+        m_pads->padButton(0)->click(); // off
+        settle(3);
+        runAction(QStringLiteral("pad:0"), true, 0.5); // a soft MIDI hit
+        runAction(QStringLiteral("pad:0"), false);
+        settle(5);
+        const double soft = changed(last);
+        check(m_activePad == 0 && soft > full * 0.3 && soft < full * 0.7,
+              QStringLiteral("a pad hit softly (velocity 64) plays at half strength (%1 of %2)").arg(soft, 0, 'f', 0).arg(full, 0, 'f', 0));
+        oscMessage(OscMessage{QStringLiteral("/mvp/pad/1"), {1.0}});
+        oscMessage(OscMessage{QStringLiteral("/mvp/pad/1"), {0.0}});
+        const bool oscOff = m_activePad == -1;
+        oscMessage(OscMessage{QStringLiteral("/mvp/padmix"), {0.25}});
+        check(oscOff && m_engine->padsMix() == 0.25, QStringLiteral("OSC /mvp/pad/1 presses pad 1, /mvp/padmix moves the All pads fader"));
+        m_pads->setPadsMix(1);
+        auto mean = [](const QImage& img) {
+            int64_t sum = 0, n = 0;
+            for (int y = 0; y < img.height(); y += 7)
+                for (int x = 0; x < img.width(); x += 7, ++n)
+                    sum += qGray(img.pixel(x, y));
+            return n ? double(sum) / double(n) : 0.0;
+        };
+        const double before = mean(last);
+        runAction(QStringLiteral("blackout"), true);
+        const bool dark = wait(3000, [&] { return mean(last) < 1.0; });
+        runAction(QStringLiteral("blackout"), true);
+        const bool back = wait(3000, [&] { return std::abs(mean(last) - before) < 8; });
+        check(dark && back && !m_engine->blackout() && !m_pads->blackoutButton()->isChecked(),
+              QStringLiteral("Blackout fades the output to black and back"));
+    }
     settle(3);
     // Pads are saved with the project.
     {

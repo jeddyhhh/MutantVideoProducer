@@ -11,6 +11,7 @@
 #include <vector>
 
 struct MidiMessage;
+struct OscMessage;
 class LiveOverlaysDialog;
 class QSlider;
 class QToolButton;
@@ -24,6 +25,7 @@ class Project;
 class QCheckBox;
 class QComboBox;
 class QLabel;
+class QSpinBox;
 class QPushButton;
 class QSplitter;
 
@@ -57,11 +59,15 @@ public:
     // with an effect, checks pictures arrive; adds PASS/FAIL lines.
     int runSelfTest(QStringList& log);
 
-    // Plays an action from a key or MIDI: "pad:N" (held down / let go for a
-    // momentary pad), "tap", "setone", "findtempo", "lockbpm", "rec", "replay",
-    // "scene:N", "song:next", "song:prev", "song:N".
-    void runAction(const QString& action, bool down);
+    // Plays an action from a key, MIDI or OSC: "pad:N" (held down / let go for a
+    // momentary pad; `velocity` 0..1 is how hard it was hit), "tap", "setone",
+    // "findtempo", "lockbpm", "rec", "replay", "blackout", "scene:N", "song:next",
+    // "song:prev", "song:N".
+    void runAction(const QString& action, bool down, double velocity = 1.0);
     void midiMessage(const MidiMessage& m);
+    // OSC from the network (Setup > MIDI > OSC): learned addresses, and /mvp/pad/1..16,
+    // /mvp/scene/1..8, /mvp/padmix 0..1, /mvp/blackout, /mvp/tap... (docs/live.md).
+    void oscMessage(const OscMessage& m);
     // Keeps the last seconds in memory while capturing; Save Replay writes them.
     void saveReplay();
     // Saves the picture on the big display (the output, as it is now) as a PNG next to the recordings.
@@ -212,6 +218,12 @@ private:
     QPushButton* m_screenshot;
     QString m_lastScreenshot; // the last one saved (tests)
     QComboBox* m_midi;
+    QCheckBox* m_velocity; // MIDI velocity sets how much of a pad shows
+    QCheckBox* m_oscBox;
+    QSpinBox* m_oscPort;
+    QLabel* m_oscStatus;
+    class QUdpSocket* m_osc = nullptr;
+    void updateOsc();
     MidiClock m_midiClock;
     std::array<QToolButton*, kLiveScenes> m_sceneButtons{};
     int m_activeScene = -1;

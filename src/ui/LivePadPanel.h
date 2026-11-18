@@ -6,6 +6,8 @@
 #include <QTimer>
 #include <QWidget>
 #include <array>
+#include <memory>
+#include <optional>
 #include <vector>
 
 class QCheckBox;
@@ -13,6 +15,7 @@ class QComboBox;
 class QLabel;
 class QPushButton;
 class QDoubleSpinBox;
+class QSlider;
 class QToolButton;
 
 // The Live tab's 4x4 pads, left of the picture. Each pad holds an effect
@@ -30,6 +33,7 @@ class LivePadPanel : public QWidget {
     Q_OBJECT
 public:
     explicit LivePadPanel(Project* project, QWidget* parent = nullptr);
+    ~LivePadPanel() override;
 
     int activePad() const { return m_active; }
     // The pad being previewed in the Cue window (-1 = none; just shows it).
@@ -109,6 +113,16 @@ public:
     QToolButton* lockBpmButton() const { return m_lockBpm; }
     QToolButton* findTempoButton() const { return m_findTempo; }
 
+    // Mix: the edited pad's (saved with it), all the pads' fader (0..1), blackout.
+    QSlider* padMixSlider() const { return m_padMix; }
+    QSlider* padsMixSlider() const { return m_padsMix; }
+    void setPadsMix(double mix);
+    double padsMix() const;
+    QToolButton* blackoutButton() const { return m_blackout; }
+    // Ableton Link: the beat clock follows the session (button hidden when the build has no Link).
+    QToolButton* linkButton() const { return m_linkButton; }
+    bool linkOn() const;
+
 signals:
     void padPressed(int pad);
     // Shift+click (or right-click > Cue): preview a pad without putting it live.
@@ -130,6 +144,10 @@ signals:
     void setLoaded(const QString& name);
     // Something worth a line in the status bar ("pad 3 is locked").
     void message(const QString& text);
+    // A pad pressed with the mouse (played at full strength).
+    void padTouched(int pad);
+    void padsMixChanged(double mix);
+    void blackoutChanged(bool on);
 
 private:
     void refresh();
@@ -143,6 +161,8 @@ private:
     double currentBpm() const;
     void step();
     void updateAutoTimer();
+    void pollLink();
+    void pushTempo(); // to the Link session, when on
 
     Project* m_project;
     std::array<QPushButton*, 16> m_buttons{};
@@ -186,4 +206,17 @@ private:
     qint64 m_lastAudioBeatMs = -1000000;
     qint64 m_lastBeatMs = -1;
     bool m_running = false;
+    // Mix.
+    QSlider* m_padMix;
+    QLabel* m_padMixLabel;
+    QSlider* m_padsMix;
+    QLabel* m_padsMixLabel;
+    QToolButton* m_blackout;
+    std::optional<Timeline> m_mixBefore; // dragging the pad's mix: the timeline before
+    // Ableton Link.
+    QToolButton* m_linkButton;
+    std::unique_ptr<class AbletonLink> m_link;
+    QTimer m_linkTimer;
+    double m_linkBeat = 0;
+    int m_linkPolls = 0;
 };

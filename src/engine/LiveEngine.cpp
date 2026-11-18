@@ -18,6 +18,17 @@
 
 namespace {
 
+// A pad's chain shown `mix` of the way (a rack's dry / wet); all of it as it is.
+EffectChain withMix(EffectChain chain, double mix, int pad)
+{
+    if (mix >= 0.999 || chain.empty())
+        return chain;
+    EffectInstance rack = makeRack(0x40000000 + pad); // (an id no project effect has: its state is its own)
+    rack.params[QStringLiteral("mix")].value = std::clamp(mix, 0.0, 1.0) * 100.0;
+    rack.chains.push_back(makeRackChain(false, QStringLiteral("Pad"), std::move(chain)));
+    return {std::move(rack)};
+}
+
 using Clock = std::chrono::steady_clock;
 
 // Where the layer goes in a picture of `out` size.
@@ -209,6 +220,8 @@ struct LevelFollower {
 LiveEngine::LiveEngine(QObject* parent) : QObject(parent)
 {
     m_gpuSurface = createGpuSurface(); // may be null: CPU rendering then
+    for (auto& v : m_velocity)
+        v = 1.0;
 }
 
 LiveEngine::~LiveEngine()
@@ -353,6 +366,12 @@ void LiveEngine::setHeldPads(const std::vector<int>& pads)
     for (int p : pads)
         if (p >= 0 && p < kLivePads)
             m_held.push_back(p);
+}
+
+void LiveEngine::setPadVelocity(int pad, double velocity)
+{
+    if (pad >= 0 && pad < kLivePads)
+        m_velocity[size_t(pad)] = std::clamp(velocity, 0.0, 1.0);
 }
 
 void LiveEngine::setLayer(int layer, const LiveSource& source)
@@ -687,6 +706,7 @@ void LiveEngine::threadMain(Options o)
     Clock::time_point fadeStart;
     double fadeSeconds = 0;
     TransitionSpec fadeSpec;
+    double blackLevel = 0; // blackout, faded in and out (0..1)
     std::array<LiveLayerSettings, kLiveLayers> layerSettings = o.layerSettings;
     std::array<LiveSource, kLiveLayers> layerChange;
     std::array<bool, kLiveLayers> changeLayer{};
@@ -1065,7 +1085,8 @@ void LiveEngine::threadMain(Options o)
         auto padChain = [&](int p) -> EffectChain {
             if (p < 0 || !snap || !hasActiveEffects(snap->timeline.livePads[size_t(p)].effects))
                 return {};
-            return chainNow(snap->timeline.livePads[size_t(p)].effects);
+            const LivePad& lp = snap->timeline.livePads[size_t(p)];
+            return withMix(chainNow(lp.effects), lp.mix * m_velocity[size_t(p)] * m_padsMix, p);
         };
         const EffectChain liveFx = snap ? chainNow(snap->timeline.liveEffects) : kNone;
         job.liveFx = &liveFx;
@@ -1119,6 +1140,14 @@ void LiveEngine::threadMain(Options o)
             }
             drawOverlays(out, snap->timeline.liveOverlays, bpm, inputs.beats - std::floor(inputs.beats), overlayPictures, audioView);
         }
+        // Blackout: fades over half a second, overlays and all.
+        blackLevel = std::clamp(blackLevel + (m_blackout ? 1.0 : -1.0) / std::max(1.0, fps * 0.5), 0.0, 1.0);
+        if (blackLevel > 0) {
+            if (out.format() != QImage::Format_ARGB32_Premultiplied)
+                out = out.convertToFormat(QImage::Format_ARGB32_Premultiplied);
+            QPainter p(&out);
+            p.fillRect(out.rect(), QColor(0, 0, 0, int(std::lround(blackLevel * 255))));
+        }
         // The cue, every other frame, at most 640 wide.
         if (const int cueKind = m_cueKind; cueKind != CueNone && snap && frame % 2 == 0 && !m_cuePending) {
             const int index = m_cueIndex;
@@ -1149,7 +1178,9 @@ void LiveEngine::threadMain(Options o)
                 cueJob.time = liveTime;
                 cueJob.fps = fps;
                 const EffectChain cueFx = chainNow(*fx);
-                const EffectChain cuePadFx = cuePad >= 0 ? chainNow(snap->timeline.livePads[size_t(cuePad)].effects) : EffectChain{};
+                const EffectChain cuePadFx = cuePad >= 0 ? withMix(chainNow(snap->timeline.livePads[size_t(cuePad)].effects),
+                                                                   snap->timeline.livePads[size_t(cuePad)].mix, cuePad)
+                                                         : EffectChain{};
                 cueJob.liveFx = &cueFx;
                 cueJob.after = {&cuePadFx};
                 QImage cue = cueRenderer->renderLiveFrame(cueJob);

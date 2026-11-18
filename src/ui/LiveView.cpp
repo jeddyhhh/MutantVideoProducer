@@ -17,6 +17,9 @@
 #include "ui/LiveOverlaysDialog.h"
 #include "ui/LivePadPanel.h"
 #include "ui/MidiHub.h"
+#include "core/Osc.h"
+#include <QNetworkInterface>
+#include <QUdpSocket>
 #include "ui/PreviewWidget.h"
 #include "ui/SetlistDialog.h"
 #include "ui/StreamDialog.h"
@@ -620,6 +623,24 @@ LiveView::LiveView(Project* project, QWidget* parent) : QWidget(parent), m_proje
         m_replayLength->addItem(tr("%1 s").arg(s), s);
     m_saveReplay = new QPushButton(tr("Save Replay"));
     m_saveReplay->setToolTip(tr("Save the replay buffer as a clip (it appears in the Editor's From Live tab). Right-click: Learn MIDI"));
+    m_velocity = new QCheckBox(tr("Velocity sets pad strength"));
+    m_velocity->setToolTip(tr("Hit a MIDI pad softly and less of its chain shows, hard and all of it (times the pad's Mix).\n"
+                              "Off: every hit plays the pad in full. Keys and the mouse always do."));
+    m_velocity->setChecked(QSettings().value(QStringLiteral("live/midiVelocity"), true).toBool());
+    connect(m_velocity, &QCheckBox::toggled, this, [](bool on) { QSettings().setValue(QStringLiteral("live/midiVelocity"), on); });
+    m_oscBox = new QCheckBox(tr("Listen on port"));
+    m_oscBox->setObjectName(QStringLiteral("liveOsc"));
+    m_oscBox->setToolTip(tr("OSC from a phone or tablet app (TouchOSC, Lemur...) on the same network: point it at this computer's\n"
+                            "address and port. Right-click a pad or button > Learn MIDI and send a control to map it, or send\n"
+                            "/mvp/pad/1..16, /mvp/scene/1..8, /mvp/padmix 0..1, /mvp/blackout, /mvp/tap, /mvp/rec..."));
+    m_oscBox->setChecked(QSettings().value(QStringLiteral("live/osc"), false).toBool());
+    m_oscPort = new QSpinBox;
+    m_oscPort->setRange(1024, 65535);
+    m_oscPort->setValue(QSettings().value(QStringLiteral("live/oscPort"), 9000).toInt());
+    m_oscStatus = new QLabel;
+    m_oscStatus->setWordWrap(true);
+    m_oscStatus->setTextInteractionFlags(Qt::TextSelectableByMouse);
+    theme::style(m_oscStatus, QStringLiteral("color: @dim;"));
     m_midi = new QComboBox;
     m_midi->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
     m_midi->setMinimumContentsLength(12);
@@ -982,10 +1003,17 @@ LiveView::LiveView(Project* project, QWidget* parent) : QWidget(parent), m_proje
     {
         auto* f = form();
         f->addRow(tr("Device"), m_midi);
+        f->addRow(m_velocity);
         auto* hint = new QLabel(tr("Right-click a pad, scene or button > Learn MIDI to map it."));
         hint->setWordWrap(true);
         theme::style(hint, QStringLiteral("color: @dim;"));
         f->addRow(hint);
+        auto* oscRow = new QHBoxLayout;
+        oscRow->addWidget(m_oscBox);
+        oscRow->addWidget(m_oscPort);
+        oscRow->addStretch(1);
+        f->addRow(tr("OSC"), oscRow);
+        f->addRow(m_oscStatus);
         sv->addWidget(new LiveSection(tr("MIDI"), QStringLiteral("midi"), f));
     }
     sv->addStretch(1);
@@ -1180,6 +1208,12 @@ LiveView::LiveView(Project* project, QWidget* parent) : QWidget(parent), m_proje
     connect(m_pads, &LivePadPanel::tempoChanged, m_engine, &LiveEngine::setTempo);
     m_engine->setTempo(m_pads->bpm());
     connect(m_pads, &LivePadPanel::padHeld, this, &LiveView::holdPad);
+    connect(m_pads, &LivePadPanel::padTouched, this, [this](int pad) { m_engine->setPadVelocity(pad, 1.0); });
+    connect(m_pads, &LivePadPanel::padsMixChanged, m_engine, &LiveEngine::setPadsMix);
+    connect(m_pads, &LivePadPanel::blackoutChanged, m_engine, &LiveEngine::setBlackout);
+    connect(m_oscBox, &QCheckBox::toggled, this, &LiveView::updateOsc);
+    connect(m_oscPort, &QSpinBox::editingFinished, this, &LiveView::updateOsc);
+    updateOsc();
     connect(m_pads, &LivePadPanel::midiLearnRequested, this, &LiveView::learnMidi);
     // Files: the next one in the playlist.
     connect(m_nextFile, &QToolButton::clicked, this, [this] { m_engine->nextFile(-1); });
@@ -1961,13 +1995,18 @@ void LiveView::saveMidiMap() const
 
 void LiveView::learnMidi(const QString& action, const QString& label)
 {
-    if (MidiHub::instance()->current().isEmpty()) {
-        m_status->setText(tr("Choose your MIDI controller in the MIDI list first, then Learn MIDI again"));
+    const bool osc = m_osc != nullptr;
+    if (MidiHub::instance()->current().isEmpty() && !osc) {
+        m_status->setText(tr("Choose your MIDI controller in the MIDI list (or switch OSC on) first, then Learn MIDI again"));
         return;
     }
     m_midiLearn = action;
     m_midiLearnLabel = label;
-    m_status->setText(tr("Press a pad or key (or move a button) on %1 for %2...").arg(MidiHub::instance()->current(), label));
+    const QString from = MidiHub::instance()->current().isEmpty() ? tr("your OSC app")
+                       : osc ? tr("%1 or your OSC app").arg(MidiHub::instance()->current())
+                             : MidiHub::instance()->current();
+    m_status->setText(action == QLatin1String("padmix") ? tr("Move a knob or fader on %1 for %2...").arg(from, label)
+                                                        : tr("Press a pad or key (or move a button) on %1 for %2...").arg(from, label));
 }
 
 void LiveView::midiMessage(const MidiMessage& m)
@@ -2001,8 +2040,13 @@ void LiveView::midiMessage(const MidiMessage& m)
     const auto it = m_midiMap.find(key);
     if (it == m_midiMap.end())
         return;
+    if (it.value() == QLatin1String("padmix")) { // a fader: the whole range
+        if (m.isController())
+            m_pads->setPadsMix(m.data2 / 127.0);
+        return;
+    }
     if (note) {
-        runAction(it.value(), m.isNoteOn());
+        runAction(it.value(), m.isNoteOn(), m_velocity->isChecked() && m.isNoteOn() ? m.data2 / 127.0 : 1.0);
     } else { // a button sending a controller: down at 64 and over
         const bool down = m.data2 >= 64;
         if (down == m_ccDown.contains(key))
@@ -2015,12 +2059,14 @@ void LiveView::midiMessage(const MidiMessage& m)
     }
 }
 
-void LiveView::runAction(const QString& action, bool down)
+void LiveView::runAction(const QString& action, bool down, double velocity)
 {
     if (action.startsWith(QLatin1String("pad:"))) {
         const int pad = action.mid(4).toInt();
         if (pad < 0 || pad >= kLivePads)
             return;
+        if (down)
+            m_engine->setPadVelocity(pad, velocity);
         if (m_pads->isMomentary(pad))
             holdPad(pad, down);
         else if (down)
@@ -2080,6 +2126,84 @@ void LiveView::runAction(const QString& action, bool down)
         saveReplay();
     else if (action == QLatin1String("screenshot"))
         saveScreenshot();
+    else if (action == QLatin1String("blackout"))
+        m_pads->blackoutButton()->toggle();
+}
+
+void LiveView::updateOsc()
+{
+    QSettings().setValue(QStringLiteral("live/osc"), m_oscBox->isChecked());
+    QSettings().setValue(QStringLiteral("live/oscPort"), m_oscPort->value());
+    const int port = m_oscPort->value();
+    if (m_osc && (!m_oscBox->isChecked() || m_osc->localPort() != port)) {
+        delete m_osc;
+        m_osc = nullptr;
+    }
+    if (!m_oscBox->isChecked()) {
+        m_oscStatus->setText(QString());
+        return;
+    }
+    if (m_osc)
+        return;
+    m_osc = new QUdpSocket(this);
+    if (!m_osc->bind(QHostAddress::AnyIPv4, quint16(port))) {
+        m_oscStatus->setText(tr("Could not listen on port %1: %2").arg(port).arg(m_osc->errorString()));
+        delete m_osc;
+        m_osc = nullptr;
+        return;
+    }
+    connect(m_osc, &QUdpSocket::readyRead, this, [this] {
+        while (m_osc && m_osc->hasPendingDatagrams()) {
+            QByteArray data(int(m_osc->pendingDatagramSize()), '\0');
+            m_osc->readDatagram(data.data(), data.size());
+            for (const OscMessage& m : parseOsc(data))
+                oscMessage(m);
+        }
+    });
+    QStringList addresses;
+    for (const QHostAddress& a : QNetworkInterface::allAddresses())
+        if (a.protocol() == QAbstractSocket::IPv4Protocol && !a.isLoopback() && !a.isLinkLocal())
+            addresses << a.toString();
+    m_oscStatus->setText(addresses.isEmpty() ? tr("Listening on port %1").arg(port)
+                                             : tr("Send to %1, port %2").arg(addresses.join(tr(" or ")), QString::number(port)));
+}
+
+void LiveView::oscMessage(const OscMessage& m)
+{
+    const double value = m.arg(0, 1.0); // (no argument: a press)
+    const QString key = QStringLiteral("o:") + m.address;
+    if (!m_midiLearn.isEmpty() && value > 0 && !m.address.startsWith(QLatin1String("/mvp/"))) {
+        for (auto it = m_midiMap.begin(); it != m_midiMap.end();) // one control per action
+            it = it.value() == m_midiLearn ? m_midiMap.erase(it) : std::next(it);
+        m_midiMap[key] = m_midiLearn;
+        saveMidiMap();
+        m_status->setText(tr("OSC %1 now plays %2").arg(m.address, m_midiLearnLabel));
+        m_midiLearn.clear();
+        return;
+    }
+    QString action = m_midiMap.value(key);
+    if (action.isEmpty() && m.address.startsWith(QLatin1String("/mvp/"))) {
+        // /mvp/pad/3, /mvp/scene/2, /mvp/song/next, /mvp/tap...: pads, scenes and songs count from 1, inputs from 0 (the Source).
+        const QStringList parts = m.address.mid(5).split(QLatin1Char('/'), Qt::SkipEmptyParts);
+        if (parts.size() == 2) {
+            bool ok = false;
+            const int n = parts[1].toInt(&ok);
+            if (parts[0] == QLatin1String("song") && !ok)
+                action = QStringLiteral("song:") + parts[1];
+            else if (ok)
+                action = parts[0] + QLatin1Char(':') + QString::number(parts[0] == QLatin1String("input") ? n : n - 1);
+        } else if (parts.size() == 1) {
+            action = parts[0];
+        }
+    }
+    if (action.isEmpty())
+        return;
+    if (action == QLatin1String("padmix")) {
+        m_pads->setPadsMix(value);
+        return;
+    }
+    // Buttons send 1 when pressed and 0 when let go; a pressure-sensitive pad may send less than 1.
+    runAction(action, value > 0, m_velocity->isChecked() && value > 0 && value < 1 ? value : 1.0);
 }
 
 void LiveView::holdPad(int pad, bool down)
@@ -2160,6 +2284,8 @@ bool LiveView::eventFilter(QObject* watched, QEvent* event)
         action = QStringLiteral("pad:%1").arg(int(hit - std::begin(keys)));
     else if (k->key() >= Qt::Key_F1 && k->key() < Qt::Key_F1 + kLiveScenes && !(k->modifiers() & Qt::ShiftModifier)) // (Shift+F1: help)
         action = QStringLiteral("scene:%1").arg(k->key() - Qt::Key_F1);
+    else if (k->key() == Qt::Key_Backspace)
+        action = QStringLiteral("blackout");
     else if (k->key() == Qt::Key_PageDown)
         action = QStringLiteral("song:next");
     else if (k->key() == Qt::Key_PageUp)

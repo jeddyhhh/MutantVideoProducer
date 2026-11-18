@@ -42,6 +42,10 @@ Each is left out of the build when its folder is missing.
   - `runtimes\win-x64\native\*` and `bin\x64-win\DirectML.dll` go in `deps\onnxruntime\lib`.
 - **VST3 Plugin**: `deps\vst3\pluginterfaces`:
   `git clone https://github.com/steinbergmedia/vst3_pluginterfaces deps\vst3\pluginterfaces`.
+- **Ableton Link** (the Live tab's Link button): `deps\link`, the source of
+  [Link 4.1.1](https://github.com/Ableton/link/archive/refs/tags/Link-4.1.1.zip) (`link-Link-4.1.1` renamed),
+  with the [asio it pins](https://github.com/chriskohlhoff/asio/archive/8806a6803cde7054c3049d3666d3ec36786568c5.zip)
+  in `deps\link\modules\asio-standalone` (its zip leaves that submodule out). Linux the same.
 
 ## Linux
 
@@ -119,5 +123,7 @@ The asset sizes and generation prompt are recorded in [icon provenance](icon.md)
 - The MediaPipe selfie segmentation model in `data/models` is Apache-2.0. RobustVideoMatting
   (`data/models/rvm_mobilenetv3_fp32.onnx`) is GPL-3.0.
 - The VST3 interface headers are MIT. VST is a trademark of Steinberg Media Technologies GmbH.
+- Ableton Link is GPL-2.0-or-later (`ABLETON-LINK-LICENSE.md`); its bundled asio is under the Boost Software
+  Licence. Ableton is a trademark of Ableton AG.
 - The sound effects in `data/sfx` (copied to `sfx` next to the program) are CC0: made for Mutant Video Producer, or
   from Kenney, OpenGameArt.org and the U.S. Fish & Wildlife Service; `data/sfx/CREDITS.md` lists each one's source.

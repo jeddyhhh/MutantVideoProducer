@@ -106,6 +106,7 @@ already in use can be moved to the new command. **Reset All** brings back the de
 | 1 2 3 4 / Q W E R / A S D F / Z X C V | Play the 16 pads (hold for momentary pads) |
 | Shift+click a pad or scene | Cue it |
 | B | Set 1 (the first beat of a bar) |
+| Backspace | Blackout (fade the output to black, and back) |
 | F1-F8 | Recall scenes |
 | Page Down / Page Up | Next / previous setlist song |
 | Enter / Shift+Enter | Switcher: Cut / Auto |

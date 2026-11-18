@@ -149,9 +149,17 @@ A 4x4 grid of pads. Each holds its own effect chain, applied on top of the Live 
   From Medium up, a chain now and then starts with a node effect made in the Effect Builder: one of
   the **Node Editor** examples, and from High the **Analogue Circuit Emu** ones too. That effect
   counts as the chain's one heavy effect.
+
   The **≡** menu's **Fill Empty Pads with Random Chains** fills every empty pad. **Replace All Pads with Random Chains**
   gives every pad a new chain, replacing what it had (locked pads are left alone). **Make All Pads Momentary** makes
   every pad play only while held (locked ones are left alone). **Ctrl+Z** undoes any of them.
+- **Mix** (under Edit): how much of the edited pad's chain shows over the picture under it, like a
+  dry / wet. It is saved with the pad. Pick the pad under **Edit** first.
+- **All pads**: a fader for every pad at once. At 0 the pads show nothing (the Live FX stay).
+  Right-click it > **Learn MIDI** and move a knob or fader to play it from a controller.
+- **Blackout** (or **Backspace**) fades the output to black in half a second: the big display,
+  recordings, the stream, Spout and the virtual camera. Press it again to fade back. The pads stay
+  as they were. Right-click > **Learn MIDI** maps it to a controller button.
 
 ### Pad keys
 
@@ -261,6 +269,12 @@ random, with the chosen transition.
   otherwise the next one is. Switches every 2 to 16 beats land on bars from there, and the light
   flashes orange on each 1. If the beats were on the off-beats, Set 1 moves them too.
 - The BPM shows two decimals: the arrows step 0.01, Page Up / Down 0.1.
+- **Link** (under the BPM, beside Set 1): join an **Ableton Link** session with music apps on the
+  same network (Ableton Live, Traktor, Bitwig, phone apps). The beat clock then follows the
+  session's beats and bars, whatever Auto is set to, and Auto switch steps on them. Typing, tapping,
+  ÷2 and ×2 change the tempo for every app in the session. The button shows how many other apps
+  are in it. Set 1 does nothing with Link on: the session decides where the 1 is. In Ableton Live,
+  switch **Link** on in its toolbar (Preferences > Link, Tempo & MIDI if it isn't shown).
 
 The beat clock also drives Launch (with Auto on), modulation and overlays. It runs even with Auto off.
 
@@ -308,7 +322,32 @@ effect setting with it. Learn messages name the button or stick.
 - Right-click a pad, a switcher tile, **Tap**, **Set 1**, **Find Tempo Again**, **Lock BPM**,
   **Rec**, **Screenshot** or **Save Replay** > **Learn MIDI...**, then press a pad or key on the controller.
 - Notes and buttons that send controllers both work, held for momentary pads.
+- **Velocity sets pad strength** (Setup > MIDI, on by default): a pad hit softly shows less of its
+  chain, hit hard all of it (times its Mix). The pad keeps the strength of its last hit; a click or
+  a key plays it in full.
 - See also MIDI clock (above) and MIDI modulation.
+
+## OSC
+
+**OSC** (Open Sound Control) lets a phone or tablet app such as TouchOSC play the Live tab over
+Wi-Fi. In **Setup > MIDI**, tick **Listen on port** (9000 unless you change it). The line under it
+shows this computer's address: put that and the port in the app as where to send. Windows may ask
+whether Mutant Video Producer may use the network the first time: allow it on private networks.
+
+- Map the app's controls like MIDI: right-click a pad, scene or button > **Learn MIDI...**, then
+  touch the control in the app.
+- Or send these addresses, with no learning (pads, scenes and songs count from 1):
+
+| Address | Does |
+|---|---|
+| `/mvp/pad/1` .. `/mvp/pad/16` | Press a pad: 1 down, 0 let go (held for momentary pads). Under 1: hit softly (Velocity) |
+| `/mvp/scene/1` .. `/mvp/scene/8` | Recall a scene |
+| `/mvp/padmix` 0..1 | The All pads fader |
+| `/mvp/blackout` | Blackout on / off |
+| `/mvp/tap`, `/mvp/setone`, `/mvp/findtempo`, `/mvp/lockbpm` | The tempo buttons |
+| `/mvp/rec`, `/mvp/replay`, `/mvp/screenshot` | Record, Save Replay, Screenshot |
+| `/mvp/song/next`, `/mvp/song/prev`, `/mvp/song/2` | The setlist |
+| `/mvp/cut`, `/mvp/auto`, `/mvp/input/0` .. `/mvp/input/4`, `/mvp/take` | The switcher (input 0 is the Source), Take the cue |
 
 ## Overlays
 

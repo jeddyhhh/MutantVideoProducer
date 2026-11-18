@@ -172,7 +172,8 @@ struct LivePad {
     EffectChain effects;
     bool locked = false; // no edits (effects, name, clearing) until unlocked
     bool momentary = false; // on only while held (mouse, key or MIDI), on top of the active pad
-    bool isEmpty() const { return name.isEmpty() && effects.empty() && !locked && !momentary; }
+    double mix = 1.0;       // how much of its chain shows over the picture under it (0..1, a dry / wet)
+    bool isEmpty() const { return name.isEmpty() && effects.empty() && !locked && !momentary && mix == 1.0; }
     bool operator==(const LivePad&) const = default;
 };
 inline constexpr int kLivePads = 16; // a 4x4 grid

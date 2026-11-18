@@ -122,6 +122,8 @@ add_library(mvp_core STATIC
     src/core/RandomChain.h       src/core/RandomChain.cpp
     src/core/LiveModulation.h    src/core/LiveModulation.cpp
     src/core/MidiInput.h         src/core/MidiInput.cpp
+    src/core/AbletonLink.h       src/core/AbletonLink.cpp
+    src/core/Osc.h               src/core/Osc.cpp
     src/core/AudioSync.h         src/core/AudioSync.cpp
     src/core/Multicam.h          src/core/Multicam.cpp
     src/core/OpticalFlow.h       src/core/OpticalFlow.cpp
@@ -202,6 +204,18 @@ if(EXISTS "${MVP_DEPS_DIR}/whisper/CMakeLists.txt")
         target_compile_definitions(mvp_core PRIVATE MVP_WHISPER_VULKAN)
         target_link_options(mvp_core INTERFACE "/DELAYLOAD:vulkan-1.dll")
         target_link_libraries(mvp_core INTERFACE delayimp)
+    endif()
+endif()
+
+# Ableton Link (tempo and beat shared with music apps on the network): Link's source, with its
+# bundled asio, in deps/link (optional; GPLv2+).
+if(EXISTS "${MVP_DEPS_DIR}/link/include/ableton/Link.hpp" AND EXISTS "${MVP_DEPS_DIR}/link/modules/asio-standalone/include/asio.hpp")
+    include("${MVP_DEPS_DIR}/link/cmake_include/ConfigureAbletonLink.cmake")
+    ConfigureAbletonLink("${MVP_DEPS_DIR}/link")
+    target_link_libraries(mvp_core PRIVATE Ableton::Link) # (an imported target: its headers are system headers, no warnings)
+    target_compile_definitions(mvp_core PRIVATE MVP_LINK)
+    if(WIN32)
+        set_source_files_properties(src/core/AbletonLink.cpp PROPERTIES COMPILE_DEFINITIONS "_WIN32_WINNT=0x0A00")
     endif()
 endif()
 

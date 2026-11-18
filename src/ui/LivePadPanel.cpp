@@ -2,6 +2,7 @@
 
 #include "ui/Theme.h"
 
+#include "core/AbletonLink.h"
 #include "core/BeatTracker.h"
 #include "ui/BeatTuner.h"
 
@@ -28,6 +29,7 @@
 #include <QRandomGenerator>
 #include <QSettings>
 #include <QShortcut>
+#include <QSlider>
 #include <QDoubleSpinBox>
 #include <QToolButton>
 #include <QUrl>
@@ -100,7 +102,8 @@ const QString kLock = QStringLiteral("\U0001F512");
 
 } // namespace
 
-LivePadPanel::LivePadPanel(Project* project, QWidget* parent) : QWidget(parent), m_project(project)
+LivePadPanel::LivePadPanel(Project* project, QWidget* parent)
+    : QWidget(parent), m_project(project), m_link(std::make_unique<AbletonLink>())
 {
     setObjectName(QStringLiteral("livePads"));
     auto* layout = new QVBoxLayout(this);
@@ -145,6 +148,7 @@ LivePadPanel::LivePadPanel(Project* project, QWidget* parent) : QWidget(parent),
         b->onDrop = [this, i](const QString& mime, const QString& id) { emit dropped(i, mime, id); };
         // A momentary pad is on while held; the others switch on / off when clicked.
         connect(b, &QPushButton::pressed, this, [this, i] {
+            emit padTouched(i);
             if (isMomentary(i))
                 emit padHeld(i, true);
         });
@@ -191,19 +195,50 @@ LivePadPanel::LivePadPanel(Project* project, QWidget* parent) : QWidget(parent),
     m_follow->setChecked(QSettings().value(QStringLiteral("live/editFollows"), true).toBool());
     connect(m_follow, &QCheckBox::toggled, this, [](bool on) { QSettings().setValue(QStringLiteral("live/editFollows"), on); });
     form->addWidget(m_follow, 1, 2);
+    // ---- Mix: the edited pad's, all the pads' (a fader), blackout ----
+    auto slider = [](const QString& name, const QString& tip) {
+        auto* s = new QSlider(Qt::Horizontal);
+        s->setObjectName(name);
+        s->setRange(0, 100);
+        s->setValue(100);
+        s->setToolTip(tip);
+        return s;
+    };
+    form->addWidget(new QLabel(tr("Mix")), 2, 0);
+    m_padMix = slider(QStringLiteral("livePadMix"), tr("How much of the edited pad's chain shows over the picture under it (a dry / wet):\n"
+                                                       "100% is all of it. Saved with the pad. Pick the pad under Edit."));
+    form->addWidget(m_padMix, 2, 1);
+    m_padMixLabel = new QLabel;
+    form->addWidget(m_padMixLabel, 2, 2);
+    form->addWidget(new QLabel(tr("All pads")), 3, 0);
+    m_padsMix = slider(QStringLiteral("livePadsMix"), tr("A fader for every pad at once: how much of their chains shows over the Live FX.\n"
+                                                         "Right-click: Learn MIDI (a knob or fader); OSC: /mvp/padmix 0..1."));
+    form->addWidget(m_padsMix, 3, 1);
+    auto* blackRow = new QHBoxLayout;
+    blackRow->setSpacing(4);
+    m_padsMixLabel = new QLabel(QStringLiteral("100%"));
+    blackRow->addWidget(m_padsMixLabel);
+    m_blackout = new QToolButton;
+    m_blackout->setObjectName(QStringLiteral("liveBlackout"));
+    m_blackout->setText(tr("Blackout"));
+    m_blackout->setCheckable(true);
+    m_blackout->setToolTip(tr("Fade the output (recordings and the stream too) to black, and back when pressed again.\n"
+                              "Shortcut: Backspace. Right-click: Learn MIDI."));
+    blackRow->addWidget(m_blackout);
+    form->addLayout(blackRow, 3, 2);
 
     // ---- Auto switch ----
-    form->addWidget(new QLabel(tr("Auto")), 2, 0);
+    form->addWidget(new QLabel(tr("Auto")), 4, 0);
     m_auto = new QComboBox;
     m_auto->addItems({tr("Off"), tr("Tempo"), tr("Audio beats"), tr("MIDI clock")});
     m_auto->setToolTip(tr("Switch pads by themselves while capturing: on a tempo (type the BPM or tap it), or on beats\n"
                           "heard on the Audio input. Uses the transition above; empty pads are skipped."));
-    form->addWidget(m_auto, 2, 1);
+    form->addWidget(m_auto, 4, 1);
     m_every = new QComboBox;
     for (int n : {1, 2, 4, 8, 16})
         m_every->addItem(n == 1 ? tr("every beat") : tr("every %1").arg(n), n);
     m_every->setToolTip(tr("Beats between switches"));
-    form->addWidget(m_every, 2, 2);
+    form->addWidget(m_every, 4, 2);
     auto* tempoRow = new QHBoxLayout;
     tempoRow->setSpacing(4);
     m_bpm = new QDoubleSpinBox;
@@ -247,8 +282,8 @@ LivePadPanel::LivePadPanel(Project* project, QWidget* parent) : QWidget(parent),
     adjustRow->addWidget(m_tap);
     adjustRow->addWidget(m_downbeat);
     adjustRow->addStretch(1);
-    form->addLayout(tempoRow, 3, 1, 1, 2);
-    form->addLayout(adjustRow, 4, 1, 1, 2);
+    form->addLayout(tempoRow, 5, 1, 1, 2);
+    form->addLayout(adjustRow, 6, 1, 1, 2);
     auto* beatRow = new QHBoxLayout;
     beatRow->setSpacing(4);
     beatRow->addWidget(m_random);
@@ -265,17 +300,26 @@ LivePadPanel::LivePadPanel(Project* project, QWidget* parent) : QWidget(parent),
                              "While it is locked you can also type or tap the tempo yourself."));
     connect(m_lockBpm, &QToolButton::toggled, this, &LivePadPanel::setTempoLocked);
     tempoRow->addWidget(m_lockBpm);
+    m_linkButton = new QToolButton;
+    m_linkButton->setObjectName(QStringLiteral("liveLink"));
+    m_linkButton->setText(tr("Link"));
+    m_linkButton->setCheckable(true);
+    m_linkButton->setToolTip(tr("Ableton Link: share the tempo and beat with music apps on the network (Ableton Live, Traktor,\n"
+                                "phone apps...). The beat clock follows the session's beats and bars, and typing, tapping,\n"
+                                "x2 or /2 change the tempo for every app. The number is how many other apps are in it."));
+    m_linkButton->setVisible(AbletonLink::available());
+    adjustRow->insertWidget(adjustRow->count() - 1, m_linkButton); // (before the stretch)
     tempoRow->addStretch(1);
     tempoRow->addWidget(m_led);
     beatRow->addStretch(1);
-    form->addLayout(beatRow, 5, 1, 1, 2);
-    form->addWidget(new QLabel(tr("Launch")), 6, 0);
+    form->addLayout(beatRow, 7, 1, 1, 2);
+    form->addWidget(new QLabel(tr("Launch")), 8, 0);
     m_launch = new QComboBox;
     m_launch->addItems({tr("At once"), tr("On the next beat"), tr("On the next bar (the 1)")});
     m_launch->setToolTip(tr("With Auto on, when a pressed pad switches: straight away, or on the next beat or bar of the beat\n"
                             "clock, so switches land in time even if you press a little early. With Auto off pads switch at\n"
                             "once (momentary pads always do)."));
-    form->addWidget(m_launch, 6, 1, 1, 2);
+    form->addWidget(m_launch, 8, 1, 1, 2);
     form->setColumnStretch(1, 1);
     layout->addLayout(form);
     m_sequencer = new LiveSequencer(project, this);
@@ -332,6 +376,7 @@ LivePadPanel::LivePadPanel(Project* project, QWidget* parent) : QWidget(parent),
         updateAutoTimer();
         if (m_tracker && m_lockBpm->isChecked()) // typed while locked: the new tempo
             m_tracker->setTempoLocked(true, m_bpm->value());
+        pushTempo();
     });
     // Launch follows the beat only with Auto on: off, pads switch at once (one waiting goes now).
     auto launchFollows = [this] {
@@ -382,13 +427,112 @@ LivePadPanel::LivePadPanel(Project* project, QWidget* parent) : QWidget(parent),
     learnable(m_downbeat, QStringLiteral("setone"), tr("Set 1"));
     learnable(m_findTempo, QStringLiteral("findtempo"), tr("Find Tempo Again"));
     learnable(m_lockBpm, QStringLiteral("lockbpm"), tr("Lock BPM"));
+    learnable(m_padsMix, QStringLiteral("padmix"), tr("All pads"));
+    learnable(m_blackout, QStringLiteral("blackout"), tr("Blackout"));
+    // The edited pad's mix: dragging shows it live, letting go is one undo step.
+    connect(m_padMix, &QSlider::sliderPressed, this, [this] { m_mixBefore = m_project->timeline(); });
+    connect(m_padMix, &QSlider::valueChanged, this, [this](int value) {
+        const int pad = m_editing - 1;
+        if (pad < 0 || pad >= kLivePads)
+            return;
+        m_padMixLabel->setText(QStringLiteral("%1%").arg(value));
+        if (m_padMix->isSliderDown()) {
+            Timeline tl = m_project->timeline();
+            tl.livePads[size_t(pad)].mix = value / 100.0;
+            m_project->setTimelineLive(tl);
+        } else {
+            editPad(pad, [value](LivePad& p) { p.mix = value / 100.0; }, tr("Pad Mix"));
+        }
+    });
+    connect(m_padMix, &QSlider::sliderReleased, this, [this] {
+        if (m_mixBefore && *m_mixBefore != m_project->timeline())
+            m_project->commitEdit(*m_mixBefore, tr("Pad Mix"));
+        m_mixBefore.reset();
+    });
+    connect(m_padsMix, &QSlider::valueChanged, this, [this](int value) {
+        m_padsMixLabel->setText(QStringLiteral("%1%").arg(value));
+        emit padsMixChanged(value / 100.0);
+    });
+    connect(m_blackout, &QToolButton::toggled, this, [this](bool on) {
+        theme::style(m_blackout, on ? QStringLiteral("QToolButton { background: @bad; color: @onAccent; font-weight: bold; }") : QString());
+        emit blackoutChanged(on);
+        emit message(on ? tr("Blackout: the output fades to black (press again to bring it back)") : tr("Blackout off"));
+    });
+    // Ableton Link: the beat clock follows the session.
+    m_linkTimer.setTimerType(Qt::PreciseTimer);
+    connect(&m_linkTimer, &QTimer::timeout, this, &LivePadPanel::pollLink);
+    connect(m_linkButton, &QToolButton::toggled, this, [this](bool on) {
+        QSettings().setValue(QStringLiteral("live/link"), on);
+        m_link->setEnabled(on);
+        if (on) {
+            if (m_link->peers() == 0)
+                m_link->setTempo(m_bpm->value()); // a new session: ours
+            m_linkBeat = std::floor(m_link->beat());
+            m_linkTimer.start(4);
+        } else {
+            m_linkTimer.stop();
+            m_linkButton->setText(tr("Link"));
+        }
+        m_beatIndex = 15;
+        updateAutoTimer();
+        emit message(on ? tr("Ableton Link on: the beat follows the session") : tr("Ableton Link off"));
+    });
     m_ledTimer.setSingleShot(true);
     connect(&m_ledTimer, &QTimer::timeout, this, [this] { theme::style(m_led, QStringLiteral("background: @raised; border-radius: 7px;")); });
     theme::style(m_led, QStringLiteral("background: @raised; border-radius: 7px;"));
     m_clock.start();
+    if (AbletonLink::available() && settings.value(QStringLiteral("live/link"), false).toBool())
+        m_linkButton->setChecked(true);
     refreshSets(); // starts as "(not saved)": the project's pads may come from anywhere
     refresh();
     updateAutoTimer(); // the beat clock runs from the start (modulation follows it)
+}
+
+LivePadPanel::~LivePadPanel() = default;
+
+void LivePadPanel::setPadsMix(double mix)
+{
+    m_padsMix->setValue(int(std::lround(std::clamp(mix, 0.0, 1.0) * 100)));
+}
+
+double LivePadPanel::padsMix() const
+{
+    return m_padsMix->value() / 100.0;
+}
+
+bool LivePadPanel::linkOn() const
+{
+    return m_linkButton->isChecked();
+}
+
+void LivePadPanel::pushTempo()
+{
+    if (linkOn())
+        m_link->setTempo(m_bpm->value());
+}
+
+void LivePadPanel::pollLink()
+{
+    const double tempo = m_link->tempo();
+    if (tempo > 0 && std::abs(tempo - m_bpm->value()) > 0.005) { // another app changed it
+        {
+            QSignalBlocker block(m_bpm);
+            m_bpm->setValue(tempo);
+        }
+        emit tempoChanged(currentBpm());
+    }
+    if (++m_linkPolls % 100 == 1) { // (about twice a second)
+        const int peers = m_link->peers();
+        m_linkButton->setText(peers > 0 ? tr("Link %1").arg(peers) : tr("Link"));
+    }
+    const double b = std::floor(m_link->beat());
+    if (b == m_linkBeat)
+        return;
+    m_linkBeat = b;
+    // The session knows where the bar is: beat 0, 4, 8... is a 1.
+    const int barBeat = int(((qint64(b) % 4) + 4) % 4);
+    m_beatIndex = ((m_beatIndex / 4) * 4 + barBeat + 15) % 16;
+    beat();
 }
 
 void LivePadPanel::setActivePad(int pad)
@@ -495,6 +639,21 @@ void LivePadPanel::refresh()
         for (int i = 0; i < kLiveLayers; ++i)
             m_edit->addItem(tr("Layer %1 FX").arg(i + 1));
         m_edit->setCurrentIndex(m_editing);
+    }
+    // The edited pad's mix.
+    {
+        const int pad = m_editing - 1;
+        const bool isPad = pad >= 0 && pad < kLivePads;
+        const double mix = isPad ? tl.livePads[size_t(pad)].mix : 1.0;
+        m_padMix->setEnabled(isPad && !tl.livePads[size_t(pad)].locked);
+        if (!m_padMix->isSliderDown()) {
+            QSignalBlocker block(m_padMix);
+            m_padMix->setValue(int(std::lround(mix * 100)));
+        }
+        m_padMixLabel->setText(isPad ? QStringLiteral("%1%").arg(m_padMix->value()) : QString());
+        m_padMix->setToolTip(isPad ? tr("Pad %1's mix: how much of its chain shows over the picture under it (a dry / wet).\n"
+                                        "Saved with the pad.").arg(pad + 1)
+                                   : tr("Pick a pad under Edit to set its mix (how much of its chain shows)"));
     }
     // The set's name, starred when the pads differ from it.
     const int index = m_setName.isEmpty() ? -1 : m_set->findData(m_setName);
@@ -767,7 +926,9 @@ void LivePadPanel::updateAutoTimer()
 {
     // The clock runs on the tempo unless it follows the audio beats (Auto off
     // only while they come).
-    if (m_auto->currentIndex() == AutoOff || m_auto->currentIndex() == AutoTempo)
+    if (linkOn())
+        m_beatTimer.stop(); // (Link's beats instead)
+    else if (m_auto->currentIndex() == AutoOff || m_auto->currentIndex() == AutoTempo)
         m_beatTimer.start(int(std::lround(60000.0 / std::max(30.0, m_bpm->value()))));
     else
         m_beatTimer.stop();
@@ -789,7 +950,10 @@ void LivePadPanel::tap()
         QSettings().setValue(QStringLiteral("live/autoBpm"), m_bpm->value());
         if (m_tracker && m_lockBpm->isChecked())
             m_tracker->setTempoLocked(true, m_bpm->value());
+        pushTempo();
     }
+    if (linkOn())
+        return; // (the session keeps the beat)
     // The tap is the beat: restart the tempo from here.
     m_beatIndex = 0;
     if (m_auto->currentIndex() == AutoTempo) {
@@ -800,7 +964,7 @@ void LivePadPanel::tap()
 
 void LivePadPanel::clockBeat(double bpm, int barBeat)
 {
-    if (m_auto->currentIndex() != AutoMidi)
+    if (m_auto->currentIndex() != AutoMidi || linkOn())
         return;
     if (bpm > 0) {
         QSignalBlocker block(m_bpm);
@@ -826,8 +990,8 @@ void LivePadPanel::pressPad(int pad)
 void LivePadPanel::audioBeat(double bpm, double confidence)
 {
     (void)confidence;
-    if (m_auto->currentIndex() == AutoTempo || m_auto->currentIndex() == AutoMidi)
-        return; // the typed / tapped tempo or the MIDI clock drives the clock
+    if (m_auto->currentIndex() == AutoTempo || m_auto->currentIndex() == AutoMidi || linkOn())
+        return; // the typed / tapped tempo, the MIDI clock or Ableton Link drives the clock
     m_lastAudioBeatMs = m_clock.elapsed();
     if (bpm > 0 && m_auto->currentIndex() == AutoAudio) {
         QSignalBlocker block(m_bpm);
@@ -901,6 +1065,7 @@ void LivePadPanel::setSongTempo(double bpm, bool lock)
     }
     if (m_tracker && lock)
         m_tracker->setTempoLocked(true, bpm);
+    pushTempo();
     m_bpm->setReadOnly((m_auto->currentIndex() == AutoAudio || m_auto->currentIndex() == AutoMidi) && !lock);
     m_beatIndex = 15;
     updateAutoTimer();
@@ -950,6 +1115,8 @@ int LivePadPanel::barBeat() const
 
 double LivePadPanel::currentBpm() const
 {
+    if (linkOn())
+        return m_bpm->value(); // (the session's)
     const bool audioBeats = m_auto->currentIndex() == AutoAudio || (m_auto->currentIndex() == AutoOff && m_clock.elapsed() - m_lastAudioBeatMs < 2000);
     if (audioBeats && m_tracker && m_tracker->bpm() > 0)
         return m_tracker->bpm();
@@ -960,8 +1127,11 @@ void LivePadPanel::scaleTempo(double factor)
 {
     if (m_auto->currentIndex() == AutoAudio && m_tracker && m_tracker->bpm() > 0) {
         const double bpm = m_tracker->scaleTempo(factor); // locked or not: the octave stays put
-        QSignalBlocker block(m_bpm);
-        m_bpm->setValue(bpm);
+        {
+            QSignalBlocker block(m_bpm);
+            m_bpm->setValue(bpm);
+        }
+        pushTempo();
         emit message(tr("Tempo %1 BPM").arg(bpm, 0, 'f', 2));
     } else {
         m_bpm->setValue(std::clamp(m_bpm->value() * factor, 30.0, 300.0));
@@ -970,6 +1140,10 @@ void LivePadPanel::scaleTempo(double factor)
 
 void LivePadPanel::setDownbeat()
 {
+    if (linkOn()) {
+        emit message(tr("Ableton Link sets where the bars are (the session's 1)"));
+        return;
+    }
     const double period = 60000.0 / std::max(20.0, currentBpm());
     const qint64 now = m_clock.elapsed();
     // Beats well off where the 1 was pressed (on the off-beats, say) move to it.

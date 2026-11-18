@@ -49,6 +49,8 @@
 #include "core/LiveModulation.h"
 #include "core/LivePadSets.h"
 #include "core/MidiInput.h"
+#include "core/Osc.h"
+#include <QtEndian>
 #include "core/BeatMarkers.h"
 #include "core/MotionTracker.h"
 #include "core/Stabilizer.h"
@@ -6080,6 +6082,30 @@ int cmdLive(const QString& outDir)
                   && gamePadControlName(other).isEmpty() && isGamePad(QStringLiteral("Xbox controller 1")) && !isGamePad(QStringLiteral("nanoPAD2")),
               QStringLiteral("an Xbox controller reads as MIDI: A is note 60 on channel 16 (on and off), the right trigger and a stick direction "
                              "are controllers, nothing when nothing moved, and each has its name"));
+    }
+    // ---- OSC: messages and bundles from a phone app; junk is left out ----
+    {
+        const auto one = parseOsc(oscPacket(QStringLiteral("/mvp/pad/3"), {0.5f}));
+        // A bundle (as TouchOSC sends) holding a message with an int, a true and a string, and one with no arguments.
+        QByteArray inner;
+        inner += QByteArray("/1/push1", 8) + QByteArray(4, '\0');
+        inner += QByteArray(",iTs", 4) + QByteArray(4, '\0');
+        inner += QByteArray("\0\0\0\x07", 4) + QByteArray("hi\0\0", 4);
+        const QByteArray bare = QByteArray("/mvp/tap", 8) + QByteArray(4, '\0');
+        QByteArray bundle = QByteArray("#bundle\0", 8) + QByteArray(8, '\0');
+        for (const QByteArray& e : {inner, bare}) {
+            const qint32 n = qToBigEndian(qint32(e.size()));
+            bundle += QByteArray(reinterpret_cast<const char*>(&n), 4) + e;
+        }
+        const auto many = parseOsc(bundle);
+        bool junkOk = true;
+        for (int cut = 0; cut < bundle.size(); ++cut) // every truncation: no crash, nothing half-read
+            for (const OscMessage& m : parseOsc(bundle.left(cut)))
+                junkOk = junkOk && m.address.startsWith(QLatin1Char('/'));
+        check(one.size() == 1 && one[0].address == QStringLiteral("/mvp/pad/3") && one[0].args == std::vector<double>{0.5}
+                  && many.size() == 2 && many[0].address == QStringLiteral("/1/push1") && many[0].args == std::vector<double>{7, 1}
+                  && many[1].address == QStringLiteral("/mvp/tap") && many[1].args.empty() && parseOsc("garbage").empty() && junkOk,
+              QStringLiteral("OSC: a message with a float, a bundle of two (an int, a true, a string skipped; no arguments), junk and cut-off packets left out"));
     }
     // ---- Scenes and the visualiser overlays are saved with the project ----
     {

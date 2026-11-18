@@ -56,6 +56,15 @@ jobs:
           if [ "$GITHUB_REF_TYPE" = tag ]; then v="${GITHUB_REF_NAME#v}"; else v="dev-${GITHUB_SHA::7}"; fi
           echo "MVP_VERSION=$v" >> "$GITHUB_ENV"
 
+      # Ableton Link, with the asio it pins (a submodule, so not in its archive).
+      - name: Download Ableton Link
+        run: |
+          curl -sSfL https://github.com/Ableton/link/archive/refs/tags/Link-4.1.1.tar.gz | tar -xz -C deps
+          mv deps/link-Link-4.1.1 deps/link
+          rm -rf deps/link/modules/asio-standalone
+          curl -sSfL https://github.com/chriskohlhoff/asio/archive/8806a6803cde7054c3049d3666d3ec36786568c5.tar.gz | tar -xz -C deps/link/modules
+          mv deps/link/modules/asio-8806a6803cde7054c3049d3666d3ec36786568c5 deps/link/modules/asio-standalone
+
       - name: Build
         run: ./build.sh Release
 
@@ -73,6 +82,7 @@ jobs:
           cp -a build/Release/bin/. build/package/MutantVideoProducer/
           find build/package/MutantVideoProducer -maxdepth 1 -type f -name 'mvp_*test' -delete
           cp README.md LICENSE CHANGELOG.md build/package/MutantVideoProducer/
+          cp deps/link/LICENSE.md build/package/MutantVideoProducer/ABLETON-LINK-LICENSE.md
           printf '%s\n' 'Built for Ubuntu 24.04 x86_64 with system Qt 6 and FFmpeg 6.1.' \
             'Install runtime dependencies: sudo apt install qt6-base-dev qt6-multimedia-dev libqt6opengl6-dev ffmpeg' \
             'Run: ./MutantVideoProducer' \

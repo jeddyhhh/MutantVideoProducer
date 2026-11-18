@@ -92,6 +92,14 @@ jobs:
           Copy-Item ortdml/LICENSE deps/onnxruntime/LICENSE
           Copy-Item dml/LICENSE.txt deps/onnxruntime/DIRECTML-LICENSE.txt
           git clone --depth 1 https://github.com/steinbergmedia/vst3_pluginterfaces.git deps/vst3/pluginterfaces
+          # Ableton Link, with the asio it pins (a submodule, so not in its zip).
+          Invoke-WebRequest https://github.com/Ableton/link/archive/refs/tags/Link-4.1.1.zip -OutFile link.zip
+          Expand-Archive link.zip -DestinationPath deps
+          Rename-Item deps/link-Link-4.1.1 link
+          Invoke-WebRequest https://github.com/chriskohlhoff/asio/archive/8806a6803cde7054c3049d3666d3ec36786568c5.zip -OutFile asio.zip
+          Expand-Archive asio.zip -DestinationPath asio
+          Remove-Item deps/link/modules/asio-standalone -Recurse -Force -ErrorAction SilentlyContinue
+          Move-Item asio/asio-8806a6803cde7054c3049d3666d3ec36786568c5 deps/link/modules/asio-standalone
 
       # To build Whisper's Vulkan backend (auto captions on the GPU); users need only a graphics driver.
       - name: Install the Vulkan SDK
@@ -207,6 +215,7 @@ jobs:
           Copy-Item deps/onnxruntime/LICENSE "$bin/ONNXRUNTIME-LICENSE.txt"
           Copy-Item deps/onnxruntime/DIRECTML-LICENSE.txt "$bin/DIRECTML-LICENSE.txt"
           Copy-Item deps/whisper/LICENSE "$bin/WHISPER-LICENSE.txt"
+          Copy-Item deps/link/LICENSE.md "$bin/ABLETON-LINK-LICENSE.md"
           Copy-Item README.md, LICENSE, CHANGELOG.md $bin
           python scripts/package-windows.py --bin $bin --output build/distribution --version $version
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
