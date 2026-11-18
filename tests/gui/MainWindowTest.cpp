@@ -559,7 +559,14 @@ int MainWindow::runEditorTest(QStringList& log)
                 m_modes->setCurrentWidget(m_live);
                 live->setTarget({FxTarget::Kind::Live, 0});
                 QApplication::processEvents();
-                const auto hints = live->findChildren<QLabel*>(QStringLiteral("userEffectHint"));
+                QElapsedTimer built; // (put up a few devices at a time)
+                built.start();
+                while (!live->chainBuilt() && built.elapsed() < 5000)
+                    QApplication::processEvents(QEventLoop::AllEvents, 50);
+                QList<QLabel*> hints;
+                for (QLabel* hint : live->findChildren<QLabel*>(QStringLiteral("userEffectHint")))
+                    if (hint->isVisibleTo(live))
+                        hints << hint;
                 const auto editorsBefore = findChildren<NodeEffectEditor*>().size();
                 if (hints.size() == 1) {
                     QWidget* label = hints.front();

@@ -152,7 +152,7 @@ A 4x4 grid of pads. Each holds its own effect chain, applied on top of the Live 
 
   The **≡** menu's **Fill Empty Pads with Random Chains** fills every empty pad. **Replace All Pads with Random Chains**
   gives every pad a new chain, replacing what it had (locked pads are left alone). **Make All Pads Momentary** makes
-  every pad play only while held (locked ones are left alone). **Ctrl+Z** undoes any of them.
+  every pad play only while held, and **Make All Pads Normal** switches them back (locked ones are left alone). **Ctrl+Z** undoes any of them.
 - **Mix** (under Edit): how much of the edited pad's chain shows over the picture under it, like a
   dry / wet. It is saved with the pad. Pick the pad under **Edit** first.
 - **All pads**: a fader for every pad at once. At 0 the pads show nothing (the Live FX stay).

@@ -709,7 +709,9 @@ private:
 
 class ChainStrip : public QWidget {
 public:
-    ChainStrip(DeviceChainView* view, ChainPath path, const EffectChain& chain, bool nested);
+    // gradual: the devices are added a few at a time, the event loop running between (the picture keeps moving while
+    // a long chain is put up); the view hears stripDone() when they are all there.
+    ChainStrip(DeviceChainView* view, ChainPath path, const EffectChain& chain, bool nested, bool gradual = false);
 
     // Index the drop at x (strip coordinates) inserts at.
     int dropIndex(int x) const
@@ -763,10 +765,14 @@ private:
         m_indicator->raise();
     }
 
+    void buildMore();
+
     DeviceChainView* m_view;
     ChainPath m_path;
     std::vector<QWidget*> m_devices;
     QFrame* m_indicator;
+    EffectChain m_pending; // gradual: the devices still to add
+    bool m_nested = false;
 };
 
 // ---------------------------------------------------------------------------
@@ -1185,14 +1191,18 @@ private:
     QColor m_family;
 };
 
-ChainStrip::ChainStrip(DeviceChainView* view, ChainPath path, const EffectChain& chain, bool nested)
-    : m_view(view), m_path(std::move(path))
+ChainStrip::ChainStrip(DeviceChainView* view, ChainPath path, const EffectChain& chain, bool nested, bool gradual)
+    : m_view(view), m_path(std::move(path)), m_nested(nested)
 {
     setAcceptDrops(true);
     auto* l = new QHBoxLayout(this);
     l->setContentsMargins(6, 4, 24, 4);
     l->setSpacing(8);
-    for (int i = 0; i < int(chain.size()); ++i) {
+    if (gradual && !chain.empty()) {
+        m_pending = chain;
+        QTimer::singleShot(0, this, [this] { buildMore(); });
+    }
+    for (int i = 0; i < int(chain.size()) && !gradual; ++i) {
         auto* d = new DeviceWidget(view, m_path, i, chain[size_t(i)], nested);
         m_devices.push_back(d);
         l->addWidget(d, 0, Qt::AlignTop);
@@ -1208,6 +1218,30 @@ ChainStrip::ChainStrip(DeviceChainView* view, ChainPath path, const EffectChain&
     m_indicator = new QFrame(this);
     theme::style(m_indicator, QStringLiteral("background: @key;"));
     m_indicator->hide();
+}
+
+void ChainStrip::buildMore()
+{
+    if (m_view->m_shown != this)
+        return; // put away before it was done: not kept, going
+
+    // As many devices as fit in about a frame (at least one), then the event loop runs.
+    QElapsedTimer t;
+    t.start();
+    auto* l = static_cast<QHBoxLayout*>(layout());
+    do {
+        const int i = int(m_devices.size());
+        auto* d = new DeviceWidget(m_view, m_path, i, m_pending[size_t(i)], m_nested);
+        m_devices.push_back(d);
+        l->insertWidget(i, d, 0, Qt::AlignTop);
+    } while (m_devices.size() < m_pending.size() && t.elapsed() < 10);
+    m_view->refreshValues();
+    if (m_devices.size() < m_pending.size()) {
+        QTimer::singleShot(16, this, [this] { buildMore(); }); // (room for the picture between)
+    } else {
+        m_pending.clear();
+        m_view->stripDone();
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1287,6 +1321,11 @@ DeviceChainView::DeviceChainView(Project* project, std::function<TimeUs()> curso
     m_scroll->setWidgetResizable(true);
     m_scroll->setFrameShape(QFrame::NoFrame);
     m_scroll->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+    m_stage = new QWidget;
+    auto* stageLayout = new QVBoxLayout(m_stage);
+    stageLayout->setContentsMargins(0, 0, 0, 0);
+    stageLayout->setSpacing(0);
+    m_scroll->setWidget(m_stage);
     l->addWidget(m_scroll, 1);
     setMinimumHeight(kBodyHeight + 70);
 
@@ -3178,6 +3217,8 @@ QString DeviceChainView::structureKey() const
             key += QStringLiteral("%1:%2:%3:%4:%5:%6:%7").arg(e.id).arg(e.type).arg(e.enabled).arg(m_selected.count(e.id))
                        .arg(m_folded.count(e.id)).arg(m_rackChain.count(e.id) ? m_rackChain.at(e.id) : 0)
                        .arg(shape != e.params.end() && shape->second.value >= 0.5);
+            if (const auto graph = e.params.find(QStringLiteral("graph")); graph != e.params.end()) // (its settings come from it)
+                key += QStringLiteral(":g%1").arg(qHash(graph->second.text));
             for (const auto& ch : e.chains) {
                 key += QStringLiteral("{%1:%2:%3").arg(ch.name).arg(ch.enabled).arg(ch.solo);
                 walk(ch.effects);
@@ -3209,6 +3250,7 @@ void DeviceChainView::resizeEvent(QResizeEvent* e)
     const int h = deviceBodyHeight();
     if (h != m_bodyHeight) {
         m_bodyHeight = h;
+        clearKept();
         m_key.clear(); // same devices, new layout
         scheduleRebuild();
     }
@@ -3222,21 +3264,46 @@ void DeviceChainView::scheduleRebuild()
 void DeviceChainView::changeEvent(QEvent* e)
 {
     QWidget::changeEvent(e);
-    if (e->type() == QEvent::PaletteChange)
+    if (e->type() == QEvent::PaletteChange) {
+        clearKept();
+        m_key.clear();
         rebuild();
+    }
 }
 
 void DeviceChainView::rebuild()
 {
     if (m_dragging) // the drag source lives in the current widgets
         return;
+    // The Live tab's chains are kept when put away (hidden, not taken down), and shown again as they were.
+    const bool keep = m_target.kind == FxTarget::Kind::Live;
+    if (m_keptSession != m_project->session().get()) { // (another project: its effect ids mean other effects)
+        clearKept();
+        m_keptSession = m_project->session().get();
+    }
+    if (m_shown) {
+        m_shown->hide();
+        if (m_shown->property("keep").toBool() && m_shownDone && !m_key.isEmpty() && !m_kept.count(m_key)) {
+            m_kept[m_key] = Kept{m_shown, m_controls, m_displays, m_thumbs};
+            m_keptOrder.push_back(m_key);
+            if (m_keptOrder.size() > 24) { // (enough for every pad, the Live FX and the layers)
+                if (QWidget* w = m_kept[m_keptOrder.front()].strip)
+                    w->deleteLater();
+                m_kept.erase(m_keptOrder.front());
+                m_keptOrder.erase(m_keptOrder.begin());
+            }
+        } else if (!m_kept.count(m_key) || m_kept[m_key].strip != m_shown) {
+            m_shown->setParent(nullptr); // (out of the view at once, as a finished one was)
+            m_shown->deleteLater();
+        }
+        m_shown = nullptr;
+    }
+    m_shownDone = true;
     m_key = structureKey();
     m_controls.clear();
     m_displays.clear();
     m_thumbs.clear();
     const int scrollX = m_scroll->horizontalScrollBar()->value();
-    if (QWidget* old = m_scroll->takeWidget())
-        old->deleteLater();
 
     const Timeline& tl = m_project->timeline();
     const EffectChain* r = root(tl);
@@ -3283,7 +3350,8 @@ void DeviceChainView::rebuild()
         auto* hint = new QLabel(tr("Select an event to see its effects here, or use a track's fx button, Output FX or Master FX."));
         hint->setAlignment(Qt::AlignCenter);
         theme::style(hint, QStringLiteral("color: @faint;"));
-        m_scroll->setWidget(hint);
+        m_stage->layout()->addWidget(hint);
+        m_shown = hint;
         return;
     }
     // Drop selections of devices that no longer exist.
@@ -3294,11 +3362,41 @@ void DeviceChainView::rebuild()
     m_groupButton->setEnabled(!m_selected.empty());
     m_key = structureKey();
 
-    auto* strip = new ChainStrip(this, {}, *r, false);
-    m_scroll->setWidget(strip);
+    if (keep) {
+        if (const auto it = m_kept.find(m_key); it != m_kept.end() && it->second.strip) {
+            m_controls = it->second.controls;
+            m_displays = it->second.displays;
+            m_thumbs = it->second.thumbs;
+            m_shown = it->second.strip;
+            m_shown->show();
+            m_scroll->horizontalScrollBar()->setValue(scrollX);
+            refreshValues();
+            updateMaskOverlay();
+            return;
+        }
+    }
+    auto* strip = new ChainStrip(this, {}, *r, false, keep);
+    strip->setProperty("keep", keep);
+    static_cast<QVBoxLayout*>(m_stage->layout())->addWidget(strip, 1);
+    m_shown = strip;
+    m_shownDone = !keep || r->empty();
     m_scroll->horizontalScrollBar()->setValue(scrollX);
     refreshValues();
     updateMaskOverlay();
+}
+
+void DeviceChainView::stripDone()
+{
+    m_shownDone = true;
+}
+
+void DeviceChainView::clearKept()
+{
+    for (auto& [key, kept] : m_kept)
+        if (kept.strip && kept.strip != m_shown)
+            kept.strip->deleteLater();
+    m_kept.clear();
+    m_keptOrder.clear();
 }
 
 void DeviceChainView::refreshValues()

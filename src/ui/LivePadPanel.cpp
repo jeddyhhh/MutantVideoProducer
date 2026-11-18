@@ -786,6 +786,10 @@ void LivePadPanel::showSetMenu()
     allHeld->setToolTip(tr("Every pad that isn't locked plays only while held (Undo puts them back)"));
     allHeld->setEnabled(std::any_of(m_project->timeline().livePads.begin(), m_project->timeline().livePads.end(),
                                     [](const LivePad& p) { return !p.locked && !p.momentary; }));
+    QAction* allNormal = menu.addAction(tr("Make All Pads Normal"), this, [this] { makeAllMomentary(false); });
+    allNormal->setToolTip(tr("Every momentary pad that isn't locked switches on and off when pressed again (Undo puts them back)"));
+    allNormal->setEnabled(std::any_of(m_project->timeline().livePads.begin(), m_project->timeline().livePads.end(),
+                                      [](const LivePad& p) { return !p.locked && p.momentary; }));
     menu.addSeparator();
     QAction* del = menu.addAction(tr("Delete \"%1\"").arg(m_setName), this, [this] {
         if (QMessageBox::question(this, tr("Delete Pad Set"), tr("Delete the saved set \"%1\"? The pads stay as they are.").arg(m_setName))
@@ -904,18 +908,21 @@ int LivePadPanel::randomizeEmptyPads(int tier, bool all)
     return filled;
 }
 
-int LivePadPanel::makeAllMomentary()
+int LivePadPanel::makeAllMomentary(bool momentary)
 {
     Timeline tl = m_project->timeline();
     int changed = 0;
     for (LivePad& lp : tl.livePads)
-        if (!lp.locked && !lp.momentary) {
-            lp.momentary = true;
+        if (!lp.locked && lp.momentary != momentary) {
+            lp.momentary = momentary;
             ++changed;
         }
     if (changed)
-        m_project->applyEdit(tl, tr("Make All Pads Momentary"));
-    emit message(changed ? tr("%1 pad(s) made momentary: each plays only while held").arg(changed) : tr("Every pad is momentary already"));
+        m_project->applyEdit(tl, momentary ? tr("Make All Pads Momentary") : tr("Make All Pads Normal"));
+    if (momentary)
+        emit message(changed ? tr("%1 pad(s) made momentary: each plays only while held").arg(changed) : tr("Every pad is momentary already"));
+    else
+        emit message(changed ? tr("%1 pad(s) made normal: each switches on and off when pressed").arg(changed) : tr("No pad is momentary"));
     return changed;
 }
 

@@ -8,7 +8,8 @@ What changed in each version of Mutant Video Producer. The newest is first.
 
 - **Live**: the pad set's **≡** menu has **Replace All Pads with Random Chains** (Low to Insane): every pad gets a new
   random chain, filled or not. Locked pads are left alone; Ctrl+Z puts them back.
-- **Live**: the same menu's **Make All Pads Momentary** makes every pad (not locked) play only while held.
+- **Live**: the same menu's **Make All Pads Momentary** makes every pad (not locked) play only while held, and
+  **Make All Pads Normal** switches them back.
 - **Live**: **Blackout** (or Backspace) fades the output, recordings and the stream to black and back. MIDI-learnable.
 - **Live**: each pad has a **Mix** (how much of its chain shows, saved with it), and an **All pads** fader sets it for
   every pad at once (MIDI-learnable to a knob or fader).
@@ -41,6 +42,9 @@ What changed in each version of Mutant Video Producer. The newest is first.
 
 ### Fixed
 
+- **Live**: switching to a pad no longer holds the picture up while its effects are put up in the device chain (Follow):
+  a pad's devices are kept once shown, so going back to it is instant, and a long chain is put up a few devices at a
+  time while the picture keeps moving.
 - **Effect devices** (Event, Track, Output and Live FX) are only as wide as their controls: they were stretched to share
   the panel's width, leaving empty space on the right of each. An Effect Builder effect's "Double-click this effect"
   line is across its top, its settings under it (it took the first column, the knobs squeezed beside it).

@@ -219,23 +219,27 @@ int LiveView::runSelfTest(QStringList& log)
                     sum += qGray(img.pixel(x, y));
             return n ? double(sum) / double(n) : 0.0;
         };
-        const double before = mean(last);
+        // The output against the picture before the effects at that moment (the screen captured changes as it likes).
+        auto ratio = [&] {
+            const double clean = mean(m_engine->cleanFrame());
+            return clean > 1 ? mean(last) / clean : 1.0;
+        };
         runAction(QStringLiteral("blackout"), true);
         const bool dark = wait(3000, [&] { return mean(last) < 1.0; });
         runAction(QStringLiteral("blackout"), true);
-        const bool back = wait(3000, [&] { return std::abs(mean(last) - before) < 8; });
+        const bool back = wait(3000, [&] { return ratio() > 0.9; });
         check(dark && back && !m_engine->blackout() && !m_pads->blackoutButton()->isChecked(),
               QStringLiteral("Blackout fades the output to black and back"));
         setFader(QStringLiteral("master"), 0.5);
-        settle(5);
-        const double halfLevel = mean(last);
+        wait(3000, [&] { return ratio() < 0.65; });
+        settle(2);
+        const double halfRatio = ratio();
         const QString shown = m_pads->blackoutButton()->text();
         setFader(QStringLiteral("master"), 1.0);
         settle(5);
-        check(halfLevel > before * 0.35 && halfLevel < before * 0.65 && shown.contains(QStringLiteral("50%"))
-                  && m_pads->blackoutButton()->text() == tr("Blackout"),
-              QStringLiteral("a master fader at 50% darkens the output to half (mean grey %1 of %2), shown on the Blackout button")
-                  .arg(halfLevel, 0, 'f', 0).arg(before, 0, 'f', 0));
+        check(halfRatio > 0.3 && halfRatio < 0.65 && shown.contains(QStringLiteral("50%")) && m_pads->blackoutButton()->text() == tr("Blackout"),
+              QStringLiteral("a master fader at 50% darkens the output to half (%1 of the picture before the effects), shown on the Blackout button")
+                  .arg(halfRatio, 0, 'f', 2));
     }
     settle(3);
     // Pads are saved with the project.
@@ -640,6 +644,35 @@ int LiveView::runSelfTest(QStringList& log)
                   .arg(m_frames - framesBefore).arg(playTimer.elapsed()).arg(firstMs).arg(statsName + QStringLiteral(" %1 ms/frame").arg(statsMs, 0, 'f', 0), types.join(QLatin1Char(',')))
                   .arg(failure.isEmpty() ? QString() : QStringLiteral(": ") + failure));
         triggerPad(2);
+        // Clicking a pad (Follow shows its chain below) doesn't hold the program up: the longest the event loop
+        // goes without running, from the click to a second after it.
+        {
+            settle(10); // (pad 3 off, its crossfade over)
+            wait(600, [] { return false; });
+            const bool follow = m_pads->followsActivePad();
+            QElapsedTimer stallClock;
+            stallClock.start();
+            qint64 lastTick = 0, longest = 0;
+            QTimer ticker;
+            ticker.setTimerType(Qt::PreciseTimer);
+            connect(&ticker, &QTimer::timeout, this, [&] {
+                longest = std::max(longest, stallClock.elapsed() - lastTick);
+                lastTick = stallClock.elapsed();
+            });
+            ticker.start(5);
+            QElapsedTimer clickTimer;
+            clickTimer.start();
+            m_pads->padButton(2)->click();
+            const qint64 clickMs = clickTimer.elapsed();
+            const int framesAt = m_frames;
+            wait(1000, [] { return false; });
+            ticker.stop();
+            const int framesAfter = m_frames - framesAt;
+            log << QStringLiteral("INFO  clicking pad 3 (Follow %1): the click took %2 ms, the longest stall %3 ms, %4 frames in the second after")
+                       .arg(follow ? QStringLiteral("on") : QStringLiteral("off")).arg(clickMs).arg(std::max(longest, clickMs)).arg(framesAfter);
+            m_pads->padButton(2)->click(); // off
+            settle(10);
+        }
         const int filled = m_pads->randomizeEmptyPads(0);
         int lowPads = 0;
         for (int i = 3; i < kLivePads; ++i)
@@ -676,6 +709,12 @@ int LiveView::runSelfTest(QStringList& log)
                 else
                     held += lp.momentary;
             }
+            const int unmade = m_pads->makeAllMomentary(false);
+            int normal = 0;
+            for (const LivePad& p : m_project->timeline().livePads)
+                normal += !p.locked && !p.momentary;
+            m_project->undoStack()->undo(); // (back to all momentary, for the checks below)
+            check(unmade == kLivePads - locked && normal == kLivePads - locked, QStringLiteral("Make All Pads Normal puts them back (%1 changed)").arg(unmade));
             check(made == toggles && made > 0 && held == kLivePads - locked && lockedSame == locked && m_pads->makeAllMomentary() == 0,
                   QStringLiteral("Make All Pads Momentary makes every unlocked pad momentary (%1 changed), locked ones left alone")
                       .arg(made));

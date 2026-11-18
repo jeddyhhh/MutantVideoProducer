@@ -5,6 +5,7 @@
 #include "ui/FxTarget.h"
 
 #include <QImage>
+#include <QPointer>
 #include <QTimer>
 #include <QWidget>
 #include <functional>
@@ -54,6 +55,9 @@ public:
     void onCursorMoved();
     // The picture an effect's mask is drawn on and dragged in (the editor's preview).
     void setPreview(PreviewWidget* preview);
+
+    // The Live tab's chains are put up a few devices at a time: false until all are there (tests wait for it).
+    bool chainBuilt() const { return m_shownDone; }
 
     // Developer check (MutantVideoProducer --devices-test): drives the view with synthetic
     // drag/drop and mouse events on the current target; adds PASS/FAIL lines.
@@ -185,6 +189,22 @@ private:
     int m_contextTrack = 0; // track the Track tab shows
     void updateScopeTabs();
     QScrollArea* m_scroll;
+    // The scroll area's widget: the chain shown, and (hidden) the Live tab's chains seen before, kept so switching
+    // pads doesn't build them again. Each is kept by its structureKey with what refreshValues needs.
+    QWidget* m_stage = nullptr;
+    QPointer<QWidget> m_shown;  // the chain (or hint) shown now
+    bool m_shownDone = true;    // its devices are all there (a chain is built a few at a time)
+    struct Kept {
+        QPointer<QWidget> strip;
+        std::vector<ParamControl*> controls;
+        std::vector<QWidget*> displays;
+        std::map<int, QWidget*> thumbs;
+    };
+    std::map<QString, Kept> m_kept;
+    std::vector<QString> m_keptOrder; // oldest first
+    const void* m_keptSession = nullptr;
+    void clearKept();
+    void stripDone(); // the chain shown has all its devices: it can be kept
     int m_bodyHeight = 140; // height of a (top-level) device's controls
     std::vector<ParamControl*> m_controls;
     std::vector<QWidget*> m_displays; // the devices' pictures of their settings (ParamDisplay), drawn again as values change
