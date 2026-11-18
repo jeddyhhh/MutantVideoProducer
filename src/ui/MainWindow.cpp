@@ -615,10 +615,8 @@ void MainWindow::play(bool fromRegionStart)
 
 void MainWindow::togglePlay()
 {
-    if (m_modes && m_modes->currentWidget() == m_live) { // Space on the Live tab: start / stop capture
-        m_live->startStop();
+    if (m_modes && m_modes->currentWidget() == m_live) // Space on the Live tab does nothing (too easy to hit while playing pads)
         return;
-    }
     if (m_shuttleRate != 0) {
         stopShuttle();
         return;

@@ -12,6 +12,7 @@ What changed in each version of Mutant Video Producer. The newest is first.
 
 ### Changed
 
+- **Live**: Space no longer starts and stops the Live tab: it was too easy to hit while playing the pads. Use **Start**.
 - The **effects lists** (Video FX, Audio FX and the Live tab's) are in two parts with a line between: **EFFECTS**, the
   single effects in white, then **CHAINS** in orange: Preset Chains and the Effect Builder's effects. They start
   folded (what you open stays open when the list changes).

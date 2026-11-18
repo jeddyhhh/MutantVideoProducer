@@ -28,7 +28,7 @@ Three layouts arrange the same controls. Switch with the **Layout** button on th
 ## Starting
 
 1. In **Setup > Input**, choose the **Source**.
-2. Press **Start** (or **Space** on the Live tab).
+2. Press **Start**.
 3. Add effects: drag them into the Live FX chain, or onto a pad.
 
 To remove all always-on effects, select **Live FX (always on)** in the pads' Edit list and click
