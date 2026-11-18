@@ -14,6 +14,8 @@ What changed in each version of Mutant Video Producer. The newest is first.
 - The **effects lists** (Video FX, Audio FX and the Live tab's) are in two parts with a line between: **EFFECTS**, the
   single effects in white, then **CHAINS** in orange: Preset Chains and the Effect Builder's effects. They start
   folded (what you open stays open when the list changes).
+- **Live**: pads pressed on the keyboard, MIDI or the mouse switch at once while **Auto** is off. **Launch** (on the
+  next beat or bar) only waits for the beat with Auto on; with Auto off it's greyed out.
 - The **Effect Builder**'s Example list has a short clip that comes with the program (h264_aac.mp4), in any project.
 - The effects you make in the Effect Builder are under **Node Editor**, after its examples (there's no User Created
   menu any more).

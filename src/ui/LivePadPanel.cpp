@@ -272,8 +272,9 @@ LivePadPanel::LivePadPanel(Project* project, QWidget* parent) : QWidget(parent),
     form->addWidget(new QLabel(tr("Launch")), 6, 0);
     m_launch = new QComboBox;
     m_launch->addItems({tr("At once"), tr("On the next beat"), tr("On the next bar (the 1)")});
-    m_launch->setToolTip(tr("When a pressed pad switches: straight away, or on the next beat or bar of the beat clock,\n"
-                            "so switches land in time even if you press a little early (momentary pads are always at once)"));
+    m_launch->setToolTip(tr("With Auto on, when a pressed pad switches: straight away, or on the next beat or bar of the beat\n"
+                            "clock, so switches land in time even if you press a little early. With Auto off pads switch at\n"
+                            "once (momentary pads always do)."));
     form->addWidget(m_launch, 6, 1, 1, 2);
     form->setColumnStretch(1, 1);
     layout->addLayout(form);
@@ -332,10 +333,23 @@ LivePadPanel::LivePadPanel(Project* project, QWidget* parent) : QWidget(parent),
         if (m_tracker && m_lockBpm->isChecked()) // typed while locked: the new tempo
             m_tracker->setTempoLocked(true, m_bpm->value());
     });
-    connect(m_auto, qOverload<int>(&QComboBox::currentIndexChanged), this, [this] {
+    // Launch follows the beat only with Auto on: off, pads switch at once (one waiting goes now).
+    auto launchFollows = [this] {
+        const bool beats = m_auto->currentIndex() != AutoOff;
+        m_launch->setEnabled(beats);
+        if (!beats && m_pendingPad >= 0) {
+            const int p = m_pendingPad;
+            m_pendingPad = -1;
+            emit padPressed(p);
+            refresh();
+        }
+    };
+    launchFollows();
+    connect(m_auto, qOverload<int>(&QComboBox::currentIndexChanged), this, [this, launchFollows] {
         m_beatIndex = 15;
         m_bpm->setReadOnly((m_auto->currentIndex() == AutoAudio || m_auto->currentIndex() == AutoMidi) && !m_lockBpm->isChecked());
         updateAutoTimer();
+        launchFollows();
     });
     connect(m_tap, &QPushButton::clicked, this, &LivePadPanel::tap);
     connect(m_edit, qOverload<int>(&QComboBox::activated), this, [this](int index) { emit editRequested(index); });
@@ -782,7 +796,7 @@ void LivePadPanel::pressPad(int pad)
 {
     if (pad < 0 || pad >= kLivePads)
         return;
-    if (m_launch->currentIndex() == LaunchNow || !m_running || isMomentary(pad)) {
+    if (m_launch->currentIndex() == LaunchNow || m_auto->currentIndex() == AutoOff || !m_running || isMomentary(pad)) {
         emit padPressed(pad);
         return;
     }

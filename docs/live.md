@@ -160,8 +160,9 @@ the 16 pads, laid out like the grid. Hold them for momentary pads.
 ### Launch
 
 **Launch** (in the pads panel) sets when a pressed pad switches: **At once**, **On the next beat**,
-or **On the next bar (the 1)**. A waiting pad has a dashed outline; press it again to cancel.
-Momentary pads and auto switch always switch at once.
+or **On the next bar (the 1)**. It follows the beat only while **Auto** is on (Tempo, Audio beats or MIDI clock):
+with Auto off, pads switch at once and Launch is greyed out. A waiting pad has a dashed outline; press it again to
+cancel. Momentary pads and auto switch always switch at once.
 
 ### Sequencer
 
@@ -260,7 +261,7 @@ random, with the chosen transition.
   flashes orange on each 1. If the beats were on the off-beats, Set 1 moves them too.
 - The BPM shows two decimals: the arrows step 0.01, Page Up / Down 0.1.
 
-The beat clock also drives Launch, modulation and overlays. It runs even with Auto off.
+The beat clock also drives Launch (with Auto on), modulation and overlays. It runs even with Auto off.
 
 ### Beat Detection
 

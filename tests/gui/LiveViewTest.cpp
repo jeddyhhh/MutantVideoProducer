@@ -1141,10 +1141,20 @@ int LiveView::runSelfTest(QStringList& log)
             tl.liveOverlays.clear();
             m_project->applyEdit(tl, QStringLiteral("Test pads"));
         }
-        // Launch on the next bar: pad 3 waits for a 1 of the beat clock (Auto off, 240 BPM: a bar a second).
+        // Launch on the next bar only follows the beat with Auto on: off, a pressed pad switches at once.
         m_pads->setAutoMode(LivePadPanel::AutoOff);
         m_pads->bpmBox()->setValue(240);
         m_pads->launchBox()->setCurrentIndex(LivePadPanel::LaunchBar);
+        runAction(QStringLiteral("pad:2"), true);
+        check(m_activePad == 2 && m_pads->pendingPad() == -1 && !m_pads->launchBox()->isEnabled(),
+              QStringLiteral("with Auto off, Launch doesn't wait for the beat: a pressed pad switches at once (active %1, pending %2)")
+                  .arg(m_activePad)
+                  .arg(m_pads->pendingPad()));
+        triggerPad(2);
+        // With Auto on (Tempo, 240 BPM: a bar a second, a switch every 16 beats), pad 3 waits for a 1 of the beat clock.
+        const int everyBefore = m_pads->everyBox()->currentIndex();
+        m_pads->everyBox()->setCurrentIndex(m_pads->everyBox()->findData(16));
+        m_pads->setAutoMode(LivePadPanel::AutoTempo);
         int launchedOn = -1;
         connect(m_pads, &LivePadPanel::padPressed, &featCtx, [&](int pad) {
             if (pad == 2 && launchedOn < 0)
@@ -1157,7 +1167,10 @@ int LiveView::runSelfTest(QStringList& log)
               QStringLiteral("Launch on the next bar: a pressed pad waits (dashed) and switches on the 1 (beat %1 of the bar; waited %2, active %3, pending %4)")
                   .arg(launchedOn + 1).arg(waiting).arg(m_activePad).arg(m_pads->pendingPad()));
         m_pads->launchBox()->setCurrentIndex(LivePadPanel::LaunchNow);
-        triggerPad(2);
+        m_pads->setAutoMode(LivePadPanel::AutoOff);
+        m_pads->everyBox()->setCurrentIndex(everyBefore);
+        if (m_activePad == 2)
+            triggerPad(2);
         // MIDI clock at 100 BPM drives the beat clock (Auto: MIDI clock), the bar counted from Start.
         m_pads->setAutoMode(LivePadPanel::AutoMidi);
         std::vector<int> bars;
