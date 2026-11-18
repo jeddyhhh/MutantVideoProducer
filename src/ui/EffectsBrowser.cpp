@@ -17,6 +17,7 @@
 #include <QFrame>
 #include <QHBoxLayout>
 #include <QHeaderView>
+#include <QTreeWidgetItemIterator>
 #include <QLabel>
 #include <QMimeData>
 #include <functional>
@@ -26,11 +27,19 @@ namespace {
 constexpr int kIdRole = Qt::UserRole;
 constexpr int kIsPresetRole = Qt::UserRole + 1;
 constexpr int kUserRole = Qt::UserRole + 2;
-constexpr int kNestedRole = Qt::UserRole + 3;
 constexpr int kChainRole = Qt::UserRole + 4;
 
 // Chains (Preset Chains, the Effect Builder's graphs) in orange, single effects in the text colour
 QColor chainColour() { return theme::c().dark ? QColor(0xffa040) : QColor(0xc05a00); }
+
+// An item by its place in the tree ("Color/Curves"), to open it again when the list is made again.
+QString pathOf(const QTreeWidgetItem* item)
+{
+    QString path = item->text(0);
+    for (const QTreeWidgetItem* p = item->parent(); p; p = p->parent())
+        path = p->text(0) + QLatin1Char('/') + path;
+    return path;
+}
 
 QTreeWidgetItem* presetItem(QTreeWidgetItem* parent, const Preset& p)
 {
@@ -71,6 +80,12 @@ EffectsBrowser::EffectsBrowser(Kind kind, QWidget* parent) : QTreeWidget(parent)
 
 void EffectsBrowser::populate()
 {
+    if (m_kind == Kind::AudioEffects || m_kind == Kind::Effects) {
+        m_open.clear();
+        for (QTreeWidgetItemIterator it(this); *it; ++it)
+            if ((*it)->isExpanded())
+                m_open.insert(pathOf(*it));
+    }
     clear();
     auto groupItem = [this](std::map<QString, QTreeWidgetItem*>& groups, const QString& name, QTreeWidgetItem* parent = nullptr) {
         QTreeWidgetItem*& group = groups[name];
@@ -94,10 +109,9 @@ void EffectsBrowser::populate()
             root->setToolTip(0, tr("Ready-made chains of effects: drag onto an event, a track or the device chain"));
             for (const Preset& p : chains)
                 presetItem(groupItem(sub, p.category.isEmpty() ? tr("Other") : p.category, root), p)->setForeground(0, chainColour());
-            root->setExpanded(false);
         }
         std::map<QString, QTreeWidgetItem*> groups;
-        // "Parent/Child" categories become nested folders; sub-folders start closed.
+        // "Parent/Child" categories become nested folders.
         std::function<QTreeWidgetItem*(const QString&)> categoryItem = [&](const QString& path) -> QTreeWidgetItem* {
             const int slash = path.lastIndexOf(QLatin1Char('/'));
             if (slash < 0)
@@ -105,10 +119,8 @@ void EffectsBrowser::populate()
             const bool fresh = !groups.count(path);
             QTreeWidgetItem* parent = categoryItem(path.left(slash));
             QTreeWidgetItem* item = groupItem(groups, path, parent);
-            if (fresh) {
+            if (fresh)
                 item->setText(0, path.mid(slash + 1));
-                item->setData(0, kNestedRole, true);
-            }
             return item;
         };
         auto addEffect = [&](const QString& id, const QString& name, const QString& category, const QString& description) {
@@ -142,8 +154,6 @@ void EffectsBrowser::populate()
         if (!audio)
             for (const EffectDef* e : retro::effects()) // (screen shaders: Tools > Get Screen Shaders)
                 addEffect(e->id, e->name, e->category, e->description);
-        for (auto& [name, g] : groups)
-            g->setExpanded(!g->data(0, kNestedRole).toBool()); // categories open, sub-folders and presets folded
         // Two sections, a line between: single effects (white), then chains (orange): Preset Chains and the categories
         // made only of chains (the Effect Builder's).
         std::function<bool(QTreeWidgetItem*)> allChains = [&](QTreeWidgetItem* group) {
@@ -196,16 +206,16 @@ void EffectsBrowser::populate()
         const QColor single = theme::c().text;
         if (!singles.empty())
             section(tr("EFFECTS"), single, tr("Single effects"));
-        for (QTreeWidgetItem* g : singles) {
+        for (QTreeWidgetItem* g : singles)
             addTopLevelItem(g);
-            g->setExpanded(true);
-        }
         if (!chained.empty())
             section(tr("CHAINS"), chainColour(), tr("Chains of effects: Preset Chains, and the Effect Builder's effects (graphs of effects)"));
-        for (QTreeWidgetItem* g : chained) {
+        for (QTreeWidgetItem* g : chained)
             addTopLevelItem(g);
-            g->setExpanded(g->text(0) != tr("Preset Chains"));
-        }
+        // Everything folded at first; what was open stays open when the list is made again (a preset or effect saved).
+        for (QTreeWidgetItemIterator it(this); *it; ++it)
+            if (m_open.contains(pathOf(*it)))
+                (*it)->setExpanded(true);
     } else if (m_kind == Kind::Generators) {
         std::map<QString, QTreeWidgetItem*> groups;
         for (const GeneratorPreset& p : generatorPresets()) {

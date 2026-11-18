@@ -12,7 +12,9 @@ What changed in each version of Mutant Video Producer. The newest is first.
 ### Changed
 
 - The **effects lists** (Video FX, Audio FX and the Live tab's) are in two parts with a line between: **EFFECTS**, the
-  single effects in white, then **CHAINS** in orange: Preset Chains and the Effect Builder's effects.
+  single effects in white, then **CHAINS** in orange: Preset Chains and the Effect Builder's effects. They start
+  folded (what you open stays open when the list changes).
+- The **Effect Builder**'s Example list has a short clip that comes with the program (h264_aac.mp4), in any project.
 - The effects you make in the Effect Builder are under **Node Editor**, after its examples (there's no User Created
   menu any more).
 - Closing the **Effect Builder** no longer asks to save. Opened on an effect (double-click), what you changed stays in
@@ -23,6 +25,8 @@ What changed in each version of Mutant Video Producer. The newest is first.
 - **Effect devices** (Event, Track, Output and Live FX) are only as wide as their controls: they were stretched to share
   the panel's width, leaving empty space on the right of each. An Effect Builder effect's "Double-click this effect"
   line is across its top, its settings under it (it took the first column, the knobs squeezed beside it).
+- The **Effect Builder**'s nodes had only the top half of their coloured title bar filled, a small triangle at its
+  right end: now the whole bar.
 
 ## 1.0.0 (2026-11-16)
 

@@ -314,6 +314,12 @@ int MainWindow::runEditorTest(QStringList& log)
             NodeEffectEditor editor(videos, videos.empty() ? QString() : videos.front().second, m_project->settings().width, this);
             editor.resize(1500, 860);
             editor.show();
+            {
+                bool clip = false; // (the clip that comes with the program, in the Example list in any project)
+                for (QComboBox* box : editor.findChildren<QComboBox*>())
+                    clip |= box->findData(QDir(nodes::examplesFolder()).filePath(QStringLiteral("h264_aac.mp4"))) >= 0;
+                check(clip, QStringLiteral("the Effect Builder's Example list has the clip that comes with the program (h264_aac.mp4)"));
+            }
             const int src = editor.graph().nodes[0].id, out = editor.graph().nodes[1].id;
             const int pix = editor.addNode(QStringLiteral("fx.pixelate"), QPointF(250, -170));
             const int inv = editor.addNode(QStringLiteral("fx.invert"), QPointF(250, 170));

@@ -102,18 +102,22 @@ public:
         const auto& c = theme::c();
         const QRectF body(0, 0, kWidth, thumbTop() + kThumbH + 10);
         p->setRenderHint(QPainter::Antialiasing);
-        p->setPen(QPen(isSelected() ? c.accent : c.line, isSelected() ? 2.0 : 1.0));
-        p->setBrush(c.raised);
-        p->drawRoundedRect(body, 6, 6);
-        // The header, coloured by kind: source and output, the nodes of their own, effects, sources.
+        QPainterPath outline;
+        outline.addRoundedRect(body, 6, 6);
+        p->fillPath(outline, c.raised);
+        // The header, coloured by kind: source and output, the nodes of their own, effects, sources. Inside the outline
+        // (its top corners round, the bottom straight), the border drawn over it.
         const QColor head = (m_type == QLatin1String("source") || m_type == QLatin1String("output") ? QColor(0x2f7d4f)
                              : m_type.startsWith(QLatin1String("fx."))                                 ? QColor(0x3a5f9e)
                              : m_type.startsWith(QLatin1String("gen."))                                ? QColor(0x6a46b8)
                                                                                                        : QColor(0xa35a1c));
-        QPainterPath top;
-        top.addRoundedRect(QRectF(0, 0, kWidth, kHeader), 6, 6);
-        top.addRect(QRectF(0, kHeader / 2, kWidth, kHeader / 2));
-        p->fillPath(top.simplified(), head);
+        p->save();
+        p->setClipPath(outline);
+        p->fillRect(QRectF(0, 0, kWidth, kHeader), head);
+        p->restore();
+        p->setPen(QPen(isSelected() ? c.accent : c.line, isSelected() ? 2.0 : 1.0));
+        p->setBrush(Qt::NoBrush);
+        p->drawPath(outline);
         p->setPen(Qt::white);
         QFont f = p->font();
         f.setBold(true);
@@ -441,6 +445,10 @@ NodeEffectEditor::NodeEffectEditor(const std::vector<std::pair<QString, QString>
     m_example->setMinimumWidth(220);
     for (const auto& [name, path] : m_videos)
         m_example->addItem(name, path);
+    // A short clip that comes with the program, to try effects on in any project.
+    if (const QString clip = QDir(nodes::examplesFolder()).filePath(QStringLiteral("h264_aac.mp4"));
+        QFileInfo::exists(clip) && m_example->findData(clip) < 0)
+        m_example->addItem(QFileInfo(clip).fileName(), clip);
     // Patterns to try it on (the color bars are the empty entry, the default).
     m_example->addItem(tr("Pattern: Color bars"), QString());
     for (const char* id : {"bars_smpte", "gradient", "vignette_gradient", "checkerboard", "plasma_neon", "plasma_fire", "plasma_ocean",

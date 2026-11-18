@@ -1,5 +1,6 @@
 #pragma once
 
+#include <QSet>
 #include <QTreeWidget>
 
 // Lists video FX (grouped by category), audio FX, transitions or generators;
@@ -31,4 +32,5 @@ protected:
 private:
     void populate();
     Kind m_kind;
+    QSet<QString> m_open; // (the folders open before the list was made again)
 };

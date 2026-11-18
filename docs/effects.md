@@ -160,7 +160,7 @@ Each drag or command is one step of undo.
   *Blockbuster Grade*, *Broken Stream*.
 - The effects lists (the Video FX and Audio FX tabs, and the Live tab's) come in two parts, a line between: **EFFECTS**,
   single effects in white, then **CHAINS** in orange: Preset Chains and the Effect Builder's effects (Node Editor,
-  Analogue Circuit Emu), each a graph of effects.
+  Analogue Circuit Emu), each a graph of effects. Every folder starts closed; click one's arrow to open it.
 - Drag a preset onto an event, a track or the device chain, or double-click it. The device chain's
   **Add** menu has the Preset Chains too.
 - A device's **≡** button loads presets into it, and **Save as Preset...** keeps its settings as your own preset.
@@ -331,8 +331,8 @@ its curves in the device chain. Then:
 
 Make your own video effects: **Tools > Effect Builder (Node Graph)...**. The window has three parts:
 
-- **Left**: the example video (any video in the project, the selected event's to start with, a file,
-  or one of 15 patterns: colour bars, gradients, a checkerboard, plasma, aurora, starfield, retro grid,
+- **Left**: the example video (any video in the project, the selected event's to start with, a short
+  clip that comes with the program (h264_aac.mp4), a file, or one of 15 patterns: colour bars, gradients, a checkerboard, plasma, aurora, starfield, retro grid,
   digital rain, bokeh, a countdown; Play / Pause and a scrub bar), and the list of **nodes** with a
   search box. Opened from the **Live** tab (or by double-clicking a user effect there), the example is
   what is live in the big Live picture, before its effects; with nothing live, the colour bars.
