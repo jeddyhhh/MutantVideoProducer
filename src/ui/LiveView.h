@@ -112,6 +112,9 @@ protected:
 
 private:
     void holdPad(int pad, bool down);
+    // Faders (a controller's, or OSC 0..1): "padmix", "master", "opacity:N" (layer N, from 0). False for other actions.
+    static bool isFader(const QString& action);
+    void setFader(const QString& action, double value);
     std::vector<LiveSource> inputSources() const;
     void updateSwitcher();
     void chooseVideoFiles(QComboBox* combo);

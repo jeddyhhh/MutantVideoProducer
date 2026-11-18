@@ -157,6 +157,8 @@ QString defaultMidiAction(const MidiMessage& m, const QString& deviceName)
         }
     }
     if (m.isController()) {
+        if (m.data1 >= 1 && m.data1 <= 6 && deviceName.contains(QLatin1String("MPD"), Qt::CaseInsensitive))
+            return m.data1 == 1 ? QStringLiteral("padmix") : m.data1 == 6 ? QStringLiteral("master") : QStringLiteral("opacity:%1").arg(m.data1 - 2);
         switch (m.data1) {
         case 115: return QStringLiteral("set:prev");
         case 116: return QStringLiteral("set:next");

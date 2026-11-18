@@ -93,6 +93,9 @@ public:
     // Blackout: the output (and recordings, the stream, Spout...) fades to black in half a second, and back.
     void setBlackout(bool on) { m_blackout = on; }
     bool blackout() const { return m_blackout; }
+    // A master fader (0..1): the output darkened to it at once (blackout goes on top).
+    void setMasterLevel(double level) { m_master = std::clamp(level, 0.0, 1.0); }
+    double masterLevel() const { return m_master; }
     // A layer's source (empty name = none), opened or closed without touching the main one.
     void setLayer(int layer, const LiveSource& source);
     void setLayerSettings(int layer, const LiveLayerSettings& settings);
@@ -210,6 +213,7 @@ private:
     std::array<std::atomic<double>, kLivePads> m_velocity{};
     std::atomic<double> m_padsMix{1.0};
     std::atomic<bool> m_blackout{false};
+    std::atomic<double> m_master{1.0};
     std::array<LiveSource, kLiveLayers> m_layerRequest;         // guarded by m_mutex
     std::array<bool, kLiveLayers> m_layerChange{};
     std::array<LiveLayerSettings, kLiveLayers> m_layerSettings; // guarded by m_mutex

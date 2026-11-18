@@ -121,6 +121,8 @@ public:
     void setPadsMix(double mix);
     double padsMix() const;
     QToolButton* blackoutButton() const { return m_blackout; }
+    // The master fader's level, shown on the Blackout button while it is down.
+    void showMasterLevel(double level);
     // Ableton Link: the beat clock follows the session (button hidden when the build has no Link).
     QToolButton* linkButton() const { return m_linkButton; }
     bool linkOn() const;

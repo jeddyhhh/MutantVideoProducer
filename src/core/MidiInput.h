@@ -44,6 +44,8 @@ std::optional<MidiMessage> mmcFromSysex(const uint8_t* data, size_t size, double
 // - notes 36-51 (C1 to D#2, the drum pads of Akai MPD / MPK / LPD, Arturia, Novation and most others) play the
 //   pads, laid out as on the controller: 36 bottom-left, 39 bottom-right, 48 top-left. On a keyboard (MPK,
 //   Launchkey, Oxygen...) only on channel 10, where their pads are, so the keys don't play pads.
+// - an Akai MPD's six faders (CC 1-6 in its Live and generic presets): All pads, the opacity of layers 1-4, and the
+//   output level (a master fade). Not on other controllers, whose knobs may send these (an LPD8's do).
 // - transport buttons: Akai's controller mode (CC 115 rewind, 116 fast forward, 117 stop, 118 play, 119 record)
 //   and MMC: play starts capture, stop stops it, record records, rewind / fast forward step the pad sets.
 // An action (LiveView::runAction), or empty. Game controllers have none.

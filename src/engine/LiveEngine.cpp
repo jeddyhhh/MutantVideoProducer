@@ -1142,11 +1142,11 @@ void LiveEngine::threadMain(Options o)
         }
         // Blackout: fades over half a second, overlays and all.
         blackLevel = std::clamp(blackLevel + (m_blackout ? 1.0 : -1.0) / std::max(1.0, fps * 0.5), 0.0, 1.0);
-        if (blackLevel > 0) {
+        if (const double dark = std::max(blackLevel, 1.0 - m_master); dark > 0) {
             if (out.format() != QImage::Format_ARGB32_Premultiplied)
                 out = out.convertToFormat(QImage::Format_ARGB32_Premultiplied);
             QPainter p(&out);
-            p.fillRect(out.rect(), QColor(0, 0, 0, int(std::lround(blackLevel * 255))));
+            p.fillRect(out.rect(), QColor(0, 0, 0, int(std::lround(dark * 255))));
         }
         // The cue, every other frame, at most 640 wide.
         if (const int cueKind = m_cueKind; cueKind != CueNone && snap && frame % 2 == 0 && !m_cuePending) {

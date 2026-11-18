@@ -500,6 +500,12 @@ double LivePadPanel::padsMix() const
     return m_padsMix->value() / 100.0;
 }
 
+void LivePadPanel::showMasterLevel(double level)
+{
+    const int percent = int(std::lround(level * 100));
+    m_blackout->setText(percent >= 100 ? tr("Blackout") : tr("Output %1%").arg(percent));
+}
+
 bool LivePadPanel::linkOn() const
 {
     return m_linkButton->isChecked();

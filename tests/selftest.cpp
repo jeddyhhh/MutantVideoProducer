@@ -6092,6 +6092,13 @@ int cmdLive(const QString& outDir)
             m.data2 = 100;
             return m;
         };
+        auto fader = [](int cc) {
+            MidiMessage m;
+            m.status = 0xB0;
+            m.data1 = uint8_t(cc);
+            m.data2 = 64;
+            return m;
+        };
         MidiMessage play;
         play.status = 0xB0;
         play.data1 = 118;
@@ -6104,9 +6111,13 @@ int cmdLive(const QString& outDir)
                   && defaultMidiAction(note(52, 9), mpd).isEmpty() && defaultMidiAction(note(36, 9), mpk) == QStringLiteral("pad:12")
                   && defaultMidiAction(note(48, 0), mpk).isEmpty() && defaultMidiAction(play, mpd) == QStringLiteral("start")
                   && rec && rec->isMmc() && defaultMidiAction(*rec, mpd) == QStringLiteral("rec") && !mmcFromSysex(other, sizeof other, 0)
-                  && defaultMidiAction(note(36, 15), QStringLiteral("Xbox controller 1")).isEmpty(),
+                  && defaultMidiAction(note(36, 15), QStringLiteral("Xbox controller 1")).isEmpty()
+                  && defaultMidiAction(fader(1), mpd) == QStringLiteral("padmix") && defaultMidiAction(fader(3), mpd) == QStringLiteral("opacity:1")
+                  && defaultMidiAction(fader(6), mpd) == QStringLiteral("master") && defaultMidiAction(fader(11), mpd).isEmpty()
+                  && defaultMidiAction(fader(1), QStringLiteral("LPD8")).isEmpty(),
               QStringLiteral("an unmapped pad controller: notes 36-51 are the pads as laid out (36 bottom-left, 48 top-left), on a keyboard "
-                             "only on channel 10; CC 118 plays; MMC record records; other SysEx and game controllers do nothing"));
+                             "only on channel 10; CC 118 plays; MMC record records; other SysEx and game controllers do nothing; an MPD's faders "
+                             "(CC 1-6) are All pads, the layers' opacity and the output level, not on an LPD8, and its knobs are free"));
     }
     // ---- OSC: messages and bundles from a phone app; junk is left out ----
     {

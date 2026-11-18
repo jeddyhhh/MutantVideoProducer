@@ -615,7 +615,15 @@ LiveView::LiveView(Project* project, QWidget* parent) : QWidget(parent), m_proje
     m_layerOpacity = new QSlider(Qt::Horizontal);
     m_layerOpacity->setRange(0, 100);
     m_layerOpacity->setMinimumWidth(90);
-    m_layerOpacity->setToolTip(tr("Layer opacity"));
+    m_layerOpacity->setToolTip(tr("Layer opacity. Right-click: Learn MIDI (a knob or fader); OSC: /mvp/opacity/1..4 0..1"));
+    m_layerOpacity->setContextMenuPolicy(Qt::CustomContextMenu);
+    connect(m_layerOpacity, &QWidget::customContextMenuRequested, this, [this](const QPoint& pos) {
+        QMenu menu(this);
+        menu.addAction(tr("Learn MIDI..."), this, [this] {
+            learnMidi(QStringLiteral("opacity:%1").arg(m_layerIndex), tr("layer %1's opacity").arg(m_layerIndex + 1));
+        });
+        menu.exec(m_layerOpacity->mapToGlobal(pos));
+    });
     m_replay = new QCheckBox(tr("Replay buffer"));
     m_replay->setToolTip(tr("Keep the last seconds of the output in memory while capturing, so you can save what just happened"));
     m_replayLength = new QComboBox;
@@ -2005,7 +2013,7 @@ void LiveView::learnMidi(const QString& action, const QString& label)
     const QString from = MidiHub::instance()->current().isEmpty() ? tr("your OSC app")
                        : osc ? tr("%1 or your OSC app").arg(MidiHub::instance()->current())
                              : MidiHub::instance()->current();
-    m_status->setText(action == QLatin1String("padmix") ? tr("Move a knob or fader on %1 for %2...").arg(from, label)
+    m_status->setText(isFader(action) ? tr("Move a knob or fader on %1 for %2...").arg(from, label)
                                                         : tr("Press a pad or key (or move a button) on %1 for %2...").arg(from, label));
 }
 
@@ -2044,9 +2052,9 @@ void LiveView::midiMessage(const MidiMessage& m)
     const QString action = it != m_midiMap.end() ? it.value() : defaultMidiAction(m, MidiHub::instance()->current());
     if (action.isEmpty())
         return;
-    if (action == QLatin1String("padmix")) { // a fader: the whole range
+    if (isFader(action)) { // the whole range
         if (m.isController())
-            m_pads->setPadsMix(m.data2 / 127.0);
+            setFader(action, m.data2 / 127.0);
         return;
     }
     if (m.isMmc()) { // (a press: no release)
@@ -2211,12 +2219,38 @@ void LiveView::oscMessage(const OscMessage& m)
     }
     if (action.isEmpty())
         return;
-    if (action == QLatin1String("padmix")) {
-        m_pads->setPadsMix(value);
+    if (isFader(action)) {
+        setFader(action, value);
         return;
     }
     // Buttons send 1 when pressed and 0 when let go; a pressure-sensitive pad may send less than 1.
     runAction(action, value > 0, m_velocity->isChecked() && value > 0 && value < 1 ? value : 1.0);
+}
+
+bool LiveView::isFader(const QString& action)
+{
+    return action == QLatin1String("padmix") || action == QLatin1String("master") || action.startsWith(QLatin1String("opacity:"));
+}
+
+void LiveView::setFader(const QString& action, double value)
+{
+    value = std::clamp(value, 0.0, 1.0);
+    if (action == QLatin1String("padmix")) {
+        m_pads->setPadsMix(value);
+    } else if (action == QLatin1String("master")) {
+        m_engine->setMasterLevel(value);
+        m_pads->showMasterLevel(value);
+    } else if (action.startsWith(QLatin1String("opacity:"))) {
+        const int layer = action.mid(8).toInt();
+        if (layer < 0 || layer >= kLiveLayers)
+            return;
+        m_layerSets[size_t(layer)].opacity = value;
+        m_engine->setLayerSettings(layer, m_layerSets[size_t(layer)]);
+        if (layer == m_layerIndex) {
+            QSignalBlocker block(m_layerOpacity);
+            m_layerOpacity->setValue(int(std::lround(value * 100)));
+        }
+    }
 }
 
 void LiveView::holdPad(int pad, bool down)

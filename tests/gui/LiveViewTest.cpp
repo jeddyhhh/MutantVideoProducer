@@ -226,6 +226,16 @@ int LiveView::runSelfTest(QStringList& log)
         const bool back = wait(3000, [&] { return std::abs(mean(last) - before) < 8; });
         check(dark && back && !m_engine->blackout() && !m_pads->blackoutButton()->isChecked(),
               QStringLiteral("Blackout fades the output to black and back"));
+        setFader(QStringLiteral("master"), 0.5);
+        settle(5);
+        const double halfLevel = mean(last);
+        const QString shown = m_pads->blackoutButton()->text();
+        setFader(QStringLiteral("master"), 1.0);
+        settle(5);
+        check(halfLevel > before * 0.35 && halfLevel < before * 0.65 && shown.contains(QStringLiteral("50%"))
+                  && m_pads->blackoutButton()->text() == tr("Blackout"),
+              QStringLiteral("a master fader at 50% darkens the output to half (mean grey %1 of %2), shown on the Blackout button")
+                  .arg(halfLevel, 0, 'f', 0).arg(before, 0, 'f', 0));
     }
     settle(3);
     // Pads are saved with the project.

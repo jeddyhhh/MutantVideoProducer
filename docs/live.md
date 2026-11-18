@@ -327,6 +327,11 @@ effect setting with it. Learn messages name the button or stick.
   its bottom-left pad (note 36) plays pad 13, the bottom-left one here, and its top-right pad (51) plays
   pad 4. On a keyboard with pads (MPK, Launchkey, Oxygen...) only channel 10 counts, where the pads are,
   so the keys don't play pads. 8-pad controllers play the bottom two rows.
+- An **Akai MPD**'s six faders (CC 1 to 6) work unmapped: fader 1 is **All pads**, faders 2 to 5 the
+  **opacity** of layers 1 to 4, and fader 6 the **output level**, a master fade to black (the Blackout
+  button shows it while it is down). Its knobs are free for **Modulate > MIDI**. Other controllers'
+  knobs can send CC 1 to 6 too, so this is for MPDs only; learn the faders on anything else (right-click
+  **All pads** or a layer's **Opacity** > Learn MIDI).
 - **Transport buttons** work unmapped too, sent as MMC or as Akai's controller mode (CC 115 to 119):
   **Play** starts capturing, **Stop** stops, **Record** records, **Rewind** and **Fast Forward** load
   the previous and next pad set. Anything learned takes over from these.
@@ -351,6 +356,8 @@ whether Mutant Video Producer may use the network the first time: allow it on pr
 | `/mvp/pad/1` .. `/mvp/pad/16` | Press a pad: 1 down, 0 let go (held for momentary pads). Under 1: hit softly (Velocity) |
 | `/mvp/scene/1` .. `/mvp/scene/8` | Recall a scene |
 | `/mvp/padmix` 0..1 | The All pads fader |
+| `/mvp/master` 0..1 | The output level (a master fade to black) |
+| `/mvp/opacity/1` .. `/mvp/opacity/4` 0..1 | A layer's opacity |
 | `/mvp/blackout` | Blackout on / off |
 | `/mvp/tap`, `/mvp/setone`, `/mvp/findtempo`, `/mvp/lockbpm` | The tempo buttons |
 | `/mvp/rec`, `/mvp/replay`, `/mvp/screenshot` | Record, Save Replay, Screenshot |

@@ -18,6 +18,7 @@ What changed in each version of Mutant Video Producer. The newest is first.
 - **Live**: **Ableton Link**: the Link button joins the tempo and bars of Ableton Live and other apps on the network.
 - **Live**: pad controllers play the pads without Learn MIDI: notes 36-51 (Akai MPD / MPK, LPD8 and most others) as
   laid out on the controller, and their transport buttons (MMC or CC 115-119) start, stop, record and step pad sets.
+  An Akai MPD's faders (CC 1-6) are All pads, layers 1-4's opacity and a master fade to black.
 
 ### Changed
 
