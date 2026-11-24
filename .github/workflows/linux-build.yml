@@ -59,6 +59,7 @@ jobs:
       # Ableton Link, with the asio it pins (a submodule, so not in its archive).
       - name: Download Ableton Link
         run: |
+          mkdir -p deps
           curl -sSfL https://github.com/Ableton/link/archive/refs/tags/Link-4.1.1.tar.gz | tar -xz -C deps
           mv deps/link-Link-4.1.1 deps/link
           rm -rf deps/link/modules/asio-standalone
