@@ -38,7 +38,7 @@ if(WIN32)
     endif()
 endif()
 
-find_package(Qt6 6.4 REQUIRED COMPONENTS Core Gui OpenGL Widgets Multimedia Network)
+find_package(Qt6 6.4 REQUIRED COMPONENTS Core Gui OpenGL Widgets Multimedia Network Qml)
 
 set(_mvp_ff_components avdevice avformat avcodec avfilter avutil swscale swresample)
 if(FFMPEG_ROOT)
@@ -305,6 +305,7 @@ add_executable(mvp WIN32
     src/ui/SetlistDialog.h       src/ui/SetlistDialog.cpp
     src/ui/StreamDialog.h        src/ui/StreamDialog.cpp
     src/ui/McpServer.h           src/ui/McpServer.cpp
+    src/ui/Plugins.h             src/ui/Plugins.cpp src/ui/MainWindowPlugins.cpp
     src/ui/ModulationDialog.h    src/ui/ModulationDialog.cpp
     src/ui/LiveOverlaysDialog.h  src/ui/LiveOverlaysDialog.cpp
     src/ui/AudioLevels.h
@@ -325,7 +326,7 @@ add_executable(mvp WIN32
 )
 set_target_properties(mvp PROPERTIES OUTPUT_NAME "MutantVideoProducer")
 qt_add_resources(mvp "mvp_icon" PREFIX "/" FILES data/mvp-icon.png)
-target_link_libraries(mvp PRIVATE mvp_core Qt6::Widgets Qt6::Multimedia Qt6::Network)
+target_link_libraries(mvp PRIVATE mvp_core Qt6::Widgets Qt6::Multimedia Qt6::Network Qt6::Qml) # (Qml: QJSEngine, for script plugins)
 if(WIN32)
     # VS2019's CMake autogen worker can stall with concurrent parsing of this target.
     set_property(TARGET mvp PROPERTY AUTOGEN_PARALLEL 1)
@@ -527,6 +528,8 @@ add_custom_target(mvp_docs ALL
     COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_SOURCE_DIR}/data/characters" "$<TARGET_FILE_DIR:mvp_selftest>/characters"
     COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_SOURCE_DIR}/data/sets" "$<TARGET_FILE_DIR:mvp_selftest>/sets"
     COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_SOURCE_DIR}/data/props" "$<TARGET_FILE_DIR:mvp_selftest>/props"
+    COMMAND ${CMAKE_COMMAND} -E rm -rf "$<TARGET_FILE_DIR:mvp_selftest>/plugins"
+    COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_SOURCE_DIR}/data/plugins" "$<TARGET_FILE_DIR:mvp_selftest>/plugins"
     COMMENT "Copying the user guide and example projects")
 
 # ---------------------------------------------------------------------------
@@ -553,7 +556,7 @@ if(WIN32)
     if(MVP_WINDEPLOYQT AND MVP_BUILD_GUI)
         add_custom_command(TARGET mvp POST_BUILD
             COMMAND "${MVP_WINDEPLOYQT}" --no-translations --no-system-d3d-compiler --no-opengl-sw
-                    --no-compiler-runtime "$<TARGET_FILE:mvp>"
+                    --no-compiler-runtime --no-quick-import --skip-plugin-types qmltooling "$<TARGET_FILE:mvp>"
             COMMENT "Deploying Qt runtime")
     endif()
 endif()

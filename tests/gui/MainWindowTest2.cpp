@@ -27,6 +27,9 @@
 #include <QDir>
 #include <QEventLoop>
 #include <QTimer>
+#include <QCoreApplication>
+#include <QJsonObject>
+#include <QUndoStack>
 
 void MainWindow::runProductionToolsTest(const std::function<void(bool, const QString&)>& check, const QDir& work)
 {
@@ -313,5 +316,37 @@ void MainWindow::runProductionToolsTest(const std::function<void(bool, const QSt
               QStringLiteral("the Live tab's Editor timeline source: listed (%1), capturing plays the timeline (%2) and its "
                              "pictures arrive (%3), stopping capture stops it (%4)")
                   .arg(editor >= 0 ? "yes" : "no").arg(playing ? "yes" : "no").arg(pictures ? "yes" : "no").arg(stopped ? "yes" : "no"));
+    }
+    {
+        // Script plugins (Tools > Plugins): the bundled Lyric Video plugin puts its example's 9 sung lines on a new
+        // Lyrics track as titles, in one undo step; a script can't read a file the form didn't give it.
+        const QString lrc = QDir(QCoreApplication::applicationDirPath()).filePath(QStringLiteral("plugins/Lyric Video/example.lrc"));
+        auto lyrics = [this] {
+            for (const Track& t : m_project->timeline().tracks)
+                if (t.name == QLatin1String("Lyrics"))
+                    return int(t.clips.size());
+            return -1;
+        };
+        const int steps = m_project->undoStack()->index();
+        const QString error = runPluginForTests(QStringLiteral("lyric-video"), 0,
+                                                QJsonObject{{QStringLiteral("lrc"), lrc}, {QStringLiteral("style"), QStringLiteral("subtitle")},
+                                                            {QStringLiteral("font"), QString()}, {QStringLiteral("snap"), false},
+                                                            {QStringLiteral("offset"), 0}},
+                                                {lrc});
+        const int made = lyrics(), oneStep = m_project->undoStack()->index() - steps;
+        m_project->undoStack()->undo();
+        const int afterUndo = lyrics();
+        const int beforeRefused = m_project->undoStack()->index();
+        const QString refused = runPluginForTests(QStringLiteral("lyric-video"), 0,
+                                                  QJsonObject{{QStringLiteral("lrc"), lrc}, {QStringLiteral("style"), QStringLiteral("title")},
+                                                              {QStringLiteral("font"), QString()}, {QStringLiteral("snap"), false},
+                                                              {QStringLiteral("offset"), 0}},
+                                                  {});
+        if (m_project->undoStack()->index() > beforeRefused) // (an empty step, if one was kept)
+            m_project->undoStack()->undo();
+        check(error.isEmpty() && made == 9 && oneStep == 1 && afterUndo == -1 && refused.contains(QStringLiteral("only a file chosen")),
+              QStringLiteral("the Lyric Video plugin makes 9 titles on a Lyrics track (%1, %2) in one undo step (%3) that takes "
+                             "them all away (%4); a script reads only the files chosen in its form (%5)")
+                  .arg(made).arg(error.isEmpty() ? QStringLiteral("ok") : error).arg(oneStep).arg(afterUndo).arg(refused));
     }
 }

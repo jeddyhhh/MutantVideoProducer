@@ -2,6 +2,16 @@
 
 What changed in each version of Mutant Video Producer. The newest is first.
 
+## Unreleased
+
+### Added
+
+- **Plugins** (Tools > Plugins): a plugin is a folder with a `plugin.json` and JavaScript. Each of its commands gets
+  a menu entry and a form, and its script edits the open project through the AI Control commands, as one undo step.
+  Scripts can't touch files or the network on their own; a plugin you added asks before it first runs and after it
+  changes. Comes with **Lyric Video from LRC**: timed lyrics as titles on a Lyrics track, optionally on the beat. See
+  the [Plugins](docs/plugins.md) page.
+
 ## 1.1.0 (2026-11-24)
 
 ### Added

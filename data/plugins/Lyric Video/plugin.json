@@ -1,0 +1,21 @@
+{
+  "id": "lyric-video",
+  "name": "Lyric Video",
+  "version": "1.0",
+  "author": "Mutant Video Producer",
+  "description": "Puts timed lyrics (an .lrc file) on a new track as titles, one per line, and can move each line onto the nearest beat of the music.",
+  "commands": [
+    {
+      "label": "Lyric Video from LRC...",
+      "script": "main.js",
+      "fields": [
+        { "id": "lrc", "label": "Lyrics (.lrc)", "type": "file", "filter": "Timed lyrics (*.lrc);;All files (*)" },
+        { "id": "style", "label": "Style", "type": "choice", "choices": ["kinetic_text", "title", "subtitle"],
+          "labels": ["Kinetic words", "Centred title", "Subtitle"], "default": "kinetic_text" },
+        { "id": "font", "label": "Font (empty: the style's own)", "type": "text", "default": "" },
+        { "id": "snap", "label": "Move each line onto the nearest beat", "type": "bool", "default": true },
+        { "id": "offset", "label": "Shift every line by (seconds)", "type": "number", "default": 0, "min": -60, "max": 60 }
+      ]
+    }
+  ]
+}

@@ -197,6 +197,12 @@ Turn on **Options > Allow AI Control (MCP)** and an AI assistant on your compute
 build node effects, write and voice dialogue, caption, mix and render, with every change visible (and undoable) in
 the program. See [AI Control](docs/ai-control.md).
 
+## Plugins
+
+**Tools > Plugins** runs commands written in JavaScript: a folder with a `plugin.json` and a script that edits the
+project through the same commands as AI Control, in one undo step. **Lyric Video from LRC** comes with it. See
+[Plugins](docs/plugins.md) to write your own.
+
 ## Make it yours
 
 ![Four of the themes: Neon Grid, Night City, Synthwave Sunset and Studio Light](docs/screenshots/readme/themes.png)

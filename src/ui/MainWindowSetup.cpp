@@ -904,6 +904,11 @@ void MainWindow::createActions()
     aiAction->setObjectName(QStringLiteral("aiComponents"));
     tools->addAction(aiAction);
 #endif
+    heading(tools, tr("Plugins"));
+    QMenu* pluginsMenu = tools->addMenu(tr("Plu&gins"));
+    pluginsMenu->setObjectName(QStringLiteral("pluginsMenu"));
+    connect(pluginsMenu, &QMenu::aboutToShow, this, [this, pluginsMenu] { fillPluginsMenu(pluginsMenu); });
+    fillPluginsMenu(pluginsMenu); // (filled now too, for the shortcuts list and tests)
 
     // Options
     QMenu* options = menuBar()->addMenu(tr("&Options"));

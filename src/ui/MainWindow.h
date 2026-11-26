@@ -35,6 +35,9 @@ class TimelineWidget;
 class VoiceJob;
 class DialogueJob;
 struct VoiceAsset;
+namespace plugins {
+struct Plugin;
+}
 
 class MainWindow : public QMainWindow {
     Q_OBJECT
@@ -64,6 +67,8 @@ public:
     int runEditorTest(QStringList& log);
     void runProductionToolsTest(const std::function<void(bool, const QString&)>& check, const class QDir& work); // (a part of it)
     Q_INVOKABLE void showMixerForTests() { showMixer(); }
+    // A plugin's command (by its id) without its form; empty on success, else the error.
+    QString runPluginForTests(const QString& id, int command, const QJsonObject& args, const QStringList& files);
 
     // Help > User Guide / Tutorials, and context help (Help.h): a page of docs/
     // ("README.md", "effects.md#masks"); from a dialog, in a window of the dialog's own.
@@ -283,6 +288,10 @@ private:
     QLabel* m_mcpLabel = nullptr;
     void setAiControl(bool on);
     void showAiControlSetup();
+    // Tools > Plugins (MainWindowPlugins.cpp).
+    void fillPluginsMenu(QMenu* menu);
+    void runPluginCommand(const plugins::Plugin& plugin, int command);
+    QString runPlugin(const plugins::Plugin& plugin, int command, const QJsonObject& args, const QStringList& files, QStringList* log);
     AudioMeter* m_meter = nullptr;
     class MixerWindow* m_mixer = nullptr;
 

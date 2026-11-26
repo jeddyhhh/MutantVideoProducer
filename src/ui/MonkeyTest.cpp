@@ -55,7 +55,7 @@ const QRegularExpression& offLimits()
     static const QRegularExpression re(
         QStringLiteral("quit|exit|youtube|update|github|report|download|install|stream|go live|record|camera|capture|webcam|"
                        "mcp|ai control|example|tutorial|welcome|render|export|explorer|containing|reveal|show in|website|"
-                       "online|transcrib|caption|restart|live"),
+                       "online|transcrib|caption|plugin|restart|live"),
         QRegularExpression::CaseInsensitiveOption);
     return re;
 }
@@ -67,7 +67,7 @@ const QRegularExpression& liveOffLimits()
     static const QRegularExpression re(
         QStringLiteral("quit|exit|youtube|update|github|report|download|install|stream|go live|on air|rtmp|srt|camera|webcam|obs|ndi|"
                        "mcp|ai control|example|tutorial|welcome|render|export|explorer|containing|reveal|show in|website|"
-                       "online|transcrib|caption|restart"),
+                       "online|transcrib|caption|plugin|restart"),
         QRegularExpression::CaseInsensitiveOption);
     return re;
 }
