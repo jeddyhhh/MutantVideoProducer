@@ -24,11 +24,19 @@ so a plugin can do almost anything you can do by hand, and nothing more.
   there (unzip it so that its `plugin.json` is directly inside its own folder). The menu is read again every time it
   opens, so there's nothing to restart.
 - **A plugin you added asks before it runs** the first time, and again whenever its files change. Run only plugins
-  from people you trust: a plugin can change the project, save and render files, and do anything else AI Control can.
+  from people you trust: a plugin can change the open project and use the program's commands, within the limits below.
 - If a plugin has a mistake in it, the menu shows **Plugins That Didn't Load**, which says what's wrong.
 
-A plugin can't read or write files on its own, and it can't go online. It can read only the files and folders you pick
-in its form, and write only the file you name in a "save as" box in its form.
+What a plugin can't do:
+
+- **Open files you didn't pick.** It reads, lists and imports only the files and folders you pick in its form (and its
+  own files, the program's, and media already in the project). That goes for every command it runs, too.
+- **Write anywhere else.** It writes and renders only to the file you name in a "save as" box in its form.
+- **Go online**, or reach another computer through a network path (`\\server\share`).
+- **Turn on a camera, microphone or recording**, open another project, copy the project out, or reach into your undo
+  history. Everything it does is one step that Ctrl+Z takes back.
+- **Load a program file (DLL).** Its VST3 effects can only be ones installed in the VST3 folders.
+- **Hang the program**: its script is stopped after 20 seconds of running.
 
 ## The plugins that come with it
 
@@ -289,8 +297,8 @@ Every field has an `id` (how the script reads it: `mvp.args.<id>`), a `label`, a
 
 | type | In the form | `mvp.args.<id>` is | Extra keys |
 |---|---|---|---|
-| `file` | a file box and **Browse...**; the file may be read | its path | `filter` (as in an open dialog: `"Lyrics (*.lrc);;All files (*)"`), `optional` |
-| `files` | several files; each may be read | a list of paths | `filter`, `optional` |
+| `file` | a file box and **Browse...**; the file may be read | its path | `filter` (as in an open dialog: `"Lyrics (*.lrc);;All files (*)"`), `optional`, `withFolder` |
+| `files` | several files; each may be read | a list of paths | `filter`, `optional`, `withFolder` |
 | `folder` | a folder; its files may be listed and read | its path | `optional` |
 | `save` | a "save as" box; that file may be written | its path | `filter`, `optional` |
 | `choice` | a drop-down list | the chosen value | `choices` (the values), `labels` (what the list shows instead) |
@@ -301,6 +309,8 @@ Every field has an `id` (how the script reads it: `mvp.args.<id>`), a `label`, a
 
 A `file`, `files`, `folder` or `save` field must be filled in, unless it has `"optional": true` (then an empty one
 gives `""`, or `[]` for `files`). The form checks that a chosen file or folder exists before the script runs.
+`"withFolder": true` on a `file` or `files` field also lets the script read and list the files in the chosen file's
+folder (an edit list that names clips next to it). A `save` path typed without an extension gets the filter's first.
 
 ### The mvp object
 
@@ -321,8 +331,15 @@ gives `""`, or `[]` for `files`). The form checks that a chosen file or folder e
 - The script runs once, top to bottom, inside the program, while the window waits. The commands it calls take as long
   as they need (a beat scan, a loudness measure), but the script's own JavaScript is stopped after **20 seconds** of
   running, so a loop that never ends can't hang the program.
-- **Not available to plugins**: `new_project`, `open_project`, `undo` and `redo`. A plugin works on the open project,
-  in one undo step.
+- **Not available to plugins**: `new_project`, `open_project`, `undo` and `redo` (a plugin works on the open project,
+  in one undo step); `youtube_clip` and `ai_components` (they go online); `collect_project`; `set_live_source`,
+  `live_action` `start` / `record` / `save_replay` and `live_switcher` `inputs` (cameras, microphones, recordings);
+  `render_queue` `project_file`; `deliver` `folder`; `presets` `remove`; and `overwrite: true` except on the save file.
+- **Paths given to commands** follow the same rules as `mvp.readText` and `mvp.writeText`. A command may open a file
+  chosen in the form (or in a chosen folder), the save file, the plugin's own files (`mvp.plugin.folder`), the
+  program's, or media already in Project Media. It may write (`render`, `render_queue`, `save_project`, `get_frame`
+  `save_to`, `captions` `export`, `youtube_publish` `thumbnail`, `graphics_overlay` `export_template`) only to the
+  file a `save` field named. Anything else is refused with a message that says so. Network paths are always refused.
 - A script and `plugin.json` can each be up to 1 MB.
 - There's no `require`, `import`, `fetch`, timers or file access other than the `mvp` functions above.
 
@@ -341,16 +358,19 @@ A checklist, so a plugin works the first time:
 5. **Never place a file over other events** unless that's the point: append at `duration`, or park past the end, trim
    and move (see [Placing clips](#placing-clips-without-cutting-into-others)).
 6. **An event longer than what's left of its file** needs `loop: true` in `edit_event`, or it is shortened.
-7. **Check what the user gave**, and `throw new Error("...")` with a sentence that says what to do: the message is
+7. **Ask for every file in the form.** A path the user didn't pick (one typed into the script, or read from a file)
+   is refused by every command, unless it's in a chosen folder or the field has `withFolder`. Output goes to a `save`
+   field's file.
+8. **Check what the user gave**, and `throw new Error("...")` with a sentence that says what to do: the message is
    shown to them as it is.
-8. **The JavaScript is Qt's engine**: modern syntax (`const`, `let`, arrow functions, classes, template strings,
+9. **The JavaScript is Qt's engine**: modern syntax (`const`, `let`, arrow functions, classes, template strings,
    destructuring, spread, `?.`, `??`, `Set`, `Map`, `includes`, `padStart`, `Math.imul`, `JSON`) works. These **don't**:
    `String.prototype.matchAll` (use a `/g` regex with `exec` in a loop), `Array.prototype.flat`,
    `Object.fromEntries`, `async` / `await`, and named regex groups (`(?<name>...)`). There's no `fetch`, `require`,
    `setTimeout` or `import`; `console.log` writes to the program's debug output.
-9. **Keep the user's things**: put back markers you borrow, leave locked tracks alone, and use `mvp.rollback()` when
+10. **Keep the user's things**: put back markers you borrow, leave locked tracks alone, and use `mvp.rollback()` when
    a change was only needed for a moment.
-10. **Test it**: run it in the program on a small project, press Ctrl+Z, run it again with other choices.
+11. **Test it**: run it in the program on a small project, press Ctrl+Z, run it again with other choices.
 
 A skeleton to start from:
 

@@ -1,6 +1,7 @@
 // The editor test's plugin part (MutantVideoProducer --editor-test): every bundled plugin runs on a small project
 // made for it, through the same path as Tools > Plugins (without its form), and what it made is checked; then the
 // sandbox: what a script may and may not read, list and write, the watchdog, rollback and the refused commands.
+#include "core/Vst3Host.h"
 #include "core/Project.h"
 #include "ui/MainWindow.h"
 #include "ui/McpServer.h"
@@ -413,6 +414,8 @@ void MainWindow::runPluginsTest(const std::function<void(bool, const QString&)>&
         }
         if (a.what === "tools") mvp.log(String(mvp.tools().length));
         if (a.what === "throw") throw new Error("on purpose");
+        if (a.what === "call") mvp.call(a.path.split(" ")[0], JSON.parse(a.path.slice(a.path.indexOf(" ") + 1)));
+        if (a.what === "qobject") mvp.log([typeof mvp.deleteLater, typeof mvp.destroyed, typeof mvp.objectName, typeof mvp.call].join(","));
     )");
     QDir().mkpath(QDir(plugins::userFolder()).filePath(QStringLiteral("broken")));
     put(QDir(plugins::userFolder()).filePath(QStringLiteral("broken/plugin.json")), "{ not json");
@@ -467,6 +470,61 @@ void MainWindow::runPluginsTest(const std::function<void(bool, const QString&)>&
               && loadProblems.join(QLatin1Char(' ')).contains(QStringLiteral("broken")),
           QStringLiteral("a script that never ends is stopped (%1 s: %2); a broken plugin.json is reported (%3)")
               .arg(ms / 1000.0, 0, 'f', 1).arg(loop, loadProblems.join(QStringLiteral("; "))));
+
+    // ---- What a script passes to commands: the same limits as its own file tools ----
+    auto refused = [&](const QString& tool, const QJsonObject& a, const plugins::Access& access = {}) {
+        return sandbox(QStringLiteral("call"), tool + QLatin1Char(' ') + QString::fromUtf8(QJsonDocument(a).toJson(QJsonDocument::Compact)), access);
+    };
+    const QString mayOpen = QStringLiteral("isn't a file this plugin may open"), saveOnly = QStringLiteral("only the file a save field names");
+    const QString picture = work.filePath(QStringLiteral("plugins/picture.png"));
+    QImage(64, 36, QImage::Format_RGB32).save(picture);
+    const QString importOther = refused(QStringLiteral("import_media"), {{QStringLiteral("paths"), QJsonArray{picture}}});
+    const QString importChosen = refused(QStringLiteral("import_media"), {{QStringLiteral("paths"), QJsonArray{picture}}}, {{picture}, {}, {}});
+    const QString startup = work.filePath(QStringLiteral("plugins/startup.bat"));
+    const QString captionsOut = refused(QStringLiteral("captions"), {{QStringLiteral("action"), QStringLiteral("export")}, {QStringLiteral("path"), startup}});
+    const QString renderOut = refused(QStringLiteral("render"), {{QStringLiteral("path"), startup}, {QStringLiteral("overwrite"), true}});
+    const QString frameOut = refused(QStringLiteral("get_frame"), {{QStringLiteral("save_to"), work.filePath(QStringLiteral("plugins/x.png"))}});
+    const QString dll = QStringLiteral("C:/Windows/System32/kernel32.dll");
+    const QString vst = refused(QStringLiteral("add_effect"), {{QStringLiteral("effect"), QStringLiteral("a_vst3")},
+                                                              {QStringLiteral("params"), QJsonObject{{QStringLiteral("plugin"), dll}}}});
+    QElapsedTimer netClock;
+    netClock.start();
+    const QString unc = refused(QStringLiteral("import_media"), {{QStringLiteral("paths"), QJsonArray{QStringLiteral("\\\\192.0.2.1\\share\\x.png")}}});
+    const QString uncRead = sandbox(QStringLiteral("read"), QStringLiteral("//192.0.2.1/share/x.txt"), {});
+    const qint64 netMs = netClock.elapsed();
+    check(importOther.contains(mayOpen) && !importChosen.contains(mayOpen) && captionsOut.contains(saveOnly) && renderOut.contains(saveOnly)
+              && frameOut.contains(saveOnly) && vst.contains(mayOpen) && unc.contains(mayOpen) && uncRead.contains(QStringLiteral("only a file chosen"))
+              && netMs < 3000 && !QFileInfo::exists(startup),
+          QStringLiteral("commands open only what the form chose (other: %1; chosen: %2), write only the save file (captions: %3; render: %4; "
+                         "frame: %5), load no DLL (%6) and never touch a network path (%7; readText: %8; %9 ms)")
+              .arg(ok(importOther), ok(importChosen), ok(captionsOut), ok(renderOut), ok(frameOut), ok(vst), ok(unc), ok(uncRead))
+              .arg(netMs));
+    QStringList closed;
+    for (const auto& [tool, a] : std::vector<std::pair<QString, QJsonObject>>{
+             {QStringLiteral("youtube_clip"), {{QStringLiteral("url"), QStringLiteral("https://example.com/?data=secret")}}},
+             {QStringLiteral("ai_components"), {{QStringLiteral("action"), QStringLiteral("install")}}},
+             {QStringLiteral("collect_project"), {{QStringLiteral("destination"), work.filePath(QStringLiteral("plugins/copy"))}}},
+             {QStringLiteral("set_live_source"), {{QStringLiteral("video"), QStringLiteral("camera")}}},
+             {QStringLiteral("live_action"), {{QStringLiteral("action"), QStringLiteral("record")}}},
+             {QStringLiteral("live_switcher"), {{QStringLiteral("inputs"), QJsonArray{QStringLiteral("camera")}}}},
+             {QStringLiteral("render_queue"), {{QStringLiteral("action"), QStringLiteral("add")}, {QStringLiteral("project_file"), picture}}},
+             {QStringLiteral("deliver"), {{QStringLiteral("action"), QStringLiteral("outputs")}, {QStringLiteral("folder"), work.absolutePath()}}},
+             {QStringLiteral("presets"), {{QStringLiteral("action"), QStringLiteral("remove")}, {QStringLiteral("preset"), QStringLiteral("x")}}},
+             {QStringLiteral("node_effect"), {{QStringLiteral("action"), QStringLiteral("save")}, {QStringLiteral("overwrite"), true}}}})
+        if (!refused(tool, a).contains(QStringLiteral("available to plugins")))
+            closed << tool;
+    QString seen;
+    sandbox(QStringLiteral("qobject"), {}, {}, &seen);
+    QString vstError;
+    vst3EffectClasses(dll, &vstError);
+    check(closed.isEmpty() && seen == QStringLiteral("undefined,undefined,undefined,function")
+#ifdef _WIN32
+              && vstError.contains(QStringLiteral("isn't in a VST3 folder"))
+#endif
+              ,
+          QStringLiteral("plugins can't go online, copy the project out, turn on a camera, open other projects, delete presets or "
+                         "overwrite saved effects (allowed: %1); mvp is a plain object (%2); a_vst3 loads only installed plugins (%3)")
+              .arg(closed.join(QStringLiteral(", ")), seen, vstError));
     QDir(folder).removeRecursively();
     QDir(QDir(plugins::userFolder()).filePath(QStringLiteral("broken"))).removeRecursively();
     call(QStringLiteral("new_project"), {{QStringLiteral("discard"), true}});

@@ -10,6 +10,12 @@
 #include <mutex>
 #include <vector>
 
+QStringList vst3Folders()
+{
+    return {QStringLiteral("C:/Program Files/Common Files/VST3"),
+            QDir(QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation)).filePath(QStringLiteral("Programs/Common/VST3"))};
+}
+
 #if defined(MVP_VST3) && defined(_WIN32)
 #ifndef NOMINMAX
 #define NOMINMAX
@@ -185,7 +191,18 @@ Module* module(const QString& path, QString* error)
     static std::mutex mutex;
     static std::map<QString, Module> modules;
     std::lock_guard lock(mutex);
-    const QString file = QFileInfo(binaryPath(path)).absoluteFilePath();
+    // (only what's installed in the VST3 folders: checked as text, before anything opens the path, so a network
+    // path or any other DLL is never touched)
+    const QString given = QDir::cleanPath(QFileInfo(QDir::fromNativeSeparators(path)).absoluteFilePath());
+    const QStringList folders = vst3Folders();
+    if (given.startsWith(QLatin1String("//")) || !std::any_of(folders.begin(), folders.end(), [&](const QString& d) {
+            return given.startsWith(QDir::cleanPath(d) + QLatin1Char('/'), Qt::CaseInsensitive);
+        })) {
+        if (error)
+            *error = QStringLiteral("%1 isn't in a VST3 folder (%2)").arg(QDir::toNativeSeparators(path), folders.join(QStringLiteral(", ")));
+        return nullptr;
+    }
+    const QString file = QFileInfo(binaryPath(given)).absoluteFilePath();
     if (auto it = modules.find(file); it != modules.end())
         return &it->second;
     Module m;
@@ -361,8 +378,7 @@ bool vst3Available()
 
 QStringList vst3InstalledPlugins()
 {
-    QStringList dirs = {QStringLiteral("C:/Program Files/Common Files/VST3"),
-                        QDir(QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation)).filePath(QStringLiteral("Programs/Common/VST3"))};
+    const QStringList dirs = vst3Folders();
     QStringList found;
     for (const QString& dir : dirs) {
         QDirIterator it(dir, {QStringLiteral("*.vst3")}, QDir::Files | QDir::Dirs | QDir::NoDotAndDotDot, QDirIterator::Subdirectories);

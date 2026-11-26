@@ -1,6 +1,7 @@
 #include "ui/Plugins.h"
 
 #include "core/Brand.h"
+#include "core/Vst3Host.h"
 #include "ui/McpServer.h"
 
 #include <QCheckBox>
@@ -67,6 +68,43 @@ QString scriptPath(const Plugin& p, const Command& c)
     return !path.isEmpty() && path.startsWith(root + QLatin1Char('/')) ? path : QString();
 }
 
+#ifdef Q_OS_WIN
+constexpr Qt::CaseSensitivity kPathCase = Qt::CaseInsensitive;
+#else
+constexpr Qt::CaseSensitivity kPathCase = Qt::CaseSensitive;
+#endif
+
+// \\server\share, //server or \\?\UNC\...: even looking to see whether one is there connects to another computer
+// (and hands it the Windows sign-in), so these are compared as text only.
+bool isNetworkPath(const QString& p)
+{
+    return p.size() > 1 && (p[0] == u'\\' || p[0] == u'/') && (p[1] == u'\\' || p[1] == u'/');
+}
+
+// A path as the sandbox compares it: the real file (links and ".." resolved; empty when it isn't there), or, for a
+// network path, its text tidied.
+QString realPath(const QString& p)
+{
+    const QString path = QDir::fromNativeSeparators(p);
+    return isNetworkPath(p) ? QDir::cleanPath(path) : QFileInfo(path).canonicalFilePath();
+}
+
+// Where a file may be written (it needn't be there yet).
+QString writePath(const QString& p)
+{
+    const QString path = QDir::fromNativeSeparators(p);
+    return QDir::cleanPath(isNetworkPath(p) ? path : QFileInfo(path).absoluteFilePath());
+}
+
+bool samePath(const QString& a, const QString& b) { return !a.isEmpty() && a.compare(b, kPathCase) == 0; }
+
+bool inside(const QString& path, const QString& folder)
+{
+    if (folder.isEmpty())
+        return false;
+    return path.startsWith(folder.endsWith(u'/') ? folder : folder + u'/', kPathCase);
+}
+
 // JSON as plain JavaScript objects and arrays (JSON.parse): every array method works on them, and the same object
 // read twice is the same object (QJSEngine's own conversion of a QVariant gives wrappers that are neither).
 QJSValue fromJson(QJSEngine& engine, const QJsonValue& value)
@@ -78,75 +116,54 @@ QJSValue fromJson(QJSEngine& engine, const QJsonValue& value)
     return value.isObject() || value.isArray() ? parsed : parsed.property(0);
 }
 
-// What a script sees as `mvp`.
+// What a script sees as `mvp` (its methods; the script never gets this object itself).
 class Api : public QObject {
     Q_OBJECT
 public:
-    Api(QJSEngine& engine, McpServer& server, const Access& access, std::function<void()> rollback, QStringList* log,
-        std::function<void(bool)> scriptTime)
+    Api(QJSEngine& engine, McpServer& server, const Access& access, const QString& pluginFolder, std::function<void()> rollback,
+        QStringList* log, std::function<void(bool)> scriptTime)
         : m_engine(engine), m_server(server), m_rollback(std::move(rollback)), m_log(log), m_scriptTime(std::move(scriptTime))
     {
         for (const QString& f : access.read)
-            m_files << QFileInfo(f).canonicalFilePath();
+            m_files << realPath(f);
         for (const QString& f : access.folders)
-            m_folders << QFileInfo(f).canonicalFilePath();
+            m_folders << realPath(f);
         for (const QString& f : access.write)
-            m_writes << QFileInfo(f).absoluteFilePath();
+            m_writes << writePath(f);
+        m_own << realPath(QCoreApplication::applicationDirPath()) << realPath(pluginFolder);
+        for (const QString& d : vst3Folders()) // (the installed VST3 plugins, for a_vst3: no other DLL is ever loaded)
+            m_own << realPath(d);
     }
 
-    // One of the program's commands (the AI Control tools), its answer as an object. Throws when it fails.
+    // One of the program's commands (the AI Control tools), its answer as an object. Throws when it fails, or when
+    // the command would go beyond what the form allows.
     Q_INVOKABLE QJSValue call(const QString& tool, const QJSValue& args = QJSValue())
     {
-        // (The script works on the open project, in one undo step: these would take it away from under it.)
-        static const QStringList refused{QStringLiteral("new_project"), QStringLiteral("open_project"), QStringLiteral("undo"),
-                                         QStringLiteral("redo")};
-        if (refused.contains(tool)) {
-            m_engine.throwError(QJSValue::GenericError, QStringLiteral("%1 isn't available to plugins").arg(tool));
+        const QJsonObject a = QJsonObject::fromVariantMap(args.toVariant().toMap());
+        if (const QString no = refusal(tool, a); !no.isEmpty()) {
+            m_engine.throwError(QJSValue::GenericError, no);
             return {};
         }
-        const QJsonObject message{{QStringLiteral("jsonrpc"), QStringLiteral("2.0")},
-                                  {QStringLiteral("id"), 1},
-                                  {QStringLiteral("method"), QStringLiteral("tools/call")},
-                                  {QStringLiteral("params"),
-                                   QJsonObject{{QStringLiteral("name"), tool},
-                                               {QStringLiteral("arguments"), QJsonObject::fromVariantMap(args.toVariant().toMap())}}}};
-        m_scriptTime(false);
-        const QJsonObject response = m_server.handle(message);
-        m_scriptTime(true);
-        if (response.contains(QStringLiteral("error"))) {
-            m_engine.throwError(QJSValue::GenericError,
-                                QStringLiteral("%1: %2").arg(tool, response[QStringLiteral("error")][QStringLiteral("message")].toString()));
+        QString error;
+        const QJsonValue result = command(tool, a, &error);
+        if (!error.isEmpty()) {
+            m_engine.throwError(QJSValue::GenericError, QStringLiteral("%1: %2").arg(tool, error));
             return {};
         }
-        const QJsonObject result = response[QStringLiteral("result")].toObject();
-        QString text;
-        for (const QJsonValue c : result[QStringLiteral("content")].toArray())
-            if (c[QStringLiteral("type")].toString() == QLatin1String("text"))
-                text += c[QStringLiteral("text")].toString();
-        if (result[QStringLiteral("isError")].toBool()) {
-            m_engine.throwError(QJSValue::GenericError, QStringLiteral("%1: %2").arg(tool, text));
-            return {};
-        }
-        if (result.contains(QStringLiteral("structuredContent")))
-            return fromJson(m_engine, result[QStringLiteral("structuredContent")]);
-        QJsonParseError err;
-        const QJsonDocument doc = QJsonDocument::fromJson(text.toUtf8(), &err);
-        if (err.error == QJsonParseError::NoError)
-            return fromJson(m_engine, doc.isArray() ? QJsonValue(doc.array()) : QJsonValue(doc.object()));
-        return QJSValue(text);
+        return result.isString() ? QJSValue(result.toString()) : fromJson(m_engine, result);
     }
 
     // A text file the user chose in the form, or one in a folder chosen there (no others).
     Q_INVOKABLE QJSValue readText(const QString& path)
     {
-        const QString canonical = QFileInfo(path).canonicalFilePath();
-        if (canonical.isEmpty() || !(m_files.contains(canonical) || inFolder(canonical))) {
+        const QString real = realPath(path);
+        if (isNetworkPath(path) || !chosen(real)) {
             m_engine.throwError(QJSValue::GenericError,
                                 QStringLiteral("readText: only a file chosen in the form, or in a folder chosen there, can be read (%1)").arg(path));
             return {};
         }
         QString error;
-        const QByteArray bytes = readSmall(canonical, kMostReadBytes, &error);
+        const QByteArray bytes = readSmall(real, kMostReadBytes, &error);
         if (!error.isEmpty()) {
             m_engine.throwError(QJSValue::GenericError, QStringLiteral("readText: %1: %2").arg(path, error));
             return {};
@@ -158,13 +175,13 @@ public:
     // (["*.jpg", "*.png"]; none: all of them).
     Q_INVOKABLE QJSValue listFolder(const QString& path, const QStringList& patterns = {})
     {
-        const QString canonical = QFileInfo(path).canonicalFilePath();
-        if (canonical.isEmpty() || !m_folders.contains(canonical)) {
+        const QString real = realPath(path);
+        if (isNetworkPath(path) || !std::any_of(m_folders.begin(), m_folders.end(), [&](const QString& d) { return samePath(real, d); })) {
             m_engine.throwError(QJSValue::GenericError, QStringLiteral("listFolder: only a folder chosen in the form can be listed (%1)").arg(path));
             return {};
         }
         QJsonArray out;
-        for (const QFileInfo& f : QDir(canonical).entryInfoList(patterns, QDir::Files, QDir::Name | QDir::IgnoreCase))
+        for (const QFileInfo& f : QDir(real).entryInfoList(patterns, QDir::Files, QDir::Name | QDir::IgnoreCase))
             out.append(f.absoluteFilePath());
         return fromJson(m_engine, out);
     }
@@ -172,13 +189,12 @@ public:
     // Writes a text file (UTF-8): only the one a save field of the form named.
     Q_INVOKABLE void writeText(const QString& path, const QString& text)
     {
-        const QString absolute = QFileInfo(path).absoluteFilePath();
-        if (!m_writes.contains(absolute)) {
+        if (!mayWrite(path)) {
             m_engine.throwError(QJSValue::GenericError, QStringLiteral("writeText: only the file a save field names can be written (%1)").arg(path));
             return;
         }
         const QByteArray bytes = text.toUtf8();
-        QSaveFile f(absolute);
+        QSaveFile f(writePath(path));
         if (bytes.size() > kMostReadBytes || !f.open(QIODevice::WriteOnly) || f.write(bytes) != bytes.size() || !f.commit())
             m_engine.throwError(QJSValue::GenericError,
                                 QStringLiteral("writeText: %1: %2").arg(path, bytes.size() > kMostReadBytes ? QStringLiteral("over 16 MB") : f.errorString()));
@@ -202,14 +218,153 @@ public:
     Q_INVOKABLE QJSValue tools() { return fromJson(m_engine, McpServer::toolList()); }
 
 private:
-    bool inFolder(const QString& canonical) const
+    // A command's answer as JSON (or its text), or the error.
+    QJsonValue command(const QString& tool, const QJsonObject& args, QString* error)
     {
-        return std::any_of(m_folders.begin(), m_folders.end(), [&](const QString& d) { return canonical.startsWith(d + QLatin1Char('/')); });
+        const QJsonObject message{{QStringLiteral("jsonrpc"), QStringLiteral("2.0")},
+                                  {QStringLiteral("id"), 1},
+                                  {QStringLiteral("method"), QStringLiteral("tools/call")},
+                                  {QStringLiteral("params"), QJsonObject{{QStringLiteral("name"), tool}, {QStringLiteral("arguments"), args}}}};
+        m_scriptTime(false);
+        const QJsonObject response = m_server.handle(message);
+        m_scriptTime(true);
+        if (response.contains(QStringLiteral("error"))) {
+            *error = response[QStringLiteral("error")][QStringLiteral("message")].toString();
+            return {};
+        }
+        const QJsonObject result = response[QStringLiteral("result")].toObject();
+        QString text;
+        for (const QJsonValue c : result[QStringLiteral("content")].toArray())
+            if (c[QStringLiteral("type")].toString() == QLatin1String("text"))
+                text += c[QStringLiteral("text")].toString();
+        if (result[QStringLiteral("isError")].toBool()) {
+            *error = text;
+            return {};
+        }
+        if (result.contains(QStringLiteral("structuredContent")))
+            return result[QStringLiteral("structuredContent")];
+        QJsonParseError err;
+        const QJsonDocument doc = QJsonDocument::fromJson(text.toUtf8(), &err);
+        if (err.error == QJsonParseError::NoError)
+            return doc.isArray() ? QJsonValue(doc.array()) : QJsonValue(doc.object());
+        return text;
+    }
+
+    // Why a command may not run with these arguments (empty: it may). A plugin is someone else's code: it works on
+    // the open project, opens only what the form chose (or the program's and its own files, or media already in the
+    // project), writes only a save field's file, and doesn't go online or turn on a camera or microphone.
+    QString refusal(const QString& tool, const QJsonObject& a)
+    {
+        static const QStringList refused{
+            QStringLiteral("new_project"), QStringLiteral("open_project"), QStringLiteral("undo"), QStringLiteral("redo"), // (the run is one undo step of the open project)
+            QStringLiteral("youtube_clip"), QStringLiteral("ai_components"), // (they go online)
+            QStringLiteral("collect_project"),                               // (copies all the media to any folder)
+            QStringLiteral("set_live_source")};                              // (cameras, microphones, screens)
+        const QString action = a[QStringLiteral("action")].toString();
+        if (refused.contains(tool))
+            return QStringLiteral("%1 isn't available to plugins").arg(tool);
+        if (tool == QLatin1String("live_action")
+            && QStringList{QStringLiteral("start"), QStringLiteral("record"), QStringLiteral("save_replay")}.contains(action))
+            return QStringLiteral("live_action %1 isn't available to plugins (it turns on the camera, the microphone or a recording)").arg(action);
+        if (tool == QLatin1String("live_switcher") && a.contains(QStringLiteral("inputs")))
+            return QStringLiteral("live_switcher inputs isn't available to plugins (it opens cameras and screens)");
+        if (tool == QLatin1String("render_queue") && a.contains(QStringLiteral("project_file")))
+            return QStringLiteral("render_queue project_file isn't available to plugins (only the open project)");
+        if (tool == QLatin1String("deliver") && a.contains(QStringLiteral("folder")))
+            return QStringLiteral("deliver folder isn't available to plugins (the outputs go where the user set)");
+        if (tool == QLatin1String("presets") && action == QLatin1String("remove"))
+            return QStringLiteral("presets remove isn't available to plugins (undo can't bring a preset back)");
+        // The one argument a command writes to.
+        QString writes;
+        if (QStringList{QStringLiteral("render"), QStringLiteral("render_queue"), QStringLiteral("save_project"), QStringLiteral("youtube_publish")}.contains(tool)
+            || (tool == QLatin1String("captions") && action == QLatin1String("export"))
+            || (tool == QLatin1String("graphics_overlay") && action == QLatin1String("export_template")))
+            writes = QStringLiteral("path");
+        else if (tool == QLatin1String("get_frame"))
+            writes = QStringLiteral("save_to");
+        const bool writesAFile = !writes.isEmpty() && a.contains(writes);
+        if (writesAFile && !mayWrite(a[writes].toString()))
+            return QStringLiteral("%1: only the file a save field names can be written (%2)").arg(tool, a[writes].toString());
+        if (a[QStringLiteral("overwrite")].toBool() && !writesAFile)
+            return QStringLiteral("%1: overwrite isn't available to plugins here (only the file a save field names can be replaced)").arg(tool);
+        for (auto it = a.begin(); it != a.end(); ++it)
+            if (it.key() != writes || !writesAFile)
+                if (QString why = opens(tool, it.key(), *it); !why.isEmpty())
+                    return why;
+        return {};
+    }
+
+    // Every file path in an argument (at any depth: effect settings, scene layers) must be one the plugin may open.
+    QString opens(const QString& tool, const QString& key, const QJsonValue& v)
+    {
+        if (v.isArray()) {
+            for (const QJsonValue x : v.toArray())
+                if (QString why = opens(tool, key, x); !why.isEmpty())
+                    return why;
+        } else if (v.isObject()) {
+            const QJsonObject o = v.toObject();
+            for (auto it = o.begin(); it != o.end(); ++it)
+                if (QString why = opens(tool, it.key(), *it); !why.isEmpty())
+                    return why;
+        } else if (v.isString() && looksLikeAPath(key, v.toString()) && !mayRead(v.toString())) {
+            return QStringLiteral("%1: %2 isn't a file this plugin may open (only files and folders chosen in its form, the program's "
+                                  "and the plugin's own files, and media already in the project)")
+                .arg(tool, v.toString());
+        }
+        return {};
+    }
+
+    static bool looksLikeAPath(const QString& key, const QString& s)
+    {
+        static const QStringList keys{QStringLiteral("path"),         QStringLiteral("paths"),   QStringLiteral("file"),
+                                      QStringLiteral("files"),        QStringLiteral("destination"), QStringLiteral("save_to"),
+                                      QStringLiteral("project_file"), QStringLiteral("plugin")};
+        if (s.isEmpty())
+            return false;
+        if (keys.contains(key) || isNetworkPath(s) || s.startsWith(QLatin1String("file:"), Qt::CaseInsensitive))
+            return true;
+        // (any other words are a path when they name a file on this computer: "C:\...", "/...")
+        static const QRegularExpression drive(QStringLiteral("^[A-Za-z]:[\\\\/]"));
+        return (drive.match(s).hasMatch() || s.startsWith(u'/')) && QFileInfo::exists(s);
+    }
+
+    // Chosen in the form: the file, or inside the folder.
+    bool chosen(const QString& real) const
+    {
+        return std::any_of(m_files.begin(), m_files.end(), [&](const QString& f) { return samePath(real, f); })
+               || std::any_of(m_folders.begin(), m_folders.end(), [&](const QString& d) { return inside(real, d); });
+    }
+
+    bool mayRead(const QString& path)
+    {
+        if (path.startsWith(QLatin1String("file:"), Qt::CaseInsensitive))
+            return false; // (paths are given as paths)
+        const QString real = realPath(path);
+        if (real.isEmpty())
+            return false;
+        if (chosen(real) || std::any_of(m_writes.begin(), m_writes.end(), [&](const QString& w) { return samePath(real, w); })
+            || (!isNetworkPath(path) && std::any_of(m_own.begin(), m_own.end(), [&](const QString& d) { return inside(real, d); })))
+            return true;
+        if (!m_mediaRead) { // (the project's own media, looked up once a run)
+            m_mediaRead = true;
+            QString error;
+            for (const QJsonValue m : command(QStringLiteral("get_project"), {}, &error)[QStringLiteral("media")].toArray())
+                m_media << realPath(m[QStringLiteral("path")].toString());
+        }
+        return std::any_of(m_media.begin(), m_media.end(), [&](const QString& m) { return samePath(real, m); });
+    }
+
+    bool mayWrite(const QString& path) const
+    {
+        const QString w = writePath(path);
+        return !path.startsWith(QLatin1String("file:"), Qt::CaseInsensitive)
+               && std::any_of(m_writes.begin(), m_writes.end(), [&](const QString& x) { return samePath(w, x); });
     }
 
     QJSEngine& m_engine;
     McpServer& m_server;
-    QStringList m_files, m_folders, m_writes;
+    QStringList m_files, m_folders, m_writes, m_own, m_media;
+    bool m_mediaRead = false;
     std::function<void()> m_rollback;
     QStringList* m_log;
     std::function<void(bool)> m_scriptTime;
@@ -322,6 +477,7 @@ bool read(const QString& folder, Plugin* out, QString* error)
             f.min = fv[QStringLiteral("min")].toDouble(-1e9);
             f.max = fv[QStringLiteral("max")].toDouble(1e9);
             f.optional = fv[QStringLiteral("optional")].toBool(false);
+            f.withFolder = fv[QStringLiteral("withFolder")].toBool(false);
             for (const QJsonValue v : fv[QStringLiteral("choices")].toArray())
                 f.choices << v.toString();
             for (const QJsonValue v : fv[QStringLiteral("labels")].toArray())
@@ -525,7 +681,12 @@ bool ask(QWidget* parent, const Plugin& plugin, int command, QJsonObject* args, 
     *access = {};
     for (size_t i = 0; i < c.fields.size(); ++i) {
         const Field& f = c.fields[i];
-        const QJsonValue v = values[i]();
+        QJsonValue v = values[i]();
+        // (a save path typed without an extension gets the filter's first, as the file dialog would give it)
+        static const QRegularExpression firstExtension(QStringLiteral("\\*\\.(\\w+)"));
+        if (const auto m = firstExtension.match(f.filter);
+            f.type == QLatin1String("save") && m.hasMatch() && !v.toString().isEmpty() && QFileInfo(v.toString()).suffix().isEmpty())
+            v = v.toString() + QLatin1Char('.') + m.captured(1);
         (*args)[f.id] = v;
         if (f.type == QLatin1String("file") && !v.toString().isEmpty())
             access->read << v.toString();
@@ -550,12 +711,26 @@ QString run(McpServer& server, const Plugin& plugin, int command, const QJsonObj
     const QByteArray code = path.isEmpty() ? QByteArray() : readSmall(path, kMostScriptBytes, &error);
     if (path.isEmpty() || !error.isEmpty())
         return QStringLiteral("%1: %2").arg(c.script, path.isEmpty() ? QStringLiteral("not found") : error);
+    // A file field with withFolder lets the script read the files beside the chosen one too.
+    Access allowed = access;
+    for (const Field& f : c.fields)
+        if (f.withFolder)
+            for (const QJsonValue v : args[f.id].isArray() ? args[f.id].toArray() : QJsonArray{args[f.id]})
+                if (!v.toString().isEmpty())
+                    allowed.folders << QFileInfo(v.toString()).absolutePath();
     QJSEngine engine;
     engine.installExtensions(QJSEngine::ConsoleExtension);
     Watchdog watchdog(engine);
-    Api api(engine, server, access, rollback, log, [&watchdog](bool on) { watchdog.running(on); });
+    Api api(engine, server, allowed, plugin.folder, rollback, log, [&watchdog](bool on) { watchdog.running(on); });
     QJSEngine::setObjectOwnership(&api, QJSEngine::CppOwnership);
-    QJSValue mvp = engine.newQObject(&api);
+    // `mvp` is a plain object holding the methods (bound to the Api), not the QObject itself: a script can't reach
+    // QObject's own deleteLater, destroyed or objectName.
+    const QJSValue wrapped = engine.newQObject(&api);
+    QJSValue mvp = engine.newObject();
+    for (const char* name : {"call", "readText", "listFolder", "writeText", "rollback", "log", "tools"}) {
+        const QJSValue method = wrapped.property(QLatin1String(name));
+        mvp.setProperty(QLatin1String(name), method.property(QStringLiteral("bind")).callWithInstance(method, {wrapped}));
+    }
     mvp.setProperty(QStringLiteral("args"), fromJson(engine, args));
     mvp.setProperty(QStringLiteral("plugin"), fromJson(engine, QJsonObject{{QStringLiteral("id"), plugin.id},
                                                                            {QStringLiteral("version"), plugin.version},

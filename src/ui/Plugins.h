@@ -21,6 +21,7 @@ struct Field {
     QString filter;          // file, files, save: the dialog's filter
     double min = -1e9, max = 1e9;
     bool optional = false;   // file, files, folder, save: may be left empty
+    bool withFolder = false; // file, files: the script may also read (and list) the files in the chosen file's folder
 };
 
 struct Command {
@@ -43,7 +44,8 @@ bool read(const QString& folder, Plugin* out, QString* error);
 // The plugin's files, hashed: a changed plugin is asked about again before it runs.
 QString fingerprint(const Plugin& plugin);
 // What the form gave a script: the only files it may read (a chosen file, or any file in a chosen folder), the
-// folders it may list, and the files it may write (a save field's).
+// folders it may list, and the files it may write (a save field's). The same limits apply to the paths it passes to
+// commands (mvp.call), which may also open the program's own files, the plugin's and media already in the project.
 struct Access {
     QStringList read, folders, write;
 };

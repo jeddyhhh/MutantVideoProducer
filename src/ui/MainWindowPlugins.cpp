@@ -52,8 +52,8 @@ void MainWindow::runPluginCommand(const plugins::Plugin& plugin, int command)
         if (QSettings().value(key).toString() != print) {
             const QString changed = QSettings().contains(key) ? tr("\n\nIt has changed since you last ran it.") : QString();
             if (QMessageBox::question(this, tr("Run Plugin"),
-                                      tr("Run \"%1\" %2%3?\n\n%4\n\nA plugin can change the open project, save and render files and do "
-                                         "anything else AI Control can. Only run plugins from people you trust.%5")
+                                      tr("Run \"%1\" %2%3?\n\n%4\n\nA plugin can change the open project, and open and write the files you "
+                                         "choose in its form. Only run plugins from people you trust.%5")
                                           .arg(plugin.name, plugin.version,
                                                plugin.author.isEmpty() ? QString() : tr(" by %1").arg(plugin.author),
                                                QDir::toNativeSeparators(plugin.folder), changed))

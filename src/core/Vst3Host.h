@@ -15,7 +15,10 @@
 #include <memory>
 
 bool vst3Available();
-// .vst3 plugins in the standard folders (Common Files\VST3 and the user's).
+// The standard VST3 folders (Common Files\VST3 and the user's): only plugins in them are ever loaded, so a path in a
+// project, a plugin script or an AI Control call can't make the program load any other DLL.
+QStringList vst3Folders();
+// .vst3 plugins in the standard folders.
 QStringList vst3InstalledPlugins();
 // The audio effect classes in a plugin file (a shell such as Waves' has many).
 QStringList vst3EffectClasses(const QString& path, QString* error = nullptr);
