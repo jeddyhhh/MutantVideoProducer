@@ -2895,6 +2895,7 @@ int MainWindow::runEditorTest(QStringList& log)
         check(script && script->toPlainText().isEmpty(), "new project clears displayed Story draft");
         m_project->load(fixture, &error);
     }
+    runPluginsTest(check, work, mediaPath);
     failures += runCollectionUiTests(this, log);
     return failures;
 }

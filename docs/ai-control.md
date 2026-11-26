@@ -96,6 +96,7 @@ for each step and the checks that catch mistakes. It is how the *Snowbank* episo
 | set_live_source | Chooses the sources. |
 | live_action | Start / stop, pads, scenes and setlist songs, filling pads, recording, cue and take. |
 | set_tempo, set_pad, save_scene | Tempo, pad chains, scenes. |
+| live_setlist | Lists the setlist, or replaces it with songs (name, BPM, scene, pad set, notes). |
 | live_switcher | The switcher's inputs, preview, Cut and Auto. |
 | get_live_frame | Looks at the output. |
 

@@ -1,0 +1,21 @@
+{
+  "id": "social-cutdowns",
+  "name": "Social Cut-downs",
+  "version": "1.0",
+  "author": "Mutant Video Producer",
+  "description": "Renders a short vertical (9:16) copy of part of the edit for Shorts, Reels or TikTok: Auto Reframe follows the subject, the render goes in the Render Queue, and the edit is left as it was.",
+  "commands": [
+    {
+      "label": "Vertical Cut-down...",
+      "script": "main.js",
+      "fields": [
+        { "id": "start", "label": "From (seconds)", "type": "number", "default": 0, "min": 0, "max": 86400 },
+        { "id": "seconds", "label": "Length", "type": "choice", "choices": ["15", "30", "60", "90"],
+          "labels": ["15 seconds", "30 seconds", "60 seconds", "90 seconds"], "default": "60" },
+        { "id": "output", "label": "Save the video as", "type": "save", "filter": "MP4 video (*.mp4)" },
+        { "id": "template", "label": "Render template (words from its name)", "type": "text", "default": "MP4 H.264" },
+        { "id": "now", "label": "Start rendering now", "type": "bool", "default": true }
+      ]
+    }
+  ]
+}

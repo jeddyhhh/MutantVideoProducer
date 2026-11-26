@@ -4,6 +4,7 @@
 #include "ui/McpServer.h"
 
 #include <QCheckBox>
+#include <QColorDialog>
 #include <QComboBox>
 #include <QCoreApplication>
 #include <QCryptographicHash>
@@ -23,9 +24,12 @@
 #include <QLineEdit>
 #include <QMessageBox>
 #include <QPushButton>
+#include <QRegularExpression>
+#include <QSaveFile>
 #include <QSettings>
 #include <QVersionNumber>
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
@@ -63,15 +67,31 @@ QString scriptPath(const Plugin& p, const Command& c)
     return !path.isEmpty() && path.startsWith(root + QLatin1Char('/')) ? path : QString();
 }
 
+// JSON as plain JavaScript objects and arrays (JSON.parse): every array method works on them, and the same object
+// read twice is the same object (QJSEngine's own conversion of a QVariant gives wrappers that are neither).
+QJSValue fromJson(QJSEngine& engine, const QJsonValue& value)
+{
+    const QByteArray text = value.isObject() ? QJsonDocument(value.toObject()).toJson(QJsonDocument::Compact)
+                            : value.isArray() ? QJsonDocument(value.toArray()).toJson(QJsonDocument::Compact)
+                                              : QJsonDocument(QJsonArray{value}).toJson(QJsonDocument::Compact);
+    QJSValue parsed = engine.globalObject().property(QStringLiteral("JSON")).property(QStringLiteral("parse")).call({QString::fromUtf8(text)});
+    return value.isObject() || value.isArray() ? parsed : parsed.property(0);
+}
+
 // What a script sees as `mvp`.
 class Api : public QObject {
     Q_OBJECT
 public:
-    Api(QJSEngine& engine, McpServer& server, const QStringList& files, QStringList* log, std::function<void(bool)> scriptTime)
-        : m_engine(engine), m_server(server), m_log(log), m_scriptTime(std::move(scriptTime))
+    Api(QJSEngine& engine, McpServer& server, const Access& access, std::function<void()> rollback, QStringList* log,
+        std::function<void(bool)> scriptTime)
+        : m_engine(engine), m_server(server), m_rollback(std::move(rollback)), m_log(log), m_scriptTime(std::move(scriptTime))
     {
-        for (const QString& f : files)
+        for (const QString& f : access.read)
             m_files << QFileInfo(f).canonicalFilePath();
+        for (const QString& f : access.folders)
+            m_folders << QFileInfo(f).canonicalFilePath();
+        for (const QString& f : access.write)
+            m_writes << QFileInfo(f).absoluteFilePath();
     }
 
     // One of the program's commands (the AI Control tools), its answer as an object. Throws when it fails.
@@ -108,20 +128,21 @@ public:
             return {};
         }
         if (result.contains(QStringLiteral("structuredContent")))
-            return m_engine.toScriptValue(result[QStringLiteral("structuredContent")].toVariant());
+            return fromJson(m_engine, result[QStringLiteral("structuredContent")]);
         QJsonParseError err;
         const QJsonDocument doc = QJsonDocument::fromJson(text.toUtf8(), &err);
         if (err.error == QJsonParseError::NoError)
-            return m_engine.toScriptValue(doc.isArray() ? QVariant(doc.array().toVariantList()) : QVariant(doc.object().toVariantMap()));
+            return fromJson(m_engine, doc.isArray() ? QJsonValue(doc.array()) : QJsonValue(doc.object()));
         return QJSValue(text);
     }
 
-    // A text file the user chose in the command's form (no others).
+    // A text file the user chose in the form, or one in a folder chosen there (no others).
     Q_INVOKABLE QJSValue readText(const QString& path)
     {
         const QString canonical = QFileInfo(path).canonicalFilePath();
-        if (canonical.isEmpty() || !m_files.contains(canonical)) {
-            m_engine.throwError(QJSValue::GenericError, QStringLiteral("readText: only a file chosen in the form can be read (%1)").arg(path));
+        if (canonical.isEmpty() || !(m_files.contains(canonical) || inFolder(canonical))) {
+            m_engine.throwError(QJSValue::GenericError,
+                                QStringLiteral("readText: only a file chosen in the form, or in a folder chosen there, can be read (%1)").arg(path));
             return {};
         }
         QString error;
@@ -133,6 +154,43 @@ public:
         return QJSValue(QString::fromUtf8(bytes));
     }
 
+    // The files in a folder chosen in the form (full paths, sorted by name), those matching the patterns
+    // (["*.jpg", "*.png"]; none: all of them).
+    Q_INVOKABLE QJSValue listFolder(const QString& path, const QStringList& patterns = {})
+    {
+        const QString canonical = QFileInfo(path).canonicalFilePath();
+        if (canonical.isEmpty() || !m_folders.contains(canonical)) {
+            m_engine.throwError(QJSValue::GenericError, QStringLiteral("listFolder: only a folder chosen in the form can be listed (%1)").arg(path));
+            return {};
+        }
+        QJsonArray out;
+        for (const QFileInfo& f : QDir(canonical).entryInfoList(patterns, QDir::Files, QDir::Name | QDir::IgnoreCase))
+            out.append(f.absoluteFilePath());
+        return fromJson(m_engine, out);
+    }
+
+    // Writes a text file (UTF-8): only the one a save field of the form named.
+    Q_INVOKABLE void writeText(const QString& path, const QString& text)
+    {
+        const QString absolute = QFileInfo(path).absoluteFilePath();
+        if (!m_writes.contains(absolute)) {
+            m_engine.throwError(QJSValue::GenericError, QStringLiteral("writeText: only the file a save field names can be written (%1)").arg(path));
+            return;
+        }
+        const QByteArray bytes = text.toUtf8();
+        QSaveFile f(absolute);
+        if (bytes.size() > kMostReadBytes || !f.open(QIODevice::WriteOnly) || f.write(bytes) != bytes.size() || !f.commit())
+            m_engine.throwError(QJSValue::GenericError,
+                                QStringLiteral("writeText: %1: %2").arg(path, bytes.size() > kMostReadBytes ? QStringLiteral("over 16 MB") : f.errorString()));
+    }
+
+    // Takes back everything this run has changed so far (e.g. after queueing a render of a changed copy).
+    Q_INVOKABLE void rollback()
+    {
+        if (m_rollback)
+            m_rollback();
+    }
+
     // A line for the status bar (and the log shown if the script fails).
     Q_INVOKABLE void log(const QString& text)
     {
@@ -141,12 +199,18 @@ public:
     }
 
     // The commands mvp.call takes: [{name, description, inputSchema}].
-    Q_INVOKABLE QJSValue tools() { return m_engine.toScriptValue(McpServer::toolList().toVariantList()); }
+    Q_INVOKABLE QJSValue tools() { return fromJson(m_engine, McpServer::toolList()); }
 
 private:
+    bool inFolder(const QString& canonical) const
+    {
+        return std::any_of(m_folders.begin(), m_folders.end(), [&](const QString& d) { return canonical.startsWith(d + QLatin1Char('/')); });
+    }
+
     QJSEngine& m_engine;
     McpServer& m_server;
-    QStringList m_files;
+    QStringList m_files, m_folders, m_writes;
+    std::function<void()> m_rollback;
     QStringList* m_log;
     std::function<void(bool)> m_scriptTime;
 };
@@ -232,8 +296,9 @@ bool read(const QString& folder, Plugin* out, QString* error)
         *error = QStringLiteral("needs Mutant Video Producer %1 or later").arg(needs);
         return false;
     }
-    static const QStringList types{QStringLiteral("file"), QStringLiteral("choice"), QStringLiteral("number"), QStringLiteral("bool"),
-                                   QStringLiteral("text")};
+    static const QStringList types{QStringLiteral("file"),   QStringLiteral("files"),  QStringLiteral("folder"),
+                                   QStringLiteral("save"),   QStringLiteral("choice"), QStringLiteral("number"),
+                                   QStringLiteral("bool"),   QStringLiteral("text"),   QStringLiteral("color")};
     for (const QJsonValue cv : o[QStringLiteral("commands")].toArray()) {
         Command c;
         c.label = cv[QStringLiteral("label")].toString();
@@ -256,6 +321,7 @@ bool read(const QString& folder, Plugin* out, QString* error)
             f.filter = fv[QStringLiteral("filter")].toString();
             f.min = fv[QStringLiteral("min")].toDouble(-1e9);
             f.max = fv[QStringLiteral("max")].toDouble(1e9);
+            f.optional = fv[QStringLiteral("optional")].toBool(false);
             for (const QJsonValue v : fv[QStringLiteral("choices")].toArray())
                 f.choices << v.toString();
             for (const QJsonValue v : fv[QStringLiteral("labels")].toArray())
@@ -319,13 +385,14 @@ QString fingerprint(const Plugin& plugin)
     return QString::fromLatin1(hash.result().toHex());
 }
 
-bool ask(QWidget* parent, const Plugin& plugin, int command, QJsonObject* args, QStringList* files)
+bool ask(QWidget* parent, const Plugin& plugin, int command, QJsonObject* args, Access* access)
 {
     const Command& c = plugin.commands[size_t(command)];
     const QJsonObject last = QJsonDocument::fromJson(QSettings().value(settingsKey(plugin, command)).toByteArray()).object();
     QDialog dlg(parent);
     dlg.setObjectName(QStringLiteral("pluginForm"));
     dlg.setWindowTitle(QString(c.label).remove(QStringLiteral("...")));
+    dlg.setMinimumWidth(480);
     auto* form = new QFormLayout(&dlg);
     if (!c.description.isEmpty() || !plugin.description.isEmpty()) {
         auto* about = new QLabel(c.description.isEmpty() ? plugin.description : c.description);
@@ -336,23 +403,67 @@ bool ask(QWidget* parent, const Plugin& plugin, int command, QJsonObject* args, 
     std::vector<std::function<QString()>> problems;
     for (const Field& f : c.fields) {
         const QJsonValue start = last.contains(f.id) ? last[f.id] : f.value;
-        if (f.type == QLatin1String("file")) {
+        const bool isPath = f.type == QLatin1String("file") || f.type == QLatin1String("files") || f.type == QLatin1String("folder")
+                            || f.type == QLatin1String("save");
+        if (isPath) {
+            QStringList shown;
+            if (start.isArray())
+                for (const QJsonValue v : start.toArray())
+                    shown << QDir::toNativeSeparators(v.toString());
+            else if (!start.toString().isEmpty())
+                shown << QDir::toNativeSeparators(start.toString());
             auto* row = new QWidget;
-            auto* line = new QLineEdit(start.toString());
+            auto* line = new QLineEdit(shown.join(QStringLiteral("; ")));
+            if (f.optional)
+                line->setPlaceholderText(QObject::tr("(optional)"));
             auto* browse = new QPushButton(QObject::tr("Browse..."));
             auto* h = new QHBoxLayout(row);
             h->setContentsMargins(0, 0, 0, 0);
             h->addWidget(line, 1);
             h->addWidget(browse);
-            QObject::connect(browse, &QPushButton::clicked, &dlg, [&dlg, line, filter = f.filter, title = f.label] {
-                const QString path = QFileDialog::getOpenFileName(&dlg, title, line->text(), filter);
-                if (!path.isEmpty())
-                    line->setText(QDir::toNativeSeparators(path));
+            QObject::connect(browse, &QPushButton::clicked, &dlg, [&dlg, line, f] {
+                const QString at = line->text().section(QLatin1Char(';'), 0, 0).trimmed();
+                QStringList chosen;
+                if (f.type == QLatin1String("file"))
+                    chosen << QFileDialog::getOpenFileName(&dlg, f.label, at, f.filter);
+                else if (f.type == QLatin1String("files"))
+                    chosen = QFileDialog::getOpenFileNames(&dlg, f.label, at, f.filter);
+                else if (f.type == QLatin1String("folder"))
+                    chosen << QFileDialog::getExistingDirectory(&dlg, f.label, at);
+                else
+                    chosen << QFileDialog::getSaveFileName(&dlg, f.label, at, f.filter);
+                chosen.removeAll(QString());
+                if (!chosen.isEmpty()) {
+                    for (QString& p : chosen)
+                        p = QDir::toNativeSeparators(p);
+                    line->setText(chosen.join(QStringLiteral("; ")));
+                }
             });
             form->addRow(f.label, row);
-            values.push_back([line] { return QJsonValue(QDir::fromNativeSeparators(line->text().trimmed())); });
-            problems.push_back([line, label = f.label] {
-                return QFileInfo(line->text().trimmed()).isFile() ? QString() : QObject::tr("%1: choose a file").arg(label);
+            auto paths = [line] {
+                QStringList out;
+                for (const QString& p : line->text().split(QLatin1Char(';'), Qt::SkipEmptyParts))
+                    if (!p.trimmed().isEmpty())
+                        out << QDir::fromNativeSeparators(p.trimmed());
+                return out;
+            };
+            if (f.type == QLatin1String("files"))
+                values.push_back([paths] { return QJsonValue(QJsonArray::fromStringList(paths())); });
+            else
+                values.push_back([paths] { return QJsonValue(paths().value(0)); });
+            problems.push_back([paths, f] {
+                const QStringList p = paths();
+                if (p.isEmpty())
+                    return f.optional ? QString() : QObject::tr("%1: choose one").arg(f.label);
+                for (const QString& one : p) {
+                    const QFileInfo fi(one);
+                    const bool ok = f.type == QLatin1String("folder") ? fi.isDir()
+                                    : f.type == QLatin1String("save")  ? fi.absoluteDir().exists() && !fi.isDir()
+                                                                       : fi.isFile();
+                    if (!ok)
+                        return QObject::tr("%1: %2 isn't there").arg(f.label, QDir::toNativeSeparators(one));
+                }
+                return QString();
             });
         } else if (f.type == QLatin1String("choice")) {
             auto* box = new QComboBox;
@@ -373,6 +484,22 @@ bool ask(QWidget* parent, const Plugin& plugin, int command, QJsonObject* args, 
             box->setChecked(start.toBool());
             form->addRow(box);
             values.push_back([box] { return QJsonValue(box->isChecked()); });
+        } else if (f.type == QLatin1String("color")) {
+            auto* button = new QPushButton;
+            auto show = [button](const QColor& colour) {
+                button->setText(colour.name());
+                button->setStyleSheet(QStringLiteral("QPushButton { background: %1; color: %2; }")
+                                          .arg(colour.name(), colour.lightnessF() > 0.55 ? QStringLiteral("#000000") : QStringLiteral("#ffffff")));
+            };
+            const QColor first(start.toString());
+            show(first.isValid() ? first : QColor(Qt::white));
+            QObject::connect(button, &QPushButton::clicked, &dlg, [&dlg, button, show, label = f.label] {
+                const QColor chosen = QColorDialog::getColor(QColor(button->text()), &dlg, label);
+                if (chosen.isValid())
+                    show(chosen);
+            });
+            form->addRow(f.label, button);
+            values.push_back([button] { return QJsonValue(button->text()); });
         } else {
             auto* line = new QLineEdit(start.toString());
             form->addRow(f.label, line);
@@ -395,17 +522,27 @@ bool ask(QWidget* parent, const Plugin& plugin, int command, QJsonObject* args, 
     if (dlg.exec() != QDialog::Accepted)
         return false;
     *args = {};
-    files->clear();
+    *access = {};
     for (size_t i = 0; i < c.fields.size(); ++i) {
-        (*args)[c.fields[i].id] = values[i]();
-        if (c.fields[i].type == QLatin1String("file"))
-            *files << (*args)[c.fields[i].id].toString();
+        const Field& f = c.fields[i];
+        const QJsonValue v = values[i]();
+        (*args)[f.id] = v;
+        if (f.type == QLatin1String("file") && !v.toString().isEmpty())
+            access->read << v.toString();
+        else if (f.type == QLatin1String("files"))
+            for (const QJsonValue p : v.toArray())
+                access->read << p.toString();
+        else if (f.type == QLatin1String("folder") && !v.toString().isEmpty())
+            access->folders << v.toString();
+        else if (f.type == QLatin1String("save") && !v.toString().isEmpty())
+            access->write << v.toString();
     }
     QSettings().setValue(settingsKey(plugin, command), QJsonDocument(*args).toJson(QJsonDocument::Compact));
     return true;
 }
 
-QString run(McpServer& server, const Plugin& plugin, int command, const QJsonObject& args, const QStringList& files, QStringList* log)
+QString run(McpServer& server, const Plugin& plugin, int command, const QJsonObject& args, const Access& access,
+            const std::function<void()>& rollback, QStringList* log)
 {
     const Command& c = plugin.commands[size_t(command)];
     const QString path = scriptPath(plugin, c);
@@ -416,13 +553,13 @@ QString run(McpServer& server, const Plugin& plugin, int command, const QJsonObj
     QJSEngine engine;
     engine.installExtensions(QJSEngine::ConsoleExtension);
     Watchdog watchdog(engine);
-    Api api(engine, server, files, log, [&watchdog](bool on) { watchdog.running(on); });
+    Api api(engine, server, access, rollback, log, [&watchdog](bool on) { watchdog.running(on); });
     QJSEngine::setObjectOwnership(&api, QJSEngine::CppOwnership);
     QJSValue mvp = engine.newQObject(&api);
-    mvp.setProperty(QStringLiteral("args"), engine.toScriptValue(args.toVariantMap()));
-    mvp.setProperty(QStringLiteral("plugin"), engine.toScriptValue(QVariantMap{{QStringLiteral("id"), plugin.id},
-                                                                               {QStringLiteral("version"), plugin.version},
-                                                                               {QStringLiteral("folder"), plugin.folder}}));
+    mvp.setProperty(QStringLiteral("args"), fromJson(engine, args));
+    mvp.setProperty(QStringLiteral("plugin"), fromJson(engine, QJsonObject{{QStringLiteral("id"), plugin.id},
+                                                                           {QStringLiteral("version"), plugin.version},
+                                                                           {QStringLiteral("folder"), plugin.folder}}));
     engine.globalObject().setProperty(QStringLiteral("mvp"), mvp);
     const QJSValue result = engine.evaluate(QString::fromUtf8(code), QFileInfo(path).fileName(), 1);
     if (engine.isInterrupted())

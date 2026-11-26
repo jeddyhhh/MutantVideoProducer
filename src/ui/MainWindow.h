@@ -37,6 +37,7 @@ class DialogueJob;
 struct VoiceAsset;
 namespace plugins {
 struct Plugin;
+struct Access;
 }
 
 class MainWindow : public QMainWindow {
@@ -66,9 +67,11 @@ public:
     // J/K/L, I/O, autosave and recovery, recent projects, relinking.
     int runEditorTest(QStringList& log);
     void runProductionToolsTest(const std::function<void(bool, const QString&)>& check, const class QDir& work); // (a part of it)
+    void runPluginsTest(const std::function<void(bool, const QString&)>& check, const QDir& work, const QString& clip); // (and its plugins)
     Q_INVOKABLE void showMixerForTests() { showMixer(); }
     // A plugin's command (by its id) without its form; empty on success, else the error.
-    QString runPluginForTests(const QString& id, int command, const QJsonObject& args, const QStringList& files);
+    QString runPluginForTests(const QString& id, int command, const QJsonObject& args, const plugins::Access& access,
+                              QStringList* log = nullptr);
 
     // Help > User Guide / Tutorials, and context help (Help.h): a page of docs/
     // ("README.md", "effects.md#masks"); from a dialog, in a window of the dialog's own.
@@ -291,7 +294,7 @@ private:
     // Tools > Plugins (MainWindowPlugins.cpp).
     void fillPluginsMenu(QMenu* menu);
     void runPluginCommand(const plugins::Plugin& plugin, int command);
-    QString runPlugin(const plugins::Plugin& plugin, int command, const QJsonObject& args, const QStringList& files, QStringList* log);
+    QString runPlugin(const plugins::Plugin& plugin, int command, const QJsonObject& args, const plugins::Access& access, QStringList* log);
     AudioMeter* m_meter = nullptr;
     class MixerWindow* m_mixer = nullptr;
 

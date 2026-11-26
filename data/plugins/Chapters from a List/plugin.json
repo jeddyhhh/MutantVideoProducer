@@ -1,0 +1,17 @@
+{
+  "id": "chapters-from-list",
+  "name": "Chapters from a List",
+  "version": "1.0",
+  "author": "Mutant Video Producer",
+  "description": "Turns a list of chapters, one per line like a YouTube description (\"00:00 Intro\", \"2:15 The build\"), into named markers. Deliver makes YouTube chapters from them.",
+  "commands": [
+    {
+      "label": "Chapters from a List...",
+      "script": "main.js",
+      "fields": [
+        { "id": "list", "label": "Chapter list (.txt)", "type": "file", "filter": "Text (*.txt);;All files (*)" },
+        { "id": "replace", "label": "Remove the markers already there first", "type": "bool", "default": false }
+      ]
+    }
+  ]
+}

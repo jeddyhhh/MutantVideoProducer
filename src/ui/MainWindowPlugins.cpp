@@ -63,11 +63,11 @@ void MainWindow::runPluginCommand(const plugins::Plugin& plugin, int command)
         }
     }
     QJsonObject args;
-    QStringList files;
-    if (!plugins::ask(this, plugin, command, &args, &files))
+    plugins::Access access;
+    if (!plugins::ask(this, plugin, command, &args, &access))
         return;
     QStringList log;
-    const QString error = runPlugin(plugin, command, args, files, &log);
+    const QString error = runPlugin(plugin, command, args, access, &log);
     if (!error.isEmpty())
         QMessageBox::warning(this, plugin.name,
                              tr("%1\n\n%2Anything it changed before that is one step in Edit > Undo.")
@@ -76,26 +76,35 @@ void MainWindow::runPluginCommand(const plugins::Plugin& plugin, int command)
         statusBar()->showMessage(log.isEmpty() ? tr("%1: done").arg(plugin.commands[size_t(command)].label) : log.last(), 6000);
 }
 
-QString MainWindow::runPlugin(const plugins::Plugin& plugin, int command, const QJsonObject& args, const QStringList& files,
+QString MainWindow::runPlugin(const plugins::Plugin& plugin, int command, const QJsonObject& args, const plugins::Access& access,
                               QStringList* log)
 {
     if (editorActive())
         stopPlayback(false);
     statusBar()->showMessage(tr("Plugin: %1...").arg(plugin.commands[size_t(command)].label));
     QApplication::setOverrideCursor(Qt::WaitCursor);
-    // Everything it does is one undo step.
-    m_project->undoStack()->beginMacro(tr("Plugin: %1").arg(QString(plugin.commands[size_t(command)].label).remove(QStringLiteral("..."))));
-    const QString error = plugins::run(*m_mcp, plugin, command, args, files, log);
-    m_project->undoStack()->endMacro();
+    // Everything it does is one undo step; mvp.rollback takes back what it has done so far.
+    QUndoStack* undo = m_project->undoStack();
+    const QString step = tr("Plugin: %1").arg(QString(plugin.commands[size_t(command)].label).remove(QStringLiteral("...")));
+    const int before = undo->index();
+    undo->beginMacro(step);
+    const QString error = plugins::run(*m_mcp, plugin, command, args, access, [undo, step, before] {
+        undo->endMacro();
+        if (undo->index() > before)
+            undo->undo();
+        undo->beginMacro(step);
+    }, log);
+    undo->endMacro();
     QApplication::restoreOverrideCursor();
     statusBar()->clearMessage();
     return error;
 }
 
-QString MainWindow::runPluginForTests(const QString& id, int command, const QJsonObject& args, const QStringList& files)
+QString MainWindow::runPluginForTests(const QString& id, int command, const QJsonObject& args, const plugins::Access& access,
+                                     QStringList* log)
 {
     for (const plugins::Plugin& p : plugins::load())
         if (p.id == id && command < int(p.commands.size()))
-            return runPlugin(p, command, args, files, nullptr);
+            return runPlugin(p, command, args, access, log);
     return QStringLiteral("no plugin %1").arg(id);
 }

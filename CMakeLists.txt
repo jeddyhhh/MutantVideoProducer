@@ -269,6 +269,7 @@ add_executable(mvp WIN32
     tests/collection-ui.cpp tests/collection-ui.h
     # The scripted GUI tests (--editor-test, --live-test): members, so they reach the widgets' internals.
     tests/gui/MainWindowTest.cpp tests/gui/MainWindowTest2.cpp tests/gui/TimelineWidgetTest.cpp tests/gui/LiveViewTest.cpp
+    tests/gui/PluginsTest.cpp
     src/ui/MainWindowStory.cpp
     src/ui/VoiceJob.h            src/ui/VoiceJob.cpp
     src/ui/StemJob.h             src/ui/StemJob.cpp

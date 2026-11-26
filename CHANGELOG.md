@@ -7,10 +7,16 @@ What changed in each version of Mutant Video Producer. The newest is first.
 ### Added
 
 - **Plugins** (Tools > Plugins): a plugin is a folder with a `plugin.json` and JavaScript. Each of its commands gets
-  a menu entry and a form, and its script edits the open project through the AI Control commands, as one undo step.
-  Scripts can't touch files or the network on their own; a plugin you added asks before it first runs and after it
-  changes. Comes with **Lyric Video from LRC**: timed lyrics as titles on a Lyrics track, optionally on the beat. See
-  the [Plugins](docs/plugins.md) page.
+  a menu entry and a form (files, folders, a file to save, choices, numbers, tick boxes, text, colours), and its script
+  edits the open project through the AI Control commands, as one undo step. Scripts can read only the files and folders
+  picked in the form and write only the file named there, and can't go online; a plugin you added asks before it first
+  runs and after it changes. Seventeen come with it: **Lyric Video from LRC**, **Chapters from a List**, **Music Video
+  in One Click**, **Fill the Gaps**, **Batch Effects**, **Countdown or Timer**, **Podcast Clean-up**, **Vertical
+  Cut-down**, **Brand Kit**, **Scoreboard from CSV**, **Edit List from CSV**, **Restyle Captions**, **Setlist from
+  CSV**, **Genre Pads**, **Photo Slideshow**, **Shot List Export** and **Stream Highlights**. See
+  [Plugins](docs/plugins.md), and [Plugin Commands](docs/plugin-commands.md) for every command a script can use.
+- **AI Control**: `live_setlist` lists or replaces the Live tab's setlist, and `get_project` says which events are
+  selected on the timeline.
 
 ## 1.1.0 (2026-11-24)
 

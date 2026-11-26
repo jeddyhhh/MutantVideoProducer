@@ -907,6 +907,7 @@ void MainWindow::createActions()
     heading(tools, tr("Plugins"));
     QMenu* pluginsMenu = tools->addMenu(tr("Plu&gins"));
     pluginsMenu->setObjectName(QStringLiteral("pluginsMenu"));
+    pluginsMenu->setToolTipsVisible(true); // (each command's plugin, version and author)
     connect(pluginsMenu, &QMenu::aboutToShow, this, [this, pluginsMenu] { fillPluginsMenu(pluginsMenu); });
     fillPluginsMenu(pluginsMenu); // (filled now too, for the shortcuts list and tests)
 

@@ -1,0 +1,17 @@
+{
+  "id": "edit-list-csv",
+  "name": "Edit List from CSV",
+  "version": "1.0",
+  "author": "Mutant Video Producer",
+  "description": "Lays out a cut from a CSV file with a row per shot: file, in, out and an optional name (\"interview.mp4,12.5,20,Hello\"). Files without a folder are looked for next to the CSV; times are seconds or h:mm:ss. The shots go one after another at the end of the edit.",
+  "commands": [
+    {
+      "label": "Edit List from CSV...",
+      "script": "main.js",
+      "fields": [
+        { "id": "csv", "label": "Edit list (.csv)", "type": "file", "filter": "CSV (*.csv *.txt);;All files (*)" },
+        { "id": "gap", "label": "Gap between shots (seconds)", "type": "number", "default": 0, "min": 0, "max": 60 }
+      ]
+    }
+  ]
+}

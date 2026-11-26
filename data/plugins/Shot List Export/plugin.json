@@ -1,0 +1,19 @@
+{
+  "id": "shot-list",
+  "name": "Shot List Export",
+  "version": "1.0",
+  "author": "Mutant Video Producer",
+  "description": "Writes a CSV of every event in the edit (track, start, end, length, file, where in the file, name or text, effects), for a cue sheet, music reporting or checking an edit in a spreadsheet. The edit isn't changed.",
+  "commands": [
+    {
+      "label": "Shot List Export...",
+      "script": "main.js",
+      "fields": [
+        { "id": "output", "label": "Save the CSV as", "type": "save", "filter": "CSV (*.csv)" },
+        { "id": "kind", "label": "Events", "type": "choice", "choices": ["all", "video", "audio"],
+          "labels": ["All of them", "Pictures only", "Sound only"], "default": "all" },
+        { "id": "timecode", "label": "Times as h:mm:ss.ff (else seconds)", "type": "bool", "default": true }
+      ]
+    }
+  ]
+}

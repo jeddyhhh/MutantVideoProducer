@@ -199,9 +199,10 @@ the program. See [AI Control](docs/ai-control.md).
 
 ## Plugins
 
-**Tools > Plugins** runs commands written in JavaScript: a folder with a `plugin.json` and a script that edits the
-project through the same commands as AI Control, in one undo step. **Lyric Video from LRC** comes with it. See
-[Plugins](docs/plugins.md) to write your own.
+**Tools > Plugins** runs commands written in JavaScript: a folder with a `plugin.json` (its form) and a script that
+edits the project through the same commands as AI Control, in one undo step. Seventeen come with it, from **Lyric
+Video from LRC**, **Music Video in One Click** and **Podcast Clean-up** to **Photo Slideshow**, **Brand Kit** and
+**Stream Highlights**. See [Plugins](docs/plugins.md) to use them and write your own.
 
 ## Make it yours
 

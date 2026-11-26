@@ -56,7 +56,8 @@ guide, and **Help > Tutorials** to open the step-by-step tutorials and their exa
 - [GPU Acceleration](gpu-acceleration.md): which parts of preview, effects and rendering use the graphics card.
 - [AI Control (MCP)](ai-control.md): letting an AI assistant on your computer edit with you.
 - [Making a whole video through AI control](ai-workflow.md): the workflow an assistant follows for an animated episode or a documentary.
-- [Plugins](plugins.md): commands others have written (Tools > Plugins), and how to write your own in JavaScript.
+- [Plugins](plugins.md): the seventeen that come with it (Tools > Plugins), and how to write your own in JavaScript;
+  [Plugin Commands](plugin-commands.md) lists every command a plugin can use.
 
 ## For developers
 

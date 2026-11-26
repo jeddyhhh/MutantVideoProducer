@@ -1,0 +1,21 @@
+{
+  "id": "batch-effects",
+  "name": "Batch Effects",
+  "version": "1.0",
+  "author": "Mutant Video Producer",
+  "description": "Puts one effect or preset on many events at once (the selected events, or every event on a track), or takes every effect off them.",
+  "commands": [
+    {
+      "label": "Batch Effects...",
+      "script": "main.js",
+      "fields": [
+        { "id": "scope", "label": "Events", "type": "choice", "choices": ["selected", "track"],
+          "labels": ["The selected events", "Every event on a track"], "default": "selected" },
+        { "id": "track", "label": "Track (1: the top one; for every event on a track)", "type": "number", "default": 1, "min": 1, "max": 99 },
+        { "id": "action", "label": "Do", "type": "choice", "choices": ["effect", "preset", "strip"],
+          "labels": ["Add an effect", "Apply a preset", "Remove every effect"], "default": "effect" },
+        { "id": "name", "label": "Effect or preset name (e.g. VHS, Film Grain)", "type": "text", "default": "VHS" }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "id": "countdown-timer",
+  "name": "Countdown and Timer",
+  "version": "1.0",
+  "author": "Mutant Video Producer",
+  "description": "A countdown (10, 9, 8 ... 1) or a running clock (00:00, 00:01 ...) as titles on a new track, one a second.",
+  "commands": [
+    {
+      "label": "Countdown or Timer...",
+      "script": "main.js",
+      "fields": [
+        { "id": "mode", "label": "Kind", "type": "choice", "choices": ["countdown", "timer"],
+          "labels": ["Countdown", "Running clock"], "default": "countdown" },
+        { "id": "at", "label": "Starts at (seconds; -1: the cursor)", "type": "number", "default": -1, "min": -1, "max": 86400 },
+        { "id": "seconds", "label": "How many seconds", "type": "number", "default": 10, "min": 1, "max": 3600 },
+        { "id": "last", "label": "Countdown: words after it (empty: none)", "type": "text", "default": "GO!" },
+        { "id": "style", "label": "Style", "type": "choice", "choices": ["title", "kinetic_text", "lower_third", "subtitle"],
+          "labels": ["Centred title", "Kinetic", "Lower third", "Subtitle"], "default": "title" },
+        { "id": "color", "label": "Colour", "type": "color", "default": "#ffffff" }
+      ]
+    }
+  ]
+}

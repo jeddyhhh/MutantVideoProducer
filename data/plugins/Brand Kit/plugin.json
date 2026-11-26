@@ -1,0 +1,23 @@
+{
+  "id": "brand-kit",
+  "name": "Brand Kit",
+  "version": "1.0",
+  "author": "Mutant Video Producer",
+  "description": "Your intro at the start (the edit moves along to make room), your outro at the end, and your logo in a corner in between, on a track of its own.",
+  "commands": [
+    {
+      "label": "Brand Kit...",
+      "script": "main.js",
+      "fields": [
+        { "id": "logo", "label": "Logo (a picture; PNG with transparency is best)", "type": "file", "optional": true,
+          "filter": "Pictures (*.png *.jpg *.jpeg *.webp *.bmp);;All files (*)" },
+        { "id": "corner", "label": "Logo corner", "type": "choice", "choices": ["top-right", "top-left", "bottom-right", "bottom-left"],
+          "labels": ["Top right", "Top left", "Bottom right", "Bottom left"], "default": "top-right" },
+        { "id": "size", "label": "Logo size (% of the picture's height)", "type": "number", "default": 12, "min": 2, "max": 50 },
+        { "id": "opacity", "label": "Logo opacity (0 to 1)", "type": "number", "default": 0.85, "min": 0.05, "max": 1 },
+        { "id": "intro", "label": "Intro video", "type": "file", "optional": true, "filter": "Videos (*.mp4 *.mov *.mkv *.webm);;All files (*)" },
+        { "id": "outro", "label": "Outro video", "type": "file", "optional": true, "filter": "Videos (*.mp4 *.mov *.mkv *.webm);;All files (*)" }
+      ]
+    }
+  ]
+}

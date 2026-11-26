@@ -1,0 +1,23 @@
+{
+  "id": "restyle-captions",
+  "name": "Restyle Captions",
+  "version": "1.0",
+  "author": "Mutant Video Producer",
+  "description": "Gives every caption on the captions tracks one look: font, size, colour, a box behind them and where they sit.",
+  "commands": [
+    {
+      "label": "Restyle Captions...",
+      "script": "main.js",
+      "fields": [
+        { "id": "tracks", "label": "Tracks whose name has", "type": "text", "default": "Caption" },
+        { "id": "font", "label": "Font (empty: keep)", "type": "text", "default": "" },
+        { "id": "size", "label": "Size (% of the picture's height; 0: keep)", "type": "number", "default": 0, "min": 0, "max": 30 },
+        { "id": "color", "label": "Colour", "type": "color", "default": "#ffffff" },
+        { "id": "box", "label": "Box behind", "type": "choice", "choices": ["keep", "none", "light", "dark"],
+          "labels": ["Keep", "None", "See-through", "Solid"], "default": "keep" },
+        { "id": "position", "label": "Where", "type": "choice", "choices": ["keep", "bottom", "top"],
+          "labels": ["Keep", "Bottom", "Top"], "default": "keep" }
+      ]
+    }
+  ]
+}

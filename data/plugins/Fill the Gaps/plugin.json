@@ -1,0 +1,20 @@
+{
+  "id": "fill-gaps",
+  "name": "Fill the Gaps",
+  "version": "1.0",
+  "author": "Mutant Video Producer",
+  "description": "Fills every empty stretch of a video track, from the start to the end of the edit, with random parts of the videos in Project Media, so a rough cut has no black holes.",
+  "commands": [
+    {
+      "label": "Fill the Gaps...",
+      "script": "main.js",
+      "fields": [
+        { "id": "track", "label": "Video track (1: the top one)", "type": "number", "default": 1, "min": 1, "max": 99 },
+        { "id": "shortest", "label": "Leave gaps shorter than (seconds)", "type": "number", "default": 0.5, "min": 0.04, "max": 60 },
+        { "id": "longest", "label": "Longest piece of one video (seconds)", "type": "number", "default": 4, "min": 0.5, "max": 600 },
+        { "id": "sound", "label": "Keep the videos' sound", "type": "bool", "default": false },
+        { "id": "seed", "label": "Seed (another number, other pieces)", "type": "number", "default": 1, "min": 0, "max": 100000 }
+      ]
+    }
+  ]
+}

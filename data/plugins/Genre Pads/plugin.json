@@ -1,0 +1,19 @@
+{
+  "id": "genre-pads",
+  "name": "Genre Pads",
+  "version": "1.0",
+  "author": "Mutant Video Producer",
+  "description": "Fills eight of the Live tab's pads with named effect chains that suit a style of music. Locked pads are left alone; Ctrl+Z puts the pads back.",
+  "commands": [
+    {
+      "label": "Genre Pads...",
+      "script": "main.js",
+      "fields": [
+        { "id": "genre", "label": "Style", "type": "choice", "choices": ["ambient", "techno", "punk", "retro", "psychedelic"],
+          "labels": ["Ambient", "Techno", "Punk", "Retro games", "Psychedelic"], "default": "techno" },
+        { "id": "first", "label": "Pads", "type": "choice", "choices": ["1", "9"], "labels": ["1 to 8", "9 to 16"], "default": "1" },
+        { "id": "momentary", "label": "Momentary (on only while held)", "type": "bool", "default": false }
+      ]
+    }
+  ]
+}

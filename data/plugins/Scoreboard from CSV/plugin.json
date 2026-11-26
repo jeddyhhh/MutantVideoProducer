@@ -1,0 +1,20 @@
+{
+  "id": "scoreboard-csv",
+  "name": "Scoreboard from CSV",
+  "version": "1.0",
+  "author": "Mutant Video Producer",
+  "description": "A score that changes through a match, from a CSV file with a row per change: time, home score, away score and an optional note (\"12:30,1,0,Goal!\"). Times are seconds or m:ss.",
+  "commands": [
+    {
+      "label": "Scoreboard from CSV...",
+      "script": "main.js",
+      "fields": [
+        { "id": "csv", "label": "Scores (.csv)", "type": "file", "filter": "CSV (*.csv *.txt);;All files (*)" },
+        { "id": "home", "label": "Home team", "type": "text", "default": "HOME" },
+        { "id": "away", "label": "Away team", "type": "text", "default": "AWAY" },
+        { "id": "position", "label": "Where", "type": "choice", "choices": ["top", "bottom"], "labels": ["Top", "Bottom"], "default": "top" },
+        { "id": "color", "label": "Colour", "type": "color", "default": "#ffffff" }
+      ]
+    }
+  ]
+}

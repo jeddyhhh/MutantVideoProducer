@@ -1,0 +1,20 @@
+{
+  "id": "photo-slideshow",
+  "name": "Photo Slideshow",
+  "version": "1.0",
+  "author": "Mutant Video Producer",
+  "description": "Every picture in a folder, in name order, at the end of the edit: each one slowly zooming, crossfading into the next, with a song under them if you choose one.",
+  "commands": [
+    {
+      "label": "Photo Slideshow...",
+      "script": "main.js",
+      "fields": [
+        { "id": "folder", "label": "Folder of pictures", "type": "folder" },
+        { "id": "seconds", "label": "Seconds per picture", "type": "number", "default": 4, "min": 1, "max": 60 },
+        { "id": "fade", "label": "Crossfade (seconds)", "type": "number", "default": 1, "min": 0, "max": 5 },
+        { "id": "zoom", "label": "Slow zoom (Ken Burns)", "type": "bool", "default": true },
+        { "id": "music", "label": "Song", "type": "file", "optional": true, "filter": "Audio (*.mp3 *.m4a *.wav *.ogg *.flac *.aac);;All files (*)" }
+      ]
+    }
+  ]
+}

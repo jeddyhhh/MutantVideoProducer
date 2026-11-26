@@ -1,0 +1,21 @@
+{
+  "id": "podcast-cleanup",
+  "name": "Podcast Clean-up",
+  "version": "1.0",
+  "author": "Mutant Video Producer",
+  "description": "Evens out the voices (each voice event's peak to the same level), turns the music down under them, can take out long pauses, then sets the whole mix's loudness for where it's going.",
+  "commands": [
+    {
+      "label": "Podcast Clean-up...",
+      "script": "main.js",
+      "fields": [
+        { "id": "music", "label": "Music track (1: the top track; 0: no music)", "type": "number", "default": 0, "min": 0, "max": 99 },
+        { "id": "duck", "label": "Music under the voices (dB)", "type": "number", "default": -12, "min": -40, "max": 0 },
+        { "id": "silences", "label": "Take out pauses (on every track)", "type": "bool", "default": false },
+        { "id": "pause", "label": "Pauses longer than (seconds)", "type": "number", "default": 1.0, "min": 0.3, "max": 10 },
+        { "id": "target", "label": "Loudness for", "type": "choice", "choices": ["-16", "-14", "-23"],
+          "labels": ["Podcasts (-16 LUFS)", "YouTube (-14 LUFS)", "Broadcast (-23 LUFS)"], "default": "-16" }
+      ]
+    }
+  ]
+}

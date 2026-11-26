@@ -876,7 +876,8 @@ QJsonArray McpServer::toolList()
     // Project.
     t.append(tool("get_project",
                   "The whole project: settings, media (ids, files, length, size), tracks with their events (event ids, where they "
-                  "sit, what they show, their effects with ids and settings), track and output effects, markers, the cursor.",
+                  "sit, what they show, their effects with ids and settings), track and output effects, markers, the cursor, "
+                  "and the events selected on the timeline (selected: true on each, and the selected list).",
                   {}, {}, true));
     t.append(tool("import_media", "Adds files (video, audio, pictures) to Project Media. Returns their media ids.",
                   {{QStringLiteral("paths"), arrayProp("string", "Full file paths")}}, {QStringLiteral("paths")}));
@@ -1584,6 +1585,14 @@ QJsonArray McpServer::toolList()
     t.append(tool("save_scene", "Saves the current Live look (Live FX, pad, layer, overlays) as a scene.",
                   {{QStringLiteral("scene"), prop("integer", "1-8")}, {QStringLiteral("name"), prop("string", "Label")}},
                   {QStringLiteral("scene")}));
+    t.append(tool("live_setlist",
+                  "The Live tab's setlist (Page Down / Page Up play its songs): without songs, lists it; songs replaces it, "
+                  "each {name, bpm (0: listen for it), lock_bpm (default true), scene (1-8, 0: none), pad_set (a saved pad "
+                  "set's name, \"\": keep the pads), notes}. One undo step.",
+                  {{QStringLiteral("songs"), QJsonObject{{QStringLiteral("type"), QStringLiteral("array")},
+                                                         {QStringLiteral("items"), QJsonObject{{QStringLiteral("type"), QStringLiteral("object")}}},
+                                                         {QStringLiteral("description"), QStringLiteral("The new setlist, in order (empty: none)")}}}},
+                  {}));
     t.append(tool("live_switcher",
                   "The Live switcher: the inputs kept open beside the Source (input 1), and which one is on air. "
                   "inputs sets inputs 2-5 by (part of) their names (see live_status; \"\" = off); cut puts an input on air at "
@@ -1711,6 +1720,7 @@ struct McpServer::ToolCall {
     QJsonObject tool_set_effect();
     QJsonObject tool_remove_effect();
     QJsonObject tool_add_marker();
+    QJsonObject tool_live_setlist();
     QJsonObject tool_remove_markers();
     QJsonObject tool_detect_beats();
     QJsonObject tool_get_frame();
@@ -1945,6 +1955,8 @@ QJsonObject McpServer::ToolCall::tool_get_project()
             }
             if (!c.name.isEmpty())
                 o[QStringLiteral("name")] = c.name;
+            if (w->m_timeline->selection().count(c.id))
+                o[QStringLiteral("selected")] = true;
             if (c.muted)
                 o[QStringLiteral("muted")] = true;
             if (c.label)
@@ -2005,7 +2017,13 @@ QJsonObject McpServer::ToolCall::tool_get_project()
                     {QStringLiteral("cursor"), sec(w->m_timeline->cursorTime())},
                     {QStringLiteral("media"), media},
                     {QStringLiteral("tracks"), tracks},
-                    {QStringLiteral("markers"), markers}};
+                    {QStringLiteral("markers"), markers},
+                    {QStringLiteral("selected"), [&] {
+                         QJsonArray ids;
+                         for (int id : w->m_timeline->selection())
+                             ids.append(id);
+                         return ids;
+                     }()}};
     out["chapters"] = tl.chapters;
     out["narration_settings"] = tl.narrationSettings;
     if (!tl.outputEffects.empty())
@@ -3647,6 +3665,48 @@ QJsonObject McpServer::ToolCall::tool_save_scene()
     return jsonResult({{QStringLiteral("scene"), n}});
 }
 
+QJsonObject McpServer::ToolCall::tool_live_setlist()
+{
+    if (has("songs")) {
+        const QJsonArray list = a.value(QStringLiteral("songs")).toArray();
+        if (list.size() > 500)
+            return errorResult(QStringLiteral("at most 500 songs"));
+        std::vector<LiveSong> songs;
+        for (const QJsonValue v : list) {
+            const QJsonObject o = v.toObject();
+            LiveSong s;
+            s.name = o[QStringLiteral("name")].toString().trimmed();
+            if (s.name.isEmpty())
+                return errorResult(QStringLiteral("every song needs a name"));
+            const double bpm = o[QStringLiteral("bpm")].toDouble(0);
+            if (!(bpm == 0 || (bpm >= 20 && bpm <= 400)))
+                return errorResult(QStringLiteral("%1: bpm 20-400, or 0 to listen for it").arg(s.name));
+            const int scene = o[QStringLiteral("scene")].toInt(0);
+            if (scene < 0 || scene > kLiveScenes)
+                return errorResult(QStringLiteral("%1: scene 1-8, or 0 for none").arg(s.name));
+            s.bpm = bpm;
+            s.lockBpm = o[QStringLiteral("lock_bpm")].toBool(true);
+            s.scene = scene - 1;
+            s.padSet = o[QStringLiteral("pad_set")].toString();
+            s.notes = o[QStringLiteral("notes")].toString();
+            songs.push_back(s);
+        }
+        Timeline tl = project->timeline();
+        tl.liveSetlist = songs;
+        if (tl != project->timeline())
+            apply(tl, QStringLiteral("Edit Setlist"));
+    }
+    QJsonArray out;
+    const auto& songs = project->timeline().liveSetlist;
+    for (int i = 0; i < int(songs.size()); ++i) {
+        const LiveSong& s = songs[size_t(i)];
+        out.append(QJsonObject{{QStringLiteral("song"), i + 1}, {QStringLiteral("name"), s.name}, {QStringLiteral("bpm"), s.bpm},
+                               {QStringLiteral("lock_bpm"), s.lockBpm}, {QStringLiteral("scene"), s.scene + 1},
+                               {QStringLiteral("pad_set"), s.padSet}, {QStringLiteral("notes"), s.notes}});
+    }
+    return jsonResult({{QStringLiteral("songs"), out}});
+}
+
 QJsonObject McpServer::ToolCall::tool_live_switcher()
 {
     if (has("inputs")) {
@@ -5153,6 +5213,7 @@ QJsonObject McpServer::callTool(const QString& name, const QJsonObject& a)
         {QStringLiteral("set_tempo"), {&ToolCall::tool_set_tempo, true}},
         {QStringLiteral("set_pad"), {&ToolCall::tool_set_pad, true}},
         {QStringLiteral("save_scene"), {&ToolCall::tool_save_scene, true}},
+        {QStringLiteral("live_setlist"), {&ToolCall::tool_live_setlist, false}},
         {QStringLiteral("live_switcher"), {&ToolCall::tool_live_switcher, true}},
         {QStringLiteral("get_live_frame"), {&ToolCall::tool_get_live_frame, true}},
     };

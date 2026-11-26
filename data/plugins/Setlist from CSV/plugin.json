@@ -1,0 +1,17 @@
+{
+  "id": "setlist-csv",
+  "name": "Setlist from CSV",
+  "version": "1.0",
+  "author": "Mutant Video Producer",
+  "description": "Sets up the Live tab's setlist for a gig from a CSV file with a row per song: name, BPM (0: listen for it), scene (1-8, 0: none), notes and a saved pad set's name (both optional).",
+  "commands": [
+    {
+      "label": "Setlist from CSV...",
+      "script": "main.js",
+      "fields": [
+        { "id": "csv", "label": "Setlist (.csv)", "type": "file", "filter": "CSV (*.csv *.txt);;All files (*)" },
+        { "id": "lock", "label": "Lock each song's tempo (else start from it and keep listening)", "type": "bool", "default": true }
+      ]
+    }
+  ]
+}

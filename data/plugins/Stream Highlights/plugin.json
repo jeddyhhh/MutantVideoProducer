@@ -1,0 +1,21 @@
+{
+  "id": "stream-highlights",
+  "name": "Stream Highlights",
+  "version": "1.0",
+  "author": "Mutant Video Producer",
+  "description": "Finds the moments of a stream recording where the chat went busiest and cuts them, in order, into a highlight reel at the end of the edit. The chat log can be a text file with a time on each line (\"[1:02:03] name: message\" or \"1:02:03 ...\"), a CSV with the seconds first, or a Twitch chat JSON (comments with content_offset_seconds).",
+  "commands": [
+    {
+      "label": "Stream Highlights...",
+      "script": "main.js",
+      "fields": [
+        { "id": "recording", "label": "Stream recording", "type": "file", "filter": "Videos (*.mp4 *.mkv *.mov *.flv *.ts *.webm);;All files (*)" },
+        { "id": "chat", "label": "Chat log", "type": "file", "filter": "Chat logs (*.txt *.log *.csv *.json);;All files (*)" },
+        { "id": "count", "label": "How many highlights", "type": "number", "default": 8, "min": 1, "max": 50 },
+        { "id": "seconds", "label": "Seconds each", "type": "number", "default": 20, "min": 3, "max": 300 },
+        { "id": "lead", "label": "Start this many seconds before the busiest moment", "type": "number", "default": 10, "min": 0, "max": 120 },
+        { "id": "offset", "label": "Chat is ahead of the video by (seconds)", "type": "number", "default": 0, "min": -600, "max": 600 }
+      ]
+    }
+  ]
+}

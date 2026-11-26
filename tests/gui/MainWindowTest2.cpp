@@ -3,6 +3,7 @@
 #include "core/MediaInfo.h"
 #include "ui/MakingOf.h"
 #include "ui/MainWindow.h"
+#include "ui/Plugins.h"
 
 #include "core/Compositor.h"
 #include "core/Effects.h"
@@ -332,7 +333,7 @@ void MainWindow::runProductionToolsTest(const std::function<void(bool, const QSt
                                                 QJsonObject{{QStringLiteral("lrc"), lrc}, {QStringLiteral("style"), QStringLiteral("subtitle")},
                                                             {QStringLiteral("font"), QString()}, {QStringLiteral("snap"), false},
                                                             {QStringLiteral("offset"), 0}},
-                                                {lrc});
+                                                plugins::Access{{lrc}, {}, {}});
         const int made = lyrics(), oneStep = m_project->undoStack()->index() - steps;
         m_project->undoStack()->undo();
         const int afterUndo = lyrics();
@@ -341,7 +342,7 @@ void MainWindow::runProductionToolsTest(const std::function<void(bool, const QSt
                                                   QJsonObject{{QStringLiteral("lrc"), lrc}, {QStringLiteral("style"), QStringLiteral("title")},
                                                               {QStringLiteral("font"), QString()}, {QStringLiteral("snap"), false},
                                                               {QStringLiteral("offset"), 0}},
-                                                  {});
+                                                  plugins::Access{});
         if (m_project->undoStack()->index() > beforeRefused) // (an empty step, if one was kept)
             m_project->undoStack()->undo();
         check(error.isEmpty() && made == 9 && oneStep == 1 && afterUndo == -1 && refused.contains(QStringLiteral("only a file chosen")),
